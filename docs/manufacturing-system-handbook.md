@@ -40,7 +40,23 @@ flowchart TD
     I -.不合格处置 / 受控返工.-> H
     K -.工程变更 ECO.-> D
     K -.客诉 / 退货 RMA.-> I
+    class A,C,E,K biz
+    class B cust
+    class D,T eng
+    class F,J flow
+    class G,H exec
+    class I qa
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef eng fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    classDef cust fill:#FCE7F3,stroke:#F9A8D4,color:#172033;
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
 ```
+
+**配色约定（全书一致）**：蓝＝经营与计划，紫＝工程与产品定义，青＝物料与流转，绿＝执行与通过，琥珀＝质量与判定，红＝异常与变更，粉＝客户/OEM 触点，灰＝数据与中性环节。
 
 读这张图的三个要点：
 
@@ -96,6 +112,23 @@ flowchart TB
     IIOT --> DWH
     DWH --> BI
     DWH --> AI
+    class CRM,ERP,SRM,OA,APS biz
+    class PLM,AI eng
+    class MES,EAM exec
+    class WMS,IIOT,BI flow
+    class QMS qa
+    class SCADA,DEV,DWH store
+    style L4 fill:#EFF6FF,stroke:#60A5FA
+    style L3 fill:#F0FDF4,stroke:#4ADE80
+    style L2 fill:#FFFBEB,stroke:#F59E0B
+    style L1 fill:#F8FAFC,stroke:#9CA3AF
+    style DATA fill:#FAF5FF,stroke:#A78BFA
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef eng fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
 ```
 
 这张图的用法：**往上走管承诺，往下走管执行，横着看管交接。** 三条贯穿性的认知：
@@ -170,6 +203,14 @@ flowchart LR
     ECO[工程变更 ECO] -.生效规则.-> PDM
     ECO -.旧料/在制处置.-> ERP
     ECO -.切换边界.-> MES
+    class CAD,PDM eng
+    class ERP biz
+    class MES exec
+    class ECO risk
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef eng fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
 ```
 
 要点：工程 BOM（EBOM，按设计功能组织）和制造 BOM（MBOM，按装配顺序组织，含包材辅料）是**受控转换**的两张表；变更（ECO）必须带着生效规则（按日期/工单/批次/序列号切换）走完全程，只改 PLM 里的图纸不算变更完成。OEM 业务多一层：**客户的设计资料和变更批准权**要并入这条流，客户版本与厂内版本的对应关系必须可查。
@@ -186,6 +227,12 @@ flowchart LR
     WO --> EXE[执行 · 过站 · 报工<br/>MES]
     KIT --> EXE
     EXE -->|完工 · 用料回传| FIN[入库 · 发运 · 开票<br/>ERP · WMS]
+    class SO,MRP,WO biz
+    class PO,GR,KIT,FIN flow
+    class EXE exec
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
 ```
 
 要点：这条流上**每一次交接都是一次过账**，重复过账（MES 和 ERP 各记一次完工）和漏过账（领料没录）是账实不符的两大来源；每个对象只能有一个过账入口。回传方向（执行 → 账务）与下发方向同等重要——报工不回传，ERP 的库存和成本就是盲的。
@@ -202,6 +249,16 @@ flowchart LR
     SHIP -.退货 RMA.-> ANA[检测分析 · 8D]
     ANA -.批次追溯.-> TRACE[(SN/批次履历<br/>MES)]
     ANA -.纠正措施.-> ECO2[工程变更<br/>PLM]
+    class IQC,IPQC,FT,REL qa
+    class STK flow
+    class SHIP cust
+    class ANA,ECO2 risk
+    class TRACE store
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef cust fill:#FCE7F3,stroke:#F9A8D4,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
 ```
 
 要点：质量状态（待验/合格/冻结/让步）必须**真实锁住库存**——QMS 里判了冻结、WMS 里照常发料，等于没有质量系统；追溯依赖执行环节逐站留下的批次/SN 关联，**履历是生产时记出来的，不是出事后补出来的**。OEM 业务在这条流上多两件事：客户测试规范与数据回传、客户见证或放行节点。
@@ -243,6 +300,16 @@ flowchart LR
     D -->|承诺| E[录入销售订单 / 项目立项]
     D -->|有条件承诺| F[记录条件与责任人·跟踪关闭]
     D -->|拒绝/再谈| G[回复需求方]
+    class A,B biz
+    class C,D,F qa
+    class C1,C2,C3,C4,C5 store
+    class E exec
+    class G risk
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
 ```
 
 **要懂的知识**
@@ -293,6 +360,14 @@ flowchart LR
     D --> E[试产问题闭环] --> F[量产放行]
     C -->|成熟产品| F
     G[变更申请 ECR] --> H[影响评估] --> I[变更指令 ECO] --> J[按生效规则执行<br/>文件·物料·在制·现场切换]
+    class A,B,B1,B2,B3,B4,C eng
+    class D,E qa
+    class F exec
+    class G,H,I,J risk
+    classDef eng fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
 ```
 
 **要懂的知识**
@@ -344,6 +419,16 @@ flowchart LR
     D1 & D2 --> E[能力核对 RCCP/CRP<br/>瓶颈资源负荷]
     E --> F[排产 APS/排产表] --> G[计划发布与冻结]
     D3 --> H[例外处理：加急/替代/调承诺] --> G
+    class A,B,C,E,F,G biz
+    class I1,I2,I3,I4 store
+    class D1,D2 exec
+    class D3 risk
+    class H qa
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
 ```
 
 **要懂的知识**
@@ -391,6 +476,20 @@ flowchart LR
     G --> H[线边配送/发料]
     R1[设备点检·治具准备·校准核查] --> I[资源就绪]
     R2[人员技能与排班] --> I
+    class A,B biz
+    class C,E,G,H flow
+    class D qa
+    class F risk
+    class OEM1 cust
+    class R1,R2 store
+    class I exec
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    classDef cust fill:#FCE7F3,stroke:#F9A8D4,color:#172033;
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
 ```
 
 **要懂的知识**
@@ -442,6 +541,18 @@ flowchart LR
     E -->|通过| F[批量放行开工]
     E -->|不通过| G[停线分析·处置后重做首件]
     C -->|任一不满足| H[明确处置：缺项·责任人·预计解决时间]
+    class A,B biz
+    class C,E qa
+    class C1,C2,C3,C4 store
+    class D flow
+    class F exec
+    class G,H risk
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
 ```
 
 **要懂的知识**
@@ -489,6 +600,16 @@ flowchart LR
     H --> B
     E --> I[工序完工 → 下一工序 / 完工入库]
     G -.缺料 / 资源异常.-> S3[回 S3 计划]
+    class A flow
+    class B,C,E,I exec
+    class D,D1,D2,F qa
+    class G,H risk
+    class S3 biz
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
 ```
 
 **要懂的知识**
@@ -538,6 +659,16 @@ flowchart LR
     H -->|需要| I[客户见证 / 数据回传 / 客户放行]
     H -->|不需要| J[放行完成 → S8]
     I --> J
+    class A,B,D,E,H qa
+    class C store
+    class F,S6 risk
+    class G,J exec
+    class I cust
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef cust fill:#FCE7F3,stroke:#F9A8D4,color:#172033;
 ```
 
 **要懂的知识**
@@ -584,6 +715,16 @@ flowchart LR
     G --> H[物流跟踪] --> I[客户签收]
     I --> J[到货验收（如约定）] --> K[交付确认 · 订单行关闭]
     I -.拒收/差异.-> L[差异处理 → S9 反馈]
+    class A,K exec
+    class B,C,D,G,H flow
+    class E qa
+    class F,I,J cust
+    class L risk
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef cust fill:#FCE7F3,stroke:#F9A8D4,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
 ```
 
 **要懂的知识**
@@ -628,6 +769,22 @@ flowchart LR
     G -->|来料问题| J[供应商整改 → 回 S4]
     G -->|执行问题| K[工艺/培训改善 → 回 S6]
     G -->|标准问题| L[测试规范修订 → 回 S7]
+    class A,B,C,D biz
+    class E cust
+    class F,L qa
+    class G risk
+    class H store
+    class I eng
+    class J flow
+    class K exec
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef cust fill:#FCE7F3,stroke:#F9A8D4,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    classDef eng fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
 ```
 
 **要懂的知识**
@@ -771,6 +928,20 @@ flowchart TB
     DWH --> A2
     API2 --> A3
     A1 & A2 & A3 --> U[业务用户]
+    class S1,S2,S3,S4,S5,S6,MDMx store
+    class ODS,DWH flow
+    class BI2,KB,API2 biz
+    class A1,A2,A3 eng
+    class U exec
+    style SRC fill:#F8FAFC,stroke:#9CA3AF
+    style BASE fill:#ECFEFF,stroke:#5EEAD4
+    style SERV fill:#EFF6FF,stroke:#60A5FA
+    style AGT fill:#FAF5FF,stroke:#A78BFA
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef eng fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
 ```
 
 ### 15.2 AI 的四层能力与边界
@@ -798,6 +969,18 @@ flowchart LR
     D --> E[执行留痕<br/>MES 过站 · 报工 · 追溯]
     B & E --> F[指标与分析<br/>口径卡 · BI 下钻]
     F --> G[AI 辅助<br/>知识 → 分析 → 事务]
+    class A store
+    class B flow
+    class C biz
+    class D,G eng
+    class E exec
+    class F qa
+    classDef store fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    classDef flow fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef biz fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef eng fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef exec fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef qa fill:#FEF3C7,stroke:#F59E0B,color:#172033;
 ```
 
 配套要点（翻查用）：
