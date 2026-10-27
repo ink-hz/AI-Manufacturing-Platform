@@ -85,8 +85,10 @@ class ReadinessService(CollaborationStore):
         require(all(item['id'] in items and items[item['id']]['kind'] == item['kind'] and items[item['id']]['required']
                     for item in old['items'] if item['required']),
                 'Replacement must preserve every required check ID, kind and applicability')
-        require(all(item['status']=='pending' for item in value['items']),
-                'Replacement checks start pending and require independent verification')
+        require(all(item['status']=='pending' or
+                    (item['status']=='na' and all(item[key] for key in ('owner','source_ref','evidence','reason')))
+                    for item in value['items']),
+                'Replacement checks require pending status or a documented independent NA review')
         historical = self.changed({**old,'superseded_by':value['id']},actor)
         self.persist(db,'readiness',historical)
         self.event(db,'readiness',historical,'supersede',actor_id,actor,request.operation_id,

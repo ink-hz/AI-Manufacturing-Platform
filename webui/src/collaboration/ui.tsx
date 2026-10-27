@@ -205,7 +205,7 @@ export function MutationForm<T extends object>({
           )}
           {frozen && (
             <p className="mf-muted">
-              本次请求已锁定，重试沿用原内容和操作标识。修改前请明确重置。
+              为避免重复操作，重试会保留本次提交内容；需要修改时，请先返回编辑。
             </p>
           )}
           <div className="mf-actions">

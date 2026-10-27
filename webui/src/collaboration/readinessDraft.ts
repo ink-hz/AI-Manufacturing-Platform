@@ -1,4 +1,4 @@
-import type { ReadinessItem } from "./types";
+import type { ReadinessItem, ReadinessFields } from "./types";
 import { readinessKinds } from "./labels";
 export const newCheck = (
   kind: ReadinessItem["kind"] = "version",
@@ -19,3 +19,26 @@ export const newCheck = (
   supply_mode: "unknown",
   first_article_result: "unknown",
 });
+
+export function validateReadinessCreate(
+  body: ReadinessFields,
+  replacement: boolean,
+) {
+  if (
+    body.items.some(
+      (i) => i.kind === "version" && !i.package_item_id && i.status !== "na",
+    )
+  )
+    throw new Error("替代核对必须选择适用的冻结资料项");
+  if (body.items.some((i) => i.status === "na" && !i.reason.trim()))
+    throw new Error("不适用需填写原因");
+  if (
+    replacement &&
+    body.items.some(
+      (i) =>
+        i.status === "na" &&
+        ![i.owner, i.source_ref, i.evidence, i.reason].every((v) => v.trim()),
+    )
+  )
+    throw new Error("本次不适用需重新填写负责人、来源、凭据和原因");
+}

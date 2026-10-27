@@ -1048,6 +1048,7 @@ it("creates an explicitly unbound version check as documented NA immediately", a
   await field("计划使用日期", "2026-11-01");
   await field("核对负责人", "王工");
   await field("对应冻结资料项", "");
+  await click("本次重新确认不适用");
   await field("不适用原因", "此范围无该版本资料要求");
   await click("建立核对");
   expect(
@@ -1196,3 +1197,93 @@ it("retains the original readiness CAS after an issue refresh supplies a newer e
     (host.querySelector('[aria-label="核对原因"]') as HTMLInputElement).value,
   ).toBe("外部版本2的结论");
 });
+it("replacement starts pending with old applicability proof cleared and permits only explicit freshly documented NA", async () => {
+  packages = [
+    pkg(),
+    {
+      ...pkg("verified", "pk2", 2),
+      items: [{ ...pkg().items[0], status: "na", reason: "新范围无适用项" }],
+    },
+  ];
+  readiness = [
+    {
+      ...check(),
+      status: "complete",
+      items: [
+        {
+          ...check().items[0],
+          status: "na",
+          package_item_id: null,
+          owner: "旧核对人",
+          source_ref: "OLD-SOURCE",
+          evidence: "OLD-PROOF",
+          reason: "旧不适用理由",
+        },
+      ],
+    },
+  ];
+  await mount();
+  await openTab("生产准备");
+  await click("首批开工");
+  await click("替代此核对");
+  expect(host.textContent).not.toContain("OLD-PROOF");
+  expect(host.textContent).not.toContain("旧不适用理由");
+  expect(
+    (host.querySelector('[aria-label="准备项负责人"]') as HTMLInputElement)
+      .value,
+  ).toBe("");
+  await click("建立替代核对");
+  expect(
+    calls.filter((c) => c.url.endsWith("/readiness") && c.body),
+  ).toHaveLength(0);
+  await click("重置本次请求并继续编辑");
+  await click("本次重新确认不适用");
+  await field("准备项负责人", "本次核对人");
+  await field("不适用来源", "NEW-SOURCE");
+  await field("不适用凭据", "NEW-PROOF");
+  await field("不适用原因", "本次独立检查新范围无适用项");
+  await click("建立替代核对");
+  expect(
+    calls.find((c) => c.url.endsWith("/readiness") && c.body)?.body,
+  ).toMatchObject({
+    supersedes_id: "r1",
+    supersedes_version: 1,
+    package_id: "pk2",
+    items: [
+      expect.objectContaining({
+        id: "version",
+        kind: "version",
+        required: true,
+        status: "na",
+        package_item_id: null,
+        owner: "本次核对人",
+        source_ref: "NEW-SOURCE",
+        evidence: "NEW-PROOF",
+        reason: "本次独立检查新范围无适用项",
+      }),
+    ],
+  });
+});
+it.each(["准备项负责人", "不适用来源", "不适用凭据", "不适用原因"])(
+  "does not post a replacement NA attestation missing %s",
+  async (missing) => {
+    packages = [pkg(), pkg("verified", "pk2", 2)];
+    readiness = [check()];
+    await mount();
+    await openTab("生产准备");
+    await click("首批开工");
+    await click("替代此核对");
+    await click("本次重新确认不适用");
+    for (const [label, value] of [
+      ["准备项负责人", "核对人"],
+      ["不适用来源", "SCOPE-NEW"],
+      ["不适用凭据", "REVIEW-NEW"],
+      ["不适用原因", "本次核对不适用"],
+    ])
+      if (label !== missing) await field(label, value);
+    await click("建立替代核对");
+    expect(
+      calls.filter((c) => c.url.endsWith("/readiness") && c.body),
+    ).toHaveLength(0);
+  },
+);
