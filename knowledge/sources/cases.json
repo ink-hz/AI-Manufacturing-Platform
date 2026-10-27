@@ -1,0 +1,393 @@
+[
+  {
+    "id": "C01",
+    "title": "关于嘉立创：公司简介与业务范围",
+    "publisher": "深圳嘉立创科技集团股份有限公司",
+    "url": "https://www.jlc.com/portal/2/vcontact.html",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "当前集团名称与电子、机械、工业软件三类业务定位。",
+    "limitations": "动态公司介绍；经营指标为企业自述，本篇未把人数、订单量或宣传奖项作独立事实验证。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md",
+      "04-cases/06-reported-metrics-and-evidence.md"
+    ]
+  },
+  {
+    "id": "C02",
+    "title": "关于深圳嘉立创科技集团股份有限公司首次公开发行股票并在主板上市的补充法律意见书（三）",
+    "publisher": "广东信达律师事务所（深圳证券交易所披露）",
+    "url": "https://reportdocs.static.szse.cn/UpFiles/rasinfodisc1/202403/RAS_202403_1319202D5CD3F4C8524D3DB04CBE6C671991D2.pdf",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "regulatory_disclosure",
+    "evidence_scope": "第8-3-6页订单工程资料、智能拼板与MI工单；第8-3-9页ERP排产；第8-3-91页网站/经营主体/业务映射。",
+    "limitations": "原始PDF已从交易所域名下载并pdftotext提取相关全文，并渲染第8-3-91页核对表格。文件涉及历史申报期，部分事实截止2023年；签署日期文本未填写，不把URL目录当发布日期。系法律意见及发行人说明/访谈/演示依据，不能视为当前工厂架构独立审计。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md",
+      "04-cases/05-comparison-and-transfer.md"
+    ]
+  },
+  {
+    "id": "C03",
+    "title": "关于立创商城",
+    "publisher": "深圳市立创电子商务有限公司（立创商城）",
+    "url": "https://www.szlcsc.com/about.html",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "商城经营主体、自营元器件采购商城定位；与制造平台及SMT私有库对象区分。",
+    "limitations": "动态企业页面；原厂追溯等承诺并非本次审计结果；未用商城SKU或用户数量推定集团系统能力。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md",
+      "04-cases/06-reported-metrics-and-evidence.md"
+    ]
+  },
+  {
+    "id": "C04",
+    "title": "关于嘉立创EDA",
+    "publisher": "嘉立创EDA团队／深圳嘉立创科技集团股份有限公司",
+    "url": "https://u.lceda.cn/page/company",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "official_platform_documentation",
+    "evidence_scope": "国内嘉立创EDA（曾用名立创EDA）与国外EasyEDA的命名、集团归属及设计工具性质。",
+    "limitations": "web打开超时后直接读取官方URL完整HTTP正文核验；页面部分经营数据仍截至2023-06-30，本文只使用名称与定位，未当作当前经营指标。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C05",
+    "title": "嘉立创DFM：PCB与PCBA可制造性分析工具",
+    "publisher": "深圳嘉立创科技集团股份有限公司",
+    "url": "https://www.jlc-dfm.com/",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "official_platform_documentation",
+    "evidence_scope": "公开上传格式、PCB/SMT可制造性检查项目和错误定位功能。",
+    "limitations": "产品功能说明；未上传设计文件、未测试规则准确性，不能视为功能可靠性、产品认证或当前内部CAM集成证明。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C06",
+    "title": "SMT贴片下单：PCBA在线下单与报价",
+    "publisher": "嘉立创SMT／深圳嘉立创科技集团股份有限公司",
+    "url": "https://www.jlc-smt.com/order?smtOrderSource=pcb",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "official_platform_documentation",
+    "evidence_scope": "未登录公开表单中的PCB订单选择、BOM/坐标来源、工艺字段、选型方式与确认选项。",
+    "limitations": "只读未登录页面；未提交订单或验证报价结果。页面随服务更新，数量、计费和交期不作为固定承诺。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md",
+      "04-cases/05-comparison-and-transfer.md"
+    ]
+  },
+  {
+    "id": "C07",
+    "title": "嘉立创SMT全新独立站上线",
+    "publisher": "深圳嘉立创科技集团股份有限公司",
+    "url": "https://www.jlc.com/portal/q7i38429.html",
+    "access_date": "2026-10-27",
+    "published_date": "2022-09-22",
+    "source_kind": "official_platform_documentation",
+    "evidence_scope": "PCB关联下单、BOM提前备料、邮寄器件、私有库库存与使用明细的官方流程说明。",
+    "limitations": "具有历史发布时间的功能介绍；页面内容可能后续更新，不将旧收费、库存规模或服务承诺作为当前规则。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C08",
+    "title": "如何查询PCB生产进度及生产基地",
+    "publisher": "嘉立创官方帮助中心",
+    "url": "https://www.jlc.com/portal/server_guide_4056.html",
+    "access_date": "2026-10-27",
+    "published_date": "2019-05-30",
+    "source_kind": "official_platform_documentation",
+    "evidence_scope": "客户订单列表可查询PCB生产进度；页面标注2026-09-17更新。",
+    "limitations": "主体文字简短且依赖截图；未登录验证数据刷新频率、工序粒度、基地字段或物理状态准确性。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C09",
+    "title": "About JLCPCB: Global PCB & Electronics Manufacturing Services",
+    "publisher": "JLCPCB",
+    "url": "https://jlcpcb.com/about-us",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "全球服务入口将PCB制造、零件采购与组装作为一站式服务；EasyEDA等生态入口定位。",
+    "limitations": "企业介绍与规模自述；不用于证明国内外账户、合同或技术架构相同。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C10",
+    "title": "Order Status",
+    "publisher": "JLCPCB Help Center",
+    "url": "https://jlcpcb.com/help/article/order-status",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "official_platform_documentation",
+    "evidence_scope": "订单历史、状态、明细、物流及合同/发票下载的客户侧流程；页面标注2026-09-09更新。",
+    "limitations": "未登录订单账户；不能推断所有工序逐件采集或对外状态与现场实时一致。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C11",
+    "title": "PCB Manufacturing Quality Control at JLCPCB",
+    "publisher": "JLCPCB",
+    "url": "https://jlcpcb.com/about-us/quality-control",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "企业披露工程文件审核、异常通知、AOI/飞针/最终检查及生产错误追查方向。",
+    "limitations": "质量体系与设备能力为企业自述，未抽样验证；不构成每块板完整谱系、每项检测覆盖或零缺陷证明。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C12",
+    "title": "How to mark on PCB?",
+    "publisher": "JLCPCB Help Center",
+    "url": "https://jlcpcb.com/help/article/how-to-mark-on-pcb",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "official_platform_documentation",
+    "evidence_scope": "可选择二维码/序列号、标识确认方式及编号不一定连续；页面标注2026-05-22更新。",
+    "limitations": "只证明对外标识选项与规则，不证明二维码自动关联完整生产或原材料追溯记录。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C13",
+    "title": "嘉立创开放平台能做什么？",
+    "publisher": "深圳嘉立创科技集团股份有限公司",
+    "url": "https://www.jlc.com/portal/q7i64392.html",
+    "access_date": "2026-10-27",
+    "published_date": "2026-10-20",
+    "source_kind": "official_platform_documentation",
+    "evidence_scope": "PCB、SMT、商城等业务API范围，审核后查看文档，以及部分业务试开放/客户筛选条件。",
+    "limitations": "未申请、未登录、未调用接口；所列范围不等于任何客户已获权限，也未验证端点、限流、幂等、回调与时效。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C14",
+    "title": "JLC API Platform",
+    "publisher": "JLCPCB",
+    "url": "https://api.jlcpcb.com/",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "official_platform_documentation",
+    "evidence_scope": "海外API平台列PCB、钢网、3D打印、元器件相关能力和申请/建应用/开发流程。",
+    "limitations": "官方文档入口可打开，但未登录正文主要由前端加载；本篇仅核实平台与接入说明，不提供未验证的端点或与国内站互通结论。",
+    "topics": [
+      "04-cases/01-jlc-electronics-platform.md"
+    ]
+  },
+  {
+    "id": "C15",
+    "title": "卡奥斯工业互联网平台",
+    "publisher": "海尔集团",
+    "url": "https://www.haier.com/haier_cosmoplat/",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "海尔对COSMOPlat平台、大规模定制、用户全流程参与和行业方案的定位。",
+    "limitations": "集团对平台的概念性介绍；不是某座工厂的当前部署清单或独立运营指标。",
+    "topics": [
+      "04-cases/02-haier-connected-factory.md"
+    ]
+  },
+  {
+    "id": "C16",
+    "title": "卡奥斯COSMOPlat平台介绍",
+    "publisher": "卡奥斯数字科技（青岛）有限公司（网站版权主体）",
+    "url": "https://www.cosmoplat.com/platform",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "平台发展历程中的卡奥斯物联科技股份有限公司名称、当前网站版权主体与工业平台定位。",
+    "limitations": "网站品牌、法律主体和制造客户需区分；本篇未据此推定采购签约主体、全部股权关系或历史工厂软件版本。",
+    "topics": [
+      "04-cases/02-haier-connected-factory.md"
+    ]
+  },
+  {
+    "id": "C17",
+    "title": "每24秒下线一台热水器：郑州海尔奋力冲刺全年30亿产值目标",
+    "publisher": "郑州经济技术开发区管理委员会",
+    "url": "https://www.zzjkq.gov.cn/zwdt/9230438.jhtml",
+    "access_date": "2026-10-27",
+    "published_date": "2025-04-15",
+    "source_kind": "government_report",
+    "evidence_scope": "郑州海尔新能源科技有限公司与郑州热水器互联工厂的对应、投产时间、产品系列、模块标准化与柔性生产组织。",
+    "limitations": "当地政府现场新闻含企业人员介绍与经营自报，不能当作独立收益审计；标题与产值目标未作为实现结果使用。",
+    "topics": [
+      "04-cases/02-haier-connected-factory.md",
+      "04-cases/05-comparison-and-transfer.md"
+    ]
+  },
+  {
+    "id": "C18",
+    "title": "全球首个！卡奥斯科技引擎交出中国答卷，点亮热水器行业灯塔工厂",
+    "publisher": "海尔集团",
+    "url": "https://www.haier.com/haier_cosmoplat/news/20220331_178274.shtml",
+    "access_date": "2026-10-27",
+    "published_date": "2022-03-30",
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "郑州热水器案例的大规模定制、供应商产能/库存/配额协同及端到端应用方向。",
+    "limitations": "企业对案例和平台贡献的自述；未验证接口与原始数据，不采用绝对化零缺陷或其他宣传性表述。",
+    "topics": [
+      "04-cases/02-haier-connected-factory.md"
+    ]
+  },
+  {
+    "id": "C19",
+    "title": "Factories of the future call for responsible scaling that prioritizes planet and people",
+    "publisher": "World Economic Forum",
+    "url": "https://www.weforum.org/media/factories-of-the-future-call-for-responsible-scaling-that-prioritizes-the-planet-and-people",
+    "access_date": "2026-10-27",
+    "published_date": "2022-03-25",
+    "source_kind": "official_recognition",
+    "evidence_scope": "正文日期2022-03-30：Haier Zhengzhou新增灯塔及连接供应商/工厂/客户；Le Vaudreuil可持续灯塔及IIoT/水循环案例。",
+    "limitations": "页面发布日期显示3月25日，正文公告日期为3月30日，分别保留。评选机构原始发布不等于对每个运营指标的独立财务或技术审计；摘要未给完整分母，本篇不汇总百分比成果。",
+    "topics": [
+      "04-cases/02-haier-connected-factory.md",
+      "04-cases/04-schneider-lighthouse.md",
+      "04-cases/06-reported-metrics-and-evidence.md"
+    ]
+  },
+  {
+    "id": "C20",
+    "title": "Global Lighthouse Network: Unlocking Sustainability through Fourth Industrial Revolution Technologies",
+    "publisher": "World Economic Forum（与McKinsey & Company合作）",
+    "url": "https://www3.weforum.org/docs/WEF_Global_Lighthouse_Network_Unlocking_Sustainability_Through_4IR.pdf",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "official_recognition",
+    "evidence_scope": "封面2021年9月；第6页新增Sany Beijing；第11页多品类小批量挑战、人机协作、焊接、换型、设备与重载物流应用。",
+    "limitations": "web打开超时后从WEF域名下载完整PDF提取，并渲染第11页复核指标方向和工厂行归属；封面仅有年月，发布日期设null。案例摘要未给完整指标基期和工时/产品分母；不直接采用百分比或据其推定根云架构。",
+    "topics": [
+      "04-cases/03-sany-heavy-industry.md",
+      "04-cases/05-comparison-and-transfer.md",
+      "04-cases/06-reported-metrics-and-evidence.md"
+    ]
+  },
+  {
+    "id": "C21",
+    "title": "SANY factory certified as the world’s first Lighthouse factory in heavy machinery industry",
+    "publisher": "SANY Group／三一官方全球网站",
+    "url": "https://www.sanyglobal.com/cn/press_releases/721/",
+    "access_date": "2026-10-27",
+    "published_date": "2021-11-15",
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "北京钻机/桩机工厂改造，钢板仓储、27米长物料AGV搬运、多机器人焊接等物理工程细节。",
+    "limitations": "英文正文刊载于中文路径；生产率增幅与WEF原始报告不一致，本篇不采用该增幅。企业技术自述未现场核验。",
+    "topics": [
+      "04-cases/03-sany-heavy-industry.md",
+      "04-cases/06-reported-metrics-and-evidence.md"
+    ]
+  },
+  {
+    "id": "C22",
+    "title": "SANY Heavy Industry Co., Ltd. 2021 Corporate Social Responsibility Report",
+    "publisher": "三一重工股份有限公司（巨潮资讯网披露）",
+    "url": "https://dataclouds.cninfo.com.cn/shgonggao/2022/2022-04-23/2b856fb4c22a11ecba63fa163e26e5de.pdf",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "regulatory_disclosure",
+    "evidence_scope": "印刷第17—18页（PDF第11页）北京桩机厂身份、2021-09-27入选及MOM/IoT/WMS/RCS/AGV协同自述。",
+    "limitations": "从原披露域名下载完整PDF提取并渲染PDF第11页，区分北京厂案例框与公司灯塔建设段。URL路径含2022-04-23，未另核实际发布日期，故设null；报告期为2021年。MOM等整合段未逐项界定北京厂部署边界，不作为当前架构审计。",
+    "topics": [
+      "04-cases/03-sany-heavy-industry.md",
+      "04-cases/06-reported-metrics-and-evidence.md"
+    ]
+  },
+  {
+    "id": "C23",
+    "title": "Why Getting Started with Your Digitization Journey May be Easier Than You Think",
+    "publisher": "Schneider Electric Blog",
+    "url": "https://blog.se.com/industry/food-and-beverage/2019/03/26/why-getting-started-with-your-digitization-journey-may-be-easier-than-you-think/",
+    "access_date": "2026-10-27",
+    "published_date": "2019-03-26",
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "Le Vaudreuil绕线设备增加温度传感器与ITOT盒子，操作人员用数据管理换型质量及机器问题的具体实例。",
+    "limitations": "官方博客案例，不是独立实验报告；未采用缺少基期、样本和分母的生产率数字，也未推定自动控制边界。",
+    "topics": [
+      "04-cases/04-schneider-lighthouse.md",
+      "04-cases/05-comparison-and-transfer.md"
+    ]
+  },
+  {
+    "id": "C24",
+    "title": "Embracing the power of industrial transformation: from single site to enterprise-wide",
+    "publisher": "Schneider Electric（作者Barbara Frei）",
+    "url": "https://www.se.com/ww/en/insights/next-generation-automation/industrial-intelligence/embracing-the-power-of-industrial-transformation/",
+    "access_date": "2026-10-27",
+    "published_date": "2023-03-13",
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "Le Vaudreuil统一控制中心、实时用电/资产/过程可视与报警，以及项目自述起点；区分单厂能力和跨企业愿景。",
+    "limitations": "企业高管署名观点；未将设想中的ERP/OT标准化当成已经全部实施，也未由资源改善归因计算ROI。",
+    "topics": [
+      "04-cases/04-schneider-lighthouse.md",
+      "04-cases/06-reported-metrics-and-evidence.md"
+    ]
+  },
+  {
+    "id": "C25",
+    "title": "Now is the time to double down, not slow down, on transforming industry",
+    "publisher": "World Economic Forum网站／Schneider Electric作者Barbara Frei",
+    "url": "https://www.weforum.org/stories/forum-in-focus/davos23-industry-transformation-efficiency-productivity",
+    "access_date": "2026-10-27",
+    "published_date": "2023-01-12",
+    "source_kind": "corporate_partner_content",
+    "evidence_scope": "页面Partner Content标识、作者施耐德高管身份；用于示范域名与证据作者需分开判断。",
+    "limitations": "文章声明观点属于作者而非WEF；不作为WEF独立工厂调研或独立认可的替代来源。",
+    "topics": [
+      "04-cases/04-schneider-lighthouse.md"
+    ]
+  },
+  {
+    "id": "C26",
+    "title": "卡奥斯灯塔工厂",
+    "publisher": "卡奥斯数字科技（青岛）有限公司（网站版权主体）",
+    "url": "https://www.cosmoplat.com/lighthouseFactory/",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "案例索引分别列不同工厂、行业、年份与场景，支持避免跨工厂混合叙述。",
+    "limitations": "供应方动态案例合集；未采用当前数量、跨行业排名或各工厂成果百分比，也不据新产品介绍倒推历史部署。",
+    "topics": [
+      "04-cases/02-haier-connected-factory.md"
+    ]
+  },
+  {
+    "id": "C27",
+    "title": "New recognition for Schneider Electric from World Economic Forum",
+    "publisher": "Schneider Electric",
+    "url": "https://www.se.com/ww/en/about-us/newsroom/news/press-releases/new-recognition-for-schneider-electric-from-world-economic-forum-62441e75d32cd17e7b1f0ab4/",
+    "access_date": "2026-10-27",
+    "published_date": "2022-03-30",
+    "source_kind": "corporate_self_report",
+    "evidence_scope": "2022年Le Vaudreuil工厂电力、材料废物、CO2与水资源改善的原始企业新闻稿；仅列该厂数据，不混入同页海得拉巴指标。",
+    "limitations": "web打开超时后直接读取施耐德官方URL完整HTTP正文核验。属于企业自述；正文未给完整基期、绝对量、产品分母或碳边界，保留为原始披露而非独立复算结论。",
+    "topics": [
+      "04-cases/06-reported-metrics-and-evidence.md"
+    ]
+  }
+]

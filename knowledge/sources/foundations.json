@@ -1,0 +1,323 @@
+[
+  {
+    "id": "F01",
+    "title": "Production process overview",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/production-control/production-process-overview",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": "2025-07-10",
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "Dynamics 365 中生产订单、批次订单、BOM/路线及生产生命周期的具体建模。",
+    "limitations": "厂商实现，不是所有制造企业的统一状态机；本文仅引用制造模式和生命周期概念。",
+    "topics": [
+      "01-foundations/01-manufacturing-process.md"
+    ]
+  },
+  {
+    "id": "F02",
+    "title": "EVT, DVT, PVT Stage Gate Definitions",
+    "publisher": "Instrumental",
+    "url": "https://instrumental.com/build-better-handbook/evt-dvt-pvt",
+    "access_date": "2026-10-27",
+    "source_kind": "vendor_engineering_handbook",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "作者基于硬件工程与NPI项目经历解释EVT/DVT/PVT及阶段理解差异。",
+    "limitations": "原创工程经验，不是强制标准；本文不采用其典型数量、失效率或退出门槛作为普遍要求。原文称最初写于2015年，当前重发日期未明确。",
+    "topics": [
+      "01-foundations/01-manufacturing-process.md"
+    ]
+  },
+  {
+    "id": "F03",
+    "title": "Metrological Traceability: Frequently Asked Questions and NIST Policy",
+    "publisher": "National Institute of Standards and Technology (NIST)",
+    "url": "https://www.nist.gov/metrology/metrological-traceability",
+    "access_date": "2026-10-27",
+    "source_kind": "government_metrology_guidance",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "测量结果的量值溯源、连续校准链和测量不确定度；可区分产品检测与测量证据。",
+    "limitations": "并非特定光学产品校准规范，不证明任一企业或仪器已经满足溯源要求。",
+    "topics": [
+      "01-foundations/01-manufacturing-process.md"
+    ]
+  },
+  {
+    "id": "F04",
+    "title": "Overview of Sales and Operations Planning",
+    "publisher": "Oracle",
+    "url": "https://docs.oracle.com/en/cloud/saas/supply-chain-and-manufacturing/26d/fasop/overview-of-sales-and-operations-planning.html",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "Oracle Fusion Cloud SCM 26D对聚合层面产品、需求、供应与战略财务目标协调的定位。",
+    "limitations": "产品文档；未据此声称所有S&OP都采用相同周期、流程或功能。",
+    "topics": [
+      "01-foundations/02-planning-and-control.md"
+    ]
+  },
+  {
+    "id": "F05",
+    "title": "Oracle MRP User’s Guide — Supply Chain Planning",
+    "publisher": "Oracle",
+    "url": "https://docs.oracle.com/cd/E26401_01/doc.122/e48795/T478564T478953.htm",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "Oracle EBS 12.2 Supply Chain Planning，尤其Master Scheduling及MDS/MPS需求与供应声明的区别。",
+    "limitations": "既有版本的产品文档；用于稳定概念，不作为新版本功能或采购建议。",
+    "topics": [
+      "01-foundations/02-planning-and-control.md"
+    ]
+  },
+  {
+    "id": "F06",
+    "title": "Oracle MRP User’s Guide — Material Requirements Planning",
+    "publisher": "Oracle",
+    "url": "https://docs.oracle.com/cd/E18727_01/doc.121/e15188/T478564T478850.htm",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "Oracle EBS 12.1传统MRP的净需求输入、补货/改期建议与无限能力假设。",
+    "limitations": "传统MRP实现，不能泛化为所有现代计划引擎；本地6周案例为原创，不是Oracle结果或示例。",
+    "topics": [
+      "01-foundations/02-planning-and-control.md",
+      "01-foundations/03-mrp-worked-example.md"
+    ]
+  },
+  {
+    "id": "F07",
+    "title": "Overview of Capacity Planning",
+    "publisher": "Oracle",
+    "url": "https://docs.oracle.com/cd/A60725_05/html/comnls/us/crp/ovwcp.htm",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "RCCP与主计划/关键资源、CRP与物料计划/详细资源的关系，以及负荷与能力比较。",
+    "limitations": "历史版本Oracle Capacity说明；用于层级区别，不用于当前版本部署与支持判断。",
+    "topics": [
+      "01-foundations/02-planning-and-control.md"
+    ]
+  },
+  {
+    "id": "F08",
+    "title": "Finite capacity planning and scheduling",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/master-planning/planning-optimization/finite-capacity",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": "2025-08-05",
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "有限能力概念及Dynamics 365的全局、计划、资源配置与时间范围限制。",
+    "limitations": "设置与行为受具体引擎及版本影响；本文不据此声称某用户系统已启用有限能力。",
+    "topics": [
+      "01-foundations/02-planning-and-control.md"
+    ]
+  },
+  {
+    "id": "F09",
+    "title": "Order to cash business process flow overview and relationships to other business processes",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/guidance/business-processes/order-to-cash-overview",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "O2C包含销售订单、应收、信用催收，并与履约、退换及总账过程关联。",
+    "limitations": "Dynamics 365过程目录；页面注明2026年目录更新与部分旧图可能不同，本文只使用文字概念，不复用图。",
+    "topics": [
+      "01-foundations/04-erp-business-transactions.md"
+    ]
+  },
+  {
+    "id": "F10",
+    "title": "Source to pay end-to-end overview",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/guidance/business-processes/source-to-pay-overview",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": "2025-07-24",
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "寻源、供应商关系、采购、发票、付款的端到端过程及制造采购关联。",
+    "limitations": "Source-to-Pay范围大于狭义P2P；目录存在标题与图逐步更新的说明，本文不把图示作通用标准。",
+    "topics": [
+      "01-foundations/04-erp-business-transactions.md"
+    ]
+  },
+  {
+    "id": "F11",
+    "title": "Overview of the Plan to produce end-to-end business process",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/guidance/business-processes/plan-to-produce-overview",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "生产策略、计划、执行、委外、质量与成本的过程关系。",
+    "limitations": "Dynamics 365业务过程目录，不是所有ERP的强制模块或状态划分；未使用页面图示作实证。",
+    "topics": [
+      "01-foundations/04-erp-business-transactions.md"
+    ]
+  },
+  {
+    "id": "F12",
+    "title": "Accounts payable invoice matching overview",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable-invoice-matching",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "两方、三方匹配及价格、收货数量、配置容差的关系。",
+    "limitations": "厂商实现，不能代替企业审批制度或具体会计准则；不采用页面金额或税项作案例。",
+    "topics": [
+      "01-foundations/04-erp-business-transactions.md"
+    ]
+  },
+  {
+    "id": "F13",
+    "title": "Inventory statuses",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/inventory/inventory-statuses",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": "2026-07-01",
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "库存状态可影响物料可用性与补货；实物仍在库不等于可用于出库或生产。",
+    "limitations": "具体库存状态、阻止规则及仓库作业限制属于Dynamics 365实现，不能泛化为所有ERP。",
+    "topics": [
+      "01-foundations/04-erp-business-transactions.md"
+    ]
+  },
+  {
+    "id": "F14",
+    "title": "BOM calculations",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/cost-management/bom-calculations",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "BOM成本计算依赖成本版本、BOM/路线版本、数量、日期及地点等上下文。",
+    "limitations": "厂商成本计算说明，不是会计政策建议；本地75/78.57元计算为独立简化管理教学。",
+    "topics": [
+      "01-foundations/04-erp-business-transactions.md"
+    ]
+  },
+  {
+    "id": "F15",
+    "title": "Bills of materials and formulas",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/production-control/bill-of-material-bom",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "BOM、配方及不同视图；BOM版本的日期/数量/地点约束及批准与激活的区别。",
+    "limitations": "Dynamics 365数据模型；不假定其BOM类型、审批规则适用于其他产品。",
+    "topics": [
+      "01-foundations/05-master-data-and-engineering-change.md"
+    ]
+  },
+  {
+    "id": "F16",
+    "title": "Manufacturing bill of materials",
+    "publisher": "Siemens",
+    "url": "https://www.siemens.com/en-gb/technology/manufacturing-bill-of-materials-mbom/",
+    "access_date": "2026-10-27",
+    "source_kind": "official_vendor_explainer",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_and_open_then_direct_http_body_verification",
+    "evidence_scope": "页面首部MBOM是制造物料定义、BOP补充如何制造的概念分工。",
+    "limitations": "产品厂商的概念解释，不是正式标准。网页工具首次可读正文，后续重取曾超时，已另以直接HTTP完整正文复核；本文仅使用MBOM/BOP的概念分工，不引用营销效果。",
+    "topics": [
+      "01-foundations/05-master-data-and-engineering-change.md"
+    ]
+  },
+  {
+    "id": "F17",
+    "title": "Routes and operations",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/production-control/routes-operations",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "路线的工序顺序、资源、准备/运行时间和成本属性；路线及版本的模型。",
+    "limitations": "Dynamics 365实现；本文不把路线、BOP与其他厂商工作定义视为完全等同数据结构。",
+    "topics": [
+      "01-foundations/05-master-data-and-engineering-change.md"
+    ]
+  },
+  {
+    "id": "F18",
+    "title": "Oracle Engineering User’s Guide — Engineering Change Orders",
+    "publisher": "Oracle",
+    "url": "https://docs.oracle.com/cd/E26401_01/doc.122/e48939/T269960T269964.htm",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "ECO管理修订/BOM及日期或单元生效；可涉及在制更新与旧料处置。",
+    "limitations": "Oracle EBS 12.2实例；ECR/ECO/ECN在不同企业的名称和流程并不统一，不据此设定用户实际流程。",
+    "topics": [
+      "01-foundations/05-master-data-and-engineering-change.md"
+    ]
+  },
+  {
+    "id": "F19",
+    "title": "Item and raw material tracing in inventory, production, and sales",
+    "publisher": "Microsoft",
+    "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/inventory/trace-items-raw-materials-inventory-production-sales",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "以库存交易、批次/SN等追踪维度进行来源/去向追踪，以及单法人和业务类型限制。",
+    "limitations": "属于文档所述Item tracing功能，不能假定涵盖跨公司全链、所有副产品或全部维修履历，也不代表用户系统已采集必要数据。",
+    "topics": [
+      "01-foundations/05-master-data-and-engineering-change.md"
+    ]
+  },
+  {
+    "id": "F20",
+    "title": "How You Create an Assemble to Order (ATO) Model Work Definition",
+    "publisher": "Oracle",
+    "url": "https://docs.oracle.com/en/cloud/saas/supply-chain-and-manufacturing/25d/faumf/how-you-create-an-assemble-to-order-ato-model-work-definition.html",
+    "access_date": "2026-10-27",
+    "source_kind": "official_documentation",
+    "published_date": null,
+    "last_updated_date": null,
+    "retrieval_method": "web_search_then_open_full_page",
+    "evidence_scope": "Oracle Fusion Cloud Manufacturing 25D的ATO配置物料与订单/工单关联实例。",
+    "limitations": "具体版本功能，不是ATO的唯一实现；不引用页面配置规则作为通用业务要求。",
+    "topics": [
+      "01-foundations/02-planning-and-control.md"
+    ]
+  }
+]

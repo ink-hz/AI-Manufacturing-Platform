@@ -1,0 +1,98 @@
+[
+  {
+    "id": "R01",
+    "title": "工业和信息化部办公厅关于印发智能制造典型场景参考指引2025年版的通知",
+    "publisher": "中华人民共和国工业和信息化部",
+    "url": "https://www.miit.gov.cn/jgsj/zbys/wjfb/art/2025/art_3033120c7e8d4e4aba0bf76b44bcc645.html",
+    "access_date": "2026-10-27",
+    "published_date": "2025-04-27",
+    "source_kind": "政府部门正式通知",
+    "evidence_scope": "正式通知名称、工信厅通装函〔2025〕155号、成文与发布日期及文件用途。",
+    "limitations": "已读取通知正文和附件入口，未逐条读取正式附件；不引用征求意见稿作为正式版正文。",
+    "topics": ["05-fieldwork/05-standards-and-reading-guide.md"]
+  },
+  {
+    "id": "R02",
+    "title": "GB/T 39116-2020 智能制造能力成熟度模型",
+    "publisher": "国家市场监督管理总局 国家标准化管理委员会",
+    "url": "https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=809991917D73FE52B65C1ECC8B51B418",
+    "access_date": "2026-10-27",
+    "published_date": "2020-10-11",
+    "source_kind": "国家标准官方目录元数据",
+    "evidence_scope": "名称、标准号、发布日、实施日及核验时目录标为现行。",
+    "limitations": "未读取标准全文，不支撑具体等级条款或企业符合性评价；标准状态需在实际使用时复核。",
+    "topics": ["05-fieldwork/05-standards-and-reading-guide.md"]
+  },
+  {
+    "id": "R03",
+    "title": "Quality Core Tools",
+    "publisher": "Automotive Industry Action Group (AIAG)",
+    "url": "https://www.aiag.org/expertise-areas/quality/quality-core-tools",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "行业组织公开方法概览",
+    "evidence_scope": "APQP、Control Plan、PPAP、FMEA、SPC、MSA 的公开用途概览。",
+    "limitations": "已读公开概览，不含付费手册全文；不把汽车行业客户要求推广成所有制造业强制要求。",
+    "topics": ["05-fieldwork/04-quality-lean-and-test-data.md", "05-fieldwork/05-standards-and-reading-guide.md", "glossary.md"]
+  },
+  {
+    "id": "R04",
+    "title": "NIST/SEMATECH e-Handbook 6.1.6 What is Process Capability",
+    "publisher": "National Institute of Standards and Technology (NIST)",
+    "url": "https://www.itl.nist.gov/div898/handbook/pmc/section1/pmc16.htm",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "研究机构公开统计教材",
+    "evidence_scope": "稳定过程与规格的比较、双侧 Cp 和 Cpk 的定义以及数据分布等适用前提。",
+    "limitations": "仅解释入门概念与公式，不设定企业或行业验收阈值；文中尺寸例为独立构造的教学假设。",
+    "topics": ["05-fieldwork/04-quality-lean-and-test-data.md", "05-fieldwork/05-standards-and-reading-guide.md", "glossary.md"]
+  },
+  {
+    "id": "R05",
+    "title": "NIST/SEMATECH e-Handbook 6.2.1 What is Acceptance Sampling",
+    "publisher": "National Institute of Standards and Technology (NIST)",
+    "url": "https://www.itl.nist.gov/div898/handbook/pmc/section2/pmc21.htm",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "研究机构公开统计教材",
+    "evidence_scope": "接收抽样用于批接收决策，与估计总体质量及长期过程控制的区别。",
+    "limitations": "不提供具体企业抽样方案或风险配置；不把抽样通过解释为每个对象都合格。",
+    "topics": ["05-fieldwork/04-quality-lean-and-test-data.md", "05-fieldwork/05-standards-and-reading-guide.md"]
+  },
+  {
+    "id": "R06",
+    "title": "Value Stream Mapping",
+    "publisher": "Lean Enterprise Institute",
+    "url": "https://www.lean.org/lexicon-terms/value-stream-mapping/",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "精益专业组织原始词条",
+    "evidence_scope": "物料与信息流的共同观察、现状与目标价值流图的用途。",
+    "limitations": "未复制原图或方法全文；访谈、盘点模板为知识库独立设计的实务建议。",
+    "topics": ["05-fieldwork/01-takeover-interviews.md", "05-fieldwork/04-quality-lean-and-test-data.md", "05-fieldwork/05-standards-and-reading-guide.md", "glossary.md"]
+  },
+  {
+    "id": "R07",
+    "title": "Takt Time",
+    "publisher": "Lean Enterprise Institute",
+    "url": "https://www.lean.org/lexicon-terms/takt-time/",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "精益专业组织原始词条",
+    "evidence_scope": "以可用生产时间除以客户需求量计算需求节拍。",
+    "limitations": "教学数值由知识库独立构造；不将节拍计算推广为自动排程或扩产结论。",
+    "topics": ["05-fieldwork/04-quality-lean-and-test-data.md", "05-fieldwork/05-standards-and-reading-guide.md", "glossary.md"]
+  },
+  {
+    "id": "R08",
+    "title": "IPC-A-610 电子组件的可接受性",
+    "publisher": "IPC 中国官方站",
+    "url": "https://www.ipc.org.cn/standards/ipc-a-610",
+    "access_date": "2026-10-27",
+    "published_date": null,
+    "source_kind": "标准制定组织公开标准介绍",
+    "evidence_scope": "电子组件可接受性标准的公开范围及与 J-STD-001 配合使用的关系。",
+    "limitations": "未读取标准全文；未据公开介绍作具体产品判定，也不把网页版本信息视为企业适用版本。",
+    "topics": ["05-fieldwork/04-quality-lean-and-test-data.md", "05-fieldwork/05-standards-and-reading-guide.md"]
+  }
+]

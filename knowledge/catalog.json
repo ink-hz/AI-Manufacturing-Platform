@@ -1,0 +1,516 @@
+{
+  "version": "2026-10-27",
+  "status": "repository_content",
+  "topic_article_count": 22,
+  "article_count_including_learning_map_and_glossary": 24,
+  "term_count": 134,
+  "unique_source_url_count": 74,
+  "source_record_count": 76,
+  "articles": [
+    {
+      "id": "00-learning-map",
+      "path": "00-learning-map.md",
+      "title": "大制造信息化知识地图",
+      "category": "学习导航与术语",
+      "tags": [
+        "知识地图"
+      ],
+      "source_ids": [],
+      "character_count": 4023,
+      "sha256": "5fbc84e62a8254eba287e54364146c9473bcee085b54fead46307e2a31298a2c"
+    },
+    {
+      "id": "glossary",
+      "path": "glossary.md",
+      "title": "制造信息化术语表",
+      "category": "学习导航与术语",
+      "tags": [
+        "术语"
+      ],
+      "source_ids": [
+        "R03",
+        "R04",
+        "R06",
+        "R07"
+      ],
+      "character_count": 8207,
+      "sha256": "46732e80451b9d0e0214ee2b6e9e03ab399d9110085576a06b828a01274aa9ed"
+    },
+    {
+      "id": "01-foundations.01-manufacturing-process",
+      "path": "01-foundations/01-manufacturing-process.md",
+      "title": "01｜制造流程：把产品定义变成可交付的实物",
+      "category": "制造与计划基础",
+      "tags": [
+        "制造流程",
+        "计划",
+        "MRP",
+        "ERP",
+        "工程数据"
+      ],
+      "source_ids": [
+        "F01",
+        "F02",
+        "F03"
+      ],
+      "character_count": 3158,
+      "sha256": "ee71bbc8ca744a8a5e82a73f318f0585ceb6a42f958dfd94764bf6c74fd128de"
+    },
+    {
+      "id": "01-foundations.02-planning-and-control",
+      "path": "01-foundations/02-planning-and-control.md",
+      "title": "02｜计划与控制：需求、物料和能力怎样接起来",
+      "category": "制造与计划基础",
+      "tags": [
+        "制造流程",
+        "计划",
+        "MRP",
+        "ERP",
+        "工程数据"
+      ],
+      "source_ids": [
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F20"
+      ],
+      "character_count": 3521,
+      "sha256": "6695c26ba7a303b6fd9ca2123e6cd87060de8c54a4fe01539b4997a27554c1cc"
+    },
+    {
+      "id": "01-foundations.03-mrp-worked-example",
+      "path": "01-foundations/03-mrp-worked-example.md",
+      "title": "03｜手算一遍 MRP：从成品需求到逾期采购建议",
+      "category": "制造与计划基础",
+      "tags": [
+        "制造流程",
+        "计划",
+        "MRP",
+        "ERP",
+        "工程数据"
+      ],
+      "source_ids": [
+        "F06"
+      ],
+      "character_count": 4366,
+      "sha256": "89239151dfd82030b6d766acdbd4041b54db9b9618c98b14501c522b9adc5a7b"
+    },
+    {
+      "id": "01-foundations.04-erp-business-transactions",
+      "path": "01-foundations/04-erp-business-transactions.md",
+      "title": "04｜ERP 业务事务：实物流、单据流和价值流怎样一致",
+      "category": "制造与计划基础",
+      "tags": [
+        "制造流程",
+        "计划",
+        "MRP",
+        "ERP",
+        "工程数据"
+      ],
+      "source_ids": [
+        "F09",
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F14"
+      ],
+      "character_count": 3757,
+      "sha256": "25c873536d367d9f25405c36632c4255dc2f6f7f0f8939d3f084a0e2b2504962"
+    },
+    {
+      "id": "01-foundations.05-master-data-and-engineering-change",
+      "path": "01-foundations/05-master-data-and-engineering-change.md",
+      "title": "05｜主数据与工程变更：让“同一种东西”始终说得清楚",
+      "category": "制造与计划基础",
+      "tags": [
+        "制造流程",
+        "计划",
+        "MRP",
+        "ERP",
+        "工程数据"
+      ],
+      "source_ids": [
+        "F15",
+        "F16",
+        "F17",
+        "F18",
+        "F19"
+      ],
+      "character_count": 3876,
+      "sha256": "b29aa2c9731db9e3dae23dc826e65f8233c0460b8aed8eef0ebd86b8129a597a"
+    },
+    {
+      "id": "02-systems.01-system-landscape",
+      "path": "02-systems/01-system-landscape.md",
+      "title": "制造信息系统全景：先理解业务能力，再理解软件名称",
+      "category": "系统全景与集成",
+      "tags": [
+        "系统分工",
+        "集成",
+        "数据",
+        "IT/OT"
+      ],
+      "source_ids": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S06",
+        "S20",
+        "S21"
+      ],
+      "character_count": 3333,
+      "sha256": "800a3a44ea5eb5442b53f302dc8194fa72956b2d7d76340b441c3163e1260244"
+    },
+    {
+      "id": "02-systems.02-process-and-system-boundaries",
+      "path": "02-systems/02-process-and-system-boundaries.md",
+      "title": "从一个制造订单看流程、数据权威与系统边界",
+      "category": "系统全景与集成",
+      "tags": [
+        "系统分工",
+        "集成",
+        "数据",
+        "IT/OT"
+      ],
+      "source_ids": [
+        "S05",
+        "S07",
+        "S20",
+        "S21"
+      ],
+      "character_count": 3098,
+      "sha256": "74dba4e2a15429eb895cc970529568dc943632874205175c64d4e637b9874735"
+    },
+    {
+      "id": "02-systems.03-integration-and-digital-thread",
+      "path": "02-systems/03-integration-and-digital-thread.md",
+      "title": "集成与数字主线：让数据跨系统后仍然能被正确解释",
+      "category": "系统全景与集成",
+      "tags": [
+        "系统分工",
+        "集成",
+        "数据",
+        "IT/OT"
+      ],
+      "source_ids": [
+        "S08",
+        "S09",
+        "S10",
+        "S11",
+        "S12"
+      ],
+      "character_count": 2773,
+      "sha256": "9023ad31552b479a88dd0d550a8b30d5aac7b0367d0363bffb0b4b73cb8fa8a4"
+    },
+    {
+      "id": "03-implementation.01-assessment-and-roadmap",
+      "path": "03-implementation/01-assessment-and-roadmap.md",
+      "title": "接手评估与路线图：把系统项目变成可验收的业务改进",
+      "category": "建设与业务验收",
+      "tags": [
+        "建设方法",
+        "验收",
+        "指标",
+        "AI"
+      ],
+      "source_ids": [
+        "S06",
+        "S13",
+        "S14",
+        "S15"
+      ],
+      "character_count": 3024,
+      "sha256": "ce6a2335abf23d6a1c49108d20e2a0e321a17069346544ab51faa9e6a5560456"
+    },
+    {
+      "id": "03-implementation.02-metrics-and-business-acceptance",
+      "path": "03-implementation/02-metrics-and-business-acceptance.md",
+      "title": "指标与业务验收：先确定分母，再解释改善",
+      "category": "建设与业务验收",
+      "tags": [
+        "建设方法",
+        "验收",
+        "指标",
+        "AI"
+      ],
+      "source_ids": [
+        "S15",
+        "S16",
+        "S17",
+        "S18"
+      ],
+      "character_count": 2992,
+      "sha256": "67903a0c928eae36feb2cb4c1b042f57e7a4b7d0d07b6ffdecc523d4259ea034"
+    },
+    {
+      "id": "03-implementation.03-ai-in-manufacturing",
+      "path": "03-implementation/03-ai-in-manufacturing.md",
+      "title": "AI 在制造信息化中的位置：知识、业务动作与现场控制分层治理",
+      "category": "建设与业务验收",
+      "tags": [
+        "建设方法",
+        "验收",
+        "指标",
+        "AI"
+      ],
+      "source_ids": [
+        "S06",
+        "S11",
+        "S12",
+        "S19"
+      ],
+      "character_count": 3008,
+      "sha256": "d8c99a64a2c47c5a0f72a828a3c6d798c80ee8b743093b3faa43dbfd0f643894"
+    },
+    {
+      "id": "04-cases.01-jlc-electronics-platform",
+      "path": "04-cases/01-jlc-electronics-platform.md",
+      "title": "嘉立创：从工程文件到制造订单的电子产业服务平台",
+      "category": "企业案例与披露数据",
+      "tags": [
+        "企业案例",
+        "嘉立创",
+        "海尔",
+        "三一",
+        "施耐德",
+        "公开披露"
+      ],
+      "source_ids": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13",
+        "C14"
+      ],
+      "character_count": 3756,
+      "sha256": "8606d69bd4484a0c969d96589c0ee02b0db0a515e4de3c613ff5e4428bacf90b"
+    },
+    {
+      "id": "04-cases.02-haier-connected-factory",
+      "path": "04-cases/02-haier-connected-factory.md",
+      "title": "海尔郑州热水器互联工厂：把定制需求连到供应与生产",
+      "category": "企业案例与披露数据",
+      "tags": [
+        "企业案例",
+        "嘉立创",
+        "海尔",
+        "三一",
+        "施耐德",
+        "公开披露"
+      ],
+      "source_ids": [
+        "C15",
+        "C16",
+        "C17",
+        "C18",
+        "C19",
+        "C26"
+      ],
+      "character_count": 3189,
+      "sha256": "cce0a1ce1c803762f049ab9c0b308f1a5339683153212f110487114e3bbbc216"
+    },
+    {
+      "id": "04-cases.03-sany-heavy-industry",
+      "path": "04-cases/03-sany-heavy-industry.md",
+      "title": "三一北京桩机工厂：复杂重型工件如何进入数字化生产闭环",
+      "category": "企业案例与披露数据",
+      "tags": [
+        "企业案例",
+        "嘉立创",
+        "海尔",
+        "三一",
+        "施耐德",
+        "公开披露"
+      ],
+      "source_ids": [
+        "C20",
+        "C21",
+        "C22"
+      ],
+      "character_count": 3167,
+      "sha256": "1a7fc7c5b6851619bb5b64a20ca1aa2956f4da40a2b43b4338ea86afde8ac177"
+    },
+    {
+      "id": "04-cases.04-schneider-lighthouse",
+      "path": "04-cases/04-schneider-lighthouse.md",
+      "title": "施耐德电气 Le Vaudreuil：能源、设备与生产管理怎样形成行动",
+      "category": "企业案例与披露数据",
+      "tags": [
+        "企业案例",
+        "嘉立创",
+        "海尔",
+        "三一",
+        "施耐德",
+        "公开披露"
+      ],
+      "source_ids": [
+        "C19",
+        "C23",
+        "C24",
+        "C25"
+      ],
+      "character_count": 3597,
+      "sha256": "dc2d15d46aa0020fc7eb8e224f4e19a01b63f540dc706800ae82836aef347e71"
+    },
+    {
+      "id": "04-cases.05-comparison-and-transfer",
+      "path": "04-cases/05-comparison-and-transfer.md",
+      "title": "四类制造数字化案例如何比较与迁移",
+      "category": "企业案例与披露数据",
+      "tags": [
+        "企业案例",
+        "嘉立创",
+        "海尔",
+        "三一",
+        "施耐德",
+        "公开披露"
+      ],
+      "source_ids": [
+        "C02",
+        "C06",
+        "C17",
+        "C20",
+        "C23"
+      ],
+      "character_count": 3104,
+      "sha256": "7b60cd1094a81da202cf979e17f082ca654b80b16aef22dd0214f26713181948"
+    },
+    {
+      "id": "04-cases.06-reported-metrics-and-evidence",
+      "path": "04-cases/06-reported-metrics-and-evidence.md",
+      "title": "原始披露数字与证据对照表",
+      "category": "企业案例与披露数据",
+      "tags": [
+        "企业案例",
+        "嘉立创",
+        "海尔",
+        "三一",
+        "施耐德",
+        "公开披露"
+      ],
+      "source_ids": [
+        "C01",
+        "C03",
+        "C19",
+        "C20",
+        "C21",
+        "C22",
+        "C24",
+        "C27"
+      ],
+      "character_count": 4926,
+      "sha256": "5bab666e5370f36b54c35dd6f699d58625473481d441a757331967f414e213c7"
+    },
+    {
+      "id": "05-fieldwork.01-takeover-interviews",
+      "path": "05-fieldwork/01-takeover-interviews.md",
+      "title": "制造信息化接手调研与访谈问题",
+      "category": "接手工作与现场调研",
+      "tags": [
+        "现场调研",
+        "数据盘点",
+        "MRP接手",
+        "质量",
+        "标准"
+      ],
+      "source_ids": [
+        "R06"
+      ],
+      "character_count": 3362,
+      "sha256": "62d127f0fd715b7ebb68c1b00c5c1160356e7db8c1d021df4c50f310132abf2c"
+    },
+    {
+      "id": "05-fieldwork.02-data-and-system-inventory",
+      "path": "05-fieldwork/02-data-and-system-inventory.md",
+      "title": "系统与数据盘点模板",
+      "category": "接手工作与现场调研",
+      "tags": [
+        "现场调研",
+        "数据盘点",
+        "MRP接手",
+        "质量",
+        "标准"
+      ],
+      "source_ids": [],
+      "character_count": 2798,
+      "sha256": "4221f21982ad362042cdc66b5d018ff7be1f550e83cebb6cc63006b68466310d"
+    },
+    {
+      "id": "05-fieldwork.03-purchased-mrp-review",
+      "path": "05-fieldwork/03-purchased-mrp-review.md",
+      "title": "已采购 MRP 系统的接手核查清单",
+      "category": "接手工作与现场调研",
+      "tags": [
+        "现场调研",
+        "数据盘点",
+        "MRP接手",
+        "质量",
+        "标准"
+      ],
+      "source_ids": [],
+      "character_count": 1913,
+      "sha256": "62ef48cd0a3342f04e6537eb2e86f7f5fdec6042e7f880966337f1cde2901d87"
+    },
+    {
+      "id": "05-fieldwork.04-quality-lean-and-test-data",
+      "path": "05-fieldwork/04-quality-lean-and-test-data.md",
+      "title": "质量方法 精益流程与测试数据",
+      "category": "接手工作与现场调研",
+      "tags": [
+        "现场调研",
+        "数据盘点",
+        "MRP接手",
+        "质量",
+        "标准"
+      ],
+      "source_ids": [
+        "R03",
+        "R04",
+        "R05",
+        "R06",
+        "R07",
+        "R08"
+      ],
+      "character_count": 2998,
+      "sha256": "e068cb0d35be1b9c262f2aa5bfca648a53e684294a2d6766c8df8404c1c0ae10"
+    },
+    {
+      "id": "05-fieldwork.05-standards-and-reading-guide",
+      "path": "05-fieldwork/05-standards-and-reading-guide.md",
+      "title": "制造信息化标准与一手资料阅读指南",
+      "category": "接手工作与现场调研",
+      "tags": [
+        "现场调研",
+        "数据盘点",
+        "MRP接手",
+        "质量",
+        "标准"
+      ],
+      "source_ids": [
+        "R01",
+        "R02",
+        "R03",
+        "R04",
+        "R05",
+        "R06",
+        "R07",
+        "R08"
+      ],
+      "character_count": 2387,
+      "sha256": "bcc881937982297a94a348f048522e8cc1a5c517e7c1a37b60ecb70465180681"
+    }
+  ]
+}

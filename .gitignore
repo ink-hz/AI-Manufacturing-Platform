@@ -1,0 +1,10 @@
+.worktrees/
+.superpowers/
+.venv/
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+.DS_Store

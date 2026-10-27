@@ -1,0 +1,1906 @@
+{
+  "version": "2026-10-27",
+  "access_date": "2026-10-27",
+  "record_count": 76,
+  "unique_url_count": 74,
+  "sources": [
+    {
+      "id": "F01",
+      "title": "Production process overview",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/production-control/production-process-overview",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F01",
+        "S05"
+      ],
+      "topics": [
+        "01-foundations/01-manufacturing-process.md",
+        "02-systems/02-process-and-system-boundaries.md"
+      ],
+      "evidence": [
+        {
+          "id": "F01",
+          "evidence_scope": "Dynamics 365 中生产订单、批次订单、BOM/路线及生产生命周期的具体建模。",
+          "limitations": "厂商实现，不是所有制造企业的统一状态机；本文仅引用制造模式和生命周期概念。"
+        },
+        {
+          "id": "S05",
+          "evidence_scope": "Dynamics 365 的生产订单、批次订单、看板及项目方式；从创建到结账的生产生命周期实例。",
+          "limitations": "页面出现授权提示但正文已公开返回并读取；仅作产品实例，本文流程为中立教学抽象，不要求照搬状态名或顺序。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json",
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "F02",
+      "title": "EVT, DVT, PVT Stage Gate Definitions",
+      "publisher": "Instrumental",
+      "url": "https://instrumental.com/build-better-handbook/evt-dvt-pvt",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "vendor_engineering_handbook",
+      "aliases": [
+        "F02"
+      ],
+      "topics": [
+        "01-foundations/01-manufacturing-process.md"
+      ],
+      "evidence": [
+        {
+          "id": "F02",
+          "evidence_scope": "作者基于硬件工程与NPI项目经历解释EVT/DVT/PVT及阶段理解差异。",
+          "limitations": "原创工程经验，不是强制标准；本文不采用其典型数量、失效率或退出门槛作为普遍要求。原文称最初写于2015年，当前重发日期未明确。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F03",
+      "title": "Metrological Traceability: Frequently Asked Questions and NIST Policy",
+      "publisher": "National Institute of Standards and Technology (NIST)",
+      "url": "https://www.nist.gov/metrology/metrological-traceability",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "government_metrology_guidance",
+      "aliases": [
+        "F03"
+      ],
+      "topics": [
+        "01-foundations/01-manufacturing-process.md"
+      ],
+      "evidence": [
+        {
+          "id": "F03",
+          "evidence_scope": "测量结果的量值溯源、连续校准链和测量不确定度；可区分产品检测与测量证据。",
+          "limitations": "并非特定光学产品校准规范，不证明任一企业或仪器已经满足溯源要求。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F04",
+      "title": "Overview of Sales and Operations Planning",
+      "publisher": "Oracle",
+      "url": "https://docs.oracle.com/en/cloud/saas/supply-chain-and-manufacturing/26d/fasop/overview-of-sales-and-operations-planning.html",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F04"
+      ],
+      "topics": [
+        "01-foundations/02-planning-and-control.md"
+      ],
+      "evidence": [
+        {
+          "id": "F04",
+          "evidence_scope": "Oracle Fusion Cloud SCM 26D对聚合层面产品、需求、供应与战略财务目标协调的定位。",
+          "limitations": "产品文档；未据此声称所有S&OP都采用相同周期、流程或功能。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F05",
+      "title": "Oracle MRP User’s Guide — Supply Chain Planning",
+      "publisher": "Oracle",
+      "url": "https://docs.oracle.com/cd/E26401_01/doc.122/e48795/T478564T478953.htm",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F05"
+      ],
+      "topics": [
+        "01-foundations/02-planning-and-control.md"
+      ],
+      "evidence": [
+        {
+          "id": "F05",
+          "evidence_scope": "Oracle EBS 12.2 Supply Chain Planning，尤其Master Scheduling及MDS/MPS需求与供应声明的区别。",
+          "limitations": "既有版本的产品文档；用于稳定概念，不作为新版本功能或采购建议。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F06",
+      "title": "Oracle MRP User’s Guide — Material Requirements Planning",
+      "publisher": "Oracle",
+      "url": "https://docs.oracle.com/cd/E18727_01/doc.121/e15188/T478564T478850.htm",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F06"
+      ],
+      "topics": [
+        "01-foundations/02-planning-and-control.md",
+        "01-foundations/03-mrp-worked-example.md"
+      ],
+      "evidence": [
+        {
+          "id": "F06",
+          "evidence_scope": "Oracle EBS 12.1传统MRP的净需求输入、补货/改期建议与无限能力假设。",
+          "limitations": "传统MRP实现，不能泛化为所有现代计划引擎；本地6周案例为原创，不是Oracle结果或示例。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F07",
+      "title": "Overview of Capacity Planning",
+      "publisher": "Oracle",
+      "url": "https://docs.oracle.com/cd/A60725_05/html/comnls/us/crp/ovwcp.htm",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F07"
+      ],
+      "topics": [
+        "01-foundations/02-planning-and-control.md"
+      ],
+      "evidence": [
+        {
+          "id": "F07",
+          "evidence_scope": "RCCP与主计划/关键资源、CRP与物料计划/详细资源的关系，以及负荷与能力比较。",
+          "limitations": "历史版本Oracle Capacity说明；用于层级区别，不用于当前版本部署与支持判断。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F08",
+      "title": "Finite capacity planning and scheduling",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/master-planning/planning-optimization/finite-capacity",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F08"
+      ],
+      "topics": [
+        "01-foundations/02-planning-and-control.md"
+      ],
+      "evidence": [
+        {
+          "id": "F08",
+          "evidence_scope": "有限能力概念及Dynamics 365的全局、计划、资源配置与时间范围限制。",
+          "limitations": "设置与行为受具体引擎及版本影响；本文不据此声称某用户系统已启用有限能力。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F09",
+      "title": "Order to cash business process flow overview and relationships to other business processes",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/guidance/business-processes/order-to-cash-overview",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F09"
+      ],
+      "topics": [
+        "01-foundations/04-erp-business-transactions.md"
+      ],
+      "evidence": [
+        {
+          "id": "F09",
+          "evidence_scope": "O2C包含销售订单、应收、信用催收，并与履约、退换及总账过程关联。",
+          "limitations": "Dynamics 365过程目录；页面注明2026年目录更新与部分旧图可能不同，本文只使用文字概念，不复用图。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F10",
+      "title": "Source to pay end-to-end overview",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/guidance/business-processes/source-to-pay-overview",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F10"
+      ],
+      "topics": [
+        "01-foundations/04-erp-business-transactions.md"
+      ],
+      "evidence": [
+        {
+          "id": "F10",
+          "evidence_scope": "寻源、供应商关系、采购、发票、付款的端到端过程及制造采购关联。",
+          "limitations": "Source-to-Pay范围大于狭义P2P；目录存在标题与图逐步更新的说明，本文不把图示作通用标准。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F11",
+      "title": "Overview of the Plan to produce end-to-end business process",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/guidance/business-processes/plan-to-produce-overview",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F11"
+      ],
+      "topics": [
+        "01-foundations/04-erp-business-transactions.md"
+      ],
+      "evidence": [
+        {
+          "id": "F11",
+          "evidence_scope": "生产策略、计划、执行、委外、质量与成本的过程关系。",
+          "limitations": "Dynamics 365业务过程目录，不是所有ERP的强制模块或状态划分；未使用页面图示作实证。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F12",
+      "title": "Accounts payable invoice matching overview",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable-invoice-matching",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F12"
+      ],
+      "topics": [
+        "01-foundations/04-erp-business-transactions.md"
+      ],
+      "evidence": [
+        {
+          "id": "F12",
+          "evidence_scope": "两方、三方匹配及价格、收货数量、配置容差的关系。",
+          "limitations": "厂商实现，不能代替企业审批制度或具体会计准则；不采用页面金额或税项作案例。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F13",
+      "title": "Inventory statuses",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/inventory/inventory-statuses",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F13"
+      ],
+      "topics": [
+        "01-foundations/04-erp-business-transactions.md"
+      ],
+      "evidence": [
+        {
+          "id": "F13",
+          "evidence_scope": "库存状态可影响物料可用性与补货；实物仍在库不等于可用于出库或生产。",
+          "limitations": "具体库存状态、阻止规则及仓库作业限制属于Dynamics 365实现，不能泛化为所有ERP。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F14",
+      "title": "BOM calculations",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/cost-management/bom-calculations",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F14"
+      ],
+      "topics": [
+        "01-foundations/04-erp-business-transactions.md"
+      ],
+      "evidence": [
+        {
+          "id": "F14",
+          "evidence_scope": "BOM成本计算依赖成本版本、BOM/路线版本、数量、日期及地点等上下文。",
+          "limitations": "厂商成本计算说明，不是会计政策建议；本地75/78.57元计算为独立简化管理教学。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F15",
+      "title": "Bills of materials and formulas",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/production-control/bill-of-material-bom",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F15"
+      ],
+      "topics": [
+        "01-foundations/05-master-data-and-engineering-change.md"
+      ],
+      "evidence": [
+        {
+          "id": "F15",
+          "evidence_scope": "BOM、配方及不同视图；BOM版本的日期/数量/地点约束及批准与激活的区别。",
+          "limitations": "Dynamics 365数据模型；不假定其BOM类型、审批规则适用于其他产品。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F16",
+      "title": "Manufacturing bill of materials",
+      "publisher": "Siemens",
+      "url": "https://www.siemens.com/en-gb/technology/manufacturing-bill-of-materials-mbom/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_vendor_explainer",
+      "aliases": [
+        "F16"
+      ],
+      "topics": [
+        "01-foundations/05-master-data-and-engineering-change.md"
+      ],
+      "evidence": [
+        {
+          "id": "F16",
+          "evidence_scope": "页面首部MBOM是制造物料定义、BOP补充如何制造的概念分工。",
+          "limitations": "产品厂商的概念解释，不是正式标准。网页工具首次可读正文，后续重取曾超时，已另以直接HTTP完整正文复核；本文仅使用MBOM/BOP的概念分工，不引用营销效果。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F17",
+      "title": "Routes and operations",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/production-control/routes-operations",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F17"
+      ],
+      "topics": [
+        "01-foundations/05-master-data-and-engineering-change.md"
+      ],
+      "evidence": [
+        {
+          "id": "F17",
+          "evidence_scope": "路线的工序顺序、资源、准备/运行时间和成本属性；路线及版本的模型。",
+          "limitations": "Dynamics 365实现；本文不把路线、BOP与其他厂商工作定义视为完全等同数据结构。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F18",
+      "title": "Oracle Engineering User’s Guide — Engineering Change Orders",
+      "publisher": "Oracle",
+      "url": "https://docs.oracle.com/cd/E26401_01/doc.122/e48939/T269960T269964.htm",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F18"
+      ],
+      "topics": [
+        "01-foundations/05-master-data-and-engineering-change.md"
+      ],
+      "evidence": [
+        {
+          "id": "F18",
+          "evidence_scope": "ECO管理修订/BOM及日期或单元生效；可涉及在制更新与旧料处置。",
+          "limitations": "Oracle EBS 12.2实例；ECR/ECO/ECN在不同企业的名称和流程并不统一，不据此设定用户实际流程。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F19",
+      "title": "Item and raw material tracing in inventory, production, and sales",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/inventory/trace-items-raw-materials-inventory-production-sales",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F19"
+      ],
+      "topics": [
+        "01-foundations/05-master-data-and-engineering-change.md"
+      ],
+      "evidence": [
+        {
+          "id": "F19",
+          "evidence_scope": "以库存交易、批次/SN等追踪维度进行来源/去向追踪，以及单法人和业务类型限制。",
+          "limitations": "属于文档所述Item tracing功能，不能假定涵盖跨公司全链、所有副产品或全部维修履历，也不代表用户系统已采集必要数据。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "F20",
+      "title": "How You Create an Assemble to Order (ATO) Model Work Definition",
+      "publisher": "Oracle",
+      "url": "https://docs.oracle.com/en/cloud/saas/supply-chain-and-manufacturing/25d/faumf/how-you-create-an-assemble-to-order-ato-model-work-definition.html",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_documentation",
+      "aliases": [
+        "F20"
+      ],
+      "topics": [
+        "01-foundations/02-planning-and-control.md"
+      ],
+      "evidence": [
+        {
+          "id": "F20",
+          "evidence_scope": "Oracle Fusion Cloud Manufacturing 25D的ATO配置物料与订单/工单关联实例。",
+          "limitations": "具体版本功能，不是ATO的唯一实现；不引用页面配置规则作为通用业务要求。"
+        }
+      ],
+      "collection_files": [
+        "sources/foundations.json"
+      ]
+    },
+    {
+      "id": "S01",
+      "title": "ISA-95 Series of Standards: Enterprise-Control System Integration",
+      "publisher": "International Society of Automation (ISA)",
+      "url": "https://www.isa.org/standards-and-publications/isa-standards/isa-95-standard",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "标准制定组织公开系列介绍，非标准全文",
+      "aliases": [
+        "S01"
+      ],
+      "topics": [
+        "02-systems/01-system-landscape.md"
+      ],
+      "evidence": [
+        {
+          "id": "S01",
+          "evidence_scope": "核验系列主题、Part 2 的 Level 3/4 接口范围、Part 3 制造运营活动范围；仅作体系定位。",
+          "limitations": "未读取或复现付费规范条款；公开介绍不构成符合性判定。层级的通俗解释由本文综合整理，逻辑边界另以 S02 佐证。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S02",
+      "title": "The ISA-95 Enterprise-Control System Integration standards",
+      "publisher": "International Society of Automation (ISA)",
+      "url": "https://www.isa.org/intech/2020/september-october/the-isa-95-enterprise-control-system-integration-s",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "标准制定组织技术说明文章",
+      "aliases": [
+        "S02"
+      ],
+      "topics": [
+        "02-systems/01-system-landscape.md"
+      ],
+      "evidence": [
+        {
+          "id": "S02",
+          "evidence_scope": "核验 levels 用于 logical integration boundaries；Part 3/4 与 manufacturing operations management 的关系。",
+          "limitations": "URL 栏目为 2020 年 9/10 月，但页面正文未给精确发布日期；不是标准条文，未复制其图表、模型或长段落。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S03",
+      "title": "What is a manufacturing execution system (MES)?",
+      "publisher": "SAP",
+      "url": "https://www.sap.com/resources/what-is-mes",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "软件厂商公开概念与产品说明",
+      "aliases": [
+        "S03"
+      ],
+      "topics": [
+        "02-systems/01-system-landscape.md"
+      ],
+      "evidence": [
+        {
+          "id": "S03",
+          "evidence_scope": "MES 对制造过程监视、跟踪与记录的能力说明，以及与企业和现场系统的关系。",
+          "limitations": "原产品路径跳转至此；厂商能力介绍，不代表所有 MES 功能或承诺，不采用其市场规模、收益或部署成本主张。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S04",
+      "title": "What is PLM (Product Lifecycle Management)?",
+      "publisher": "Oracle",
+      "url": "https://www.oracle.com/scm/product-lifecycle-management/what-is-plm/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "软件厂商公开概念与产品说明",
+      "aliases": [
+        "S04"
+      ],
+      "topics": [
+        "02-systems/01-system-landscape.md"
+      ],
+      "evidence": [
+        {
+          "id": "S04",
+          "evidence_scope": "PLM 覆盖产品生命周期信息、文档、工程变更等对象的概念说明。",
+          "limitations": "不是产品选型结论，不据此假定本企业 PLM 部署或功能；未使用产品比较和营销收益主张。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S06",
+      "title": "Production planning",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/master-planning/planning-optimization/production-planning",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "官方产品技术文档",
+      "aliases": [
+        "S06"
+      ],
+      "topics": [
+        "02-systems/01-system-landscape.md",
+        "03-implementation/01-assessment-and-roadmap.md",
+        "03-implementation/03-ai-in-manufacturing.md"
+      ],
+      "evidence": [
+        {
+          "id": "S06",
+          "evidence_scope": "计划使用有效 BOM、多层物料需求、现有及在途供应；版本有效期与排程细节的具体实现。",
+          "limitations": "页面出现授权提示但正文可读取；实现细节仅适用于该文档产品与版本上下文，不泛化为所有 MRP，也不证明本企业接口可用。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S07",
+      "title": "Inventory on-hand list",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/inventory/inventory-on-hand-list",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "官方产品技术文档",
+      "aliases": [
+        "S07"
+      ],
+      "topics": [
+        "02-systems/02-process-and-system-boundaries.md"
+      ],
+      "evidence": [
+        {
+          "id": "S07",
+          "evidence_scope": "实物、实物预留、可用实物、预计供应及可预留量受参数和维度影响的字段定义。",
+          "limitations": "页面出现授权提示但表格正文可读取；字段名和可用计算依产品配置变化，本文原创冻结库存例不是该系统公式。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S08",
+      "title": "Unified Architecture – Landingpage",
+      "publisher": "OPC Foundation",
+      "url": "https://opcfoundation.org/about/opc-technologies/opc-ua/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "标准制定组织公开技术介绍",
+      "aliases": [
+        "S08"
+      ],
+      "topics": [
+        "02-systems/03-integration-and-digital-thread.md"
+      ],
+      "evidence": [
+        {
+          "id": "S08",
+          "evidence_scope": "OPC UA 的平台独立性、信息建模、服务和认证/加密/审计能力。",
+          "limitations": "不是 OPC UA 逐条规范或产品符合性验证；安全能力存在不等于特定部署已正确启用，未据此宣称连通即互操作。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S09",
+      "title": "Reference architecture to integrate heterogeneous manufacturing systems for the digital thread",
+      "publisher": "National Institute of Standards and Technology (NIST)",
+      "url": "https://www.nist.gov/publications/reference-architecture-integrate-heterogeneous-manufacturing-systems-digital-thread",
+      "access_date": "2026-10-27",
+      "published_date": "2017-05-22",
+      "source_kind": "研究机构公开论文摘要与出版记录",
+      "aliases": [
+        "S09"
+      ],
+      "topics": [
+        "02-systems/03-integration-and-digital-thread.md"
+      ],
+      "evidence": [
+        {
+          "id": "S09",
+          "evidence_scope": "数字主线连接生命周期系统、异构数据及上下文困难，参考架构为研究方案。",
+          "limitations": "读取 NIST 摘要和出版记录，未把链接期刊全文视为已读；不将论文四层参考架构当通用部署标准或成效基准。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S10",
+      "title": "What is the GS1 Traceability Standard?",
+      "publisher": "GS1",
+      "url": "https://support.gs1.org/support/solutions/articles/43000734535-what-is-the-gs1-traceability-standard-",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "标准制定组织官方支持概念说明",
+      "aliases": [
+        "S10"
+      ],
+      "topics": [
+        "02-systems/03-integration-and-digital-thread.md"
+      ],
+      "evidence": [
+        {
+          "id": "S10",
+          "evidence_scope": "关键追踪事件 CTE 与关键数据元素 KDE 的概念。",
+          "limitations": "支持页标示修改日 2024-08-22，非首次发布日期；主站标准正文及 PDF 本次抓取 403，改用此短说明，不宣称逐项标准符合性。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S11",
+      "title": "Idempotent Consumer pattern",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/idempotent-consumer",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "官方架构技术指南",
+      "aliases": [
+        "S11"
+      ],
+      "topics": [
+        "02-systems/03-integration-and-digital-thread.md",
+        "03-implementation/03-ai-in-manufacturing.md"
+      ],
+      "evidence": [
+        {
+          "id": "S11",
+          "evidence_scope": "重复投递、稳定去重标识、原子记录、顺序与下游副作用边界。",
+          "limitations": "页面最后更新为 2026-09-05，非首次发布日期；页面出现授权提示但正文可读。仅引用通用原理，未指定 Azure 部署或复用示例代码。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S12",
+      "title": "NIST SP 800-82 Rev. 3: Guide to Operational Technology (OT) Security",
+      "publisher": "National Institute of Standards and Technology (NIST)",
+      "url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-82r3.pdf",
+      "access_date": "2026-10-27",
+      "published_date": "2023-09-28",
+      "source_kind": "政府机构正式技术指南全文",
+      "aliases": [
+        "S12"
+      ],
+      "topics": [
+        "02-systems/03-integration-and-digital-thread.md",
+        "03-implementation/03-ai-in-manufacturing.md"
+      ],
+      "evidence": [
+        {
+          "id": "S12",
+          "evidence_scope": "OT 性能/可靠性/安全特殊性，6.2.1 访问控制及 6.2.1.3 网络分区隔离等原则。",
+          "limitations": "已打开 PDF 并定位相关章节，非逐页审计。官网记录 https://csrc.nist.gov/pubs/sp/800/82/r3/final 核验 r3 正式版及 r4 初稿提示；不是中国法律要求，也不替代现场专业验证。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S13",
+      "title": "智能制造能力成熟度国家标准推进工作会在京召开",
+      "publisher": "工业和信息化部装备工业一司",
+      "url": "https://www.miit.gov.cn/jgsj/zbys/znzz/art/2020/art_6b6d5e4bdd12450e82aff13362a1ad33.html",
+      "access_date": "2026-10-27",
+      "published_date": "2020-10-23",
+      "source_kind": "政府官方标准发布说明",
+      "aliases": [
+        "S13"
+      ],
+      "topics": [
+        "03-implementation/01-assessment-and-roadmap.md"
+      ],
+      "evidence": [
+        {
+          "id": "S13",
+          "evidence_scope": "GB/T 39116/39117 的发布、成熟度等级/能力要素及基于现状分步提升的用途。",
+          "limitations": "历史发布新闻，不是现行条款全文；不采用其历史企业数量为当前数据，不据此给企业评分。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S14",
+      "title": "国家标准 GB/T 39116-2020 智能制造能力成熟度模型",
+      "publisher": "国家市场监督管理总局、国家标准化管理委员会",
+      "url": "https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=809991917D73FE52B65C1ECC8B51B418",
+      "access_date": "2026-10-27",
+      "published_date": "2020-10-11",
+      "source_kind": "官方国家标准目录与元数据",
+      "aliases": [
+        "S14",
+        "R02"
+      ],
+      "topics": [
+        "03-implementation/01-assessment-and-roadmap.md",
+        "05-fieldwork/05-standards-and-reading-guide.md"
+      ],
+      "evidence": [
+        {
+          "id": "S14",
+          "evidence_scope": "名称、编号、核验时状态现行、发布日期与实施日期 2021-05-01。",
+          "limitations": "未读取在线预览全文，目录记录不能支持具体评分细则或企业等级判断。"
+        },
+        {
+          "id": "R02",
+          "evidence_scope": "名称、标准号、发布日、实施日及核验时目录标为现行。",
+          "limitations": "未读取标准全文，不支撑具体等级条款或企业符合性评价；标准状态需在实际使用时复核。"
+        }
+      ],
+      "collection_files": [
+        "sources/research.json",
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S15",
+      "title": "Base the implementation lifecycle on your business processes",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/guidance/implementation-guide/process-focused-solution-implementation-lifecycle",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "官方软件实施方法指南",
+      "aliases": [
+        "S15"
+      ],
+      "topics": [
+        "03-implementation/01-assessment-and-roadmap.md",
+        "03-implementation/02-metrics-and-business-acceptance.md"
+      ],
+      "evidence": [
+        {
+          "id": "S15",
+          "evidence_scope": "以端到端业务流程串联角色、数据、系统、设计、测试、培训、切换和运营。",
+          "limitations": "页面出现授权提示但方法正文已读取；属 Dynamics 365 实施指导，本文将通用原则与作者建议分开，不采用其工具或数量要求为通用标准。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S16",
+      "title": "Calculate OEE",
+      "publisher": "Vorne Industries / OEE.com",
+      "url": "https://www.oee.com/calculating-oee/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "指标设备与软件供应商官方技术解释",
+      "aliases": [
+        "S16"
+      ],
+      "topics": [
+        "03-implementation/02-metrics-and-business-acceptance.md"
+      ],
+      "evidence": [
+        {
+          "id": "S16",
+          "evidence_scope": "OEE=A×P×Q，计划生产时间、运行时间、理想周期、产出、首次合格的常见计算方法及停机口径。",
+          "limitations": "非 ISO 标准，不采用供应商示例、世界级目标、投资收益或部署宣传；正文数值另行原创计算，并要求企业明确口径。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S17",
+      "title": "Percentage of orders delivered complete and on time (aka on time in full (OTIF))",
+      "publisher": "APQC",
+      "url": "https://www.apqc.org/what-we-do/benchmarking/open-standards-benchmarking/measures/percentage-orders-delivered-complete",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "指标发布机构官方定义（搜索可见）",
+      "aliases": [
+        "S17"
+      ],
+      "topics": [
+        "03-implementation/02-metrics-and-business-acceptance.md"
+      ],
+      "evidence": [
+        {
+          "id": "S17",
+          "evidence_scope": "仅使用官方搜索返回的完整与约定时间窗口两项 OTIF 定义。",
+          "limitations": "精确页面 open 两次超时，但官方搜索可见正文定义；不以搜索结果为全文审阅，不使用样本数量、中位数、基准或跨企业比较。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S18",
+      "title": "Letter F - Quality Glossary of Terms, Acronyms & Definitions with Letter F",
+      "publisher": "American Society for Quality (ASQ)",
+      "url": "https://asq.org/quality-resources/quality-glossary/f",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "专业协会官方术语表",
+      "aliases": [
+        "S18"
+      ],
+      "topics": [
+        "03-implementation/02-metrics-and-business-acceptance.md"
+      ],
+      "evidence": [
+        {
+          "id": "S18",
+          "evidence_scope": "First pass yield 定义及剔除返工、重测等后合格的口径。",
+          "limitations": "只核验 FPY 词条，不替代企业检验规范；最终良率和多工序处理为正文显式定义与教学解释，不冒充 ASQ 唯一公式。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S19",
+      "title": "Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile (NIST AI 600-1)",
+      "publisher": "National Institute of Standards and Technology (NIST)",
+      "url": "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf",
+      "access_date": "2026-10-27",
+      "published_date": "2024-07-26",
+      "source_kind": "政府研究机构自愿性风险管理指南全文",
+      "aliases": [
+        "S19"
+      ],
+      "topics": [
+        "03-implementation/03-ai-in-manufacturing.md"
+      ],
+      "evidence": [
+        {
+          "id": "S19",
+          "evidence_scope": "2.2 confabulation 及 MEASURE 建议：经验评价能力、核验来源与引用、持续监测。",
+          "limitations": "已打开 PDF 并定位相关条目，非逐页审阅；精确发布日期由已打开的 https://www.nist.gov/itl/ai-risk-management-framework 核验。跨行业自愿指南，不是制造认证、法规或平台已验证能力。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S20",
+      "title": "Third-Party Logistics and Warehouse Management Systems",
+      "publisher": "Oracle",
+      "url": "https://docs.oracle.com/en/cloud/saas/supply-chain-and-manufacturing/25c/famml/third-party-logistics-and-warehouse-management-systems.html",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "官方产品集成技术文档",
+      "aliases": [
+        "S20"
+      ],
+      "topics": [
+        "02-systems/01-system-landscape.md",
+        "02-systems/02-process-and-system-boundaries.md"
+      ],
+      "evidence": [
+        {
+          "id": "S20",
+          "evidence_scope": "WMS 的仓内物料移动/存储角色，以及库存系统下发收发请求、外部 WMS 回传确认的具体产品实例。",
+          "limitations": "明确为 25c 版本文档，不声称最新版本或所有 WMS 架构；未验证任何本企业系统接口。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "S21",
+      "title": "Quality and nonconformance management overview",
+      "publisher": "Microsoft",
+      "url": "https://learn.microsoft.com/en-us/dynamics365/supply-chain/inventory/quality-management-processes",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "官方产品技术文档",
+      "aliases": [
+        "S21"
+      ],
+      "topics": [
+        "02-systems/01-system-landscape.md",
+        "02-systems/02-process-and-system-boundaries.md"
+      ],
+      "evidence": [
+        {
+          "id": "S21",
+          "evidence_scope": "检验触发、质量订单、不合格处置及检验期间限制库存使用的配置实例。",
+          "limitations": "页面出现授权提示但正文可读取；不是所有 QMS 的必备功能列表，不用软件配置替代质量专业人员与批准责任。"
+        }
+      ],
+      "collection_files": [
+        "sources/systems.json"
+      ]
+    },
+    {
+      "id": "C01",
+      "title": "关于嘉立创：公司简介与业务范围",
+      "publisher": "深圳嘉立创科技集团股份有限公司",
+      "url": "https://www.jlc.com/portal/2/vcontact.html",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C01"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md",
+        "04-cases/06-reported-metrics-and-evidence.md"
+      ],
+      "evidence": [
+        {
+          "id": "C01",
+          "evidence_scope": "当前集团名称与电子、机械、工业软件三类业务定位。",
+          "limitations": "动态公司介绍；经营指标为企业自述，本篇未把人数、订单量或宣传奖项作独立事实验证。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C02",
+      "title": "关于深圳嘉立创科技集团股份有限公司首次公开发行股票并在主板上市的补充法律意见书（三）",
+      "publisher": "广东信达律师事务所（深圳证券交易所披露）",
+      "url": "https://reportdocs.static.szse.cn/UpFiles/rasinfodisc1/202403/RAS_202403_1319202D5CD3F4C8524D3DB04CBE6C671991D2.pdf",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "regulatory_disclosure",
+      "aliases": [
+        "C02"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md",
+        "04-cases/05-comparison-and-transfer.md"
+      ],
+      "evidence": [
+        {
+          "id": "C02",
+          "evidence_scope": "第8-3-6页订单工程资料、智能拼板与MI工单；第8-3-9页ERP排产；第8-3-91页网站/经营主体/业务映射。",
+          "limitations": "原始PDF已从交易所域名下载并pdftotext提取相关全文，并渲染第8-3-91页核对表格。文件涉及历史申报期，部分事实截止2023年；签署日期文本未填写，不把URL目录当发布日期。系法律意见及发行人说明/访谈/演示依据，不能视为当前工厂架构独立审计。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C03",
+      "title": "关于立创商城",
+      "publisher": "深圳市立创电子商务有限公司（立创商城）",
+      "url": "https://www.szlcsc.com/about.html",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C03"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md",
+        "04-cases/06-reported-metrics-and-evidence.md"
+      ],
+      "evidence": [
+        {
+          "id": "C03",
+          "evidence_scope": "商城经营主体、自营元器件采购商城定位；与制造平台及SMT私有库对象区分。",
+          "limitations": "动态企业页面；原厂追溯等承诺并非本次审计结果；未用商城SKU或用户数量推定集团系统能力。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C04",
+      "title": "关于嘉立创EDA",
+      "publisher": "嘉立创EDA团队／深圳嘉立创科技集团股份有限公司",
+      "url": "https://u.lceda.cn/page/company",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_platform_documentation",
+      "aliases": [
+        "C04"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C04",
+          "evidence_scope": "国内嘉立创EDA（曾用名立创EDA）与国外EasyEDA的命名、集团归属及设计工具性质。",
+          "limitations": "web打开超时后直接读取官方URL完整HTTP正文核验；页面部分经营数据仍截至2023-06-30，本文只使用名称与定位，未当作当前经营指标。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C05",
+      "title": "嘉立创DFM：PCB与PCBA可制造性分析工具",
+      "publisher": "深圳嘉立创科技集团股份有限公司",
+      "url": "https://www.jlc-dfm.com/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_platform_documentation",
+      "aliases": [
+        "C05"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C05",
+          "evidence_scope": "公开上传格式、PCB/SMT可制造性检查项目和错误定位功能。",
+          "limitations": "产品功能说明；未上传设计文件、未测试规则准确性，不能视为功能可靠性、产品认证或当前内部CAM集成证明。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C06",
+      "title": "SMT贴片下单：PCBA在线下单与报价",
+      "publisher": "嘉立创SMT／深圳嘉立创科技集团股份有限公司",
+      "url": "https://www.jlc-smt.com/order?smtOrderSource=pcb",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_platform_documentation",
+      "aliases": [
+        "C06"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md",
+        "04-cases/05-comparison-and-transfer.md"
+      ],
+      "evidence": [
+        {
+          "id": "C06",
+          "evidence_scope": "未登录公开表单中的PCB订单选择、BOM/坐标来源、工艺字段、选型方式与确认选项。",
+          "limitations": "只读未登录页面；未提交订单或验证报价结果。页面随服务更新，数量、计费和交期不作为固定承诺。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C07",
+      "title": "嘉立创SMT全新独立站上线",
+      "publisher": "深圳嘉立创科技集团股份有限公司",
+      "url": "https://www.jlc.com/portal/q7i38429.html",
+      "access_date": "2026-10-27",
+      "published_date": "2022-09-22",
+      "source_kind": "official_platform_documentation",
+      "aliases": [
+        "C07"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C07",
+          "evidence_scope": "PCB关联下单、BOM提前备料、邮寄器件、私有库库存与使用明细的官方流程说明。",
+          "limitations": "具有历史发布时间的功能介绍；页面内容可能后续更新，不将旧收费、库存规模或服务承诺作为当前规则。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C08",
+      "title": "如何查询PCB生产进度及生产基地",
+      "publisher": "嘉立创官方帮助中心",
+      "url": "https://www.jlc.com/portal/server_guide_4056.html",
+      "access_date": "2026-10-27",
+      "published_date": "2019-05-30",
+      "source_kind": "official_platform_documentation",
+      "aliases": [
+        "C08"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C08",
+          "evidence_scope": "客户订单列表可查询PCB生产进度；页面标注2026-09-17更新。",
+          "limitations": "主体文字简短且依赖截图；未登录验证数据刷新频率、工序粒度、基地字段或物理状态准确性。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C09",
+      "title": "About JLCPCB: Global PCB & Electronics Manufacturing Services",
+      "publisher": "JLCPCB",
+      "url": "https://jlcpcb.com/about-us",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C09"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C09",
+          "evidence_scope": "全球服务入口将PCB制造、零件采购与组装作为一站式服务；EasyEDA等生态入口定位。",
+          "limitations": "企业介绍与规模自述；不用于证明国内外账户、合同或技术架构相同。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C10",
+      "title": "Order Status",
+      "publisher": "JLCPCB Help Center",
+      "url": "https://jlcpcb.com/help/article/order-status",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_platform_documentation",
+      "aliases": [
+        "C10"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C10",
+          "evidence_scope": "订单历史、状态、明细、物流及合同/发票下载的客户侧流程；页面标注2026-09-09更新。",
+          "limitations": "未登录订单账户；不能推断所有工序逐件采集或对外状态与现场实时一致。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C11",
+      "title": "PCB Manufacturing Quality Control at JLCPCB",
+      "publisher": "JLCPCB",
+      "url": "https://jlcpcb.com/about-us/quality-control",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C11"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C11",
+          "evidence_scope": "企业披露工程文件审核、异常通知、AOI/飞针/最终检查及生产错误追查方向。",
+          "limitations": "质量体系与设备能力为企业自述，未抽样验证；不构成每块板完整谱系、每项检测覆盖或零缺陷证明。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C12",
+      "title": "How to mark on PCB?",
+      "publisher": "JLCPCB Help Center",
+      "url": "https://jlcpcb.com/help/article/how-to-mark-on-pcb",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_platform_documentation",
+      "aliases": [
+        "C12"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C12",
+          "evidence_scope": "可选择二维码/序列号、标识确认方式及编号不一定连续；页面标注2026-05-22更新。",
+          "limitations": "只证明对外标识选项与规则，不证明二维码自动关联完整生产或原材料追溯记录。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C13",
+      "title": "嘉立创开放平台能做什么？",
+      "publisher": "深圳嘉立创科技集团股份有限公司",
+      "url": "https://www.jlc.com/portal/q7i64392.html",
+      "access_date": "2026-10-27",
+      "published_date": "2026-10-20",
+      "source_kind": "official_platform_documentation",
+      "aliases": [
+        "C13"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C13",
+          "evidence_scope": "PCB、SMT、商城等业务API范围，审核后查看文档，以及部分业务试开放/客户筛选条件。",
+          "limitations": "未申请、未登录、未调用接口；所列范围不等于任何客户已获权限，也未验证端点、限流、幂等、回调与时效。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C14",
+      "title": "JLC API Platform",
+      "publisher": "JLCPCB",
+      "url": "https://api.jlcpcb.com/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_platform_documentation",
+      "aliases": [
+        "C14"
+      ],
+      "topics": [
+        "04-cases/01-jlc-electronics-platform.md"
+      ],
+      "evidence": [
+        {
+          "id": "C14",
+          "evidence_scope": "海外API平台列PCB、钢网、3D打印、元器件相关能力和申请/建应用/开发流程。",
+          "limitations": "官方文档入口可打开，但未登录正文主要由前端加载；本篇仅核实平台与接入说明，不提供未验证的端点或与国内站互通结论。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C15",
+      "title": "卡奥斯工业互联网平台",
+      "publisher": "海尔集团",
+      "url": "https://www.haier.com/haier_cosmoplat/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C15"
+      ],
+      "topics": [
+        "04-cases/02-haier-connected-factory.md"
+      ],
+      "evidence": [
+        {
+          "id": "C15",
+          "evidence_scope": "海尔对COSMOPlat平台、大规模定制、用户全流程参与和行业方案的定位。",
+          "limitations": "集团对平台的概念性介绍；不是某座工厂的当前部署清单或独立运营指标。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C16",
+      "title": "卡奥斯COSMOPlat平台介绍",
+      "publisher": "卡奥斯数字科技（青岛）有限公司（网站版权主体）",
+      "url": "https://www.cosmoplat.com/platform",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C16"
+      ],
+      "topics": [
+        "04-cases/02-haier-connected-factory.md"
+      ],
+      "evidence": [
+        {
+          "id": "C16",
+          "evidence_scope": "平台发展历程中的卡奥斯物联科技股份有限公司名称、当前网站版权主体与工业平台定位。",
+          "limitations": "网站品牌、法律主体和制造客户需区分；本篇未据此推定采购签约主体、全部股权关系或历史工厂软件版本。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C17",
+      "title": "每24秒下线一台热水器：郑州海尔奋力冲刺全年30亿产值目标",
+      "publisher": "郑州经济技术开发区管理委员会",
+      "url": "https://www.zzjkq.gov.cn/zwdt/9230438.jhtml",
+      "access_date": "2026-10-27",
+      "published_date": "2025-04-15",
+      "source_kind": "government_report",
+      "aliases": [
+        "C17"
+      ],
+      "topics": [
+        "04-cases/02-haier-connected-factory.md",
+        "04-cases/05-comparison-and-transfer.md"
+      ],
+      "evidence": [
+        {
+          "id": "C17",
+          "evidence_scope": "郑州海尔新能源科技有限公司与郑州热水器互联工厂的对应、投产时间、产品系列、模块标准化与柔性生产组织。",
+          "limitations": "当地政府现场新闻含企业人员介绍与经营自报，不能当作独立收益审计；标题与产值目标未作为实现结果使用。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C18",
+      "title": "全球首个！卡奥斯科技引擎交出中国答卷，点亮热水器行业灯塔工厂",
+      "publisher": "海尔集团",
+      "url": "https://www.haier.com/haier_cosmoplat/news/20220331_178274.shtml",
+      "access_date": "2026-10-27",
+      "published_date": "2022-03-30",
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C18"
+      ],
+      "topics": [
+        "04-cases/02-haier-connected-factory.md"
+      ],
+      "evidence": [
+        {
+          "id": "C18",
+          "evidence_scope": "郑州热水器案例的大规模定制、供应商产能/库存/配额协同及端到端应用方向。",
+          "limitations": "企业对案例和平台贡献的自述；未验证接口与原始数据，不采用绝对化零缺陷或其他宣传性表述。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C19",
+      "title": "Factories of the future call for responsible scaling that prioritizes planet and people",
+      "publisher": "World Economic Forum",
+      "url": "https://www.weforum.org/media/factories-of-the-future-call-for-responsible-scaling-that-prioritizes-the-planet-and-people",
+      "access_date": "2026-10-27",
+      "published_date": "2022-03-25",
+      "source_kind": "official_recognition",
+      "aliases": [
+        "C19"
+      ],
+      "topics": [
+        "04-cases/02-haier-connected-factory.md",
+        "04-cases/04-schneider-lighthouse.md",
+        "04-cases/06-reported-metrics-and-evidence.md"
+      ],
+      "evidence": [
+        {
+          "id": "C19",
+          "evidence_scope": "正文日期2022-03-30：Haier Zhengzhou新增灯塔及连接供应商/工厂/客户；Le Vaudreuil可持续灯塔及IIoT/水循环案例。",
+          "limitations": "页面发布日期显示3月25日，正文公告日期为3月30日，分别保留。评选机构原始发布不等于对每个运营指标的独立财务或技术审计；摘要未给完整分母，本篇不汇总百分比成果。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C20",
+      "title": "Global Lighthouse Network: Unlocking Sustainability through Fourth Industrial Revolution Technologies",
+      "publisher": "World Economic Forum（与McKinsey & Company合作）",
+      "url": "https://www3.weforum.org/docs/WEF_Global_Lighthouse_Network_Unlocking_Sustainability_Through_4IR.pdf",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "official_recognition",
+      "aliases": [
+        "C20"
+      ],
+      "topics": [
+        "04-cases/03-sany-heavy-industry.md",
+        "04-cases/05-comparison-and-transfer.md",
+        "04-cases/06-reported-metrics-and-evidence.md"
+      ],
+      "evidence": [
+        {
+          "id": "C20",
+          "evidence_scope": "封面2021年9月；第6页新增Sany Beijing；第11页多品类小批量挑战、人机协作、焊接、换型、设备与重载物流应用。",
+          "limitations": "web打开超时后从WEF域名下载完整PDF提取，并渲染第11页复核指标方向和工厂行归属；封面仅有年月，发布日期设null。案例摘要未给完整指标基期和工时/产品分母；不直接采用百分比或据其推定根云架构。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C21",
+      "title": "SANY factory certified as the world’s first Lighthouse factory in heavy machinery industry",
+      "publisher": "SANY Group／三一官方全球网站",
+      "url": "https://www.sanyglobal.com/cn/press_releases/721/",
+      "access_date": "2026-10-27",
+      "published_date": "2021-11-15",
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C21"
+      ],
+      "topics": [
+        "04-cases/03-sany-heavy-industry.md",
+        "04-cases/06-reported-metrics-and-evidence.md"
+      ],
+      "evidence": [
+        {
+          "id": "C21",
+          "evidence_scope": "北京钻机/桩机工厂改造，钢板仓储、27米长物料AGV搬运、多机器人焊接等物理工程细节。",
+          "limitations": "英文正文刊载于中文路径；生产率增幅与WEF原始报告不一致，本篇不采用该增幅。企业技术自述未现场核验。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C22",
+      "title": "SANY Heavy Industry Co., Ltd. 2021 Corporate Social Responsibility Report",
+      "publisher": "三一重工股份有限公司（巨潮资讯网披露）",
+      "url": "https://dataclouds.cninfo.com.cn/shgonggao/2022/2022-04-23/2b856fb4c22a11ecba63fa163e26e5de.pdf",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "regulatory_disclosure",
+      "aliases": [
+        "C22"
+      ],
+      "topics": [
+        "04-cases/03-sany-heavy-industry.md",
+        "04-cases/06-reported-metrics-and-evidence.md"
+      ],
+      "evidence": [
+        {
+          "id": "C22",
+          "evidence_scope": "印刷第17—18页（PDF第11页）北京桩机厂身份、2021-09-27入选及MOM/IoT/WMS/RCS/AGV协同自述。",
+          "limitations": "从原披露域名下载完整PDF提取并渲染PDF第11页，区分北京厂案例框与公司灯塔建设段。URL路径含2022-04-23，未另核实际发布日期，故设null；报告期为2021年。MOM等整合段未逐项界定北京厂部署边界，不作为当前架构审计。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C23",
+      "title": "Why Getting Started with Your Digitization Journey May be Easier Than You Think",
+      "publisher": "Schneider Electric Blog",
+      "url": "https://blog.se.com/industry/food-and-beverage/2019/03/26/why-getting-started-with-your-digitization-journey-may-be-easier-than-you-think/",
+      "access_date": "2026-10-27",
+      "published_date": "2019-03-26",
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C23"
+      ],
+      "topics": [
+        "04-cases/04-schneider-lighthouse.md",
+        "04-cases/05-comparison-and-transfer.md"
+      ],
+      "evidence": [
+        {
+          "id": "C23",
+          "evidence_scope": "Le Vaudreuil绕线设备增加温度传感器与ITOT盒子，操作人员用数据管理换型质量及机器问题的具体实例。",
+          "limitations": "官方博客案例，不是独立实验报告；未采用缺少基期、样本和分母的生产率数字，也未推定自动控制边界。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C24",
+      "title": "Embracing the power of industrial transformation: from single site to enterprise-wide",
+      "publisher": "Schneider Electric（作者Barbara Frei）",
+      "url": "https://www.se.com/ww/en/insights/next-generation-automation/industrial-intelligence/embracing-the-power-of-industrial-transformation/",
+      "access_date": "2026-10-27",
+      "published_date": "2023-03-13",
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C24"
+      ],
+      "topics": [
+        "04-cases/04-schneider-lighthouse.md",
+        "04-cases/06-reported-metrics-and-evidence.md"
+      ],
+      "evidence": [
+        {
+          "id": "C24",
+          "evidence_scope": "Le Vaudreuil统一控制中心、实时用电/资产/过程可视与报警，以及项目自述起点；区分单厂能力和跨企业愿景。",
+          "limitations": "企业高管署名观点；未将设想中的ERP/OT标准化当成已经全部实施，也未由资源改善归因计算ROI。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C25",
+      "title": "Now is the time to double down, not slow down, on transforming industry",
+      "publisher": "World Economic Forum网站／Schneider Electric作者Barbara Frei",
+      "url": "https://www.weforum.org/stories/forum-in-focus/davos23-industry-transformation-efficiency-productivity",
+      "access_date": "2026-10-27",
+      "published_date": "2023-01-12",
+      "source_kind": "corporate_partner_content",
+      "aliases": [
+        "C25"
+      ],
+      "topics": [
+        "04-cases/04-schneider-lighthouse.md"
+      ],
+      "evidence": [
+        {
+          "id": "C25",
+          "evidence_scope": "页面Partner Content标识、作者施耐德高管身份；用于示范域名与证据作者需分开判断。",
+          "limitations": "文章声明观点属于作者而非WEF；不作为WEF独立工厂调研或独立认可的替代来源。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C26",
+      "title": "卡奥斯灯塔工厂",
+      "publisher": "卡奥斯数字科技（青岛）有限公司（网站版权主体）",
+      "url": "https://www.cosmoplat.com/lighthouseFactory/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C26"
+      ],
+      "topics": [
+        "04-cases/02-haier-connected-factory.md"
+      ],
+      "evidence": [
+        {
+          "id": "C26",
+          "evidence_scope": "案例索引分别列不同工厂、行业、年份与场景，支持避免跨工厂混合叙述。",
+          "limitations": "供应方动态案例合集；未采用当前数量、跨行业排名或各工厂成果百分比，也不据新产品介绍倒推历史部署。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "C27",
+      "title": "New recognition for Schneider Electric from World Economic Forum",
+      "publisher": "Schneider Electric",
+      "url": "https://www.se.com/ww/en/about-us/newsroom/news/press-releases/new-recognition-for-schneider-electric-from-world-economic-forum-62441e75d32cd17e7b1f0ab4/",
+      "access_date": "2026-10-27",
+      "published_date": "2022-03-30",
+      "source_kind": "corporate_self_report",
+      "aliases": [
+        "C27"
+      ],
+      "topics": [
+        "04-cases/06-reported-metrics-and-evidence.md"
+      ],
+      "evidence": [
+        {
+          "id": "C27",
+          "evidence_scope": "2022年Le Vaudreuil工厂电力、材料废物、CO2与水资源改善的原始企业新闻稿；仅列该厂数据，不混入同页海得拉巴指标。",
+          "limitations": "web打开超时后直接读取施耐德官方URL完整HTTP正文核验。属于企业自述；正文未给完整基期、绝对量、产品分母或碳边界，保留为原始披露而非独立复算结论。"
+        }
+      ],
+      "collection_files": [
+        "sources/cases.json"
+      ]
+    },
+    {
+      "id": "R01",
+      "title": "工业和信息化部办公厅关于印发智能制造典型场景参考指引2025年版的通知",
+      "publisher": "中华人民共和国工业和信息化部",
+      "url": "https://www.miit.gov.cn/jgsj/zbys/wjfb/art/2025/art_3033120c7e8d4e4aba0bf76b44bcc645.html",
+      "access_date": "2026-10-27",
+      "published_date": "2025-04-27",
+      "source_kind": "政府部门正式通知",
+      "aliases": [
+        "R01"
+      ],
+      "topics": [
+        "05-fieldwork/05-standards-and-reading-guide.md"
+      ],
+      "evidence": [
+        {
+          "id": "R01",
+          "evidence_scope": "正式通知名称、工信厅通装函〔2025〕155号、成文与发布日期及文件用途。",
+          "limitations": "已读取通知正文和附件入口，未逐条读取正式附件；不引用征求意见稿作为正式版正文。"
+        }
+      ],
+      "collection_files": [
+        "sources/research.json"
+      ]
+    },
+    {
+      "id": "R03",
+      "title": "Quality Core Tools",
+      "publisher": "Automotive Industry Action Group (AIAG)",
+      "url": "https://www.aiag.org/expertise-areas/quality/quality-core-tools",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "行业组织公开方法概览",
+      "aliases": [
+        "R03"
+      ],
+      "topics": [
+        "05-fieldwork/04-quality-lean-and-test-data.md",
+        "05-fieldwork/05-standards-and-reading-guide.md",
+        "glossary.md"
+      ],
+      "evidence": [
+        {
+          "id": "R03",
+          "evidence_scope": "APQP、Control Plan、PPAP、FMEA、SPC、MSA 的公开用途概览。",
+          "limitations": "已读公开概览，不含付费手册全文；不把汽车行业客户要求推广成所有制造业强制要求。"
+        }
+      ],
+      "collection_files": [
+        "sources/research.json"
+      ]
+    },
+    {
+      "id": "R04",
+      "title": "NIST/SEMATECH e-Handbook 6.1.6 What is Process Capability",
+      "publisher": "National Institute of Standards and Technology (NIST)",
+      "url": "https://www.itl.nist.gov/div898/handbook/pmc/section1/pmc16.htm",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "研究机构公开统计教材",
+      "aliases": [
+        "R04"
+      ],
+      "topics": [
+        "05-fieldwork/04-quality-lean-and-test-data.md",
+        "05-fieldwork/05-standards-and-reading-guide.md",
+        "glossary.md"
+      ],
+      "evidence": [
+        {
+          "id": "R04",
+          "evidence_scope": "稳定过程与规格的比较、双侧 Cp 和 Cpk 的定义以及数据分布等适用前提。",
+          "limitations": "仅解释入门概念与公式，不设定企业或行业验收阈值；文中尺寸例为独立构造的教学假设。"
+        }
+      ],
+      "collection_files": [
+        "sources/research.json"
+      ]
+    },
+    {
+      "id": "R05",
+      "title": "NIST/SEMATECH e-Handbook 6.2.1 What is Acceptance Sampling",
+      "publisher": "National Institute of Standards and Technology (NIST)",
+      "url": "https://www.itl.nist.gov/div898/handbook/pmc/section2/pmc21.htm",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "研究机构公开统计教材",
+      "aliases": [
+        "R05"
+      ],
+      "topics": [
+        "05-fieldwork/04-quality-lean-and-test-data.md",
+        "05-fieldwork/05-standards-and-reading-guide.md"
+      ],
+      "evidence": [
+        {
+          "id": "R05",
+          "evidence_scope": "接收抽样用于批接收决策，与估计总体质量及长期过程控制的区别。",
+          "limitations": "不提供具体企业抽样方案或风险配置；不把抽样通过解释为每个对象都合格。"
+        }
+      ],
+      "collection_files": [
+        "sources/research.json"
+      ]
+    },
+    {
+      "id": "R06",
+      "title": "Value Stream Mapping",
+      "publisher": "Lean Enterprise Institute",
+      "url": "https://www.lean.org/lexicon-terms/value-stream-mapping/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "精益专业组织原始词条",
+      "aliases": [
+        "R06"
+      ],
+      "topics": [
+        "05-fieldwork/01-takeover-interviews.md",
+        "05-fieldwork/04-quality-lean-and-test-data.md",
+        "05-fieldwork/05-standards-and-reading-guide.md",
+        "glossary.md"
+      ],
+      "evidence": [
+        {
+          "id": "R06",
+          "evidence_scope": "物料与信息流的共同观察、现状与目标价值流图的用途。",
+          "limitations": "未复制原图或方法全文；访谈、盘点模板为知识库独立设计的实务建议。"
+        }
+      ],
+      "collection_files": [
+        "sources/research.json"
+      ]
+    },
+    {
+      "id": "R07",
+      "title": "Takt Time",
+      "publisher": "Lean Enterprise Institute",
+      "url": "https://www.lean.org/lexicon-terms/takt-time/",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "精益专业组织原始词条",
+      "aliases": [
+        "R07"
+      ],
+      "topics": [
+        "05-fieldwork/04-quality-lean-and-test-data.md",
+        "05-fieldwork/05-standards-and-reading-guide.md",
+        "glossary.md"
+      ],
+      "evidence": [
+        {
+          "id": "R07",
+          "evidence_scope": "以可用生产时间除以客户需求量计算需求节拍。",
+          "limitations": "教学数值由知识库独立构造；不将节拍计算推广为自动排程或扩产结论。"
+        }
+      ],
+      "collection_files": [
+        "sources/research.json"
+      ]
+    },
+    {
+      "id": "R08",
+      "title": "IPC-A-610 电子组件的可接受性",
+      "publisher": "IPC 中国官方站",
+      "url": "https://www.ipc.org.cn/standards/ipc-a-610",
+      "access_date": "2026-10-27",
+      "published_date": null,
+      "source_kind": "标准制定组织公开标准介绍",
+      "aliases": [
+        "R08"
+      ],
+      "topics": [
+        "05-fieldwork/04-quality-lean-and-test-data.md",
+        "05-fieldwork/05-standards-and-reading-guide.md"
+      ],
+      "evidence": [
+        {
+          "id": "R08",
+          "evidence_scope": "电子组件可接受性标准的公开范围及与 J-STD-001 配合使用的关系。",
+          "limitations": "未读取标准全文；未据公开介绍作具体产品判定，也不把网页版本信息视为企业适用版本。"
+        }
+      ],
+      "collection_files": [
+        "sources/research.json"
+      ]
+    }
+  ]
+}
