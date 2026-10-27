@@ -14,8 +14,17 @@ _DOCUMENTS = {
 }
 
 
+def _resolve(path):
+    try:
+        return path.resolve()
+    except RuntimeError as exc:
+        # Python versions can report a symlink loop as RuntimeError rather
+        # than OSError. Limit normalization to the path-resolution operation.
+        raise ValueError('Invalid release document path') from exc
+
+
 def _regular_file(root, relative):
-    target = (root / relative).resolve()
+    target = _resolve(root / relative)
     if not target.is_relative_to(root) or not stat.S_ISREG(target.stat().st_mode):
         raise ValueError('Invalid release document')
     return target
@@ -23,7 +32,7 @@ def _regular_file(root, relative):
 
 def read_handbook(assets_dir, document, release):
     title, source_path = _DOCUMENTS[document]
-    root = Path(assets_dir).resolve().parent.parent
+    root = _resolve(Path(assets_dir)).parent.parent
     metadata = json.loads(_regular_file(root, 'handbook-metadata.json').read_bytes())
     entry = metadata['files'][source_path]
     if not isinstance(entry, dict) or set(entry) != {'updated_at', 'sha256'}:

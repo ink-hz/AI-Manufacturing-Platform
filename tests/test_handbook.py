@@ -77,3 +77,17 @@ def test_router_construction_no_content_or_database_io(tmp_path,monkeypatch):
     monkeypatch.setattr(Path,'resolve',forbidden)
     api.build_router(database_path=str(tmp_path/'uncreated'/'db'),assets_dir=str(tmp_path/'absent'),authorize=lambda request,write=False:None)
     assert not (tmp_path/'uncreated').exists()
+
+
+@pytest.mark.parametrize('loop',['document','metadata','assets-root'])
+@pytest.mark.parametrize('mode,expected',[('edit',503),('anonymous',401)])
+def test_handbook_symlink_loops_fail_privately_after_auth(tmp_path,loop,mode,expected):
+    client,_=setup(tmp_path,mode=mode)
+    target={'document':tmp_path/PATHS['handbook'], 'metadata':tmp_path/'handbook-metadata.json', 'assets-root':tmp_path/'webui'/'dist'}[loop]
+    if target.is_dir(): target.rmdir()
+    else: target.unlink()
+    target.symlink_to(target.name)
+    response=TestClient(client.app,raise_server_exceptions=False).get(BASE)
+    assert response.status_code==expected
+    assert response.json()=={'detail':'Sign in' if expected==401 else 'Manufacturing storage unavailable'}
+    assert response.headers['cache-control']=='private, no-store'
