@@ -22,6 +22,7 @@ export function HandbookReader({
     [data, setData] = useState<Handbook | null>(null),
     [selected, setSelected] = useState(""),
     [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
     [retry, setRetry] = useState(0);
   const article = useRef<HTMLDivElement>(null),
     savedScroll = useRef<Record<string, number>>({}),
@@ -33,6 +34,7 @@ export function HandbookReader({
     let active = true;
     const api = createApi(options);
     setError("");
+    setNotice("");
     setData(null);
     api
       .handbook(document, release)
@@ -120,8 +122,27 @@ export function HandbookReader({
       )
     ) {
       event.preventDefault();
+      setNotice("");
       setDocument("workflow");
       setSelected("");
+      return;
+    }
+    if (
+      /^(?:\.\/|\.\.\/|\.\.\/docs\/|docs\/)?manufacturing-system-handbook\.md(?:#.*)?$/.test(
+        href,
+      )
+    ) {
+      event.preventDefault();
+      setNotice("");
+      setDocument("handbook");
+      setSelected("");
+      return;
+    }
+    if (href && !/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href)) {
+      event.preventDefault();
+      setNotice(
+        `“${a.textContent?.trim() || "该参考资料"}”尚未纳入本次发布，当前阅读内容已保留。`,
+      );
     }
   }
   return (
@@ -163,6 +184,11 @@ export function HandbookReader({
           工作流总览
         </button>
       </div>
+      {notice && (
+        <p className="mf-badge" role="status">
+          {notice}
+        </p>
+      )}
       {error && (
         <p className="mf-error" role="alert">
           {error}{" "}

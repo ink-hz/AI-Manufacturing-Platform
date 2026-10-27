@@ -845,3 +845,56 @@ it("scrolls an attention item into view inside its selected project phase", asyn
     HTMLElement.prototype.scrollIntoView = old;
   }
 });
+it("maps the workflow handbook backlink and prevents broken unpublished relative reference navigation", async () => {
+  await mount();
+  renderMarkdown.mockImplementation((element: HTMLElement) => {
+    const backlink = document.createElement("a");
+    backlink.href = "../manufacturing-system-handbook.md";
+    backlink.textContent = "系统学习手册";
+    const reference = document.createElement("a");
+    reference.href =
+      "../../knowledge/01-foundations/01-manufacturing-process.md";
+    reference.textContent = "制造过程知识";
+    const external = document.createElement("a");
+    external.href = "https://example.com/source";
+    external.textContent = "外部来源";
+    element.replaceChildren(backlink, reference, external);
+    return { unmount: () => element.replaceChildren() };
+  });
+  await click("制造手册");
+  await click("工作流总览");
+  const reference = [...host.querySelectorAll(".mf-article a")].find(
+    (a) => a.textContent === "制造过程知识",
+  )!;
+  const broken = new MouseEvent("click", { bubbles: true, cancelable: true });
+  await act(async () => reference.dispatchEvent(broken));
+  expect(broken.defaultPrevented).toBe(true);
+  expect(host.textContent).toContain("尚未纳入本次发布");
+  const before = requests.filter((r) =>
+    r.path.includes("document=handbook"),
+  ).length;
+  const backlink = [...host.querySelectorAll(".mf-article a")].find(
+    (a) => a.textContent === "系统学习手册",
+  )!;
+  const back = new MouseEvent("click", { bubbles: true, cancelable: true });
+  await act(async () => backlink.dispatchEvent(back));
+  await flush();
+  expect(back.defaultPrevented).toBe(true);
+  expect(
+    requests.filter((r) => r.path.includes("document=handbook")),
+  ).toHaveLength(before + 1);
+  const external = host.querySelector('.mf-article a[href^="https:"]')!;
+  let policyPreserved = false;
+  const prevent = (e: Event) => {
+    policyPreserved = !e.defaultPrevented;
+    e.preventDefault();
+  };
+  host.addEventListener("click", prevent);
+  await act(async () =>
+    external.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    ),
+  );
+  host.removeEventListener("click", prevent);
+  expect(policyPreserved).toBe(true);
+});
