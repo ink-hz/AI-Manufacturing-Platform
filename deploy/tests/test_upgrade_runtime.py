@@ -38,3 +38,36 @@ def test_upgrade_runtime_preserves_host_mount_options_and_all_data(mutate):
 def test_upgrade_baseline_requires_exact_old_release_values():
     e,old,new=fixture();old['Config']['Env']=[v for v in old['Config']['Env'] if not v.startswith('PLATFORM_MANUFACTURING_RELEASE=')]+['PLATFORM_MANUFACTURING_RELEASE='+'e'*40]
     with pytest.raises(ValueError):release.validate_baseline(e,old)
+
+
+def rollback_fixture():
+    _,old,_=fixture();restored=copy.deepcopy(old)
+    restored['Id']='3'*64;restored['Config']['Hostname']='3'*12
+    return old,restored
+
+
+def test_exact_rollback_accepts_generated_hostname_and_dynamic_sdk_address_only():
+    old,restored=rollback_fixture()
+    old['NetworkSettings']['Networks']['sdk']['IPAddress']='172.23.0.3'
+    restored['NetworkSettings']['Networks']['sdk']['IPAddress']='172.23.0.4'
+    release.compare_rollback_runtime(old,restored)
+
+
+@pytest.mark.parametrize('mutate',[
+ lambda r:r['HostConfig']['Mounts'][0]['BindOptions'].update(NonRecursive=True),
+ lambda r:r['NetworkSettings']['Networks']['sdk']['IPAMConfig'].update(IPv4Address='172.23.0.3'),
+ lambda r:r['NetworkSettings']['Networks']['sdk'].update(GwPriority=10),
+ lambda r:r['NetworkSettings']['Networks']['sdk'].update(Aliases=['changed']),
+])
+def test_rollback_cannot_report_success_with_mount_or_network_declaration_drift(mutate):
+    old,restored=rollback_fixture();mutate(restored)
+    with pytest.raises(ValueError):release.compare_rollback_runtime(old,restored)
+
+
+def test_rollback_preserves_explicitly_configured_fixed_ip():
+    old,restored=rollback_fixture()
+    for row in [old,restored]:
+        row['NetworkSettings']['Networks']['sdk']['IPAMConfig']['IPv4Address']='172.23.0.3'
+        row['NetworkSettings']['Networks']['sdk']['IPAddress']='172.23.0.3'
+    restored['NetworkSettings']['Networks']['sdk']['IPAddress']='172.23.0.4'
+    with pytest.raises(ValueError):release.compare_rollback_runtime(old,restored)

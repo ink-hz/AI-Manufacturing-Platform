@@ -175,6 +175,37 @@ def snapshot_files(e):
     return result
 
 
+def compare_networks(old,new):
+    before,after=old['NetworkSettings']['Networks'],new['NetworkSettings']['Networks']
+    require(set(before)==set(after),'runtime_network_set_changed')
+    for name in before:
+        for key in ['NetworkID','IPAMConfig','GwPriority','Aliases','DriverOpts','Links']:
+            require(before[name].get(key)==after[name].get(key),'runtime_network_option_changed')
+        ipam=before[name].get('IPAMConfig') or {}
+        if ipam.get('IPv4Address'):
+            for key in ['IPAddress','IPPrefixLen']:
+                require(before[name].get(key)==after[name].get(key),'runtime_fixed_ip_changed')
+        if ipam.get('IPv6Address'):
+            for key in ['GlobalIPv6Address','GlobalIPv6PrefixLen']:
+                require(before[name].get(key)==after[name].get(key),'runtime_fixed_ipv6_changed')
+        if 'DNSNames' in before[name] or 'DNSNames' in after[name]:
+            expected=[new['Id'][:12] if value==old['Id'][:12] else value for value in before[name].get('DNSNames',[])]
+            require(sorted(expected)==sorted(after[name].get('DNSNames',[])),'runtime_network_dns_changed')
+
+
+def compare_rollback_runtime(old,restored):
+    require(restored['Image']==old['Image'],'rollback_image_mismatch')
+    require(ops.actual_environment(restored)==ops.actual_environment(old),'rollback_environment_mismatch')
+    require(sorted(restored['Mounts'],key=lambda m:m['Destination'])==sorted(old['Mounts'],key=lambda m:m['Destination']),'rollback_mount_mismatch')
+    ops.runtime_values(old,restored)
+    before,after=copy.deepcopy(old['HostConfig']),copy.deepcopy(restored['HostConfig'])
+    for row in [before,after]:
+        if row.get('Mounts'):row['Mounts']=sorted(row['Mounts'],key=lambda m:m['Target'])
+        if row.get('Binds'):row['Binds']=sorted(row['Binds'])
+    require(before==after,'rollback_hostconfig_changed')
+    compare_networks(old,restored)
+
+
 def compare_runtime(old, new, e):
     require(new['Image']==e['target_image_id'],'deployed_image_mismatch')
     require(ops.actual_environment(new)=={**ops.actual_environment(old),**environment_delta(e)},'runtime_environment_changed')
@@ -209,13 +240,7 @@ def compare_runtime(old, new, e):
     for row in [before,after]:
         for key in ['com.docker.compose.config-hash','com.docker.compose.image','com.docker.compose.project.config_files']:row.pop(key,None)
     require(before==after,'runtime_labels_changed')
-    before,after=old['NetworkSettings']['Networks'],new['NetworkSettings']['Networks']
-    require(set(before)==set(after),'runtime_network_set_changed')
-    for name in before:
-        for key in ['IPAMConfig','GwPriority','Aliases','DriverOpts','Links']:
-            require(before[name].get(key)==after[name].get(key),'runtime_network_option_changed')
-        if (before[name].get('IPAMConfig') or {}).get('IPv4Address'):
-            require(before[name]['IPAddress']==after[name]['IPAddress'],'runtime_fixed_ip_changed')
+    compare_networks(old,new)
 
 
 def ready(image):
@@ -360,11 +385,9 @@ def cutover(e):
                 check_rollback_image(old)
                 ops.run(ops.compose(pre['files'])+['up','-d','--no-build','--no-deps','--force-recreate','platform-api'],env=env)
                 restored=ready(old['Image'])
-                require(ops.actual_environment(restored)==ops.actual_environment(old),'rollback_environment_mismatch')
-                require(sorted(restored['Mounts'],key=lambda m:m['Destination'])==sorted(old['Mounts'],key=lambda m:m['Destination']),'rollback_mount_mismatch')
+                compare_rollback_runtime(old,restored)
                 require(ops.discover_files(restored)==pre['files'],'rollback_chain_mismatch')
                 require(ops.maps(ops.API)==pre['baseline_content'],'rollback_content_mismatch')
-                ops.runtime_values(old,restored)
                 others_unchanged(pre['containers'])
                 ops.write('rollback.json',{'restored':True,'image':restored['Image'],'manufacturing_data_retained':True})
             except BaseException as rollback_error:

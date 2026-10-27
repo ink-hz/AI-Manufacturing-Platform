@@ -133,11 +133,18 @@ archived=check(client.patch(project_path,json={'expected_version':1,'archived':T
 assert archived['project']['status']=='archived'
 assert len(check(client.get(prefix+'/dashboard'),200).json()['projects'])==1
 check(client.patch(project_path,json={'expected_version':archived['project']['version'],'archived':False},headers=headers),200)
+published_metadata=json.loads((business/'handbook-metadata.json').read_text())
 for doc,path in [('handbook','docs/manufacturing-system-handbook.md'),('workflow','docs/workflows/manufacturing-process-overview.md')]:
     read=check(client.get(prefix+'/handbook',params={'document':doc,'release':expected['business_commit']}),200).json()
     assert read['source_path']==path and read['sha256']==manifest['files'][path]
+    assert read['release']==expected['business_commit'] and read['updated_at']==published_metadata['files'][path]['updated_at']
     assert hashlib.sha256(read['markdown'].encode()).hexdigest()==read['sha256']
 check(client.get(prefix+'/handbook',params={'release':'wrong-release'}),409)
+auth.role=Role.PLATFORM_ADMIN
+admin_project=check(client.get(project_path),200).json()
+check(client.patch(project_path,json={'expected_version':admin_project['project']['version'],'summary':'Candidate administrator update'},headers=headers),200)
+check(client.get(prefix+'/handbook'),200)
+auth.role=Role.PLATFORM_OWNER
 auth.stale=True
 check(client.get(project_path),200);check(client.get(prefix+'/handbook'),200)
 check(client.patch(project_path,json={'expected_version':2,'name':'Must not write'},headers=headers),503)
