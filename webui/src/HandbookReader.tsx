@@ -19,27 +19,42 @@ export function HandbookReader({
   onLegacy: () => void;
 }) {
   const [document, setDocument] = useState<DocumentName>("handbook"),
-    [data, setData] = useState<Handbook | null>(null),
+    [loaded, setLoaded] = useState<{
+      document: DocumentName; targetSerial: number; data: Handbook;
+    } | null>(null),
     [selected, setSelected] = useState(""),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [retry, setRetry] = useState(0);
+  const data = loaded?.document === document && loaded.targetSerial === target.serial
+    ? loaded.data : null;
+  const [jump, setJump] = useState({
+    id: "", serial: 0, targetSerial: target.serial, document: "handbook" as DocumentName,
+  });
+  const completedJump = useRef(0);
+  const appliedStageTarget = useRef<number | null>(null);
   const article = useRef<HTMLDivElement>(null),
     savedScroll = useRef<Record<string, number>>({}),
     section = useRef<HTMLDivElement>(null);
   const chapters = useMemo(() => splitChapters(data?.markdown || ""), [data]);
   const chapter = chapters.find((c) => c.id === selected) || chapters[0];
+  const headingIds = useMemo(
+    () => Object.fromEntries(
+      chapters.filter((c) => c.line !== null).map((c) => [c.line!, c.id]),
+    ),
+    [chapters],
+  );
   useEffect(() => {
     if (!visible) return;
     let active = true;
     const api = createApi(options);
     setError("");
     setNotice("");
-    setData(null);
+    setLoaded(null);
     api
       .handbook(document, release)
       .then((d) => {
-        if (active) setData(d);
+        if (active) setLoaded({ document, targetSerial: target.serial, data: d });
       })
       .catch((e) => {
         if (active) setError(message(e));
@@ -51,6 +66,7 @@ export function HandbookReader({
   }, [
     visible,
     document,
+    target.serial,
     retry,
     release,
     options.apiBase,
@@ -66,10 +82,12 @@ export function HandbookReader({
   useEffect(() => {
     if (data) {
       const all = splitChapters(data.markdown);
-      if (target.stage && document === "handbook")
-        setSelected(
-          all.find((c) => c.stageId === target.stage)?.id || all[0]?.id || "",
-        );
+      if (target.stage && document === "handbook" && appliedStageTarget.current !== target.serial) {
+        const id = all.find((c) => c.stageId === target.stage)?.id || all[0]?.id || "";
+        setSelected(id);
+        setJump((old) => ({ id, serial: old.serial + 1, targetSerial: target.serial, document }));
+        appliedStageTarget.current = target.serial;
+      }
       else
         setSelected((s) =>
           all.some((c) => c.id === s) ? s : all[0]?.id || "",
@@ -78,25 +96,63 @@ export function HandbookReader({
   }, [data, target.serial]);
   useEffect(() => {
     const element = article.current;
-    if (!visible || !data || !chapter || !element || !options.renderMarkdown)
-      return;
-    const key = `${document}/${chapter.id}`;
+    if (!visible || !data || !element || !options.renderMarkdown) return;
+    const key = document;
+    const body = section.current;
     element.replaceChildren();
     let handle: { unmount(): void } | undefined;
     try {
       handle = options.renderMarkdown(element, {
-        markdown: chapter.markdown,
+        markdown: data.markdown,
+        headingIds,
       });
     } catch {
       setError("阅读组件暂不可用");
     }
-    if (section.current)
-      section.current.scrollTop = savedScroll.current[key] || 0;
+    // Native React rendering is asynchronous; restore only after content exists.
+    const restore = () => {
+      if (!element.querySelector("h1,h2,h3,p,table,pre,figure")) return false;
+      if (body) body.scrollTop = savedScroll.current[key] || 0;
+      return true;
+    };
+    const observer = new MutationObserver(() => {
+      if (restore()) observer.disconnect();
+    });
+    if (!restore()) observer.observe(element, { childList: true, subtree: true });
     return () => {
-      if (section.current) savedScroll.current[key] = section.current.scrollTop;
+      observer.disconnect();
+      if (body) savedScroll.current[key] = body.scrollTop;
       handle?.unmount();
     };
-  }, [visible, data, chapter, document, options.renderMarkdown]);
+  }, [visible, data, headingIds, document, options.renderMarkdown]);
+  useEffect(() => {
+    const element = article.current;
+    if (
+      !visible || !data || !jump.id || !element ||
+      jump.document !== document || jump.targetSerial !== target.serial ||
+      completedJump.current === jump.serial
+    ) return;
+    const scroll = () => {
+      const target = chapters.find((c) => c.id === jump.id);
+      if (target?.line === null) {
+        if (!element.textContent) return false;
+        if (section.current) section.current.scrollTop = 0;
+        completedJump.current = jump.serial;
+        return true;
+      }
+      const destination = [...element.querySelectorAll<HTMLElement>("[id]")]
+        .find((node) => node.id === jump.id);
+      if (!destination) return false;
+      destination.scrollIntoView?.({ block: "start" });
+      completedJump.current = jump.serial;
+      return true;
+    };
+    const observer = new MutationObserver(() => {
+      if (scroll()) observer.disconnect();
+    });
+    if (!scroll()) observer.observe(element, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [visible, data, jump, document, chapters, target.serial]);
   function follow(event: React.MouseEvent) {
     const a = (event.target as Element).closest("a");
     if (!a || !article.current?.contains(a)) return;
@@ -109,9 +165,24 @@ export function HandbookReader({
       } catch {
         return;
       }
-      const element = [
+      let element = [
         ...article.current.querySelectorAll<HTMLElement>("[id]"),
       ].find((e) => e.id === id);
+      // Preserve author-written Markdown hashes when TOC IDs override headings.
+      if (!element) {
+        const counts = new Map<string, number>();
+        for (const heading of article.current.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")) {
+          const base = (heading.textContent || "").normalize("NFKC").trim()
+            .toLocaleLowerCase("zh-CN").replace(/\s+/g, "-")
+            .replace(/[^\p{Letter}\p{Number}_-]/gu, "") || "section";
+          const count = (counts.get(base) || 0) + 1;
+          counts.set(base, count);
+          if ((count === 1 ? base : `${base}-${count}`) === id) {
+            element = heading;
+            break;
+          }
+        }
+      }
       element?.scrollIntoView?.({ block: "start" });
       return;
     }
@@ -202,8 +273,11 @@ export function HandbookReader({
             {chapters.map((c) => (
               <button
                 key={c.id}
-                aria-current={c.id === chapter?.id ? "page" : undefined}
-                onClick={() => setSelected(c.id)}
+                aria-current={c.id === chapter?.id ? "location" : undefined}
+                onClick={() => {
+                  setSelected(c.id);
+                  setJump((old) => ({ id: c.id, serial: old.serial + 1, targetSerial: target.serial, document }));
+                }}
               >
                 {c.title}
               </button>

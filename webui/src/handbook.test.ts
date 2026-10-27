@@ -38,3 +38,7 @@ it("preserves related workflow source, CRLF preambles and nested fence lengths w
     "S4",
   ]);
 });
+it("indexes renderer source lines including CRLF and fenced headings",()=>{
+  const headings=splitChapters("前言\r\n# 总览\r\n```md\r\n## 假标题\r\n```\r\n## S1 需求\r\n末尾");
+  expect(headings.map((heading)=>heading.line)).toEqual([null,2,6]);
+});

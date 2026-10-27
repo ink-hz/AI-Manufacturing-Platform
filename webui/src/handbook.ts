@@ -2,15 +2,18 @@ export interface Chapter {
   id: string;
   title: string;
   markdown: string;
+  line: number | null;
   stageId?: string;
 }
 /** Slice the original string, never reconstruct it: preambles and part overviews are content. */
 export function splitChapters(markdown: string): Chapter[] {
-  const starts: { offset: number; title: string; stageId?: string }[] = [];
+  const starts: { offset: number; title: string; line: number | null; stageId?: string }[] = [];
   let offset = 0,
+    lineNumber = 0,
     fence = "",
     fenceLength = 0;
   for (const line of markdown.match(/[^\n]*\n|[^\n]+$/g) || []) {
+    lineNumber++;
     const marker = /^ {0,3}(`{3,}|~{3,})(.*?)(?:\r?\n)?$/.exec(line);
     if (marker) {
       if (!fence) {
@@ -36,6 +39,7 @@ export function splitChapters(markdown: string): Chapter[] {
         starts.push({
           offset,
           title: h[2],
+          line: lineNumber,
           ...(stage ? { stageId: stage[1] } : {}),
         });
       }
@@ -43,10 +47,11 @@ export function splitChapters(markdown: string): Chapter[] {
     offset += line.length;
   }
   if (!starts.length || starts[0].offset > 0)
-    starts.unshift({ offset: 0, title: "导读" });
+    starts.unshift({ offset: 0, title: "导读", line: null });
   return starts.map((s, i) => ({
     id: `mf-chapter-${i}`,
     title: s.title,
+    line: s.line,
     stageId: s.stageId,
     markdown: markdown.slice(
       s.offset,

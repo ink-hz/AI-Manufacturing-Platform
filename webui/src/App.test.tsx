@@ -554,36 +554,38 @@ it("does not navigate on a project save response after its form was explicitly d
   expect(host.querySelector(".mf-project-table")).not.toBeNull();
   expect(host.querySelector(".mf-phase-rail")).toBeNull();
 });
-it("preserves the renderer heading slugs and follows named hashes inside only the current article", async () => {
+it("follows named hashes even when outline IDs override the renderer heading slugs", async () => {
   await mount();
   const scrollToHeading = vi.fn();
   renderMarkdown.mockImplementationOnce(
     (element: HTMLElement, options: any) => {
       const heading = document.createElement("h2");
-      heading.id = "named-heading";
+      heading.id = options.headingIds[3];
       heading.textContent = "命名标题";
       heading.scrollIntoView = scrollToHeading;
       const link = document.createElement("a");
-      link.href = "#named-heading";
+      link.href = "#命名标题";
       link.textContent = "章节内定位";
       element.replaceChildren(heading, link);
       return { unmount: vi.fn() };
     },
   );
   await click("制造手册");
-  expect(renderMarkdown.mock.calls.at(-1)[1].headingIds).toBeUndefined();
+  expect(renderMarkdown.mock.calls.at(-1)[1].headingIds).toEqual({
+    1: "mf-chapter-0", 3: "mf-chapter-1", 5: "mf-chapter-2",
+  });
   const link = host.querySelector(".mf-article a")!;
   const event = new MouseEvent("click", { bubbles: true, cancelable: true });
   await act(async () => link.dispatchEvent(event));
   expect(event.defaultPrevented).toBe(true);
   expect(scrollToHeading).toHaveBeenCalledWith({ block: "start" });
 });
-it("retires each chapter renderer and rejects an older document after switching documents", async () => {
+it("retains the renderer on outline navigation and rejects an older document after switching documents", async () => {
   await mount();
   await click("制造手册");
   const first = retires.at(-1);
   await click("5. S1 需求");
-  expect(first).toHaveBeenCalledTimes(1);
+  expect(first).not.toHaveBeenCalled();
   const old = renderMarkdown.mock.calls.length;
   const original = vi.mocked(fetch).getMockImplementation()!;
   let finish!: (r: Response) => void;
@@ -595,6 +597,7 @@ it("retires each chapter renderer and rejects an older document after switching 
       : original(...args),
   );
   await click("工作流总览");
+  expect(first).toHaveBeenCalledTimes(1);
   await click("系统手册");
   await act(async () =>
     finish(
@@ -1287,4 +1290,123 @@ it("never replays a committed task creation when its refresh callback rejects", 
   } finally {
     api.dispose();
   }
+});
+
+it("renders the complete handbook through its end and keeps the same renderer when navigating the outline", async () => {
+  await mount();
+  const scrolls = new Map<string, ReturnType<typeof vi.fn>>();
+  renderMarkdown.mockImplementation((element: HTMLElement, options: any) => {
+    element.textContent = options.markdown;
+    options.markdown.split("\n").forEach((line: string, index: number) => {
+      const match = /^(#{1,2})\s+(.+)$/.exec(line);
+      if (!match) return;
+      const heading = document.createElement(`h${match[1].length}`);
+      heading.id = options.headingIds?.[index + 1] || `unmapped-${index + 1}`;
+      heading.textContent = match[2];
+      const scroll = vi.fn();heading.scrollIntoView = scroll;scrolls.set(match[2], scroll);
+      element.append(heading);
+    });
+    const unmount = vi.fn();retires.push(unmount);return {unmount};
+  });
+  await click("制造手册");
+  const complete = "# 手册\n介绍\n## 5. S1 需求\n阶段内容\n## 6. S2 工程\n工程内容";
+  expect(renderMarkdown.mock.calls.at(-1)[1].markdown).toBe(complete);
+  const count = renderMarkdown.mock.calls.length;
+  const handle = retires.at(-1);
+  await click("6. S2 工程");
+  expect(renderMarkdown).toHaveBeenCalledTimes(count);
+  expect(handle).not.toHaveBeenCalled();
+  expect(scrolls.get("6. S2 工程")).toHaveBeenCalledWith({block:"start"});
+  expect(host.querySelector(".mf-article")?.textContent).toContain("介绍");
+  expect(host.querySelector(".mf-article")?.textContent).toContain("阶段内容");
+  expect(host.querySelector(".mf-article")?.textContent).toContain("工程内容");
+  await click("6. S2 工程");
+  expect(scrolls.get("6. S2 工程")).toHaveBeenCalledTimes(2);
+  const body = host.querySelector<HTMLElement>(".mf-book-body")!;
+  body.scrollTop = 480;
+  await click("返回工作内容");
+  await click("制造手册");
+  expect(host.querySelector<HTMLElement>(".mf-book-body")?.scrollTop).toBe(480);
+  expect(scrolls.get("6. S2 工程")).not.toHaveBeenCalled();
+});
+
+it("waits for the shared renderer to insert the target heading while retaining the entire stage-linked document", async () => {
+  await mount();await open();await click("S2工程准备未开始");
+  const scroll = vi.fn();let insert!:()=>void;
+  renderMarkdown.mockImplementation((element:HTMLElement, options:any)=>{
+    insert=()=>{
+      element.textContent=options.markdown;
+      const heading=document.createElement("h2");heading.id=options.headingIds?.[5]||"unmapped";
+      heading.textContent="6. S2 工程";
+      heading.scrollIntoView=(options)=>{scroll(options);element.parentElement!.scrollTop=50;};
+      element.append(heading);
+    };
+    return {unmount:vi.fn()};
+  });
+  await click("了解这个阶段");
+  expect(renderMarkdown.mock.calls.at(-1)[1].markdown).toContain("# 手册\n介绍");
+  expect(renderMarkdown.mock.calls.at(-1)[1].markdown).toContain("阶段内容");
+  expect(scroll).not.toHaveBeenCalled();
+  await act(async()=>insert());await flush();
+  expect(scroll).toHaveBeenCalledWith({block:"start"});
+  host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop = 111;
+  await click("工作流总览");
+  await act(async () => insert());
+  await click("系统手册");
+  await act(async () => insert());
+  expect(host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop).toBe(111);
+  expect(scroll).toHaveBeenCalledTimes(1);
+  await click("返回工作内容");
+  await click("了解这个阶段");
+  await act(async () => insert());
+  expect(scroll).toHaveBeenCalledTimes(2);
+});
+
+it("preserves independent document positions with asynchronous renderer commits", async () => {
+  await mount();
+  let insert!: () => void;
+  renderMarkdown.mockImplementation((element: HTMLElement, options: any) => {
+    let active = true;
+    insert = () => {
+      if (!active) return;
+      const heading = document.createElement("h1");
+      heading.id = options.headingIds[1];
+      heading.textContent = options.markdown;
+      element.append(heading);
+    };
+    return { unmount() { active = false; element.replaceChildren(); } };
+  });
+  await click("制造手册");
+  await act(async () => insert());
+  host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop = 111;
+  await click("工作流总览");
+  await act(async () => insert());
+  const workflowStart = host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop;
+  host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop = 222;
+  await click("系统手册");
+  await act(async () => insert());
+  expect(workflowStart).toBe(0);
+  expect(host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop).toBe(111);
+  expect(renderMarkdown).toHaveBeenCalledTimes(3);
+});
+
+it("retires an unfinished stage jump when opening the general handbook", async () => {
+  await mount(); await open(); await click("S2工程准备未开始");
+  const scroll = vi.fn();
+  let insert!: () => void;
+  renderMarkdown.mockImplementation((element: HTMLElement, options: any) => {
+    insert = () => {
+      const heading = document.createElement("h2");
+      heading.id = options.headingIds[5];
+      heading.textContent = "6. S2 工程";
+      heading.scrollIntoView = scroll;
+      element.append(heading);
+    };
+    return { unmount: vi.fn() };
+  });
+  await click("了解这个阶段");
+  await click("返回工作内容");
+  await click("制造手册");
+  await act(async () => insert());
+  expect(scroll).not.toHaveBeenCalled();
 });
