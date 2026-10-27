@@ -108,10 +108,12 @@ def build_router(*, database_path: str, assets_dir: str, authorize, release: str
         return repository.update_task(line_id, stage_id, task_id, value, actor_label(request))
 
     @router.get('/assets/{asset_name}')
-    def asset(asset_name: str):
+    def asset(asset_name: str, request: Request):
         media_types = {'manufacturing.js': 'text/javascript', 'manufacturing.css': 'text/css'}
         if asset_name not in media_types:
             raise HTTPException(404, 'Manufacturing asset not found')
+        if any(tag != release for tag in request.query_params.getlist('release')):
+            raise HTTPException(409, 'Manufacturing assets changed; reload before continuing')
         root = Path(assets_dir).resolve()
         target = (root / asset_name).resolve()
         if target.parent != root or not target.is_file():

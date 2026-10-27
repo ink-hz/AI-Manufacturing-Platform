@@ -262,3 +262,71 @@ def test_manufacturing_error_boundary_preserves_unrelated_host_routes(tmp_path):
     assert missing.json() == {'detail':'Not Found'}
     assert 'cache-control' not in missing.headers
     assert calls == []
+
+
+@pytest.mark.parametrize('asset_name,mime,expected', [
+    ('manufacturing.js','text/javascript','window.OrbbecManufacturing={};'),
+    ('manufacturing.css','text/css','.mf-root {}'),
+])
+@pytest.mark.parametrize('params', [{}, {'release':'release-123'}])
+def test_assets_accept_matching_release_or_untagged_requests(tmp_path,asset_name,mime,expected,params):
+    client, calls = make_client(tmp_path)
+    response = client.get(BASE+'/assets/'+asset_name,params=params)
+    assert response.status_code == 200
+    assert response.text == expected
+    assert response.headers['content-type'].startswith(mime)
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert calls == [False]
+
+
+@pytest.mark.parametrize('asset_name', ['manufacturing.js','manufacturing.css'])
+@pytest.mark.parametrize('params', [
+    {'release':'stale-version-token'},
+    {'release':''},
+    [('release','stale-version-token'),('release','release-123')],
+])
+def test_assets_reject_stale_release_before_filesystem_io(tmp_path,monkeypatch,asset_name,params):
+    from manufacturing_platform import api
+    client, calls = make_client(tmp_path)
+    paths = []
+    original_path = api.Path
+    def asset_path(value):
+        paths.append(value)
+        return original_path(value)
+    monkeypatch.setattr(api,'Path',asset_path)
+    response = client.get(BASE+'/assets/'+asset_name,params=params)
+    assert response.status_code == 409
+    assert response.json() == {'detail':'Manufacturing assets changed; reload before continuing'}
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert 'stale-version-token' not in response.text and 'release-123' not in response.text
+    assert calls == [False]
+    assert paths == []
+    assert not (tmp_path/'db').exists()
+
+
+@pytest.mark.parametrize('asset_name', ['manufacturing.js','manufacturing.css'])
+@pytest.mark.parametrize('mode,status', [('anonymous',401),('denied',403)])
+def test_asset_authorization_precedes_release_mismatch(tmp_path,monkeypatch,asset_name,mode,status):
+    from manufacturing_platform import api
+    client, calls = make_client(tmp_path,mode=mode)
+    def forbidden_io(value):
+        raise AssertionError('Unauthorized asset request reached the filesystem')
+    monkeypatch.setattr(api,'Path',forbidden_io)
+    response = client.get(BASE+'/assets/'+asset_name,params={'release':'stale-version-token'})
+    assert response.status_code == status
+    assert response.json() == {'detail':'Sign in' if status == 401 else 'Forbidden'}
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert calls == [False]
+
+
+def test_asset_name_whitelist_precedes_release_mismatch(tmp_path,monkeypatch):
+    from manufacturing_platform import api
+    client, calls = make_client(tmp_path)
+    def forbidden_io(value):
+        raise AssertionError('Unknown asset name reached the filesystem')
+    monkeypatch.setattr(api,'Path',forbidden_io)
+    response = client.get(BASE+'/assets/unknown.js',params={'release':'stale-version-token'})
+    assert response.status_code == 404
+    assert response.json() == {'detail':'Manufacturing asset not found'}
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert calls == [False]
