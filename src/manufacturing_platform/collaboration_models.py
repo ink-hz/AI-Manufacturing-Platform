@@ -186,6 +186,8 @@ class ReadinessItem(Model):
 
 
 class ReadinessCreate(UniqueItems, Operation):
+    supersedes_id: Name | None = None
+    supersedes_version: Version | None = None
     title: Name
     package_id: Name
     work_order_ref: Name
@@ -194,6 +196,13 @@ class ReadinessCreate(UniqueItems, Operation):
     required: Flag = True
     owner: Name
     items: Annotated[list[ReadinessItem], Field(min_length=1,max_length=200)]
+
+
+    @model_validator(mode='after')
+    def paired_supersession(self):
+        if (self.supersedes_id is None) != (self.supersedes_version is None):
+            raise ValueError('Supersession requires both record ID and version')
+        return self
 
 
 class ReadinessWrite(UniqueItems, Change):

@@ -1,7 +1,7 @@
 """Fixed-scope production readiness with evidence rules and linked issues."""
 from uuid import uuid4
 from .collaboration_store import CollaborationStore, require
-from .repository import NotFound, _now
+from .repository import Conflict, NotFound, _now
 
 
 def readiness_status(items, package_status):
@@ -48,26 +48,54 @@ class ReadinessService(CollaborationStore):
             if readiness_id:
                 old = self.object(db,'readiness',readiness_id,project_id)
                 self.cas(old,request)
+                if old.get('superseded_by'):
+                    raise Conflict()
                 items = self.fields(request)['items']
                 fixed = lambda rows: {item['id']:(item['kind'],item['required'],item['package_item_id']) for item in rows}
                 require(fixed(items)==fixed(old['items']), 'Readiness item selection and applicability are frozen')
                 value = self.changed({**old,'items':items},actor)
             else:
                 value = self.new(self.fields(request),actor)
-                value['project_id'] = project_id
+                value.update(project_id=project_id,superseded_by=None)
             package = self.object(db,'packages',value['package_id'],project_id)
+            if not readiness_id:
+                require(package['status']=='verified', 'Readiness requires a fixed verified package')
             value['package_revision'] = package['revision']
             self.validate_items(db,value,package,project)
             value['status'] = readiness_status(value['items'],package['status'])
+            if not readiness_id and request.supersedes_id is not None:
+                self.supersede(db,project_id,request,value,package,actor_id,actor)
             self.persist(db,'readiness',value)
             self.event(db,'readiness',value,'update' if readiness_id else 'create',actor_id,actor,request.operation_id)
             return value
         return self.transact(request,actor_id,actor,'readiness',project_id+'/'+(readiness_id or ''),change)
 
+    def supersede(self, db, project_id, request, value, package, actor_id, actor):
+        old = self.object(db,'readiness',request.supersedes_id,project_id)
+        if old['version'] != request.supersedes_version or old.get('superseded_by'):
+            raise Conflict()
+        require(all(old[key] == value[key] for key in ('work_order_ref','scope','required')),
+                'Replacement must preserve work order, scope and required applicability')
+        previous_package = self.object(db,'packages',old['package_id'],project_id)
+        require(package['family_id'] == previous_package['family_id'] and package['revision'] > previous_package['revision'],
+                'Replacement requires a strictly newer revision in the same package family')
+        items = {item['id']:item for item in value['items']}
+        require(all(item['id'] in items and items[item['id']]['kind'] == item['kind'] and items[item['id']]['required']
+                    for item in old['items'] if item['required']),
+                'Replacement must preserve every required check ID, kind and applicability')
+        require(all(item['status']=='pending' for item in value['items']),
+                'Replacement checks start pending and require independent verification')
+        historical = self.changed({**old,'superseded_by':value['id']},actor)
+        self.persist(db,'readiness',historical)
+        self.event(db,'readiness',historical,'supersede',actor_id,actor,request.operation_id,
+                   reason='Replaced by '+value['id']+' for package revision '+str(package['revision']))
+
     def issue(self, project_id, readiness_id, request, actor_id, actor):
         def create(db):
             detail = self._read(db,project_id)
             readiness = self.object(db,'readiness',readiness_id,project_id)
+            if readiness.get('superseded_by'):
+                raise Conflict()
             item = next((item for item in readiness['items'] if item['id']==request.item_id),None)
             if item is None:
                 raise NotFound()

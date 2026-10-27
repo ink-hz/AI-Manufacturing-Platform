@@ -7,7 +7,7 @@ def compose_status(db, project_id, status):
     if status == 'archived':
         return status
     rows = [json.loads(row[0]) for row in db.execute('SELECT body FROM manufacturing_readiness WHERE project_id=?',(project_id,))]
-    required = [row for row in rows if row['required']]
+    required = [row for row in rows if row['required'] and not row.get('superseded_by')]
     if any(row['status']=='blocked' for row in required):
         return 'blocked'
     if status == 'completed' and any(row['status']!='complete' for row in required):
@@ -43,6 +43,8 @@ def attention(db):
             add('handoff',handoff,handoff['to_party'],handoff['reason'] or ('Awaiting manual receipt' if handoff['status']=='sent' else 'Handoff '+handoff['status']))
     for row in db.execute('SELECT body FROM manufacturing_readiness ORDER BY rowid'):
         record = json.loads(row[0])
+        if record.get('superseded_by'):
+            continue
         pending = [item for item in record['items'] if item['required'] and item['status'] in {'pending','blocked'}]
         for item in pending:
             add('readiness',record,item['label'],item['reason'] or 'Readiness requires evidence',item)

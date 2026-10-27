@@ -66,7 +66,7 @@ class EngineeringService(CollaborationStore):
             self.event(db,'packages',value,action,actor_id,actor,request.operation_id,reason=request.reason)
             if action == 'invalidate':
                 for record in self.rows(db,'readiness',project_id):
-                    if record['package_id'] != package_id:
+                    if record['package_id'] != package_id or record.get('superseded_by'):
                         continue
                     # A withdrawn execution basis affects every assertion of applicability.
                     for item in record['items']:
