@@ -55,7 +55,11 @@ browser automation or a substitute for the user's desktop/mobile page acceptance
 
 ## 项目管理与平台 Markdown 复用
 
-默认页面为工作台、制造项目、事项、制造手册；`LegacyWorkflow` 保留旧流程现状参考。新 API 类型见 `src/projects/types.ts`，所有请求沿用 `api.ts` 的同源、CSRF、权限失效和生命周期处理。
+默认页面为工作台、制造项目、事项、系统协同、制造手册；`LegacyWorkflow` 保留旧流程现状参考。独立管理框架由制造应用提供，包括左侧导航、当前位置和右上角账户区；宿主在 Agent AppShell 之外挂载。新 API 类型见 `src/projects/types.ts`，所有请求沿用 `api.ts` 的同源、CSRF、权限失效和生命周期处理。
+
+宿主可传入 `user: {displayName, roleLabel}`、`onNavigatePlatform()` 和异步 `onLogout()`。展示信息只使用实际 Account，账户动作仍由宿主执行原有登录流程。挂载句柄的 `updateUser(user)` 原地更新显示姓名/角色，不销毁项目草稿或 Markdown 根；授权身份、角色或 CSRF 的变化仍由宿主退役旧挂载后重新创建。旧宿主省略新增选项仍可挂载。
+
+返回平台和退出经过制造应用的草稿确认；确认丢弃后先同步脏状态和卸载前保护，再执行账户动作。退出失败留在当前界面显示错误，重复点击不会产生并发退出。句柄卸载后停止展示更新和外部动作。
 
 `mount` 还接收可选 `renderMarkdown(element, { markdown, headingIds? }) => { unmount() }`。现有平台通过 `manufacturingMarkdown.tsx` 注入真实 `ArticleMarkdown`，后者沿用 `MermaidDiagram`。业务包负责章节、位置、元数据和上下文，未包含另一套 Markdown/Mermaid 依赖。原生渲染句柄按调用拥有独立 DOM 子根，替换时立即退役并延迟释放 React 根，避免旧清理删除新内容。
 
