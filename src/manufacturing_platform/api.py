@@ -14,6 +14,7 @@ from .catalog import load_catalog
 from .models import RecordWrite, TaskCreate, TaskWrite
 from .repository import Conflict, NotFound, Repository
 from .project_api import register_project_routes
+from .collaboration_api import register_collaboration_routes
 
 
 def build_router(*, database_path: str, assets_dir: str, authorize, release: str = 'development'):
@@ -122,6 +123,8 @@ def build_router(*, database_path: str, assets_dir: str, authorize, release: str
         return Response(target.read_bytes(), media_type=media_types[asset_name])
 
     register_project_routes(router, database_path=database_path, assets_dir=assets_dir, catalog=catalog, release=release)
+
+    register_collaboration_routes(router, database_path=database_path, catalog=catalog)
 
     # Match only this prefix after all business routes. The fallback authorizes
     # and returns errors; it cannot invoke a business handler or serve an asset.

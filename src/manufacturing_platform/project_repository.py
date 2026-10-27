@@ -24,7 +24,7 @@ def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
 
 
-def _summary(detail):
+def _summary(detail, db=None):
     project = dict(detail['project'])
     stages, tasks = detail['stages'], detail['tasks']
     if project['archived']:
@@ -37,6 +37,9 @@ def _summary(detail):
         status = 'active'
     else:
         status = 'planned'
+    if db is not None:
+        from .collaboration_queries import compose_status
+        status = compose_status(db, project['id'], status)
     current = next((s for s in stages if s['status'] in {'doing', 'blocked'}), None)
     current = current or next((s for s in stages if s['status'] != 'done'), stages[-1])
     return {**project, 'status': status, 'current_stage_id': current['id'], 'current_stage_name': current['name'],
@@ -44,8 +47,8 @@ def _summary(detail):
             'open_tasks': sum(t['status'] != 'done' for t in tasks)}
 
 
-def _public(detail):
-    return {**detail, 'project': _summary(detail), 'activity': list(reversed(detail['activity'][-50:]))}
+def _public(detail, db=None):
+    return {**detail, 'project': _summary(detail, db), 'activity': list(reversed(detail['activity'][-50:]))}
 
 
 class ProjectRepository:
@@ -62,7 +65,9 @@ class ProjectRepository:
         try:
             db.execute('PRAGMA busy_timeout=5000')
             db.execute('PRAGMA journal_mode=WAL')
-            db.executescript(_SCHEMA)
+            from .collaboration_store import SCHEMA
+            db.execute('PRAGMA foreign_keys=ON')
+            db.executescript(_SCHEMA + SCHEMA)
             db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
             try:
                 yield db
@@ -96,6 +101,8 @@ class ProjectRepository:
     @staticmethod
     def _retry(db, value, actor, kind, scope):
         payload = _json(value.model_dump(mode='json', exclude={'operation_id'}))
+        if db.execute('SELECT 1 FROM manufacturing_control_operations WHERE operation_id=?',(str(value.operation_id),)).fetchone():
+            raise Conflict()
         row = db.execute('SELECT actor_id,kind,scope,payload,response FROM manufacturing_project_operations WHERE operation_id=?', (str(value.operation_id),)).fetchone()
         if row:
             if row[:4] != (actor, kind, scope, payload):
@@ -133,20 +140,23 @@ class ProjectRepository:
             self._activity(detail, actor_label, 'project_created', '创建制造项目')
             detail['project'] = _summary(detail)
             db.execute('INSERT INTO manufacturing_projects VALUES (?,?)', (project_id, _json(detail)))
-            response = _public(detail)
+            response = _public(detail, db)
             self._remember(db, value, actor_id, 'project', '', payload, response)
             return response
 
     def get(self, project_id):
         with self._connection() as db:
-            return _public(self._read(db, project_id))
+            return _public(self._read(db, project_id), db)
 
-    def _all(self):
-        with self._connection() as db:
-            return [ProjectDetail.model_validate_json(row[0]).model_dump(mode='json') for row in db.execute('SELECT body FROM manufacturing_projects ORDER BY rowid DESC')]
+    def _all(self, db=None):
+        if db is None:
+            with self._connection() as connection:
+                return self._all(connection)
+        return [ProjectDetail.model_validate_json(row[0]).model_dump(mode='json') for row in db.execute('SELECT body FROM manufacturing_projects ORDER BY rowid DESC')]
 
     def list(self):
-        return [_summary(detail) for detail in self._all()]
+        with self._connection() as db:
+            return [_summary(detail, db) for detail in self._all(db)]
 
     def update(self, project_id, value, actor_label):
         with self._connection(write=True) as db:
@@ -160,7 +170,7 @@ class ProjectRepository:
                 project.update(version=project['version']+1, updated_at=_now(), updated_by=actor_label)
                 self._activity(detail, actor_label, 'project_updated', '更新项目资料')
                 self._save(db, detail)
-            return _public(detail)
+            return _public(detail, db)
 
     def update_stage(self, project_id, stage_id, value, actor_label):
         with self._connection(write=True) as db:
@@ -188,7 +198,7 @@ class ProjectRepository:
                 raise NotFound()
             now = _now()
             task = {**value.model_dump(mode='json', exclude={'operation_id'}), 'id': str(uuid4()), 'project_id': project_id,
-                    'status': 'todo', 'version': 1, 'created_at': now, 'updated_at': now, 'updated_by': actor_label}
+                    'status': 'todo', 'version': 1, 'created_at': now, 'updated_at': now, 'updated_by': actor_label, 'source': None}
             detail['tasks'].append(task)
             self._activity(detail, actor_label, 'task_created', '创建项目事项', stage_id=task['stage_id'], task_id=task['id'])
             self._save(db, detail)
@@ -230,8 +240,13 @@ class ProjectRepository:
         return self._flat(self._all())
 
     def dashboard(self):
-        details = [d for d in self._all() if not d['project']['archived']]
-        projects = sorted((_summary(d) for d in details), key=lambda p: p['updated_at'], reverse=True)
+        with self._connection() as db:
+            return self._dashboard(db)
+
+    def _dashboard(self, db):
+        from .collaboration_queries import attention as control_attention
+        details = [d for d in self._all(db) if not d['project']['archived']]
+        projects = sorted((_summary(d, db) for d in details), key=lambda p: p['updated_at'], reverse=True)
         tasks = self._flat(details)
         open_tasks = [t for t in tasks if t['status'] != 'done']
         today = date.today()
@@ -250,7 +265,7 @@ class ProjectRepository:
                     blockers.append({'project_id': project['id'], 'project_name': project['name'], 'stage_id': task['stage_id'], 'stage_name': stages[task['stage_id']]['name'],
                                      'task_id': task['id'], 'title': task['title'], 'reason': task['notes'], 'owner': task['owner'], 'due_date': task['due_date']})
             activity.extend({**item, 'project_id': project['id'], 'project_name': project['name']} for item in detail['activity'])
-        return {'counts': {'active_projects': sum(p['status'] != 'completed' for p in projects), 'blocked_projects': sum(p['status'] == 'blocked' for p in projects),
+        return {'control_attention': control_attention(db), 'counts': {'active_projects': sum(p['status'] != 'completed' for p in projects), 'blocked_projects': sum(p['status'] == 'blocked' for p in projects),
                            'due_soon': sum(p['status'] != 'completed' and p['due_date'] is not None and today.isoformat() <= p['due_date'] <= soon for p in projects),
                            'open_tasks': len(open_tasks), 'pending_confirmations': sum(t['kind'] == 'confirmation' for t in open_tasks)},
                 'projects': sorted(projects, key=lambda p: (p['status'] == 'completed', p['status'] != 'blocked', p['due_date'] is None, p['due_date'] or ''))[:8],

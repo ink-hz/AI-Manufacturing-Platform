@@ -108,7 +108,14 @@ class ProjectStage(StageContent):
     updated_by: str
 
 
+class TaskSource(Model):
+    type: Literal['readiness']
+    id: str
+    item_id: Identifier
+
+
 class ProjectTask(Dated):
+    source: TaskSource | None = None
     id: str
     project_id: str
     stage_id: Identifier
