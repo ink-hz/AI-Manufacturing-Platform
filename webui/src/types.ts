@@ -1,8 +1,16 @@
+export type MarkdownOptions = {
+  markdown: string;
+  headingIds?: Readonly<Record<number, string>>;
+};
 export interface MountOptions {
   /** Same-origin API root, e.g. /api/v1/manufacturing. */
   apiBase: string;
   csrfToken: string;
   readOnly: boolean;
+  renderMarkdown?: (
+    element: HTMLElement,
+    options: MarkdownOptions,
+  ) => { unmount(): void };
   onAuthError?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
 }
