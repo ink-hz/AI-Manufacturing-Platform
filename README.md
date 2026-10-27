@@ -57,4 +57,6 @@ AI-Manufacturing-Platform/
 
 环节内可以保存现状、待办、参与方、设计/BOM 等交接资料及 ERP/MRP/MES 关系。系统关系登记不代表已连接；真实系统集成需另行核对厂商、接口和数据责任。
 
-前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。实际版本与验收范围见发布记录。
+前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。实际版本与验收范围见 [首版发布记录](docs/release-2026-10-27.md)。
+
+线上入口：[大制造工作台](https://agent.orbbec.com.cn/manufacturing)（初始开放平台 owner/admin）。

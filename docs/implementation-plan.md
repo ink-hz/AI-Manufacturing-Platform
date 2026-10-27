@@ -48,10 +48,10 @@ POST `/lines/{line_id}/stages/{stage_id}/tasks` consumes `{title,operation_id}` 
 
 Assets: GET `/assets/{asset_name}` permits only `manufacturing.js` and `manufacturing.css` from assets_dir, correct MIME, no directory traversal/SPA fallback. All routes gate auth before persistence or asset reads, mutations call authorize(write=True). Add a private APIRoute wrapper for fixed validation errors/no-store including errors.
 
-- [ ] Write tests first for empty/read/save/reopen, line isolation, CAS conflict and independent SQLite connections, idempotent task create/reopen/scope rejection, config rename/order/invalid definitions, safe errors, permissions/read-only/assets.
-- [ ] Run RED: `PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests` and record feature-missing failure.
-- [ ] Implement the package and hand-written catalog with short contextual prompts, source references as simple text/links and per-stage proposed responsibility examples.
-- [ ] Run focused GREEN, then the package suite once; commit and report exact RED/GREEN evidence.
+- [x] Write tests first for empty/read/save/reopen, line isolation, CAS conflict and independent SQLite connections, idempotent task create/reopen/scope rejection, config rename/order/invalid definitions, safe errors, permissions/read-only/assets.
+- [x] Run RED: `PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests` and record feature-missing failure.
+- [x] Implement the package and hand-written catalog with short contextual prompts, source references as simple text/links and per-stage proposed responsibility examples.
+- [x] Run focused GREEN, then the package suite once; commit and report exact RED/GREEN evidence.
 
 ## Task 2: Two-view browser library
 
@@ -72,8 +72,8 @@ Use credentials same-origin and `X-CSRF-Token` on writes (verify platform exact 
 
 Read-only disables all write actions. 401/403 clears sensitive loaded state and calls onAuthError (or displays access denied). Read/save failures retain appropriate loaded/draft state with retry. Show system relationship badge `关系登记，尚未验证连接`. Reference participants/system roles clearly separate from saved actual relationships. Fields accessible and responsive, no browser automation. Scoped `.mf-` CSS, no global body resets, inherit platform typography/theme, quiet panels, no giant KPI cards. Do not render knowledge articles as page menu. Use no external CDN/network resources.
 
-- [ ] Add meaningful Vitest/jsdom tests first for default/group+line switching, empty and saved stage views, scope isolation, successful mutation and failure retention, CAS conflict and read-only, relationship editor and truthful connection badge. API tests check headers and idempotency body.
-- [ ] Verify RED, implement minimal UI, verify GREEN, `npm run build`, report bundle names/global mount interface and commit.
+- [x] Add meaningful Vitest/jsdom tests first for default/group+line switching, empty and saved stage views, scope isolation, successful mutation and failure retention, CAS conflict and read-only, relationship editor and truthful connection badge. API tests check headers and idempotency body.
+- [x] Verify RED, implement minimal UI, verify GREEN, `npm run build`, report bundle names/global mount interface and commit.
 
 ## Task 3: Platform bridge, identity and navigation
 
@@ -91,16 +91,21 @@ Load trusted `<root>/src/manufacturing_platform` via explicit import path and ca
 
 Native page fetches access then loads authenticated JS/CSS once per asset URL, mounts into a dedicated DOM element with account CSRF and prefix-aware API base, unmounts correctly under React StrictMode. Retain platform sidebar/header and deep route title. Route may use `/manufacturing` only, business inner views stateful; if using child paths define and validate them rather than arbitrary catch-all. Handle unavailable/denied/error states without fake UI. Navigation visible only authorized/available; assets never public manifest entries. Preserve all existing unrelated scope checks.
 
-- [ ] Add tests first for 401/member403/admin success, hard-stale read/write, missing/invalid CSRF through real platform middleware, authenticated asset delivery and unknown paths, safe login return, sidebar/route/wrapper mount failures and dirty navigation.
-- [ ] Verify RED; implement small adapters; verify GREEN with affected auth/router/API suites and frontend build. Do not repeat unrelated full suites for every small change.
-- [ ] Commit, request spec+quality review, merge validated feature branches into their main branches preserving user untracked files, record both exact SHAs.
+- [x] Add tests first for 401/member403/admin success, hard-stale read/write, missing/invalid CSRF through real platform middleware, authenticated asset delivery and unknown paths, safe login return, sidebar/route/wrapper mount failures and dirty navigation.
+- [x] Verify RED; implement small adapters; verify GREEN with affected auth/router/API suites and frontend build. Do not repeat unrelated full suites for every small change.
+- [x] Commit, request spec+quality review, merge validated feature branches into their main branches preserving user untracked files, record both exact SHAs.
 
 ## Task 4: Production rollout and evidence
 
 **Files:** Create checked-in `deploy/` release/verify scripts and `docs/release-2026-10-27.md` in manufacturing repo; platform release record in appropriate docs/operations. Reuse existing production controlled executor and maintenance-chain contract described in docs/deployment-audit.md.
 
-- [ ] Validate final package tests, platform affected suites/build, clean diffs and review findings. Build immutable release archive from recorded manufacturing commit, include actual compiled assets with manifest hashes and source revision. No credentials/data in archive.
-- [ ] Use current runtime labels/maintenance manifest as authority, preserve 37 ordered Compose inputs and append one manufacturing overlay with exact platform image/release, read-only manufacturing release mount, independent writable data directory owned10001, root/restart/health/network settings unchanged. Preserve all current runtime SDK/FAE patches. Candidate readiness before cutover; backup record and deterministic rollback to exact previous chain.
-- [ ] Protected production probes use documented controlled executor/session verification, not another user's cookie. Verify unauth401, non-granted403, real authorization/CSRF and new asset MIME+full body hashes, API readiness, persistence/restart with isolated disposable records only where authorized. Do not create success records by SQL. Delete no user data.
-- [ ] Verify other app entrances/representative static hashes and service status. Record running image/release, maintenance-chain file, package SHA and test counts. User browser/visual acceptance remains unexecuted and is reported separately. Existing unhealthy unrelated services are recorded as baseline, not claimed fixed.
-- [ ] If vendor documents arrive, add a separate narrowly specified read-only connector step with actual field mapping/auth/rate/error behavior and its own acceptance; otherwise explicitly leave genuine ERP/MRP/MES connectivity unverified while shipping relationship registration.
+- [x] Validate final package tests, platform affected suites/build, clean diffs and review findings. Build immutable release archive from recorded manufacturing commit, include actual compiled assets with manifest hashes and source revision. No credentials/data in archive.
+- [x] Use current runtime labels/maintenance manifest as authority, preserve 37 ordered Compose inputs and append one manufacturing overlay with exact platform image/release, read-only manufacturing release mount, independent writable data directory owned10001, root/restart/health/network settings unchanged. Preserve all current runtime SDK/FAE patches. Candidate readiness before cutover; backup record and deterministic rollback to exact previous chain.
+- [x] Protected production probes use documented controlled executor/session verification, not another user's cookie. Verify unauth401, non-granted403, real authorization/CSRF and new asset MIME+full body hashes, API readiness, persistence/restart with isolated disposable records only where authorized. Do not create success records by SQL. Delete no user data.
+- [x] Verify other app entrances/representative static hashes and service status. Record running image/release, maintenance-chain file, package SHA and test counts. User browser/visual acceptance remains unexecuted and is reported separately. Existing unhealthy unrelated services are recorded as baseline, not claimed fixed.
+后续单独安排：If vendor documents arrive, add a separate narrowly specified read-only connector step with actual field mapping/auth/rate/error behavior and its own acceptance; otherwise explicitly leave genuine ERP/MRP/MES connectivity unverified while shipping relationship registration.
+
+
+## 执行结果
+
+2026-10-27，任务 1 至任务 4 已完成开发、复审、主线归并和生产发布。平台源码 b141294d，制造源码 3cc02ffe；完整版本、测试、隔离候选、生产验证及回滚证据见 [首版发布记录](release-2026-10-27.md)。检查项按首版范围结案；浏览器验收仍由用户完成，真实 ERP/MRP/MES 对接等待具体厂商和接口资料。
