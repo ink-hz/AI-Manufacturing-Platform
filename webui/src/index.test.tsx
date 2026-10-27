@@ -63,10 +63,29 @@ it.each([401, 403])(
     });
     await act(async () => old.unmount());
     const callbackCount = retiredDirty.mock.calls.length;
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({ groups: [], lines: [], stages: [], can_edit: false }),
-      ),
+    vi.mocked(fetch).mockImplementation(
+      async (url) =>
+        new Response(
+          JSON.stringify(
+            String(url).endsWith("/dashboard")
+              ? {
+                  counts: {
+                    active_projects: 0,
+                    blocked_projects: 0,
+                    due_soon: 0,
+                    open_tasks: 0,
+                    pending_confirmations: 0,
+                  },
+                  projects: [],
+                  attention: [],
+                  blockers: [],
+                  activity: [],
+                }
+              : String(url).endsWith("/catalog")
+                ? { groups: [], lines: [], stages: [], can_edit: false }
+                : { items: [] },
+          ),
+        ),
     );
     let current!: ReturnType<typeof mount>;
     await act(async () => {

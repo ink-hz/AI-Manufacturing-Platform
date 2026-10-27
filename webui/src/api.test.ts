@@ -86,3 +86,75 @@ describe("manufacturing API", () => {
     expect(new ApiError(409).message).not.toContain("sensitive");
   });
 });
+it("extends the same protected request lifecycle for project APIs and fixed documents", async () => {
+  const fetcher = vi
+    .fn()
+    .mockImplementation(() => Promise.resolve(new Response("{}")));
+  vi.stubGlobal("fetch", fetcher);
+  const api = createApi({
+    apiBase: "/api",
+    csrfToken: "csrf",
+    readOnly: false,
+  });
+  await api.dashboard();
+  await api.projects();
+  await api.project("p /1");
+  const body = {
+    operation_id: "id",
+    name: "相机",
+    line_id: "cameras",
+    owner: "王工",
+    due_date: null,
+  };
+  await api.createProject(body);
+  await api.createProject(body);
+  await api.updateProject("p", { expected_version: 2, archived: true });
+  await api.saveProjectStage("p", "S1", {
+    expected_version: 4,
+    status: "done",
+    owner: "王工",
+    due_date: null,
+    blocker: "",
+    practice: "事实",
+    participants: [],
+    handoffs: [],
+    systems: [],
+  });
+  await api.projectTasks();
+  await api.createProjectTask("p", {
+    operation_id: "task-id",
+    stage_id: "S1",
+    title: "确认",
+    kind: "confirmation",
+    priority: "urgent",
+    due_date: null,
+  });
+  await api.updateProjectTask("p", "t", {
+    expected_version: 3,
+    status: "todo",
+  });
+  await api.handbook("workflow", "release 1");
+  expect(fetcher.mock.calls.map((c) => c[0])).toEqual([
+    "/api/dashboard",
+    "/api/projects",
+    "/api/projects/p%20%2F1",
+    "/api/projects",
+    "/api/projects",
+    "/api/projects/p",
+    "/api/projects/p/stages/S1",
+    "/api/project-tasks",
+    "/api/projects/p/tasks",
+    "/api/projects/p/tasks/t",
+    "/api/handbook?document=workflow&release=release%201",
+  ]);
+  expect(JSON.parse(fetcher.mock.calls[3][1].body)).toEqual(
+    JSON.parse(fetcher.mock.calls[4][1].body),
+  );
+  expect(fetcher.mock.calls[6][1]).toMatchObject({
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "X-CSRF-Token": "csrf" },
+  });
+  api.dispose();
+  await expect(api.handbook()).rejects.toMatchObject({ name: "AbortError" });
+});

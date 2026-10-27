@@ -1,155 +1,243 @@
 import { act } from "react";
 import { createRoot, Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { App } from "./App";
-
+import { TaskEditor } from "./projects/TaskEditor";
+import { ProjectDetail } from "./projects/ProjectDetail";
+import { createApi } from "./api";
 const catalog = JSON.parse(
   readFileSync("../src/manufacturing_platform/catalog.json", "utf8"),
 );
-const empty = () => ({
-  practice: "",
-  participants: [],
-  handoffs: [],
-  systems: [],
-  version: 0,
-  updated_at: null,
-  updated_by: null,
-});
 let host: HTMLDivElement,
   root: Root,
-  requests: { path: string; method: string; body: any }[],
-  saved: any,
-  tasks: any[],
-  failSave: number,
-  failRead: number,
-  failTask: number;
-let dirty = vi.fn();
-const options = () => ({
-  apiBase: "/api/v1/manufacturing",
-  csrfToken: "token",
-  readOnly: false,
-  onDirtyChange: dirty,
+  detail: any,
+  projects: any[],
+  requests: any[],
+  fail: number,
+  dirty: any,
+  renderMarkdown: any,
+  retires: any[];
+const summary = () => ({
+  id: "p1",
+  code: "MF-001",
+  name: "深度相机试产",
+  line_id: "cameras",
+  line_name: "自研相机",
+  group_id: "internal",
+  owner: "王工",
+  product: "D1",
+  customer: "产品部",
+  due_date: "2026-11-01",
+  target_quantity: 100,
+  summary: "交付首批样机",
+  archived: false,
+  version: 1,
+  status: "planned",
+  current_stage_id: "S1",
+  current_stage_name: "需求确认",
+  completed_stages: 0,
+  total_stages: 9,
+  open_tasks: 0,
+  updated_at: "2026-10-27T08:00:00Z",
 });
+const response = (v: any, status = 200) =>
+  new Response(JSON.stringify(v), { status });
 async function flush() {
   await act(async () => {
     await new Promise((r) => setTimeout(r, 0));
   });
 }
 function button(text: string) {
-  const found = [...host.querySelectorAll("button")].find(
-    (b) => b.textContent?.trim() === text,
+  const b = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === text && !b.closest("[hidden]"),
   );
-  if (!found) throw new Error(`Missing button ${text}: ${host.textContent}`);
-  return found;
+  if (!b) throw new Error(`Missing ${text}: ${host.textContent}`);
+  return b;
 }
 async function click(text: string) {
   await act(async () => button(text).click());
   await flush();
 }
-async function input(label: string, value: string) {
-  const el = [...host.querySelectorAll("input,textarea")].find(
-    (e) => e.getAttribute("aria-label") === label,
-  ) as HTMLInputElement;
-  if (!el) throw new Error(`Missing field ${label}`);
+async function field(label: string, value: string) {
+  const e = host.querySelector(`[aria-label="${label}"]`) as HTMLInputElement;
+  expect(e, label).not.toBeNull();
   await act(async () => {
     const proto =
-      el.tagName === "TEXTAREA"
-        ? HTMLTextAreaElement.prototype
-        : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
+      e.tagName === "SELECT"
+        ? HTMLSelectElement.prototype
+        : e.tagName === "TEXTAREA"
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(e, value);
+    e.dispatchEvent(new Event("input", { bubbles: true }));
+    e.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
 async function mount(extra = {}) {
   await act(async () =>
-    root.render(<App options={{ ...options(), ...extra }} />),
+    root.render(
+      <App
+        options={{
+          apiBase: "/api",
+          csrfToken: "csrf",
+          readOnly: false,
+          onDirtyChange: dirty,
+          renderMarkdown,
+          ...extra,
+        }}
+      />,
+    ),
   );
   await flush();
 }
 async function open() {
-  await click("01 需求确认 未记录 →");
+  await click("深度相机试产");
 }
 beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  projects = [summary()];
+  detail = {
+    project: projects[0],
+    stages: catalog.stages.map((s: any) => ({
+      ...s,
+      status: "todo",
+      owner: "",
+      due_date: null,
+      blocker: "",
+      practice: "",
+      participants: [],
+      handoffs: [],
+      systems: [],
+      version: 1,
+    })),
+    tasks: [],
+    activity: [
+      {
+        id: "a",
+        actor: "王工",
+        summary: "创建制造项目",
+        created_at: "2026-10-27T08:00:00Z",
+        stage_id: null,
+      },
+    ],
+  };
   requests = [];
-  saved = empty();
-  tasks = [];
-  failSave = 0;
-  failRead = 0;
-  failTask = 0;
+  fail = 0;
   dirty = vi.fn();
+  retires = [];
+  renderMarkdown = vi.fn((el: HTMLElement, { markdown }: any) => {
+    el.textContent = `已渲染 ${markdown}`;
+    const a = document.createElement("a");
+    a.href = "workflows/manufacturing-process-overview.md";
+    a.textContent = "流程总览";
+    el.append(a);
+    const unmount = vi.fn(() => el.replaceChildren());
+    retires.push(unmount);
+    return { unmount };
+  });
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
-      const path = url.replace("/api/v1/manufacturing", "");
+      const path = url.replace("/api", "");
       const method = init.method || "GET";
       const body = init.body ? JSON.parse(init.body as string) : undefined;
       requests.push({ path, method, body });
-      const response = (data: unknown, status = 200) =>
-        new Response(JSON.stringify(data), { status });
-      if (path === "/catalog") return response({ ...catalog, can_edit: true });
-      const parts = path.split("/");
-      const line = catalog.lines.find((l: any) => l.id === parts[2]);
-      const stage = catalog.stages.find((s: any) => s.id === parts[4]);
-      if (method === "PUT") {
-        if (failSave) return response({}, failSave);
-        saved = {
-          ...body,
-          version: saved.version + 1,
-          updated_at: "2026-10-27T08:00:00Z",
-          updated_by: "王工",
-        };
-        delete saved.expected_version;
-        return response(saved);
+      if (method !== "GET" && fail) {
+        const status = fail;
+        fail = 0;
+        return response({}, status);
       }
-      if (method === "POST") {
-        if (failTask) {
-          failTask--;
-          return response({}, 503);
-        }
-        const t = {
-          id: "task1",
-          title: body.title,
-          completed: false,
-          version: 1,
-          created_at: "now",
-          updated_at: "now",
-          updated_by: "王工",
+      if (path === "/catalog")
+        return response({ ...catalog, can_edit: true, release: "v2" });
+      if (path === "/dashboard")
+        return response({
+          counts: {
+            active_projects: 7,
+            blocked_projects: 2,
+            due_soon: 3,
+            open_tasks: 11,
+            pending_confirmations: 1,
+          },
+          projects,
+          attention: detail.tasks.map((t: any) => ({
+            ...t,
+            project_name: detail.project.name,
+            stage_name: "需求确认",
+          })),
+          blockers: [],
+          activity: detail.activity.map((a: any) => ({
+            ...a,
+            project_name: detail.project.name,
+            project_id: "p1",
+          })),
+        });
+      if (path === "/projects" && method === "GET")
+        return response({ items: projects });
+      if (path === "/project-tasks")
+        return response({
+          items: detail.tasks.map((t: any) => ({
+            ...t,
+            project_name: detail.project.name,
+            line_id: "cameras",
+            line_name: "自研相机",
+            stage_name: "需求确认",
+          })),
+        });
+      if (path.startsWith("/handbook"))
+        return response({
+          title: path.includes("workflow") ? "流程总览" : "制造手册",
+          markdown:
+            "# 手册\n介绍\n## 5. S1 需求\n阶段内容\n## 6. S2 工程\n工程内容",
+          updated_at: "2026-10-26T00:00:00Z",
+          source_path: "docs/manufacturing-system-handbook.md",
+          release: "v2",
+        });
+      if (path === "/projects" && method === "POST") {
+        detail = { ...detail, project: { ...summary(), ...body } };
+        projects = [detail.project];
+        return response(detail);
+      }
+      if (method === "PUT") {
+        const id = path.split("/").at(-1);
+        const i = detail.stages.findIndex((s: any) => s.id === id);
+        detail.stages[i] = {
+          ...detail.stages[i],
+          ...body,
+          version: detail.stages[i].version + 1,
         };
-        if (!tasks.length) tasks.push(t);
+        return response(detail.stages[i]);
+      }
+      if (path === "/projects/p1" && method === "PATCH") {
+        detail.project = {
+          ...detail.project,
+          ...body,
+          version: detail.project.version + 1,
+        };
+        return response(detail);
+      }
+      if (path === "/projects/p1/tasks" && method === "POST") {
+        const t = {
+          ...body,
+          id: "t1",
+          project_id: "p1",
+          status: "todo",
+          version: 1,
+        };
+        detail.tasks.push(t);
         return response(t);
       }
       if (method === "PATCH") {
-        if (failSave) return response({}, failSave);
-        const t = { ...tasks[0], ...body, version: tasks[0].version + 1 };
-        tasks = [t];
-        return response(t);
+        detail.tasks[0] = {
+          ...detail.tasks[0],
+          ...body,
+          version: detail.tasks[0].version + 1,
+        };
+        return response(detail.tasks[0]);
       }
-      if (stage) {
-        if (failRead) return response({}, failRead);
-        return response({
-          line,
-          stage,
-          record: parts[2] === "cameras" ? saved : empty(),
-          tasks: parts[2] === "cameras" ? tasks : [],
-          can_edit: true,
-        });
-      }
-      return response({
-        line,
-        stages: catalog.stages.map((s: any) => ({
-          ...s,
-          recorded:
-            parts[2] === "cameras" && s.id === "S1" && !!saved.practice.trim(),
-          open_tasks:
-            s.id === "S1" ? tasks.filter((t) => !t.completed).length : 0,
-        })),
-        can_edit: true,
-      });
+      return response(detail);
     }),
   );
 });
@@ -158,388 +246,1045 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
-
-describe("two-view workbench", () => {
-  it("defaults to cameras and switches group/line by stable scope", async () => {
-    await mount();
-    expect(requests.some((r) => r.path === "/lines/cameras")).toBe(true);
-    await click("3D 打印机");
-    expect(requests.at(-1)?.path).toBe("/lines/3d-printers");
-    await click("外部业务");
-    expect(requests.at(-1)?.path).toBe("/lines/oem");
-    expect(host.querySelector('[aria-label="业务线"] button')).toBeNull();
-    await open();
-    expect(host.textContent).toContain("OEM 代工代料");
-    expect(host.textContent).toContain("尚未记录");
+it("opens on real projects with server counts, compact progress, and factual activity", async () => {
+  await mount();
+  expect(host.textContent).toContain("在管项目");
+  expect(host.textContent).toContain("7");
+  expect(host.textContent).toContain("王工");
+  expect(host.textContent).toContain("创建制造项目");
+  expect(host.querySelector(".mf-home-grid")).not.toBeNull();
+  expect(host.querySelector(".mf-progress")?.children).toHaveLength(9);
+  expect(host.querySelector(".mf-stages")).toBeNull();
+});
+it("creates a project with immutable retry identity then enters detail", async () => {
+  projects = [];
+  await mount();
+  await click("新建项目");
+  await field("项目名称", "OEM 首批交付");
+  await field("项目负责人", "李工");
+  fail = 503;
+  await click("创建项目");
+  expect(host.textContent).toContain("尚未保存");
+  await click("创建项目");
+  const writes = requests.filter((r) => r.method === "POST");
+  expect(writes[0].body).toEqual(writes[1].body);
+  expect(writes[0].body.operation_id).toMatch(/^[\da-f-]{36}$/);
+  expect(host.querySelector(".mf-phase-rail")).not.toBeNull();
+  expect(host.textContent).toContain("OEM 首批交付");
+});
+it("keeps filters and shows actual project cards in board", async () => {
+  await mount();
+  await click("制造项目");
+  await field("搜索项目", "不存在");
+  expect(host.textContent).toContain("没有符合筛选的项目");
+  await click("看板");
+  expect(host.querySelector(".mf-board")).not.toBeNull();
+  await field("搜索项目", "深度");
+  expect(host.querySelectorAll(".mf-project-card")).toHaveLength(1);
+  await click("制造手册");
+  await click("制造项目");
+  expect(
+    (host.querySelector('[aria-label="搜索项目"]') as HTMLInputElement).value,
+  ).toBe("深度");
+  expect(button("看板").getAttribute("aria-pressed")).toBe("true");
+});
+it("saves stage facts and relations together, retains conflict draft and reopens completion", async () => {
+  await mount();
+  await open();
+  await click("编辑阶段");
+  await field("阶段说明", "等待客户确认");
+  await field("阶段状态", "blocked");
+  await field("受阻原因", "BOM 版本待确认");
+  await click("添加参与方");
+  await field("参与方 1 名称", "工程");
+  fail = 409;
+  await click("保存阶段");
+  expect(host.textContent).toContain("内容已更新");
+  expect(
+    (host.querySelector('[aria-label="阶段说明"]') as HTMLTextAreaElement)
+      .value,
+  ).toBe("等待客户确认");
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  await click("保留草稿");
+  await click("保存阶段");
+  expect(detail.stages[0]).toMatchObject({
+    status: "blocked",
+    blocker: "BOM 版本待确认",
+    participants: [{ name: "工程" }],
   });
-  it("saves actual practice and relations together, refreshes overview, and clears recorded state", async () => {
-    await mount();
-    await open();
-    await click("编辑");
-    await input("现状说明", "部分事实仍待核实");
-    const details = host.querySelector(
-      'details[data-section="relationships"]',
-    ) as HTMLDetailsElement;
-    details.open = true;
-    await click("添加参与方");
-    await input("参与方 1 名称", "奥比工程");
-    await input("参与方 1 责任", "核对设计 BOM");
-    await click("添加系统");
-    await input("系统 1 名称", "现有 ERP");
-    expect(host.textContent).toContain("关系登记，尚未验证连接");
-    await click("保存");
-    expect(saved).toMatchObject({
-      practice: "部分事实仍待核实",
-      participants: [{ name: "奥比工程", responsibility: "核对设计 BOM" }],
-      systems: [{ name: "现有 ERP", method: "unknown" }],
-    });
-    expect(host.textContent).toContain("王工");
-    expect(dirty).toHaveBeenLastCalledWith(false);
-    await click("← 返回流程");
-    expect(host.textContent).toContain("已记录");
-    await click("01 需求确认 已记录 →");
-    await click("编辑");
-    await input("现状说明", "");
-    await click("保存");
-    await click("← 返回流程");
-    expect(host.textContent).not.toContain("已记录");
+  await click("完成阶段");
+  expect(detail.stages[0].status).toBe("done");
+  await click("重新打开阶段");
+  expect(detail.stages[0].status).toBe("doing");
+});
+it("creates assigned dated priority confirmations and completes/reopens", async () => {
+  await mount();
+  await open();
+  await click("新建事项");
+  await field("事项标题", "确认客户样机");
+  await field("事项类型", "confirmation");
+  await field("事项负责人", "陈工");
+  await field("事项日期", "2026-11-03");
+  await field("事项优先级", "urgent");
+  await field("事项说明", "核对验收依据");
+  fail = 503;
+  await click("创建事项");
+  await click("创建事项");
+  const posts = requests.filter(
+    (r) => r.path.endsWith("/tasks") && r.method === "POST",
+  );
+  expect(posts[0].body).toEqual(posts[1].body);
+  expect(detail.tasks[0]).toMatchObject({
+    kind: "confirmation",
+    owner: "陈工",
+    due_date: "2026-11-03",
+    priority: "urgent",
   });
-  it("retains unsaved practice on save failure and CAS conflict with explicit reload choice", async () => {
-    await mount();
-    await open();
-    await click("编辑");
-    await input("现状说明", "本地草稿");
-    failSave = 503;
-    await click("保存");
-    expect(
-      (
-        host.querySelector(
-          'textarea[aria-label="现状说明"]',
-        ) as HTMLTextAreaElement
-      ).value,
-    ).toBe("本地草稿");
-    expect(host.textContent).toContain("尚未保存");
-    failSave = 409;
-    await click("保存");
-    expect(host.textContent).toContain("内容已更新");
-    expect(host.textContent).toContain("保留草稿");
-    await click("保留草稿");
-    expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(
-      "本地草稿",
-    );
-    await click("保存");
-    await click("放弃草稿并重新读取");
-    expect(host.querySelector('textarea[aria-label="现状说明"]')).toBeNull();
+  await click("完成事项");
+  expect(detail.tasks[0].status).toBe("done");
+  await click("重新打开事项");
+  expect(detail.tasks[0].status).toBe("todo");
+});
+it("retains the dirty stage while reading and guards leaving", async () => {
+  await mount();
+  await open();
+  await click("编辑阶段");
+  await field("阶段说明", "还未保存");
+  await click("了解这个阶段");
+  expect(renderMarkdown.mock.calls.at(-1)[1].markdown).toContain("## 5. S1");
+  expect(host.textContent).toContain("2026-10-26");
+  await click("返回工作内容");
+  expect(
+    (host.querySelector('[aria-label="阶段说明"]') as HTMLTextAreaElement)
+      .value,
+  ).toBe("还未保存");
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  await click("返回项目列表");
+  expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+  await click("继续编辑");
+  const event = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+});
+it("uses renderer handles and fixed workflow links, with no raw markdown fallback", async () => {
+  await mount();
+  await click("制造手册");
+  expect(renderMarkdown).toHaveBeenCalled();
+  await act(async () =>
+    (host.querySelector(".mf-article a") as HTMLAnchorElement).click(),
+  );
+  await flush();
+  expect(requests.some((r) => r.path.includes("document=workflow"))).toBe(true);
+  expect(retires.some((fn) => fn.mock.calls.length)).toBe(true);
+  await click("工作台");
+  expect(retires.at(-1)).toHaveBeenCalledTimes(1);
+  await mount({ renderMarkdown: undefined });
+  await click("制造手册");
+  expect(host.textContent).toContain("阅读组件暂不可用");
+  expect(host.querySelector(".mf-article")?.textContent || "").not.toContain(
+    "##",
+  );
+});
+it("archives via core CAS and disables all mutations when read-only", async () => {
+  await mount();
+  await open();
+  await click("归档项目");
+  expect(requests.find((r) => r.method === "PATCH").body).toEqual({
+    expected_version: 1,
+    archived: true,
   });
-  it("protects dirty back navigation, notifies host, and prevents unload", async () => {
-    await mount();
-    await open();
-    await click("编辑");
-    await input("现状说明", "草稿");
-    expect(dirty).toHaveBeenLastCalledWith(true);
-    const event = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(true);
-    await click("← 返回流程");
-    expect(host.querySelector('[role="dialog"]')).not.toBeNull();
-    await click("继续编辑");
-    expect(host.querySelector("textarea")).not.toBeNull();
-    await click("← 返回流程");
-    await click("放弃并离开");
-    expect(host.textContent).toContain("大制造");
-    expect(dirty).toHaveBeenLastCalledWith(false);
+  await mount({ readOnly: true });
+  expect(button("恢复项目").disabled).toBe(true);
+  expect(button("编辑阶段").disabled).toBe(true);
+  expect(button("新建事项").disabled).toBe(true);
+  expect(button("新建项目").disabled).toBe(true);
+});
+it("uses the actual handbook workflow link and retires late unauthorized document responses on leaving", async () => {
+  const auth = vi.fn();
+  await mount({ onAuthError: auth });
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let resolve!: (r: Response) => void;
+  let signal: AbortSignal | undefined;
+  vi.mocked(fetch).mockImplementation((...args) => {
+    if (String(args[0]).includes("/handbook")) {
+      signal = args[1]?.signal as AbortSignal;
+      return new Promise((r) => {
+        resolve = r;
+      });
+    }
+    return original(...args);
   });
-  it("retries task creation with same UUID and allows edit, completion, reopen", async () => {
-    await mount();
-    await open();
-    await input("新待办", "确认供应商交期");
-    failTask = 1;
-    await click("添加待办");
-    expect(host.textContent).toContain("尚未保存");
-    await click("添加待办");
-    const bodies = requests
-      .filter((r) => r.method === "POST")
-      .map((r) => r.body);
-    expect(bodies[0].operation_id).toBe(bodies[1].operation_id);
-    expect(bodies[0].operation_id).toMatch(/^[0-9a-f-]{36}$/);
-    await click("修改待办");
-    await input("待办标题", "确认原始交期依据");
-    await click("保存待办");
-    expect(tasks[0].title).toBe("确认原始交期依据");
-    await click("标记完成");
-    expect(tasks[0].completed).toBe(true);
-    expect(host.textContent).toContain("已完成（1）");
-    await click("重新打开");
-    expect(tasks[0].completed).toBe(false);
-    expect(
-      requests.find((r) => r.method === "PATCH")?.body.expected_version,
-    ).toBe(1);
+  await click("制造手册");
+  await click("工作台");
+  expect(signal?.aborted).toBe(true);
+  await act(async () => resolve(response({}, 403)));
+  await flush();
+  expect(auth).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("无权访问");
+});
+it("preserves S2 selection, filters and a project form draft when consulting the handbook", async () => {
+  await mount();
+  await open();
+  await click("S2工程准备未开始");
+  await click("编辑阶段");
+  await field("阶段说明", "工程阶段草稿");
+  await click("了解这个阶段");
+  expect(renderMarkdown.mock.calls.at(-1)[1].markdown).toContain("S2 工程");
+  await click("返回工作内容");
+  expect(
+    (host.querySelector('[aria-label="阶段说明"]') as HTMLTextAreaElement)
+      .value,
+  ).toBe("工程阶段草稿");
+  expect(host.querySelector('[aria-current="step"]')?.textContent).toContain(
+    "S2",
+  );
+  await click("返回项目列表");
+  await click("放弃并离开");
+  await click("新建项目");
+  await field("项目名称", "保存中的相机");
+  await click("制造手册");
+  await click("返回工作内容");
+  expect(
+    (host.querySelector('[aria-label="项目名称"]') as HTMLInputElement).value,
+  ).toBe("保存中的相机");
+  expect(dirty).toHaveBeenLastCalledWith(true);
+});
+it("filters real items by type/status/business and locates their project stage", async () => {
+  detail.tasks = [
+    {
+      id: "t1",
+      project_id: "p1",
+      stage_id: "S2",
+      title: "核对测试版本",
+      kind: "issue",
+      owner: "陈工",
+      priority: "high",
+      status: "blocked",
+      due_date: "2026-11-01",
+      notes: "版本缺失",
+      version: 1,
+    },
+  ];
+  await mount();
+  await click("事项");
+  expect(host.textContent).toContain("核对测试版本");
+  await field("筛选事项类型", "confirmation");
+  expect(host.textContent).toContain("没有符合筛选的事项");
+  await field("筛选事项类型", "issue");
+  await click("核对测试版本");
+  expect(host.querySelector('[aria-current="step"]')?.textContent).toContain(
+    "S2",
+  );
+  expect(host.querySelector(".mf-task-highlight")?.textContent).toContain(
+    "核对测试版本",
+  );
+  await click("编辑事项");
+  await field("事项类型", "task");
+  await field("事项状态", "doing");
+  await field("事项日期", "");
+  await field("事项优先级", "normal");
+  await click("保存事项");
+  expect(detail.tasks[0]).toMatchObject({
+    kind: "task",
+    status: "doing",
+    due_date: null,
+    priority: "normal",
   });
-  it("keeps old content on read failures and disables writes for read-only", async () => {
-    saved = { ...empty(), practice: "已了解的事实", version: 1 };
-    await mount({ readOnly: true });
-    await click("01 需求确认 已记录 →");
-    expect(host.textContent).toContain("已了解的事实");
-    expect(button("编辑").disabled).toBe(true);
-    expect(button("添加待办").disabled).toBe(true);
-    failRead = 503;
-    await click("重新读取");
-    expect(host.textContent).toContain("已了解的事实");
-    expect(host.textContent).toContain("读取失败");
-    failRead = 0;
-    await click("重试读取");
-    expect(host.textContent).toContain("已了解的事实");
+});
+it("keeps creation content locked after ambiguous failure until explicit cancellation", async () => {
+  await mount();
+  await click("新建项目");
+  await field("项目名称", "第一项");
+  await field("项目负责人", "王工");
+  fail = 503;
+  await click("创建项目");
+  expect(
+    (host.querySelector('[aria-label="项目名称"]') as HTMLInputElement).closest(
+      "fieldset",
+    )?.disabled,
+  ).toBe(true);
+  await click("取消本次创建");
+  await click("新建项目");
+  await field("项目名称", "第二项");
+  await field("项目负责人", "李工");
+  await click("创建项目");
+  const posts = requests.filter((r) => r.method === "POST");
+  expect(posts[0].body.operation_id).not.toBe(posts[1].body.operation_id);
+  expect(detail.project.name).toBe("第二项");
+});
+it("preserves independent stage drafts when adding an item without forcing loss", async () => {
+  await mount();
+  await open();
+  await click("编辑阶段");
+  await field("阶段说明", "阶段草稿");
+  await click("新建事项");
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  await field("事项标题", "独立保存事项");
+  await click("创建事项");
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  expect(
+    (host.querySelector('[aria-label="阶段说明"]') as HTMLTextAreaElement)
+      .value,
+  ).toBe("阶段草稿");
+  expect(detail.stages[0].practice).toBe("");
+});
+it("does not navigate on a project save response after its form was explicitly discarded", async () => {
+  await mount();
+  await click("新建项目");
+  await field("项目名称", "晚到的响应");
+  await field("项目负责人", "王工");
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let finish!: () => void;
+  const wait = new Promise<void>((r) => {
+    finish = r;
   });
-  it("clears loaded sensitive content and informs host on auth failure", async () => {
-    const onAuthError = vi.fn();
-    saved = { ...empty(), practice: "敏感记录", version: 1 };
-    await mount({ onAuthError });
-    await click("01 需求确认 已记录 →");
-    failRead = 403;
-    await click("重新读取");
-    expect(host.textContent).not.toContain("敏感记录");
-    expect(host.textContent).toContain("无权访问");
-    expect(onAuthError).toHaveBeenCalledTimes(1);
+  vi.mocked(fetch).mockImplementation(async (...args) => {
+    const result = await original(...args);
+    if (args[1]?.method === "POST") await wait;
+    return result;
   });
-  it("does not leak persisted scope into another business line", async () => {
-    saved = { ...empty(), practice: "相机业务专属", version: 1 };
-    await mount();
-    await click("01 需求确认 已记录 →");
-    await click("← 返回流程");
-    await click("3D 打印机");
-    await open();
-    expect(host.textContent).not.toContain("相机业务专属");
-    expect(host.textContent).toContain("尚未记录");
-  });
-  it("edits and removes all relation types in one draft and cancels without persistence", async () => {
-    await mount();
-    await open();
-    await click("编辑关系");
-    await click("添加参与方");
-    await input("参与方 1 名称", "研发");
-    await click("添加交接资料");
-    await input("交接资料 1 资料或数据名", "工程 BOM");
-    await input("交接资料 1 版本/依据", "A版，待批准");
-    await click("添加系统");
-    await input("系统 1 名称", "MES");
-    await click("保存现状与关系");
-    expect(saved.handoffs[0]).toMatchObject({
-      name: "工程 BOM",
-      version_reference: "A版，待批准",
-    });
-    expect(saved.practice).toBe("");
-    await click("编辑关系");
-    await input("参与方 1 责任", "修改草稿");
-    await click("移除系统 1");
-    await click("取消");
-    expect(saved.systems).toHaveLength(1);
-    expect(saved.participants[0].responsibility).toBe("");
-    await click("编辑关系");
-    await click("移除参与方 1");
-    await click("移除交接资料 1");
-    await click("移除系统 1");
-    await click("保存现状与关系");
-    expect(saved.participants).toEqual([]);
-    expect(saved.handoffs).toEqual([]);
-    expect(saved.systems).toEqual([]);
-  });
-  it("retains failed task updates and expected_version on conflict", async () => {
-    tasks = [{ id: "t1", title: "原始待办", completed: false, version: 4 }];
-    await mount();
-    await click("01 需求确认 未记录 · 1 项待办 →");
-    await click("修改待办");
-    await input("待办标题", "需要核对的标题");
-    failSave = 409;
-    await click("保存待办");
-    await click("保留草稿");
-    expect(
-      (host.querySelector('input[aria-label="待办标题"]') as HTMLInputElement)
-        .value,
-    ).toBe("需要核对的标题");
-    expect(tasks[0].title).toBe("原始待办");
-    expect(
-      requests.find((r) => r.method === "PATCH")?.body.expected_version,
-    ).toBe(4);
-  });
-  it("saves a draft before leaving and keeps selection and shell scroll position", async () => {
-    await mount();
-    host.scrollTop = 265;
-    await open();
-    await click("编辑");
-    await input("现状说明", "保存后返回");
-    await click("← 返回流程");
-    await click("保存并返回");
-    expect(saved.practice).toBe("保存后返回");
-    expect(host.scrollTop).toBe(265);
-    expect(host.querySelector('button[aria-pressed="true"]')?.textContent).toBe(
-      "自研相机",
-    );
-  });
-  it("puts conflict choices in keyboard focus and Escape preserves the draft", async () => {
-    await mount();
-    await open();
-    await click("编辑");
-    await input("现状说明", "键盘草稿");
-    failSave = 409;
-    await click("保存");
-    const dialog = host.querySelector('[role="dialog"]')!;
-    expect(dialog.contains(document.activeElement)).toBe(true);
-    await act(async () =>
-      document.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-      ),
-    );
-    expect(host.querySelector('[role="dialog"]')).toBeNull();
-    expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(
-      "键盘草稿",
-    );
-  });
-  it("creates a fresh task operation if a failed title is deliberately changed", async () => {
-    await mount();
-    await open();
-    await input("新待办", "原始标题");
-    failTask = 1;
-    await click("添加待办");
-    await input("新待办", "新标题");
-    await click("添加待办");
-    const bodies = requests
-      .filter((r) => r.method === "POST")
-      .map((r) => r.body);
-    expect(bodies[0].operation_id).not.toBe(bodies[1].operation_id);
-    expect(tasks[0].title).toBe("新标题");
-  });
-
-  it("identifies a task save separately while a record draft remains unsaved", async () => {
-    await mount();
-    await open();
-    await click("编辑");
-    await input("现状说明", "未保存现状");
-    await input("新待办", "单独保存待办");
-    await click("添加待办");
-    expect(host.textContent).toContain("待办已保存");
-    expect(dirty).toHaveBeenLastCalledWith(true);
-    expect(saved.practice).toBe("");
-    expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(
-      "未保存现状",
-    );
-  });
-  it("prevents draft edits while an explicit reload is in flight", async () => {
-    await mount();
-    await open();
-    await click("编辑");
-    await input("现状说明", "先核对本地草稿");
-    await click("重新读取");
-    const original = vi.mocked(fetch).getMockImplementation()!;
-    let finish!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
-    vi.mocked(fetch).mockImplementation(async (...args) => {
-      await pending;
-      return original(...args);
-    });
-    await click("放弃草稿并重新读取");
-    expect(
-      (
-        host.querySelector(
-          'textarea[aria-label="现状说明"]',
-        ) as HTMLTextAreaElement
-      ).disabled,
-    ).toBe(true);
-    await act(async () => {
-      finish();
-    });
-    await flush();
-  });
-  it.each(["practice", "relationships", "new task", "task edit"])(
-    "confirms retry reads before discarding a %s draft",
-    async (kind) => {
-      if (kind === "task edit")
-        tasks = [{ id: "t1", title: "待核对", completed: false, version: 1 }];
-      await mount();
-      await click(
-        kind === "task edit"
-          ? "01 需求确认 未记录 · 1 项待办 →"
-          : "01 需求确认 未记录 →",
-      );
-      failRead = 503;
-      await click("重新读取");
-      failRead = 0;
-      if (kind === "practice") {
-        await click("编辑");
-        await input("现状说明", "本地现状");
-      }
-      if (kind === "relationships") {
-        await click("编辑关系");
-        await click("添加参与方");
-        await input("参与方 1 名称", "本地参与方");
-      }
-      if (kind === "new task") {
-        await input("新待办", "待确认标题");
-        failTask = 1;
-        await click("添加待办");
-      }
-      if (kind === "task edit") {
-        await click("修改待办");
-        await input("待办标题", "本地标题");
-      }
-      const readCount = requests.filter((r) => r.method === "GET").length;
-      await click("重试读取");
-      expect(requests.filter((r) => r.method === "GET")).toHaveLength(
-        readCount,
-      );
-      expect(host.querySelector('[role="dialog"]')).not.toBeNull();
-      await click("保留草稿");
-      expect(dirty).toHaveBeenLastCalledWith(true);
-      if (kind === "new task") {
-        await click("添加待办");
-        const posts = requests.filter((r) => r.method === "POST");
-        expect(posts).toHaveLength(2);
-        expect(posts[0].body.operation_id).toBe(posts[1].body.operation_id);
-      }
+  await click("创建项目");
+  await click("工作台");
+  await click("放弃并离开");
+  await act(async () => finish());
+  await flush();
+  expect(host.querySelector(".mf-phase-rail")).toBeNull();
+  expect(host.querySelector(".mf-home-grid")).not.toBeNull();
+  await click("制造项目");
+  expect(host.querySelector(".mf-project-table")).not.toBeNull();
+  expect(host.querySelector(".mf-phase-rail")).toBeNull();
+});
+it("preserves the renderer heading slugs and follows named hashes inside only the current article", async () => {
+  await mount();
+  const scrollToHeading = vi.fn();
+  renderMarkdown.mockImplementationOnce(
+    (element: HTMLElement, options: any) => {
+      const heading = document.createElement("h2");
+      heading.id = "named-heading";
+      heading.textContent = "命名标题";
+      heading.scrollIntoView = scrollToHeading;
+      const link = document.createElement("a");
+      link.href = "#named-heading";
+      link.textContent = "章节内定位";
+      element.replaceChildren(heading, link);
+      return { unmount: vi.fn() };
     },
   );
-  it("blocks retry reads during a pending write and locks repeated retry requests", async () => {
+  await click("制造手册");
+  expect(renderMarkdown.mock.calls.at(-1)[1].headingIds).toBeUndefined();
+  const link = host.querySelector(".mf-article a")!;
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+  await act(async () => link.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(scrollToHeading).toHaveBeenCalledWith({ block: "start" });
+});
+it("retires each chapter renderer and rejects an older document after switching documents", async () => {
+  await mount();
+  await click("制造手册");
+  const first = retires.at(-1);
+  await click("5. S1 需求");
+  expect(first).toHaveBeenCalledTimes(1);
+  const old = renderMarkdown.mock.calls.length;
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let finish!: (r: Response) => void;
+  vi.mocked(fetch).mockImplementation((...args) =>
+    String(args[0]).includes("document=workflow")
+      ? new Promise((r) => {
+          finish = r;
+        })
+      : original(...args),
+  );
+  await click("工作流总览");
+  await click("系统手册");
+  await act(async () =>
+    finish(
+      response({
+        title: "迟到的旧资料",
+        markdown: "# 过期正文",
+        updated_at: "old",
+        source_path: "old",
+        release: "v2",
+      }),
+    ),
+  );
+  await flush();
+  expect(host.textContent).not.toContain("迟到的旧资料");
+  expect(renderMarkdown.mock.calls.length).toBeGreaterThan(old);
+  expect(renderMarkdown.mock.calls.at(-1)[1].markdown).not.toContain(
+    "过期正文",
+  );
+});
+it("retains a failed task edit and core CAS draft until explicitly reloaded", async () => {
+  detail.tasks = [
+    {
+      id: "t1",
+      project_id: "p1",
+      stage_id: "S1",
+      title: "原事项",
+      kind: "issue",
+      owner: "王工",
+      due_date: null,
+      priority: "high",
+      notes: "原说明",
+      status: "todo",
+      version: 4,
+    },
+  ];
+  await mount();
+  await open();
+  await click("编辑事项");
+  await field("事项标题", "本地事项草稿");
+  fail = 409;
+  await click("保存事项");
+  expect(
+    (host.querySelector('[aria-label="事项标题"]') as HTMLInputElement).value,
+  ).toBe("本地事项草稿");
+  expect(
+    requests.find((r) => r.path.endsWith("/tasks/t1") && r.method === "PATCH")
+      .body.expected_version,
+  ).toBe(4);
+  await click("保留草稿");
+  await click("取消事项编辑");
+  await click("编辑项目资料");
+  await field("项目负责人", "新负责人");
+  fail = 409;
+  await click("保存项目");
+  expect(
+    (host.querySelector('[aria-label="项目负责人"]') as HTMLInputElement).value,
+  ).toBe("新负责人");
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  await click("放弃草稿并重新读取");
+  await click("放弃并离开");
+  expect(host.querySelector('[aria-label="项目负责人"]')).toBeNull();
+  expect(host.textContent).toContain("负责人 王工");
+});
+it("keeps write controls disabled when read-only changes during stage and item editing", async () => {
+  await mount();
+  await open();
+  await click("编辑阶段");
+  await click("新建事项");
+  await mount({ readOnly: true });
+  for (const label of [
+    "保存阶段",
+    "创建事项",
+    "添加参与方",
+    "采用参考关系并核对",
+    "归档项目",
+  ])
+    expect(button(label).disabled, label).toBe(true);
+  expect(
+    (
+      host.querySelector('[aria-label="阶段状态"]') as HTMLSelectElement
+    ).closest("fieldset")?.disabled,
+  ).toBe(true);
+  expect(
+    (host.querySelector('[aria-label="事项标题"]') as HTMLInputElement).closest(
+      "fieldset",
+    )?.disabled,
+  ).toBe(true);
+});
+it("preserves a core draft and its original CAS when another child save refreshes a newer server core", async () => {
+  await mount();
+  await open();
+  await click("编辑项目资料");
+  await field("项目负责人", "本地责任人");
+  await click("新建事项");
+  await field("事项标题", "并行登记事项");
+  detail.project = { ...detail.project, owner: "另一位操作者", version: 2 };
+  await click("创建事项");
+  expect(
+    (host.querySelector('[aria-label="项目负责人"]') as HTMLInputElement).value,
+  ).toBe("本地责任人");
+  fail = 409;
+  await click("保存项目");
+  const patch = requests.find(
+    (r) => r.method === "PATCH" && r.path === "/projects/p1",
+  );
+  expect(patch.body.expected_version).toBe(1);
+  expect(dirty).toHaveBeenLastCalledWith(true);
+});
+it("adopts reference relationships only by explicit action and saves all relation types in one stage CAS", async () => {
+  await mount();
+  await open();
+  expect(detail.stages[0].participants).toEqual([]);
+  await click("编辑阶段");
+  await click("采用参考关系并核对");
+  await click("保存阶段");
+  const write = requests.find((r) => r.method === "PUT");
+  expect(write.body).toMatchObject({
+    expected_version: 1,
+    status: "todo",
+    owner: "",
+    due_date: null,
+    blocker: "",
+    practice: "",
+  });
+  expect(write.body.participants).toEqual(
+    catalog.stages[0].reference_participants,
+  );
+  expect(write.body.handoffs).toEqual(catalog.stages[0].reference_handoffs);
+  expect(write.body.systems).toEqual(catalog.stages[0].reference_systems);
+  expect(host.textContent).toContain("关系登记，尚未验证连接");
+  expect(requests.filter((r) => r.method === "PUT")).toHaveLength(1);
+});
+it("filters project groups, lines, states and archived records identically across list and board", async () => {
+  projects.push({
+    ...summary(),
+    id: "p2",
+    name: "客户 OEM 交付",
+    line_id: "oem",
+    line_name: "OEM 代工代料",
+    group_id: "external",
+    owner: "李工",
+    status: "blocked",
+  });
+  projects.push({
+    ...summary(),
+    id: "p3",
+    name: "旧项目",
+    status: "archived",
+    archived: true,
+  });
+  await mount();
+  expect(
+    [...host.querySelectorAll(".mf-summary-strip strong")].map(
+      (e) => e.textContent,
+    ),
+  ).toEqual(["7", "2", "3", "11"]);
+  await click("制造项目");
+  await field("业务归属", "external");
+  await field("项目业务线", "oem");
+  await field("项目状态", "blocked");
+  expect(host.querySelectorAll(".mf-project-row")).toHaveLength(1);
+  expect(host.querySelector(".mf-project-row")?.textContent).toContain(
+    "客户 OEM 交付",
+  );
+  await click("看板");
+  expect(host.querySelectorAll(".mf-project-card")).toHaveLength(1);
+  await field("业务归属", "");
+  await field("项目状态", "archived");
+  expect(host.querySelectorAll(".mf-project-card")).toHaveLength(1);
+  expect(host.querySelector(".mf-project-card")?.textContent).toContain(
+    "旧项目",
+  );
+});
+it("requires a real blocker before a stage can be saved as blocked", async () => {
+  await mount();
+  await open();
+  await click("标记受阻");
+  expect(button("保存阶段").disabled).toBe(true);
+  await click("保存阶段");
+  expect(requests.filter((r) => r.method === "PUT")).toHaveLength(0);
+  await field("受阻原因", "供应商版本不一致");
+  await click("保存阶段");
+  expect(detail.stages[0].status).toBe("blocked");
+  expect(detail.stages[0].blocker).toBe("供应商版本不一致");
+});
+it("keeps the same pending item operation across handbook visits and locks duplicate submissions", async () => {
+  await mount();
+  await open();
+  await click("新建事项");
+  await field("事项标题", "确认原始依据");
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let finish!: () => void;
+  const wait = new Promise<void>((r) => {
+    finish = r;
+  });
+  vi.mocked(fetch).mockImplementation(async (...args) => {
+    if (args[1]?.method === "POST") {
+      await wait;
+      return response({}, 503);
+    }
+    return original(...args);
+  });
+  const create = button("创建事项");
+  await act(async () => {
+    create.click();
+    create.click();
+  });
+  expect(create.disabled).toBe(true);
+  await act(async () => finish());
+  await flush();
+  vi.mocked(fetch).mockImplementation(original);
+  await click("制造手册");
+  await click("返回工作内容");
+  await click("创建事项");
+  expect(detail.tasks[0].title).toBe("确认原始依据");
+  const calls = vi
+    .mocked(fetch)
+    .mock.calls.filter((c) => c[1]?.method === "POST");
+  expect(calls).toHaveLength(2);
+  expect(JSON.parse(calls[0][1]!.body as string)).toEqual(
+    JSON.parse(calls[1][1]!.body as string),
+  );
+});
+it("scrolls an attention item into view inside its selected project phase", async () => {
+  const old = HTMLElement.prototype.scrollIntoView;
+  const scroll = vi.fn();
+  HTMLElement.prototype.scrollIntoView = scroll;
+  try {
+    detail.tasks = [
+      {
+        id: "attention-task",
+        project_id: "p1",
+        stage_id: "S2",
+        title: "待确认的工程版本",
+        kind: "confirmation",
+        status: "todo",
+        priority: "high",
+        owner: "王工",
+        due_date: null,
+        notes: "",
+        version: 1,
+      },
+    ];
+    await mount();
+    await click("待确认的工程版本");
+    expect(host.querySelector('[aria-current="step"]')?.textContent).toContain(
+      "S2",
+    );
+    expect(scroll).toHaveBeenCalledWith({ block: "center" });
+  } finally {
+    HTMLElement.prototype.scrollIntoView = old;
+  }
+});
+it("maps the workflow handbook backlink and prevents broken unpublished relative reference navigation", async () => {
+  await mount();
+  renderMarkdown.mockImplementation((element: HTMLElement) => {
+    const backlink = document.createElement("a");
+    backlink.href = "../manufacturing-system-handbook.md";
+    backlink.textContent = "系统学习手册";
+    const reference = document.createElement("a");
+    reference.href =
+      "../../knowledge/01-foundations/01-manufacturing-process.md";
+    reference.textContent = "制造过程知识";
+    const external = document.createElement("a");
+    external.href = "https://example.com/source";
+    external.textContent = "外部来源";
+    element.replaceChildren(backlink, reference, external);
+    return { unmount: () => element.replaceChildren() };
+  });
+  await click("制造手册");
+  await click("工作流总览");
+  const reference = [...host.querySelectorAll(".mf-article a")].find(
+    (a) => a.textContent === "制造过程知识",
+  )!;
+  const broken = new MouseEvent("click", { bubbles: true, cancelable: true });
+  await act(async () => reference.dispatchEvent(broken));
+  expect(broken.defaultPrevented).toBe(true);
+  expect(host.textContent).toContain("尚未纳入本次发布");
+  const before = requests.filter((r) =>
+    r.path.includes("document=handbook"),
+  ).length;
+  const backlink = [...host.querySelectorAll(".mf-article a")].find(
+    (a) => a.textContent === "系统学习手册",
+  )!;
+  const back = new MouseEvent("click", { bubbles: true, cancelable: true });
+  await act(async () => backlink.dispatchEvent(back));
+  await flush();
+  expect(back.defaultPrevented).toBe(true);
+  expect(
+    requests.filter((r) => r.path.includes("document=handbook")),
+  ).toHaveLength(before + 1);
+  const external = host.querySelector('.mf-article a[href^="https:"]')!;
+  let policyPreserved = false;
+  const prevent = (e: Event) => {
+    policyPreserved = !e.defaultPrevented;
+    e.preventDefault();
+  };
+  host.addEventListener("click", prevent);
+  await act(async () =>
+    external.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    ),
+  );
+  host.removeEventListener("click", prevent);
+  expect(policyPreserved).toBe(true);
+});
+it("executes the requested phase selection after discarding a phase draft without remounting its owner", async () => {
+  await mount();
+  await open();
+  await click("编辑阶段");
+  await field("阶段说明", "放弃的 S1 草稿");
+  await click("S2工程准备未开始");
+  await click("放弃并离开");
+  expect(host.querySelector('[aria-current="step"]')?.textContent).toContain(
+    "S2",
+  );
+  expect(host.querySelector(".mf-stage-workspace h2")?.textContent).toBe(
+    "工程准备",
+  );
+  expect(host.querySelector('[aria-label="阶段说明"]')).toBeNull();
+  expect(detail.stages[0].practice).toBe("");
+  expect(dirty).toHaveBeenLastCalledWith(false);
+});
+it("executes item changes after discard and keeps mutation failures visible in the live detail", async () => {
+  detail.tasks = [
+    {
+      id: "t1",
+      project_id: "p1",
+      stage_id: "S1",
+      title: "已有事项",
+      kind: "task",
+      status: "todo",
+      priority: "normal",
+      owner: "王工",
+      due_date: null,
+      notes: "",
+      version: 1,
+    },
+  ];
+  await mount();
+  await open();
+  await click("编辑阶段");
+  await field("阶段说明", "需要放弃的草稿");
+  fail = 503;
+  await click("完成事项");
+  await click("放弃并离开");
+  expect(
+    requests.filter(
+      (r) => r.method === "PATCH" && r.path.endsWith("/tasks/t1"),
+    ),
+  ).toHaveLength(1);
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "尚未保存",
+  );
+  expect(host.textContent).toContain("已有事项");
+  await click("完成事项");
+  expect(detail.tasks[0].status).toBe("done");
+  expect(host.textContent).toContain("重新打开事项");
+});
+it("opens the requested replacement item editor after discarding an existing item draft", async () => {
+  detail.tasks = [
+    {
+      id: "t1",
+      project_id: "p1",
+      stage_id: "S1",
+      title: "已有事项",
+      kind: "task",
+      status: "todo",
+      priority: "normal",
+      owner: "",
+      due_date: null,
+      notes: "",
+      version: 1,
+    },
+  ];
+  await mount();
+  await open();
+  await click("编辑事项");
+  await field("事项标题", "未保存的修改");
+  await click("新建事项");
+  await click("放弃并离开");
+  expect(host.querySelector(".mf-task-editor h3")?.textContent).toBe(
+    "新建事项",
+  );
+  expect(
+    (host.querySelector('[aria-label="事项标题"]') as HTMLInputElement).value,
+  ).toBe("");
+});
+it("treats a successful item POST as committed when detail refresh fails and retries only the read", async () => {
+  await mount();
+  await open();
+  await click("新建事项");
+  await field("事项标题", "只应创建一次");
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let committed = false,
+    failedRead = false;
+  vi.mocked(fetch).mockImplementation(async (...args) => {
+    if (
+      String(args[0]) === "/api/projects/p1" &&
+      (!args[1]?.method || args[1].method === "GET") &&
+      committed &&
+      !failedRead
+    ) {
+      failedRead = true;
+      return response({}, 503);
+    }
+    const result = await original(...args);
+    if (args[1]?.method === "POST") committed = true;
+    return result;
+  });
+  await click("创建事项");
+  expect(host.querySelector('[aria-label="事项标题"]')).toBeNull();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "读取失败",
+  );
+  expect(host.querySelector('[role="alert"]')?.textContent).not.toContain(
+    "尚未保存",
+  );
+  await click("重试读取项目");
+  expect(host.textContent).toContain("只应创建一次");
+  expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+  expect(detail.tasks).toHaveLength(1);
+});
+it("offers an unconditional truthful retry when the first project GET fails", async () => {
+  await mount();
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let failed = false;
+  vi.mocked(fetch).mockImplementation((...args) => {
+    if (String(args[0]) === "/api/projects/p1" && !failed) {
+      failed = true;
+      return Promise.resolve(response({}, 503));
+    }
+    return original(...args);
+  });
+  await open();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "读取失败",
+  );
+  expect(host.querySelector('[role="alert"]')?.textContent).not.toContain(
+    "尚未保存",
+  );
+  await click("重试读取项目");
+  expect(host.querySelector(".mf-phase-rail")).not.toBeNull();
+});
+it.each([
+  ["initial", 200],
+  ["initial", 503],
+  ["stage save", 200],
+  ["stage save", 503],
+  ["retry", 200],
+  ["retry", 503],
+] as const)(
+  "retires a late %s detail response (%s) after an independent task save",
+  async (source, status) => {
+    const api = createApi({
+      apiBase: "/api",
+      csrfToken: "csrf",
+      readOnly: false,
+    });
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    let holdNext = source === "initial",
+      failNext = false,
+      release!: () => void;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    const held = vi.fn();
+    vi.mocked(fetch).mockImplementation(async (...args) => {
+      if (String(args[0]) === "/api/projects/p1" && args[1]?.method === "GET") {
+        if (failNext) {
+          failNext = false;
+          return response({}, 503);
+        }
+        if (holdNext) {
+          holdNext = false;
+          const snapshot = await original(...args);
+          held();
+          await pending;
+          return status === 200 ? snapshot : response({}, status);
+        }
+      }
+      return original(...args);
+    });
+    try {
+      await act(async () =>
+        root.render(
+          <ProjectDetail
+            api={api}
+            draftEpoch={0}
+            id="p1"
+            initial={structuredClone(detail)}
+            catalog={catalog}
+            readOnly={false}
+            onDirty={vi.fn()}
+            onChanged={vi.fn()}
+            onBack={vi.fn()}
+            onHandbook={vi.fn()}
+            onLegacy={vi.fn()}
+            requestLeave={(action) => action()}
+          />,
+        ),
+      );
+      await flush();
+      if (source === "stage save") {
+        holdNext = true;
+        await click("开始阶段");
+      } else if (source === "retry") {
+        failNext = true;
+        await click("开始阶段");
+        expect(host.querySelector('[role="alert"]')).not.toBeNull();
+        holdNext = true;
+        await click("重试读取项目");
+      }
+      expect(held).toHaveBeenCalledTimes(1);
+      await click("新建事项");
+      await field("事项标题", "并行保存后必须保留");
+      await click("创建事项");
+      expect(host.querySelector(".mf-task strong")?.textContent).toBe(
+        "并行保存后必须保留",
+      );
+      expect(host.querySelector('[aria-label="事项标题"]')).toBeNull();
+      release();
+      await flush();
+      expect(detail.tasks).toHaveLength(1);
+      expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+      expect(host.querySelector(".mf-task strong")?.textContent).toBe(
+        "并行保存后必须保留",
+      );
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+      expect(host.textContent).not.toContain("正在读取项目");
+      expect(button("新建事项").disabled).toBe(false);
+    } finally {
+      release();
+      api.dispose();
+    }
+  },
+);
+it.each([200, 503])(
+  "retires a pending detail read (%s) when a core save returns a newer aggregate",
+  async (status) => {
     await mount();
     await open();
-    failRead = 503;
-    await click("重新读取");
-    failRead = 0;
-    await click("编辑");
-    await input("现状说明", "正在保存的现状");
     const original = vi.mocked(fetch).getMockImplementation()!;
-    let finish!: () => void;
-    let hold = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
+    let release!: () => void;
+    let holdNext = true;
+    const pending = new Promise<void>((resolve) => (release = resolve));
     vi.mocked(fetch).mockImplementation(async (...args) => {
-      const response = await original(...args);
-      await hold;
-      return response;
+      const result = await original(...args);
+      if (
+        holdNext &&
+        String(args[0]) === "/api/projects/p1" &&
+        args[1]?.method === "GET"
+      ) {
+        holdNext = false;
+        await pending;
+        return status === 200 ? result : response({}, status);
+      }
+      return result;
     });
-    await click("保存");
-    const readCount = requests.filter((r) => r.method === "GET").length;
-    expect(button("重试读取").disabled).toBe(true);
-    await click("重试读取");
-    expect(requests.filter((r) => r.method === "GET")).toHaveLength(readCount);
-    await act(async () => {
-      finish();
-    });
-    await flush();
-    hold = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
-    const retry = button("重试读取");
-    await act(async () => {
-      retry.click();
-      retry.click();
-    });
-    expect(requests.filter((r) => r.method === "GET")).toHaveLength(
-      readCount + 1,
+    await click("开始阶段");
+    await click("编辑项目资料");
+    await field("项目负责人", "新项目责任人");
+    await click("保存项目");
+    expect(host.querySelector(".mf-detail-heading")?.textContent).toContain(
+      "新项目责任人",
     );
-    await act(async () => {
-      finish();
-    });
+    release();
     await flush();
+    expect(host.querySelector(".mf-detail-heading")?.textContent).toContain(
+      "新项目责任人",
+    );
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  },
+);
+it.each([200, 503])(
+  "refreshes after a delayed core PATCH without replacing a newer task aggregate (GET %s)",
+  async (status) => {
+    await mount();
+    await open();
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    let coreReturned = false,
+      readsAfterCore = 0,
+      refreshStatus = status;
+    vi.mocked(fetch).mockImplementation(async (...args) => {
+      if (String(args[0]) === "/api/projects/p1") {
+        if (args[1]?.method === "PATCH") {
+          const snapshot = await original(...args);
+          await pending;
+          coreReturned = true;
+          return snapshot;
+        }
+        if (args[1]?.method === "GET" && coreReturned) {
+          readsAfterCore++;
+          if (refreshStatus === 503) return response({}, 503);
+        }
+      }
+      return original(...args);
+    });
+    await click("编辑项目资料");
+    await field("项目负责人", "已提交的项目责任人");
+    await click("保存项目");
+    await click("新建事项");
+    await field("事项标题", "核心响应前已保存的事项");
+    await click("创建事项");
+    expect(host.querySelector(".mf-task strong")?.textContent).toBe(
+      "核心响应前已保存的事项",
+    );
+    release();
+    await flush();
+    expect(host.querySelector(".mf-task strong")?.textContent).toBe(
+      "核心响应前已保存的事项",
+    );
+    expect(readsAfterCore).toBe(1);
+    expect(host.querySelector('[aria-label="项目负责人"]')).toBeNull();
+    if (status === 503) {
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        "读取失败",
+      );
+      expect(host.textContent).not.toContain("尚未保存");
+      refreshStatus = 200;
+      await click("重试读取项目");
+    }
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector(".mf-detail-heading")?.textContent).toContain(
+      "已提交的项目责任人",
+    );
+    expect(detail.tasks).toHaveLength(1);
+    expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(1);
+    expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+  },
+);
+it.each(["返回工作内容", "制造项目"])(
+  "restores retained work scroll when returning through %s",
+  async (label) => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    await mount();
+    await open();
+    host.scrollTop = 260;
+    const frame = host.querySelector(".mf-root") as HTMLElement;
+    frame.scrollTop = 130;
+    await click("制造手册");
+    host.scrollTop = 0;
+    frame.scrollTop = 0;
+    await click(label);
+    expect(host.scrollTop).toBe(260);
+    expect(frame.scrollTop).toBe(130);
+    expect(host.querySelector(".mf-phase-rail")).not.toBeNull();
+  },
+);
+it("never replays a committed task creation when its refresh callback rejects", async () => {
+  const api = createApi({
+    apiBase: "/api",
+    csrfToken: "csrf",
+    readOnly: false,
   });
+  const saved = vi.fn().mockRejectedValue(new Error("读取失败"));
+  const closed = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        <TaskEditor
+          api={api}
+          projectId="p1"
+          stageId="S1"
+          stages={detail.stages}
+          readOnly={false}
+          onDirty={vi.fn()}
+          onSaved={saved}
+          onCancel={closed}
+          onReload={vi.fn()}
+        />,
+      ),
+    );
+    await field("事项标题", "已经提交的事项");
+    await click("创建事项");
+    expect(host.querySelector('[aria-label="事项标题"]')).toBeNull();
+    expect(host.textContent).toContain("事项已保存");
+    expect(host.textContent).not.toContain("尚未保存");
+    await click("重试读取项目");
+    expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+    expect(saved).toHaveBeenCalledTimes(2);
+    saved.mockResolvedValue(undefined);
+    await click("重试读取项目");
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+  } finally {
+    api.dispose();
+  }
 });

@@ -1,4 +1,19 @@
 import type {
+  Dashboard,
+  ProjectSummary,
+  ProjectCreate,
+  ProjectWrite,
+  ProjectDetailData,
+  StageWrite,
+  ProjectStage,
+  FlatTask,
+  ProjectTaskCreate,
+  ProjectTaskWrite,
+  ProjectTask,
+  Handbook,
+  DocumentName,
+} from "./projects/types";
+import type {
   Catalog,
   LineOverview,
   MountOptions,
@@ -88,6 +103,41 @@ export function createApi(
       for (const controller of controllers) controller.abort();
       controllers.clear();
     },
+    dashboard: () => request<Dashboard>("/dashboard"),
+    projects: () => request<{ items: ProjectSummary[] }>("/projects"),
+    project: (id: string) =>
+      request<ProjectDetailData>(`/projects/${encodeURIComponent(id)}`),
+    createProject: (body: ProjectCreate) =>
+      request<ProjectDetailData>("/projects", "POST", body),
+    updateProject: (id: string, body: ProjectWrite) =>
+      request<ProjectDetailData>(
+        `/projects/${encodeURIComponent(id)}`,
+        "PATCH",
+        body,
+      ),
+    saveProjectStage: (id: string, stage: string, body: StageWrite) =>
+      request<ProjectStage>(
+        `/projects/${encodeURIComponent(id)}/stages/${encodeURIComponent(stage)}`,
+        "PUT",
+        body,
+      ),
+    projectTasks: () => request<{ items: FlatTask[] }>("/project-tasks"),
+    createProjectTask: (id: string, body: ProjectTaskCreate) =>
+      request<ProjectTask>(
+        `/projects/${encodeURIComponent(id)}/tasks`,
+        "POST",
+        body,
+      ),
+    updateProjectTask: (id: string, task: string, body: ProjectTaskWrite) =>
+      request<ProjectTask>(
+        `/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(task)}`,
+        "PATCH",
+        body,
+      ),
+    handbook: (document: DocumentName = "handbook", release?: string) =>
+      request<Handbook>(
+        `/handbook?document=${document}${release === undefined ? "" : `&release=${encodeURIComponent(release)}`}`,
+      ),
     catalog: () => request<Catalog>("/catalog"),
     line: (line: string) => request<LineOverview>(scope(line)),
     stage: (line: string, stage: string) =>
