@@ -9,25 +9,7 @@ import type {
 } from "./types";
 import { Field, MutationForm, type EditorHost } from "./ui";
 import { readinessKinds } from "./labels";
-export const newCheck = (
-  kind: ReadinessItem["kind"] = "version",
-): ReadinessItem => ({
-  id: crypto.randomUUID(),
-  kind,
-  label: readinessKinds[kind],
-  required: true,
-  owner: "",
-  due_date: null,
-  status: "pending",
-  evidence: "",
-  source_ref: "",
-  source_system_id: null,
-  reason: "",
-  valid_until: null,
-  package_item_id: null,
-  supply_mode: "unknown",
-  first_article_result: "unknown",
-});
+import { newCheck } from "./readinessDraft";
 export function ReadinessCreate({
   api,
   projectId,
@@ -50,15 +32,22 @@ export function ReadinessCreate({
   );
   function binding(item: ReadinessItem, packageId: string): ReadinessItem {
     const source = available.find((p) => p.id === packageId);
+    const valid =
+      source?.items.filter(
+        (i) => item.kind !== "version" || i.status === "verified",
+      ) || [];
+    const id = valid.some((i) => i.id === item.package_item_id)
+      ? item.package_item_id
+      : item.kind === "version"
+        ? valid[0]?.id || null
+        : null;
     return {
       ...item,
-      package_item_id: source?.items.some((i) => i.id === item.package_item_id)
-        ? item.package_item_id
-        : item.kind === "version"
-          ? source?.items.find((i) => i.status === "verified")?.id || null
-          : null,
+      package_item_id: id,
+      status: item.kind === "version" && !id && !old ? "na" : "pending",
     };
   }
+
   const [initial] = useState<ReadinessFields>(() => ({
     title: old?.title || "",
     package_id: available[0]?.id || "",
@@ -116,7 +105,20 @@ export function ReadinessCreate({
         initial={initial}
         changed={!!old}
         label={old ? "建立替代核对" : "建立核对"}
-        write={(body) => api.createReadiness(projectId, body)}
+        write={async (body) => {
+          if (
+            body.items.some(
+              (i) =>
+                i.kind === "version" &&
+                !i.package_item_id &&
+                (old || i.status !== "na"),
+            )
+          )
+            throw new Error("替代核对必须选择适用的冻结资料项");
+          if (body.items.some((i) => i.status === "na" && !i.reason.trim()))
+            throw new Error("不适用需填写原因");
+          return api.createReadiness(projectId, body);
+        }}
       >
         <Field
           label="核对名称"
@@ -216,17 +218,16 @@ export function ReadinessCreate({
                   value={current.kind}
                   values={readinessKinds}
                   onChange={(v) =>
-                    updateItem({
-                      kind: v as ReadinessItem["kind"],
-                      label: readinessKinds[v as ReadinessItem["kind"]],
-                      package_item_id:
-                        v === "version"
-                          ? available
-                              .find((p) => p.id === d.package_id)
-                              ?.items.find((i) => i.status === "verified")
-                              ?.id || null
-                          : null,
-                    })
+                    updateItem(
+                      binding(
+                        {
+                          ...current,
+                          kind: v as ReadinessItem["kind"],
+                          label: readinessKinds[v as ReadinessItem["kind"]],
+                        },
+                        d.package_id,
+                      ),
+                    )
                   }
                 />
                 <Field
@@ -251,14 +252,29 @@ export function ReadinessCreate({
                 label="对应冻结资料项"
                 value={current.package_item_id || ""}
                 values={{
-                  "": "无适用项（需说明不适用）",
+                  "": old
+                    ? "请选择适用的冻结资料项"
+                    : "无适用项（建立为不适用并说明原因）",
                   ...Object.fromEntries(
                     (available.find((p) => p.id === d.package_id)?.items || [])
                       .filter((i) => i.status === "verified")
                       .map((i) => [i.id, `${i.title} / ${i.revision}`]),
                   ),
                 }}
-                onChange={(v) => updateItem({ package_item_id: v || null })}
+                onChange={(v) =>
+                  updateItem({
+                    package_item_id: v || null,
+                    status: !v && !old ? "na" : "pending",
+                  })
+                }
+              />
+            )}
+            {current.status === "na" && (
+              <Field
+                label="不适用原因"
+                required
+                value={current.reason}
+                onChange={(v) => updateItem({ reason: v })}
               />
             )}
             <Field
@@ -267,7 +283,7 @@ export function ReadinessCreate({
               onChange={(v) => updateItem({ owner: v })}
             />
             <p className="mf-muted">
-              建立后从待核对开始；凭据、来源、有效期等在选定项目中逐项登记。
+              适用项从待核对开始；明确不适用需在建立时记录原因。凭据等后续逐项登记。
             </p>
           </>
         )}

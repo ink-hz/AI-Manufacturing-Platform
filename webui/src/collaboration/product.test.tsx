@@ -1037,3 +1037,43 @@ it("selects a real line-scoped source system by name instead of asking for an in
       .source_system_id,
   ).toBe("s1");
 });
+it("creates an explicitly unbound version check as documented NA immediately", async () => {
+  packages = [pkg()];
+  await mount();
+  await openTab("生产准备");
+  await click("新建准备核对");
+  await field("核对名称", "无适用版本");
+  await field("工单编号", "WO1");
+  await field("执行范围", "首批");
+  await field("计划使用日期", "2026-11-01");
+  await field("核对负责人", "王工");
+  await field("对应冻结资料项", "");
+  await field("不适用原因", "此范围无该版本资料要求");
+  await click("建立核对");
+  expect(
+    calls.find((c) => c.url.endsWith("/readiness") && c.body)?.body.items[0],
+  ).toMatchObject({
+    package_item_id: null,
+    status: "na",
+    reason: "此范围无该版本资料要求",
+  });
+});
+it("blocks a pending replacement when its newer package has no applicable verified item", async () => {
+  packages = [
+    pkg(),
+    {
+      ...pkg("verified", "pk2", 2),
+      items: [{ ...pkg().items[0], status: "na", reason: "不适用" }],
+    },
+  ];
+  readiness = [check()];
+  await mount();
+  await openTab("生产准备");
+  await click("首批开工");
+  await click("替代此核对");
+  await click("建立替代核对");
+  expect(
+    calls.filter((c) => c.url.endsWith("/readiness") && c.body),
+  ).toHaveLength(0);
+  expect(host.textContent).toContain("替代核对必须选择适用的冻结资料项");
+});
