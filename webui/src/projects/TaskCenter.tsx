@@ -1,3 +1,4 @@
+import type { ControlTarget } from "../collaboration/types";
 import { useState } from "react";
 import type { Catalog } from "../types";
 import { kinds, priorities, workStatus, type FlatTask } from "./types";
@@ -6,10 +7,12 @@ export function TaskCenter({
   items,
   catalog,
   onOpen,
+  onControl,
 }: {
   items: FlatTask[];
   catalog: Catalog;
   onOpen: (id: string, stage: string, task: string) => void;
+  onControl?: (id: string, target: ControlTarget) => void;
 }) {
   const [query, setQuery] = useState(""),
     [kind, setKind] = useState(""),
@@ -82,6 +85,20 @@ export function TaskCenter({
               >
                 {t.title}
               </button>
+              {t.source && onControl && (
+                <button
+                  className="mf-link mf-small"
+                  onClick={() =>
+                    onControl(t.project_id, {
+                      object_type: "readiness",
+                      object_id: t.source!.id,
+                      item_id: t.source!.item_id,
+                    })
+                  }
+                >
+                  查看来源准备项
+                </button>
+              )}
               <small className="mf-muted">
                 {t.project_name} / {t.stage_id} {t.stage_name} · {t.line_name}
               </small>

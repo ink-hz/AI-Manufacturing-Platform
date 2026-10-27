@@ -84,6 +84,7 @@ export type ProjectTaskWrite = Partial<TaskFields> & {
   status?: WorkStatus;
 };
 export interface ProjectTask extends TaskFields {
+  source?: { type: "readiness"; id: string; item_id: string } | null;
   id: string;
   project_id: string;
   status: WorkStatus;
@@ -129,6 +130,7 @@ export interface Blocker {
   due_date: string | null;
 }
 export interface Dashboard {
+  control_attention?: import("../collaboration/types").Attention[];
   counts: {
     active_projects: number;
     blocked_projects: number;

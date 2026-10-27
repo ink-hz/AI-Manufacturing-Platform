@@ -1,3 +1,5 @@
+import { ControlAttention } from "../collaboration/ControlAttention";
+import type { ControlTarget } from "../collaboration/types";
 import type { Dashboard } from "./types";
 import { kinds, priorities, workStatus } from "./types";
 import { ProjectCard } from "./ProjectList";
@@ -8,11 +10,13 @@ export function ProjectHome({
   onOpen,
   onFilter,
   onTasks,
+  onControl,
 }: {
   data: Dashboard;
   onOpen: (id: string, stage?: string, task?: string) => void;
   onFilter: (status: string) => void;
   onTasks: () => void;
+  onControl?: (id: string, target: ControlTarget) => void;
 }) {
   return (
     <>
@@ -67,6 +71,12 @@ export function ProjectHome({
             {data.counts.pending_confirmations} 项待确认 ·
             优先处理受阻与临期工作
           </p>
+          {onControl && (
+            <ControlAttention
+              items={data.control_attention || []}
+              onOpen={onControl}
+            />
+          )}
           {data.blockers.length > 0 && (
             <section>
               <h3>阻塞问题</h3>

@@ -1,4 +1,23 @@
 import type {
+  Collaboration,
+  Controls,
+  SystemFields,
+  SystemRecord,
+  AuthorityFields,
+  Authority,
+  PackageFields,
+  EngineeringPackage,
+  PackageAction,
+  HandoffFields,
+  Handoff,
+  ReceiptAction,
+  ReadinessFields,
+  Readiness,
+  ReadinessItem,
+  IssueFields,
+  Operation,
+} from "./collaboration/types";
+import type {
   Dashboard,
   ProjectSummary,
   ProjectCreate,
@@ -29,9 +48,11 @@ export class ApiError extends Error {
     super(
       status === 409
         ? "内容已更新，请核对后再保存"
-        : status === 401 || status === 403
-          ? "无权访问"
-          : "请求失败，请重试",
+        : status === 422
+          ? "请检查资料的必填项、凭据、版本和业务状态"
+          : status === 401 || status === 403
+            ? "无权访问"
+            : "请求失败，请重试",
     );
   }
 }
@@ -103,6 +124,93 @@ export function createApi(
       for (const controller of controllers) controller.abort();
       controllers.clear();
     },
+    collaboration: () => request<Collaboration>("/collaboration"),
+    controls: (id: string) =>
+      request<Controls>(`/projects/${encodeURIComponent(id)}/controls`),
+    createSystem: (body: SystemFields & Operation) =>
+      request<SystemRecord>("/systems", "POST", body),
+    updateSystem: (id: string, body: Partial<SystemFields> & Operation) =>
+      request<SystemRecord>(
+        `/systems/${encodeURIComponent(id)}`,
+        "PATCH",
+        body,
+      ),
+    createAuthority: (body: AuthorityFields & Operation) =>
+      request<Authority>("/authorities", "POST", body),
+    updateAuthority: (id: string, body: Partial<AuthorityFields> & Operation) =>
+      request<Authority>(
+        `/authorities/${encodeURIComponent(id)}`,
+        "PATCH",
+        body,
+      ),
+    createPackage: (id: string, body: PackageFields & Operation) =>
+      request<EngineeringPackage>(
+        `/projects/${encodeURIComponent(id)}/packages`,
+        "POST",
+        body,
+      ),
+    savePackage: (
+      id: string,
+      record: string,
+      body: PackageFields & Operation,
+    ) =>
+      request<EngineeringPackage>(
+        `/projects/${encodeURIComponent(id)}/packages/${encodeURIComponent(record)}`,
+        "PUT",
+        body,
+      ),
+    packageAction: (
+      id: string,
+      record: string,
+      body: Operation & { action: PackageAction; reason: string },
+    ) =>
+      request<EngineeringPackage>(
+        `/projects/${encodeURIComponent(id)}/packages/${encodeURIComponent(record)}/actions`,
+        "POST",
+        body,
+      ),
+    createHandoff: (id: string, body: HandoffFields & Operation) =>
+      request<Handoff>(
+        `/projects/${encodeURIComponent(id)}/handoffs`,
+        "POST",
+        body,
+      ),
+    handoffAction: (
+      id: string,
+      record: string,
+      body: ReceiptAction & Operation,
+    ) =>
+      request<Handoff>(
+        `/projects/${encodeURIComponent(id)}/handoffs/${encodeURIComponent(record)}`,
+        "PATCH",
+        body,
+      ),
+    createReadiness: (id: string, body: ReadinessFields & Operation) =>
+      request<Readiness>(
+        `/projects/${encodeURIComponent(id)}/readiness`,
+        "POST",
+        body,
+      ),
+    saveReadiness: (
+      id: string,
+      record: string,
+      body: Operation & { items: ReadinessItem[] },
+    ) =>
+      request<Readiness>(
+        `/projects/${encodeURIComponent(id)}/readiness/${encodeURIComponent(record)}`,
+        "PUT",
+        body,
+      ),
+    createReadinessIssue: (
+      id: string,
+      record: string,
+      body: IssueFields & Operation,
+    ) =>
+      request<ProjectTask>(
+        `/projects/${encodeURIComponent(id)}/readiness/${encodeURIComponent(record)}/issues`,
+        "POST",
+        body,
+      ),
     dashboard: () => request<Dashboard>("/dashboard"),
     projects: () => request<{ items: ProjectSummary[] }>("/projects"),
     project: (id: string) =>

@@ -1,4 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { ControlTarget } from "../collaboration/types";
+const ControlsWorkspace = lazy(() =>
+  import("../collaboration/ControlsWorkspace").then((m) => ({
+    default: m.ControlsWorkspace,
+  })),
+);
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Api } from "../api";
 import type { Catalog } from "../types";
 import {
@@ -22,6 +35,7 @@ export function ProjectDetail({
   initial,
   stageTarget,
   taskTarget,
+  controlTarget,
   catalog,
   readOnly,
   onDirty,
@@ -37,6 +51,7 @@ export function ProjectDetail({
   initial?: ProjectDetailData;
   stageTarget?: string;
   taskTarget?: string;
+  controlTarget?: ControlTarget;
   catalog: Catalog;
   readOnly: boolean;
   onDirty: DirtyChange;
@@ -56,6 +71,12 @@ export function ProjectDetail({
     [taskEdit, setTaskEdit] = useState<ProjectTask | "new" | null>(null),
     [busy, setBusy] = useState(false),
     [reload, setReload] = useState(0);
+  const [workTab, setWorkTab] = useState<
+    "stage" | "package" | "readiness" | "handoff"
+  >(controlTarget?.object_type || "stage");
+  useEffect(() => {
+    if (controlTarget) setWorkTab(controlTarget.object_type);
+  }, [controlTarget]);
   const itemsElement = useRef<HTMLElement>(null);
   const active = useRef(true),
     readSequence = useRef(0),
@@ -216,160 +237,201 @@ export function ProjectDetail({
           }
         />
       )}
-      <nav className="mf-phase-rail" aria-label="项目阶段">
-        {data.stages.map((s) => (
+      <nav className="mf-subnav" aria-label="项目工作区">
+        {(
+          [
+            ["stage", "阶段推进"],
+            ["package", "工程资料"],
+            ["readiness", "生产准备"],
+            ["handoff", "交接记录"],
+          ] as const
+        ).map(([key, label]) => (
           <button
-            key={s.id}
-            aria-current={s.id === stage?.id ? "step" : undefined}
-            className={`mf-phase mf-phase-${s.status}`}
-            disabled={busy}
+            key={key}
+            aria-current={workTab === key ? "page" : undefined}
             onClick={() => {
-              if (s.id !== stage?.id)
-                requestLeave(() => {
-                  setStageId(s.id);
-                  setTaskEdit(null);
-                });
+              if (workTab !== key) requestLeave(() => setWorkTab(key));
             }}
           >
-            <strong>{s.id}</strong>
-            <span>{s.name}</span>
-            <small>{workStatus[s.status]}</small>
+            {label}
           </button>
         ))}
       </nav>
-      <div className="mf-detail-grid">
-        <div>
-          {stage && (
-            <StagePanel
-              key={`${stage.id}-${draftEpoch}`}
-              api={api}
-              projectId={id}
-              stage={stage}
-              readOnly={disabled}
-              onDirty={onDirty}
-              onSaved={refreshed}
-              onHandbook={() => onHandbook(stage.id)}
-              requestLeave={requestLeave}
-            />
-          )}
-          <section className="mf-surface mf-items" ref={itemsElement}>
-            <div className="mf-section-heading">
-              <h3>
-                阶段事项{" "}
-                <small>
-                  {tasks.filter((t) => t.status !== "done").length} 项未完成
-                </small>
-              </h3>
-              <button
-                disabled={disabled}
-                onClick={() =>
-                  taskEdit
-                    ? requestLeave(() => setTaskEdit("new"))
-                    : setTaskEdit("new")
-                }
-              >
-                新建事项
-              </button>
-            </div>
-            {taskEdit && (
-              <TaskEditor
-                key={`${draftEpoch}-${taskEdit === "new" ? "new" : taskEdit.id}`}
+      {workTab !== "stage" && (
+        <Suspense fallback={<p role="status">正在读取项目协同…</p>}>
+          <ControlsWorkspace
+            api={api}
+            projectId={id}
+            lineId={p.line_id}
+            tab={workTab}
+            target={controlTarget}
+            readOnly={disabled}
+            onDirty={onDirty}
+            onChanged={() => {
+              onChanged();
+              void readDetail();
+            }}
+            requestLeave={requestLeave}
+            draftEpoch={draftEpoch}
+          />
+        </Suspense>
+      )}
+      <div hidden={workTab !== "stage"}>
+        <nav className="mf-phase-rail" aria-label="项目阶段">
+          {data.stages.map((s) => (
+            <button
+              key={s.id}
+              aria-current={s.id === stage?.id ? "step" : undefined}
+              className={`mf-phase mf-phase-${s.status}`}
+              disabled={busy}
+              onClick={() => {
+                if (s.id !== stage?.id)
+                  requestLeave(() => {
+                    setStageId(s.id);
+                    setTaskEdit(null);
+                  });
+              }}
+            >
+              <strong>{s.id}</strong>
+              <span>{s.name}</span>
+              <small>{workStatus[s.status]}</small>
+            </button>
+          ))}
+        </nav>
+        <div className="mf-detail-grid">
+          <div>
+            {stage && (
+              <StagePanel
+                key={`${stage.id}-${draftEpoch}`}
                 api={api}
                 projectId={id}
-                stageId={stage?.id || ""}
-                stages={data.stages}
-                task={taskEdit === "new" ? undefined : taskEdit}
+                stage={stage}
                 readOnly={disabled}
                 onDirty={onDirty}
                 onSaved={refreshed}
-                onCancel={() => setTaskEdit(null)}
-                onReload={() =>
-                  requestLeave(() => {
-                    setTaskEdit(null);
-                    setReload((x) => x + 1);
-                  })
-                }
+                onHandbook={() => onHandbook(stage.id)}
+                requestLeave={requestLeave}
               />
             )}
-            {tasks.map((t) => (
-              <article
-                className={`mf-task ${taskTarget === t.id ? "mf-task-highlight" : ""}`}
-                id={`mf-task-${t.id}`}
-                key={t.id}
-              >
-                <div className="mf-task-title">
-                  <span className="mf-eyebrow">
-                    {kinds[t.kind]} · {priorities[t.priority]}
-                  </span>
-                  <strong>{t.title}</strong>
-                  <small className="mf-muted">
-                    {t.owner || "未分派"} · 目标 {t.due_date || "未设日期"}
+            <section className="mf-surface mf-items" ref={itemsElement}>
+              <div className="mf-section-heading">
+                <h3>
+                  阶段事项{" "}
+                  <small>
+                    {tasks.filter((t) => t.status !== "done").length} 项未完成
                   </small>
-                  {t.notes && <p className="mf-practice">{t.notes}</p>}
-                </div>
-                <div>
-                  <Status value={t.status} text={workStatus[t.status]} />
-                  <div className="mf-actions">
-                    <button
-                      disabled={disabled}
-                      onClick={() =>
-                        taskEdit
-                          ? requestLeave(() => setTaskEdit(t))
-                          : setTaskEdit(t)
-                      }
-                    >
-                      编辑事项
-                    </button>
-                    <button
-                      disabled={disabled}
-                      onClick={() =>
-                        requestLeave(
-                          () =>
-                            void mutate(() =>
-                              api.updateProjectTask(id, t.id, {
-                                expected_version: t.version,
-                                status: t.status === "done" ? "todo" : "done",
-                              }),
-                            ),
-                        )
-                      }
-                    >
-                      {t.status === "done" ? "重新打开事项" : "完成事项"}
-                    </button>
+                </h3>
+                <button
+                  disabled={disabled}
+                  onClick={() =>
+                    taskEdit
+                      ? requestLeave(() => setTaskEdit("new"))
+                      : setTaskEdit("new")
+                  }
+                >
+                  新建事项
+                </button>
+              </div>
+              {taskEdit && (
+                <TaskEditor
+                  key={`${draftEpoch}-${taskEdit === "new" ? "new" : taskEdit.id}`}
+                  api={api}
+                  projectId={id}
+                  stageId={stage?.id || ""}
+                  stages={data.stages}
+                  task={taskEdit === "new" ? undefined : taskEdit}
+                  readOnly={disabled}
+                  onDirty={onDirty}
+                  onSaved={refreshed}
+                  onCancel={() => setTaskEdit(null)}
+                  onReload={() =>
+                    requestLeave(() => {
+                      setTaskEdit(null);
+                      setReload((x) => x + 1);
+                    })
+                  }
+                />
+              )}
+              {tasks.map((t) => (
+                <article
+                  className={`mf-task ${taskTarget === t.id ? "mf-task-highlight" : ""}`}
+                  id={`mf-task-${t.id}`}
+                  key={t.id}
+                >
+                  <div className="mf-task-title">
+                    <span className="mf-eyebrow">
+                      {kinds[t.kind]} · {priorities[t.priority]}
+                    </span>
+                    <strong>{t.title}</strong>
+                    <small className="mf-muted">
+                      {t.owner || "未分派"} · 目标 {t.due_date || "未设日期"}
+                    </small>
+                    {t.notes && <p className="mf-practice">{t.notes}</p>}
                   </div>
-                </div>
-              </article>
-            ))}
-            {!tasks.length && !taskEdit && (
+                  <div>
+                    <Status value={t.status} text={workStatus[t.status]} />
+                    <div className="mf-actions">
+                      <button
+                        disabled={disabled}
+                        onClick={() =>
+                          taskEdit
+                            ? requestLeave(() => setTaskEdit(t))
+                            : setTaskEdit(t)
+                        }
+                      >
+                        编辑事项
+                      </button>
+                      <button
+                        disabled={disabled}
+                        onClick={() =>
+                          requestLeave(
+                            () =>
+                              void mutate(() =>
+                                api.updateProjectTask(id, t.id, {
+                                  expected_version: t.version,
+                                  status: t.status === "done" ? "todo" : "done",
+                                }),
+                              ),
+                          )
+                        }
+                      >
+                        {t.status === "done" ? "重新打开事项" : "完成事项"}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+              {!tasks.length && !taskEdit && (
+                <p className="mf-muted">
+                  本阶段还没有事项。可登记待办、阻塞问题或需要确认的工作。
+                </p>
+              )}
+            </section>
+          </div>
+          <aside className="mf-detail-context">
+            <section className="mf-surface">
+              <h3>交付资料</h3>
+              <dl className="mf-facts">
+                <dt>产品 / 型号</dt>
+                <dd>{p.product || "未填写"}</dd>
+                <dt>{p.group_id === "internal" ? "接收方" : "委托客户"}</dt>
+                <dd>{p.customer || "未填写"}</dd>
+                <dt>项目说明</dt>
+                <dd className="mf-practice">{p.summary || "未填写"}</dd>
+              </dl>
               <p className="mf-muted">
-                本阶段还没有事项。可登记待办、阻塞问题或需要确认的工作。
+                {p.completed_stages}/{p.total_stages} 阶段已完成 ·{" "}
+                {p.open_tasks} 项未完成
               </p>
-            )}
-          </section>
+              <button className="mf-link mf-small" onClick={onLegacy}>
+                流程现状参考
+              </button>
+            </section>
+            <section className="mf-surface">
+              <ActivityFeed items={data.activity} />
+            </section>
+          </aside>
         </div>
-        <aside className="mf-detail-context">
-          <section className="mf-surface">
-            <h3>交付资料</h3>
-            <dl className="mf-facts">
-              <dt>产品 / 型号</dt>
-              <dd>{p.product || "未填写"}</dd>
-              <dt>{p.group_id === "internal" ? "接收方" : "委托客户"}</dt>
-              <dd>{p.customer || "未填写"}</dd>
-              <dt>项目说明</dt>
-              <dd className="mf-practice">{p.summary || "未填写"}</dd>
-            </dl>
-            <p className="mf-muted">
-              {p.completed_stages}/{p.total_stages} 阶段已完成 · {p.open_tasks}{" "}
-              项未完成
-            </p>
-            <button className="mf-link mf-small" onClick={onLegacy}>
-              流程现状参考
-            </button>
-          </section>
-          <section className="mf-surface">
-            <ActivityFeed items={data.activity} />
-          </section>
-        </aside>
       </div>
     </>
   );

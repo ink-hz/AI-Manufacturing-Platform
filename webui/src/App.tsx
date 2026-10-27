@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createApi } from "./api";
 import type { Catalog, MountOptions } from "./types";
 import { LegacyWorkflow } from "./LegacyWorkflow";
@@ -20,7 +28,19 @@ import {
   type FlatTask,
   type ProjectDetailData,
 } from "./projects/types";
-type View = "home" | "projects" | "tasks" | "handbook" | "legacy";
+import type { ControlTarget } from "./collaboration/types";
+const SystemCollaboration = lazy(() =>
+  import("./collaboration/SystemCollaboration").then((m) => ({
+    default: m.SystemCollaboration,
+  })),
+);
+type View =
+  | "home"
+  | "projects"
+  | "tasks"
+  | "handbook"
+  | "legacy"
+  | "collaboration";
 export function App({ options }: { options: MountOptions }) {
   const callbacks = useRef(options);
   callbacks.current = options;
@@ -37,6 +57,7 @@ export function App({ options }: { options: MountOptions }) {
       id: string;
       stage?: string;
       task?: string;
+      control?: ControlTarget;
       initial?: ProjectDetailData;
     } | null>(null),
     [creating, setCreating] = useState(false),
@@ -152,6 +173,14 @@ export function App({ options }: { options: MountOptions }) {
       setWorkView("projects");
     });
   }
+  function openControl(id: string, control: ControlTarget) {
+    requestLeave(() => {
+      setSelected({ id, control });
+      setCreating(false);
+      setView("projects");
+      setWorkView("projects");
+    });
+  }
   function openBook(stage?: string) {
     scroll.current = { nodes: [], x: window.scrollX, y: window.scrollY };
     let element: HTMLElement | null = frame.current;
@@ -231,6 +260,7 @@ export function App({ options }: { options: MountOptions }) {
                 ["home", "工作台"],
                 ["projects", "制造项目"],
                 ["tasks", "事项"],
+                ["collaboration", "系统协同"],
                 ["handbook", "制造手册"],
               ] as const
             ).map(([key, label]) => (
@@ -257,6 +287,7 @@ export function App({ options }: { options: MountOptions }) {
                 {actualWork === "home" && dashboard && (
                   <ProjectHome
                     data={dashboard}
+                    onControl={openControl}
                     onOpen={open}
                     onFilter={(status) => {
                       setFilters((f) => ({ ...f, status }));
@@ -292,6 +323,7 @@ export function App({ options }: { options: MountOptions }) {
                       initial={selected.initial}
                       stageTarget={selected.stage}
                       taskTarget={selected.task}
+                      controlTarget={selected.control}
                       catalog={catalog}
                       readOnly={readOnly}
                       onDirty={onDirty}
@@ -310,8 +342,28 @@ export function App({ options }: { options: MountOptions }) {
                       onOpen={open}
                     />
                   ))}
+                {actualWork === "collaboration" && (
+                  <Suspense fallback={<p role="status">正在读取系统协同…</p>}>
+                    <SystemCollaboration
+                      api={api}
+                      catalog={catalog}
+                      readOnly={readOnly}
+                      onDirty={onDirty}
+                      onChanged={changed}
+                      requestLeave={requestLeave}
+                      draftEpoch={epoch}
+                      onOpen={open}
+                      onControl={openControl}
+                    />
+                  </Suspense>
+                )}
                 {actualWork === "tasks" && (
-                  <TaskCenter items={tasks} catalog={catalog} onOpen={open} />
+                  <TaskCenter
+                    items={tasks}
+                    catalog={catalog}
+                    onOpen={open}
+                    onControl={openControl}
+                  />
                 )}
               </>
             )}
