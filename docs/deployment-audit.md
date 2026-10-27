@@ -78,3 +78,69 @@ API 使用 UID/GID `10001:10001`、只读根文件系统、`cap_drop: ALL` 和 `
 ## 尚未执行
 
 制造程序开发、镜像构建、数据库/目录创建、平台接入修改、任何生产变更、真实模型调用和业务写入、已登录页面验收均不属于本次只读审计成果。发布前必须重新读取运行事实；以上容器 ID、镜像和 37 项链是审计时快照。
+
+## 补充审计：已选定进程内模块与资产方案
+
+2026-10-27 后续实现选择本报告列出的第二种可行方案：兄弟仓库的版本化 Python 模块和 React IIFE 资源，通过只读 `/opt/manufacturing` 挂载加载到平台 API 进程；制造 SQLite 使用独立持久挂载。这一选择取代上文“独立服务 + 平台代理”的实施建议，不增加服务间身份协议、Docker 网络或 Nginx 变更。本补充仍只读，未运行任何发布阶段或候选容器。
+
+### 已核对的发布依据
+
+- 现行 `future-maintenance.json` 的 `compose_files_in_order` 与运行 API 标签完全相同。该文件 SHA-256：`914a429a108f70c6f92a2bde98e4fd7e3df8304c27db4aabc240f5716e70d4fa`。
+- 生产旧 `release.py` 与本地 `/tmp/manufacturing-release-template.py` 的字节一致，SHA-256：`fd7f0e42c2f7af0ca6f30b8bd1f4ff182d6b5f09f87c43a4f9ca39755df1f3e3`。
+- 同目录 `deploy-input-lock.py` 的 SHA-256：`45c2d3fce8a5ef2e3dd6306eaa15b7cdbfc85072bed164033684f84b425a4eb4`。
+- 当前运行依赖为 FastAPI `0.141.1`、Pydantic `2.13.4`、httpx `0.28.1`，满足兄弟包当前声明；不需要为了加载该包重新安装或升级平台依赖。
+- API 没有 `/app/data` 或 `/app/data/manufacturing` 的现有持久挂载。只设置数据库路径会在只读根文件系统下失败；即使改变根文件系统可写，也不能获得容器重建后的持久性。
+- 父任务另已核对五个拟改核心文件（`main.py`、`auth.py`、`middleware.py`、`authorization.py`、`routes_auth.py`）的线上字节与主线一致。这是五文件补丁的基线依据，不是全平台源码与主线相同的证明。
+- 检查时 action/input 持久锁均不存在。这只是该时刻事实，发布程序仍必须非阻塞获取正式锁。
+
+### 允许的精确运行差异
+
+建议发布清单采用以下明确契约；若最终代码采用别的环境变量名，必须逐项替换为其真实名称和值，不允许以 `PLATFORM_MANUFACTURING_*` 整段前缀作为豁免。
+
+| 字段 | 候选允许值 |
+|---|---|
+| `services.platform-api.image` | 本次平台补丁的唯一标签，构建与切换时同时固定镜像 ID |
+| `PLATFORM_RELEASE_SHA` | 已归并平台主线的本次准确 40 位提交 |
+| `PLATFORM_MANUFACTURING_ROOT` | `/opt/manufacturing` |
+| `PLATFORM_MANUFACTURING_DATABASE_PATH` | `/app/data/manufacturing/workbench.sqlite3` |
+| `PLATFORM_MANUFACTURING_RELEASE` | 已归并兄弟仓库的准确 40 位提交 |
+| 新增代码 bind | 宿主机版本目录 `/data/orbbec-agent-platform/manufacturing/releases/<兄弟SHA>` → `/opt/manufacturing`，`read_only: true`、`bind.create_host_path: false` |
+| 新增数据 bind | 宿主机独立目录 `/data/orbbec-agent-platform/manufacturing/state` → `/app/data/manufacturing`，`read_only: false`、`bind.create_host_path: false` |
+
+四项环境差异中只有 `PLATFORM_RELEASE_SHA` 覆盖现有值，其余须验证原来不存在；若实际集成从固定代码常量获得 root/path/release，可省略相应新增环境项，不能添加无消费者的设置。保留原来全部环境值，包括 `SDK_KNOWLEDGE_*`、HR 模型选择、企业/外部身份、Office、DAQ、VOC 配置。无需修改全局 `PYTHONPATH`；固定包路径的显式加载应由受审查的接入代码完成。
+
+预先创建宿主机目录，杜绝 Compose 静默创建错误目录。版本目录应由 root 控制，应用 UID/GID `10001:10001` 仅需读取/遍历；数据目录归该应用 UID/GID，建议 `0700`，必须允许创建 SQLite 数据库、`-wal` 和 `-shm`。不要递归改变既有平台目录的属主。不得挂载整个 `/app/data`，也不得让新挂载遮挡平台源码或现有 13 项挂载。候选有效 Compose 与运行验证都应按 destination 比较旧挂载，确保仅增加这两个唯一目标。
+
+除镜像、上述精确环境字段与两项挂载外，平台 API 的 command、entrypoint、user、working directory、healthcheck、capabilities、只读根、安全选项、tmpfs、restart、全部四个网络及其固定 IP/网关优先级/别名等保持。全部其他服务配置应逐字等效。成功的新维护清单应为原 37 份有序输入加本次唯一 overlay；不更新 `current` 链接来伪装全量发布。
+
+### 镜像与制品构建
+
+候选镜像从已核对的运行镜像 **`sha256:900c41813f920ed7859de4fa87b381ea6f9e48b0c53d43298f0989b98a183547`** 派生，仅 COPY 明确批准的平台接入文件与必要导航产物；不从主线基础 Dockerfile重建整个运行环境，不执行 pip/apt 升级，不替换 Git、SDK知识文件或其他应用源码。保留镜像原 Cmd、Entrypoint、User、WorkingDir、Healthcheck、ExposedPorts 与现有自定义 Labels；镜像 ENV 若修改，只允许明确的发布标识。只改 Dockerfile LABEL 也会使既有严格 runtime label 门禁失败，应提前决定是否确有必要并明确审批差异。
+
+兄弟制品从准确提交归档，至少固定包源码、`catalog.json`、React JS/CSS 与制品 manifest；不含 `.venv`、`node_modules`、测试数据或 SQLite 文件。核对整个只读树的相对路径、大小、SHA-256、模式、无 symlink，并在候选容器以 UID10001 验证实际可读取。制品上传、解包和候选测试期间不把版本目录当作可变工作目录；候选、切换前和切换后重新核对同一 manifest。
+
+平台现有 source/static map 与兄弟代码/资产树必须分别取证。原旧脚本的 `maps()` 只扫描 `/app/backend/app`，不会覆盖 `/opt/manufacturing`，因此不足以证明兄弟制品部署正确。已有平台静态产物若因导航重建而变化，逐项列入批准差异；不能继续照用 SDK 发布“全部静态文件不变”的断言。
+
+### 旧发布辅助函数的安全复用范围
+
+旧脚本可以提供经过固定哈希的通用辅助实现，但不能执行它的 CLI、`prepare()`、`candidate()`、`cutover()` 或旧 `production_service_check()`。这些阶段硬编码了旧容器 ID、`8b91139c…` 镜像、`9926939e…` 版本、SDK index、SDK挂载和业务断言；直接改少量常量无法获得制造发布契约。
+
+建议把审查过的通用函数显式复制到本次独立控制器，保留原来源哈希及函数清单，或者校验完整原文件哈希后导入并仅调用明确列出的通用函数。原文件 import 本身不执行 `__main__` 阶段；调用前所有依赖的全局常量必须指向本次私有 stage、准确平台提交和已固定 lock tool，不能向旧 SDK stage 写新收据。可复用的模式包括 `safe_path`、`file_tree`、私有输出的 `run/private_bytes/write`、`discover_files`、`actual_environment`、`compose`、`replay_equivalence`、锁实现和严格运行配置比较。制造 overlay/env/mount 对比、输入制品校验、候选业务检查和生产验证必须由本次控制器明确实现。
+
+旧 `environment(api)` 会剔除调用者的 `PLATFORM_`、`COMPOSE_`、`SDK_` 环境，再仅从运行容器回填 `PLATFORM_HR_AGENT_MODEL`。保留这种隔离原则，用同一干净环境渲染 baseline/candidate、执行 up 和 rollback；若本次变量采用其他前缀，也应明确清除它们。不要把全部运行环境导回 shell 来掩盖 Compose 漂移，更不要把凭据打印到日志。渲染后的 baseline 环境必须与真实运行值相等，镜像默认环境也须纳入后述 replay。
+
+旧脚本的三个锁分别是宿主机 `.deploy.lock` flock、`private/agent-brain-action.lock` 及 `private/deploy-input.lock`。prepare/candidate 使用前两项；真正切换阶段还获取 deploy-input 锁。每个阶段释放后，下阶段须重新核对容器 ID、完整链、配置/脚本/制品摘要；不能沿用早先读取的状态直接 up。切换失败按同一环境与原链恢复；仅在明确确认回滚成功后释放锁。回滚不确定时保留持久锁和私有失败收据，不能在 finally 中强制删除别人的锁。
+
+旧 `replay-defaults.private.json` 固定的是旧 `8b91139c…` 镜像，**不能沿用**。本次须为当前 `900c4181…` 镜像建立新的、从未启动、无挂载、无外加环境、`--network none` 的 Docker defaults probe，固定其 inspect 与镜像 Config；再使用严格 `replay_equivalence` 证明原 37 份 Compose 和干净环境可以重建当前 API。该 mapper 只允许已审查服务字段，对未知字段应失败。其 null/空数组标准化只适用于已经解释过的 Docker 空值编码，不能删除有实义的差异。新挂载使用 `create_host_path:false` 的语义不应被放宽为 true。
+
+这项新 replay 证明是回滚可重现的前置条件。候选镜像及当前旧标签都要核对其不可变 image ID；baseline replay、候选有效配置比较通过后才允许 `up -d --no-build --no-deps --force-recreate platform-api`。单纯 `docker compose config` 通过不证明与运行容器一致。
+
+### 无员工冒用的候选和生产验收
+
+候选正向业务验证放在隔离容器：固定目标镜像与只读兄弟制品，`--network none`、只读根、UID10001、drop ALL/no-new-privileges；仅挂载独立一次性数据目录，不挂载任何生产凭据、数据库、SQLite或身份 Cookie。使用明确标注的合成 AuthContext/授权存储，通过真实中间件和本次 router 运行 HTTP，覆盖允许/拒绝、read-only、CSRF/Origin、失效身份、未知资源、乐观冲突、幂等、输入保存与任务状态；删除进程并用同一一次性目录重新启动，核对保存结果还在。禁止调用完整生产 lifespan 来做这项合成验证，防止启动目录同步、Brain或外部提供方。
+
+当前兄弟 `Repository` 构造不触碰数据库，但其 `health/read_stage/overview` 第一次连接会设置 WAL、创建目录和表。不能把这几个方法称为对生产数据库的“纯只读检查”。部署初始化若使用它们，必须明确仅创建制造自有空 schema，不创建虚构业务记录，并单独报告；本次审计没有执行。
+
+生产阶段可以在没有员工 Cookie 的情况下确认：平台健康、匿名业务 API401、未登录壳进入既有登录契约、精确 MIME/缓存策略、全部代码/制品摘要、两个挂载及 UID权限、原有业务入口/静态摘要、旧服务和 Nginx边界保持。容器内模块/目录/资产校验与制造自有存储初始化不需要冒充任何主体，也不能据此声称已登录正向权限通过。不要导出现有 Session、制造生产身份、写合成员工会话，或在实际生产进程注入伪造 AuthContext 来填补正向验收。用户真实登录后完成工作台页面验收；若尚未进行，生产收据明确写 `authenticated_browser: not_run`，并把隔离候选合成身份验证、生产匿名边界验证和真实用户验收分别报告。
+
+回滚平台镜像和挂载组合时保留制造 state 目录；不能删除已产生的真实数据。如果后续需要备份已活动的 SQLite，采用其在线 backup 接口或在停止写入后完整处理 DB/WAL，不能只复制单个 `.sqlite3` 文件声称完成一致性备份。
