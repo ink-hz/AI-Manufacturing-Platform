@@ -25,14 +25,16 @@ class ReadinessService(CollaborationStore):
             if item['package_item_id'] is not None and item['package_item_id'] not in package_items:
                 raise NotFound()
             require(item['status'] not in {'blocked','na'} or bool(item['reason']), 'Blocked and not applicable items require a reason')
+            if item['kind']=='version' and item['status']!='na':
+                reference = package_items.get(item['package_item_id'])
+                require(reference is not None and reference['status']=='verified', 'Version check must reference applicable verified package item')
             if item['status'] != 'verified':
                 continue
             require(all(item[k] for k in ('owner','source_ref','evidence')), 'Verified checks require owner, source and evidence')
             if item['kind'] == 'equipment':
                 require(item['valid_until'] is not None and item['valid_until'] >= value['planned_use_date'], 'Equipment validity must cover planned use date')
             if item['kind'] == 'version':
-                reference = package_items.get(item['package_item_id'])
-                require(package['status']=='verified' and reference is not None and reference['status']=='verified', 'Version check must reference applicable verified package item')
+                require(package['status']=='verified', 'Version check requires a verified package')
             if item['kind'] == 'first_article' and item['required']:
                 require(item['first_article_result']=='passed', 'Required first article must have passed')
             if item['kind'] in {'materials','customer_material'}:
