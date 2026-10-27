@@ -1,6 +1,6 @@
 # 大制造业务管理工作台产品设计
 
-版本 v0.5，2026-10-27，独立管理平台已实现，生产发布与页面验收另行记录。架构产品化首轮已上线。用户已确认[工程资料到开工准备的产品设计](superpowers/specs/2026-10-27-manufacturing-architecture-product-design.md)，实际版本与验收范围见[本轮发布记录](release-architecture-product-2026-10-27.md)。此前项目管理版发布事实保留为[历史记录](release-product-v2-2026-10-27.md)。
+版本 v0.5，2026-10-27，独立管理平台已上线，实际版本与验收范围见[本轮发布记录](release-console-2026-10-27.md)，浏览器视觉验收由用户完成。已上线的工程资料、交接和准备核对设计见[架构产品化设计](superpowers/specs/2026-10-27-manufacturing-architecture-product-design.md)与[发布记录](release-architecture-product-2026-10-27.md)。此前项目管理版发布事实保留为[历史记录](release-product-v2-2026-10-27.md)。
 
 ## 产品定位与设计依据
 

@@ -4,7 +4,7 @@
 
 ## 产品设计
 
-[大制造工作台产品设计 v0.4](docs/manufacturing-workbench-product-design.md)：以工作台、制造项目、事项和制造手册组织产品。围绕具体项目推进阶段、协调问题与确认事项，S1—S9 作为项目内部模板。
+[大制造工作台产品设计 v0.5](docs/manufacturing-workbench-product-design.md)：独立管理平台以左侧业务导航、顶部位置与实际账户菜单组织工作台、制造项目、事项、系统协同和制造手册。围绕具体项目推进阶段、协调问题与确认事项，S1—S9 作为项目内部模板。
 
 ## 系统手册
 
@@ -53,10 +53,10 @@ AI-Manufacturing-Platform/
 
 ## 工作台开发与发布
 
-`src/manufacturing_platform/` 提供持久化业务 API，`webui/` 提供独立 React 资源；现有 Agent 平台负责登录、权限、导航和页面外壳。当前开放平台 owner/admin，支持相机、3D 打印机和 OEM 业务线，使用 SQLite 独立持久存储。
+`src/manufacturing_platform/` 提供持久化业务 API，`webui/` 提供独立管理框架与 React 资源；Agent 平台负责企业登录、权限和资源生命周期，在自身 AppShell 之外挂载制造平台。当前开放平台 owner/admin，支持相机、3D 打印机和 OEM 业务线，使用 SQLite 独立持久存储。
 
 项目支持列表/看板、交付目标、阶段推进和事项；工程资料包按版本核对与修订，交接有独立回执，生产准备可逐项核对并创建关联问题。“系统协同”明确系统/载体、数据归属和未完成交接；首页显示真实缺项待办。手册复用平台 Markdown/Mermaid 整篇连续阅读，旧流程现状保留为参考。平台人工核对与外部正式批准分开；真实 ERP/MRP/MES 接口需按厂商资料、契约和数据责任逐条接入。
 
-前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。当前版本与 41 项维护链见 [架构产品化发布记录](docs/release-architecture-product-2026-10-27.md)；[手册连续阅读](docs/release-handbook-continuous-2026-10-27.md)、[产品重构](docs/release-product-v2-2026-10-27.md)和[首版](docs/release-2026-10-27.md)记录保留历史。
+前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。当前版本与 42 项维护链见 [独立管理平台发布记录](docs/release-console-2026-10-27.md)；[架构产品化](docs/release-architecture-product-2026-10-27.md)、[手册连续阅读](docs/release-handbook-continuous-2026-10-27.md)、[产品重构](docs/release-product-v2-2026-10-27.md)和[首版](docs/release-2026-10-27.md)记录保留历史。
 
 线上入口：[大制造工作台](https://agent.orbbec.com.cn/manufacturing)（初始开放平台 owner/admin）。
