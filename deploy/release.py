@@ -44,16 +44,73 @@ def added_mounts(e):
             {'type':'bind','source':e['data_host'],'target':'/app/data/manufacturing','read_only':False,'bind':{'create_host_path':False}}]
 
 
+def validate_paths(e):
+    base='/data/orbbec-agent-platform/manufacturing'
+    require(e['manufacturing_host']==base+'/releases/'+e['manufacturing_commit'] and e['data_host']==base+'/data','unapproved_manufacturing_path')
+
+
+trusted_stat=lambda path:path.lstat()
+
+
+def validate_release_metadata(root):
+    for path in [root,*sorted(root.rglob('*'))]:
+        info=trusted_stat(path)
+        require(info.st_uid==0 and info.st_gid==0,'business_ownership')
+        if stat.S_ISDIR(info.st_mode):
+            require(stat.S_IMODE(info.st_mode)==0o555,'business_directory_metadata')
+        else:
+            require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode)==0o444,'business_file_metadata')
+
+
+def check_rollback_image(old):
+    require(json.loads(ops.run(['docker','image','inspect',old['Config']['Image']]))[0]['Id']==old['Image'],'rollback_tag_drift')
+
+
+def validate_image_defaults(baseline,target):
+    require(baseline['Config']==target['Config'],'image_defaults_changed')
+
+
+def check_images(e,old):
+    check_rollback_image(old)
+    baseline=json.loads(ops.run(['docker','image','inspect',old['Image']]))[0]
+    target=json.loads(ops.run(['docker','image','inspect',e['target_image']]))[0]
+    require(target['Id']==e['target_image_id'],'target_tag_drift')
+    validate_image_defaults(baseline,target)
+
+
+def invalidate_success():
+    for name in ['cutover.json','future-maintenance.json']:
+        (ops.STAGE/name).unlink(missing_ok=True)
+
+
+def publish_success(receipt,maintenance):
+    try:
+        ops.write('future-maintenance.json',maintenance)
+        ops.write('cutover.json',receipt)  # Commit marker is published last.
+    except BaseException:
+        invalidate_success()
+        raise
+
+
 def snapshot_files(e):
     names=['request.json','release.py','release_support.py','release_guard.py','candidate_verify.py']
     result={name:ops.digest(ops.STAGE/name) for name in names}
+    validate_paths(e)
     release=ops.safe_path(e['manufacturing_host'],directory=True)
+    validate_release_metadata(release)
+    state=ops.safe_path(e['data_host'],directory=True)
+    info=state.stat()
+    require(info.st_uid==10001 and info.st_gid==10001 and stat.S_IMODE(info.st_mode)==0o700,'state_directory_metadata')
+    for parent in [release.parent,release.parent.parent,state.parent]:
+        info=parent.stat()
+        require(info.st_uid==0 and info.st_gid==0 and not stat.S_IMODE(info.st_mode)&0o022,'untrusted_manufacturing_parent')
     result['business_manifest']=ops.digest(release/'manifest.json')
     manifest=json.loads((release/'manifest.json').read_text())
     require(manifest['commit']==e['manufacturing_commit'],'business_commit_mismatch')
     observed=tree_hashes(release);observed.pop('manifest.json')
     require(observed==manifest['files'],'business_tree_mismatch')
     require(not any(p.is_symlink() for p in release.rglob('*')),'business_symlink')
+    result['business_metadata']=hashlib.sha256(ops.canonical(ops.file_tree(release))).hexdigest()
     return result
 
 
@@ -109,6 +166,7 @@ def prepare(e):
         old=ops.inspect(ops.API)
         require(old['State'].get('Health',{}).get('Status')=='healthy','baseline_unhealthy')
         require(old['Image']==e['expected_old_image'],'baseline_image_drift')
+        check_images(e,old)
         files=ops.discover_files(old)
         require(len(files)==e['expected_chain_length'],'compose_chain_length_drift')
         env=ops.environment(old)
@@ -155,6 +213,7 @@ def candidate(e):
     with ops.Locks():
         pre=ops.read('preflight.json');unchanged(e,pre)
         require(ops.inspect(ops.API)['Id']==pre['old']['Id'],'running_container_drift')
+        check_images(e,pre['old'])
         args=['docker','run','--rm','-i','--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--user','10001:10001','--tmpfs','/tmp:rw,noexec,nosuid,size=32m']
         args+=['--mount',f"type=bind,source={e['manufacturing_host']},target=/opt/manufacturing,readonly"]
         args+=['-e','PLATFORM_MANUFACTURING_ROOT=/opt/manufacturing','-e','PLATFORM_MANUFACTURING_DATABASE_PATH=/tmp/manufacturing-candidate.sqlite3','-e','PLATFORM_MANUFACTURING_RELEASE='+e['manufacturing_commit']]
@@ -192,7 +251,7 @@ def cutover(e):
         baseline=json.loads(ops.run(ops.compose(pre['files'])+['config','--format','json'],env=env))
         candidate_config=json.loads(ops.run(ops.compose(pre['files'],True)+['config','--format','json'],env=env))
         validate_candidate(baseline,candidate_config,target_image=e['target_image'],environment_delta=environment_delta(e),new_mounts=added_mounts(e))
-        require(json.loads(ops.run(['docker','image','inspect',e['target_image']]))[0]['Id']==e['target_image_id'],'target_tag_drift')
+        check_images(e,old)  # Both target defaults and rollback tag are pinned before mutation.
         try:
             ops.run(ops.compose(pre['files'],True)+['up','-d','--no-build','--no-deps','--force-recreate','platform-api'],env=env,timeout=180)
             new=ready(e['target_image_id']);compare_runtime(old,new,e)
@@ -203,16 +262,17 @@ def cutover(e):
             readiness=json.loads(ops.run(['docker','exec',ops.API,'python','-c',verify]))
             statuses=http_checks(e,pre);unchanged(e,pre)
             receipt={'status':'healthy','platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'container':new['Id'],'compose_files':pre['files']+[str(ops.STAGE/'overlay.json')],'readiness':readiness,'http_statuses':statuses,'browser_acceptance':'not_run','production_erp_connections':'unverified'}
-            ops.write('cutover.json',receipt)
-            ops.write('future-maintenance.json',{'compose_files_in_order':receipt['compose_files'],'platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'previous_manifest':e['previous_manifest'],'preservation':'All prior ordered overlays, mounts, networks, runtime security and Git capability retained.'})
+            publish_success(receipt,{'compose_files_in_order':receipt['compose_files'],'platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'previous_manifest':e['previous_manifest'],'preservation':'All prior ordered overlays, mounts, networks, runtime security and Git capability retained.'})
             print(json.dumps({'deployed':True,'platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'compose_files':len(receipt['compose_files'])}))
         except BaseException as error:
+            try:invalidate_success()
+            except OSError:pass
             try:
                 ops.write('cutover-failure.private.json',{'type':type(error).__name__,'reason':str(error)})
             except OSError:
                 pass  # A full receipt disk must not block the rollback attempt.
             try:
-                require(json.loads(ops.run(['docker','image','inspect',old['Config']['Image']]))[0]['Id']==old['Image'],'rollback_tag_drift')
+                check_rollback_image(old)
                 ops.run(ops.compose(pre['files'])+['up','-d','--no-build','--no-deps','--force-recreate','platform-api'],env=env)
                 restored=ready(old['Image'])
                 require(ops.actual_environment(restored)==ops.actual_environment(old),'rollback_environment_mismatch')

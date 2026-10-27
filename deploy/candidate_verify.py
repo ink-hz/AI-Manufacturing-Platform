@@ -27,21 +27,45 @@ for name,digest in manifest['files'].items():assert hashlib.sha256((business/nam
 assert os.statvfs(business).f_flag & os.ST_RDONLY
 assert os.environ['PLATFORM_MANUFACTURING_DATABASE_PATH'].startswith('/tmp/')
 
+# The same production app factory must register the feature; no hand-built router app.
+HARNESS = r'''from pathlib import Path
+import json,os,tempfile
+from uuid import UUID
+from fastapi.testclient import TestClient
+from app.control_plane.authorization import AuthorizationService
+from app.control_plane.models import IdentityMode
+from app.control_plane.middleware import IdentitySecurityMiddleware
+from app.control_plane.models import AuthContext,Role
+from app.main import create_app
 class Auth:
+    mode=IdentityMode.PRODUCTION
     route_prefix='/';cookie_name='manufacturing_candidate_session';csrf_cookie_name='manufacturing_candidate_csrf';public_base_url='https://manufacturing-candidate.invalid'
+    app_key='candidate-public-id';corp_id='candidate-corp-id'
     role=Role.PLATFORM_OWNER;stale=False;revoked=False
     def authenticate(self,token):
         if token!='synthetic-candidate-session' or self.revoked:return None
         return AuthContext(UUID('11111111-1111-4111-8111-111111111111'),self.role,UUID('22222222-2222-4222-8222-222222222222'),self.stale),'synthetic-candidate-csrf'
     def hard_stale_audit(self,*args):pass
-
+class NoGrants:
+    def permits(self,*args):return False
+scratch=Path(tempfile.mkdtemp(prefix='manufacturing-harness-',dir='/tmp'))
+(scratch/'registry.yaml').write_text('version: 1\nagents: []\n')
+(scratch/'contract.json').write_text('{"bots": []}')
+os.environ['PLATFORM_AGENT_BRAIN_ENABLED']='0'
+os.environ['PLATFORM_STATIC_DIR']='/app/backend/app/static'
 auth=Auth()
-def app():
-    instance=FastAPI();instance.include_router(build_manufacturing_router())
-    instance.add_middleware(IdentitySecurityMiddleware,auth=auth,authorization=AuthorizationService(None),public_assets=frozenset(),routes=tuple(instance.router.routes))
-    return instance
+instance=create_app(registry_path=str(scratch/'registry.yaml'),cluster_contract_path=str(scratch/'contract.json'),start_poller=False,identity_auth=auth)
+matched=[row for row in instance.user_middleware if row.cls is IdentitySecurityMiddleware]
+assert len(matched)==1
+matched[0].kwargs['authorization']=AuthorizationService(NoGrants())
+# Resolve the registered routing view used by the real security middleware.
+from app.manufacturing_paths import MANUFACTURING_PREFIX,MANUFACTURING_ROUTES
+registered={(method,route.path) for route in IdentitySecurityMiddleware._expand_included_routes(instance.routes) for method in getattr(route,'methods',[])}
+assert all((method,MANUFACTURING_PREFIX+path) in registered for method,path in MANUFACTURING_ROUTES)
+'''
+exec(HARNESS)
 
-client=TestClient(app(),base_url=auth.public_base_url)
+client=TestClient(instance,base_url=auth.public_base_url)
 prefix='/api/v1/manufacturing';stage=prefix+'/lines/oem/stages/S4'
 def check(response,status):
     assert response.status_code==status,(status,response.status_code,response.text[:120])
@@ -77,10 +101,21 @@ auth.stale=False;auth.role=Role.MEMBER;check(client.get(stage),403)
 auth.role=Role.PLATFORM_OWNER
 response=client.put(stage,content=b'\xff',headers={**headers,'Content-Type':'application/json'})
 assert response.status_code in {400,422} and 'no-store' in response.headers.get('cache-control','')
-# New router/repository object on the same SQLite file must retain records.
-with TestClient(app(),base_url=auth.public_base_url) as second:
-    second.cookies.set(auth.cookie_name,'synthetic-candidate-session')
-    assert check(second.get(stage),200).json()['record']['version']==1
-    assert check(second.get(stage),200).json()['tasks'][0]['completed']
+# Close the first app's client, then reopen through the real adapter in a NEW process.
+client.close()
+reopen = HARNESS + r'''
+c=TestClient(instance,base_url=auth.public_base_url)
+c.cookies.set(auth.cookie_name,'synthetic-candidate-session')
+r=c.get('/api/v1/manufacturing/lines/oem/stages/S4')
+assert r.status_code==200
+assert r.json()['record']['version']==1
+assert r.json()['record']['participants'][0]['name']=='Candidate supplier'
+assert r.json()['tasks'][0]['completed']
+c.close()
+print('process-restart-persistence-ok')
+'''
+assert subprocess.run([sys.executable,'-c',reopen],capture_output=True,check=True).stdout.strip()==b'process-restart-persistence-ok'
+client=TestClient(instance,base_url=auth.public_base_url)
+client.cookies.set(auth.cookie_name,'synthetic-candidate-session')
 auth.revoked=True;check(client.get(stage),401)
-print(json.dumps({'passed':True,'authentication':'synthetic_ASGI_with_real_middleware_authorization_csrf','persistence':'disposable_SQLite_reopen','business_lines':3,'business_relationships':'registered_not_connected','production_business_writes':0,'network_calls':0,'browser_acceptance':'not_run'}))
+print(json.dumps({'passed':True,'authentication':'synthetic_ASGI_with_real_middleware_authorization_csrf','persistence':'disposable_SQLite_separate_process_restart','application':'actual_app.main.create_app_routes','business_lines':3,'business_relationships':'registered_not_connected','production_business_writes':0,'network_calls':0,'browser_acceptance':'not_run'}))
