@@ -81,6 +81,8 @@ def assemble(manufacturing_repo,platform_repo,output,baseline,manufacturing_sha,
     business_dist=build_frontend(manufacturing_repo,manufacturing_sha,clean/'manufacturing',output/'business-build.private.log')
     platform_dist=build_frontend(platform_repo,platform_sha,clean/'platform',output/'platform-build.private.log')
     payload=output/'payload';payload.mkdir()
+    # A handbook-only release has no backend delta but keeps the COPY source.
+    (payload/'build/backend').mkdir(parents=True)
     write_business_release(manufacturing_repo,manufacturing_sha,business_dist,payload/'business')
     changed=git(platform_repo,'diff','--name-only',platform_base_sha,platform_sha,'--','backend/app').decode().splitlines()
     approved={'backend/app/'+name for name in baseline['approved_backend_files']}

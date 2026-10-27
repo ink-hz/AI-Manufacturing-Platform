@@ -39,3 +39,25 @@ def test_release_refuses_overwriting_existing_payload(tmp_path):
     root,sha,assets=repo(tmp_path);target=tmp_path/'business';target.mkdir();(target/'keep').write_text('keep')
     with pytest.raises(ValueError):importlib.import_module('build_artifact').write_business_release(root,sha,assets,target)
     assert (target/'keep').read_text()=='keep'
+
+
+def test_handbook_only_release_keeps_valid_empty_backend_copy_context(tmp_path,monkeypatch):
+    module=importlib.import_module('build_artifact')
+    root,_,assets=repo(tmp_path)
+    for name in module.TOOLS:
+        path=root/'deploy'/name;path.parent.mkdir(exist_ok=True);path.write_text('# build fixture\n')
+    subprocess.run(['git','-C',str(root),'add','.'],check=True)
+    subprocess.run(['git','-C',str(root),'commit','-q','-m','release tools'],check=True)
+    sha=subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD']).decode().strip()
+    for branch in ['main','master']:
+        if subprocess.run(['git','-C',str(root),'show-ref','--verify','--quiet','refs/heads/'+branch]).returncode:
+            subprocess.run(['git','-C',str(root),'branch',branch,sha],check=True)
+    monkeypatch.setattr(module,'build_frontend',lambda *_:assets)
+    baseline={'old_image_tag':'orbbec:baseline','old_image_id':'sha256:'+'a'*64,'chain_length':38,'old_platform_commit':sha,'old_manufacturing_commit':sha,'previous_manifest':'/private/future-maintenance.json','lock_tool':'/private/lock.py','lock_tool_sha256':'b'*64,'approved_backend_files':[]}
+    output=tmp_path/'output'
+    module.assemble(root,root,output,baseline,sha,sha,sha)
+    request=json.loads((output/'payload/request-template.json').read_text())
+    assert request['backend_hashes']==request['backend_base_hashes']=={}
+    import tarfile
+    with tarfile.open(output/'payload.tar.gz') as tar:
+        assert any(member.isdir() and member.name=='build/backend' for member in tar.getmembers())
