@@ -136,6 +136,20 @@ export function PackageEditor({
           </button>
         ))}
       </nav>
+      {tab === "items" && (
+        <nav className="mf-item-tabs" aria-label="资料项查看">
+          {d.items.map((i, n) => (
+            <button
+              type="button"
+              key={i.id}
+              aria-current={item === n ? "page" : undefined}
+              onClick={() => setItem(n)}
+            >
+              {i.title || `资料 ${n + 1}`}
+            </button>
+          ))}
+        </nav>
+      )}
       <MutationForm
         {...host}
         readOnly={host.readOnly || frozen}
@@ -223,16 +237,6 @@ export function PackageEditor({
         ) : (
           <>
             <div className="mf-full-width mf-item-tabs">
-              {d.items.map((i, n) => (
-                <button
-                  type="button"
-                  key={i.id}
-                  aria-current={item === n ? "page" : undefined}
-                  onClick={() => setItem(n)}
-                >
-                  {i.title || `资料 ${n + 1}`}
-                </button>
-              ))}
               <button
                 type="button"
                 onClick={() => {

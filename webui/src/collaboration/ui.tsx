@@ -106,6 +106,9 @@ export function MutationForm<T extends object>({
   changed?: boolean;
   dirtyKey?: string;
 } & EditorHost) {
+  // A live collection refresh cannot advance the CAS of retained draft content.
+  // Explicit guarded discard remounts the form with a new draft baseline.
+  const [baselineVersion] = useState(version);
   const [busy, setBusy] = useState(false),
     [frozen, setFrozen] = useState(false),
     [committed, setCommitted] = useState(false),
@@ -140,7 +143,7 @@ export function MutationForm<T extends object>({
           JSON.stringify({
             ...draft,
             operation_id: crypto.randomUUID(),
-            ...(version ? { expected_version: version } : {}),
+            ...(baselineVersion ? { expected_version: baselineVersion } : {}),
           }),
         );
         setFrozen(true);

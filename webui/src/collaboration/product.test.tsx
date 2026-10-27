@@ -1077,3 +1077,122 @@ it("blocks a pending replacement when its newer package has no applicable verifi
   ).toHaveLength(0);
   expect(host.textContent).toContain("替代核对必须选择适用的冻结资料项");
 });
+it.each([
+  ["review", false],
+  ["verified", false],
+  ["invalid", false],
+  ["draft", true],
+] as const)(
+  "inspects every material in a %s package (readOnly=%s) while keeping writes disabled",
+  async (status, readOnly) => {
+    packages = [
+      {
+        ...pkg(status),
+        items: [
+          pkg().items[0],
+          {
+            ...pkg().items[0],
+            id: "drawing",
+            kind: "drawing",
+            title: "第二份图纸",
+            source_name: "图纸库",
+            source_ref: "DRAW-2",
+            revision: "B2",
+            evidence: "https://example.com/drawing-proof",
+          },
+        ],
+      },
+    ];
+    await mount(readOnly);
+    await openTab("工程资料");
+    await click("生产依据");
+    await click("资料项目");
+    const target = btn("第二份图纸");
+    expect(target.matches(":disabled")).toBe(false);
+    await click("第二份图纸");
+    expect(
+      (host.querySelector('[aria-label="来源名称"]') as HTMLInputElement).value,
+    ).toBe("图纸库");
+    expect(
+      (host.querySelector('[aria-label="来源编号或链接"]') as HTMLInputElement)
+        .value,
+    ).toBe("DRAW-2");
+    expect(
+      (host.querySelector('[aria-label="资料修订"]') as HTMLInputElement).value,
+    ).toBe("B2");
+    expect(
+      host.querySelector('a[href="https://example.com/drawing-proof"]'),
+    ).not.toBeNull();
+    expect(
+      host.querySelector('[aria-label="资料名称"]')?.matches(":disabled"),
+    ).toBe(true);
+    expect(
+      [...host.querySelectorAll("button")].some(
+        (b) => b.textContent === "保存资料包",
+      ),
+    ).toBe(false);
+    expect(btn("添加资料项").matches(":disabled")).toBe(true);
+    expect(calls.some((c) => c.method !== "GET")).toBe(false);
+  },
+);
+it("retains the original readiness CAS after an issue refresh supplies a newer external version", async () => {
+  packages = [pkg()];
+  readiness = [check()];
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/readiness/r1") && init?.method === "PUT") {
+      const body = JSON.parse(String(init.body));
+      calls.push({ url: String(input), method: "PUT", body });
+      if (body.expected_version !== readiness[0].version)
+        return new Response("{}", { status: 409 });
+      readiness[0] = {
+        ...readiness[0],
+        items: body.items,
+        version: readiness[0].version + 1,
+      };
+      return new Response(JSON.stringify(readiness[0]));
+    }
+    return original(input, init);
+  });
+  await mount();
+  await openTab("生产准备");
+  await click("首批开工");
+  await field("核对原因", "本地保留草稿");
+  readiness = [
+    {
+      ...check(),
+      version: 2,
+      items: [
+        {
+          ...check().items[0],
+          owner: "另一位工程师",
+          reason: "外部版本2的结论",
+        },
+      ],
+    },
+  ];
+  await click("登记关联问题");
+  await field("问题标题", "补齐证据");
+  await click("创建关联问题");
+  expect(
+    (host.querySelector('[aria-label="核对原因"]') as HTMLInputElement).value,
+  ).toBe("本地保留草稿");
+  await click("保存核对");
+  const write = calls.find(
+    (c) => c.method === "PUT" && c.url.endsWith("/readiness/r1"),
+  );
+  expect(write?.body.expected_version).toBe(1);
+  expect(host.textContent).toContain("内容已更新");
+  expect(host.textContent).toContain("草稿已保留");
+  expect(readiness[0].version).toBe(2);
+  expect(readiness[0].items[0].reason).toBe("外部版本2的结论");
+  expect(
+    (host.querySelector('[aria-label="核对原因"]') as HTMLInputElement).value,
+  ).toBe("本地保留草稿");
+  await click("放弃草稿并重新读取");
+  await click("放弃并离开");
+  await click("首批开工");
+  expect(
+    (host.querySelector('[aria-label="核对原因"]') as HTMLInputElement).value,
+  ).toBe("外部版本2的结论");
+});
