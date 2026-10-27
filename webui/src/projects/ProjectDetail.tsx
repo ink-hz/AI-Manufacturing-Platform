@@ -14,9 +14,10 @@ import { StagePanel } from "./StagePanel";
 import { TaskEditor } from "./TaskEditor";
 import { ProjectForm } from "./ProjectForm";
 import { ActivityFeed } from "./ActivityFeed";
-import { SaveError, Status, type DirtyChange } from "./ui";
+import { ReadError, SaveError, Status, type DirtyChange } from "./ui";
 export function ProjectDetail({
   api,
+  draftEpoch,
   id,
   initial,
   stageTarget,
@@ -31,6 +32,7 @@ export function ProjectDetail({
   requestLeave,
 }: {
   api: Api;
+  draftEpoch: number;
   id: string;
   initial?: ProjectDetailData;
   stageTarget?: string;
@@ -49,6 +51,7 @@ export function ProjectDetail({
       stageTarget || initial?.project.current_stage_id || "",
     ),
     [error, setError] = useState(""),
+    [readError, setReadError] = useState(""),
     [editing, setEditing] = useState(false),
     [taskEdit, setTaskEdit] = useState<ProjectTask | "new" | null>(null),
     [busy, setBusy] = useState(false),
@@ -65,6 +68,7 @@ export function ProjectDetail({
   useEffect(() => {
     let current = true;
     setError("");
+    setReadError("");
     api
       .project(id)
       .then((d) => {
@@ -74,7 +78,7 @@ export function ProjectDetail({
         }
       })
       .catch((e) => {
-        if (current) setError(message(e));
+        if (current) setReadError(message(e));
       });
     return () => {
       current = false;
@@ -91,10 +95,15 @@ export function ProjectDetail({
     target?.scrollIntoView?.({ block: "center" });
   }, [taskTarget, stageId, data]);
   async function refreshed() {
-    const d = await api.project(id);
-    if (active.current) {
-      setData(d);
-      onChanged();
+    // The write has committed. A following GET failure must never turn it
+    // back into an unsaved mutation or cause a new create operation.
+    onChanged();
+    setReadError("");
+    try {
+      const d = await api.project(id);
+      if (active.current) setData(d);
+    } catch (e) {
+      if (active.current) setReadError(message(e));
     }
   }
   async function mutate(action: () => Promise<unknown>) {
@@ -119,8 +128,11 @@ export function ProjectDetail({
   if (!data)
     return (
       <div>
-        {error ? (
-          <SaveError error={error} onReload={() => setReload((x) => x + 1)} />
+        {readError ? (
+          <ReadError
+            error={readError}
+            onRetry={() => setReload((x) => x + 1)}
+          />
         ) : (
           <p role="status">正在读取项目…</p>
         )}
@@ -173,6 +185,13 @@ export function ProjectDetail({
           </button>
         </div>
       </div>
+      {readError && (
+        <ReadError
+          error={readError}
+          retained
+          onRetry={() => requestLeave(() => setReload((x) => x + 1))}
+        />
+      )}
       {error && (
         <SaveError
           error={error}
@@ -182,7 +201,7 @@ export function ProjectDetail({
       )}
       {editing && (
         <ProjectForm
-          key="project-core"
+          key={`project-core-${draftEpoch}`}
           api={api}
           catalog={catalog}
           project={p}
@@ -227,7 +246,7 @@ export function ProjectDetail({
         <div>
           {stage && (
             <StagePanel
-              key={stage.id}
+              key={`${stage.id}-${draftEpoch}`}
               api={api}
               projectId={id}
               stage={stage}
@@ -259,7 +278,7 @@ export function ProjectDetail({
             </div>
             {taskEdit && (
               <TaskEditor
-                key={taskEdit === "new" ? "new" : taskEdit.id}
+                key={`${draftEpoch}-${taskEdit === "new" ? "new" : taskEdit.id}`}
                 api={api}
                 projectId={id}
                 stageId={stage?.id || ""}

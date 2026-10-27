@@ -131,7 +131,7 @@ export function App({ options }: { options: MountOptions }) {
     if (next === view && !(next === "projects" && (selected || creating)))
       return;
     if (view === "handbook" && next === workView) {
-      setView(next);
+      returnToWork();
       return;
     }
     requestLeave(() => {
@@ -251,7 +251,7 @@ export function App({ options }: { options: MountOptions }) {
             </p>
           )}
           {!catalog && !error && <p role="status">正在读取工作台…</p>}
-          <main hidden={view === "handbook" || view === "legacy"} key={epoch}>
+          <main hidden={view === "handbook" || view === "legacy"}>
             {catalog && (
               <>
                 {actualWork === "home" && dashboard && (
@@ -268,6 +268,7 @@ export function App({ options }: { options: MountOptions }) {
                 {actualWork === "projects" &&
                   (creating ? (
                     <ProjectForm
+                      key={`new-project-${epoch}`}
                       api={api}
                       catalog={catalog}
                       readOnly={readOnly}
@@ -285,6 +286,7 @@ export function App({ options }: { options: MountOptions }) {
                   ) : selected ? (
                     <ProjectDetail
                       key={selected.id}
+                      draftEpoch={epoch}
                       api={api}
                       id={selected.id}
                       initial={selected.initial}

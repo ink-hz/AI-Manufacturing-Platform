@@ -13,7 +13,7 @@ import {
   type Priority,
   type WorkStatus,
 } from "./types";
-import { Choice, SaveError, useDirty, type DirtyChange } from "./ui";
+import { Choice, ReadError, SaveError, useDirty, type DirtyChange } from "./ui";
 export function TaskEditor({
   api,
   projectId,
@@ -50,6 +50,8 @@ export function TaskEditor({
     [status, setStatus] = useState<WorkStatus>(task?.status || "todo"),
     [busy, setBusy] = useState(false),
     [frozen, setFrozen] = useState(false),
+    [committed, setCommitted] = useState(false),
+    [refreshError, setRefreshError] = useState(""),
     [error, setError] = useState("");
   const active = useRef(true);
   useEffect(() => {
@@ -59,19 +61,21 @@ export function TaskEditor({
     };
   }, []);
   const operation = useRef<ProjectTaskCreate | null>(null),
+    committedWrite = useRef(false),
     lock = useRef(false);
   useDirty(
     "task-editor",
-    JSON.stringify(draft) !== JSON.stringify(initial) ||
-      status !== (task?.status || "todo") ||
-      !!operation.current ||
-      busy,
+    !committed &&
+      (JSON.stringify(draft) !== JSON.stringify(initial) ||
+        status !== (task?.status || "todo") ||
+        !!operation.current ||
+        busy),
     onDirty,
   );
   const update = (key: keyof TaskFields, value: string | null) =>
     setDraft({ ...draft, [key]: value });
   async function save() {
-    if (lock.current || readOnly) return;
+    if (lock.current || readOnly || committedWrite.current) return;
     lock.current = true;
     setBusy(true);
     setError("");
@@ -87,18 +91,54 @@ export function TaskEditor({
         setFrozen(true);
         await api.createProjectTask(projectId, operation.current);
       }
+      committedWrite.current = true;
       operation.current = null;
       if (active.current) {
+        setCommitted(true);
         await onSaved();
         if (active.current) onCancel();
       }
     } catch (e) {
-      if (active.current) setError(message(e));
+      if (active.current) {
+        if (committedWrite.current) setRefreshError(message(e));
+        else setError(message(e));
+      }
     } finally {
       lock.current = false;
       if (active.current) setBusy(false);
     }
   }
+  async function retryRefresh() {
+    if (lock.current || !committedWrite.current) return;
+    lock.current = true;
+    setBusy(true);
+    setRefreshError("");
+    try {
+      await onSaved();
+      if (active.current) onCancel();
+    } catch (e) {
+      if (active.current) setRefreshError(message(e));
+    } finally {
+      lock.current = false;
+      if (active.current) setBusy(false);
+    }
+  }
+  if (committed)
+    return (
+      <div className="mf-task-editor">
+        <p role="status">事项已保存。</p>
+        {refreshError && (
+          <ReadError
+            error={refreshError}
+            onRetry={() => void retryRefresh()}
+            disabled={busy}
+          />
+        )}
+        <button type="button" disabled={busy} onClick={onCancel}>
+          关闭已保存事项
+        </button>
+      </div>
+    );
   return (
     <form
       className="mf-task-editor mf-editor"

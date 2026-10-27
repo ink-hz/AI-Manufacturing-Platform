@@ -88,6 +88,26 @@ export function SaveError({
     </div>
   );
 }
+export function ReadError({
+  error,
+  onRetry,
+  retained = false,
+  disabled = false,
+}: {
+  error: string;
+  onRetry: () => void;
+  retained?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <div role="alert" className="mf-error">
+      读取失败。{error}。{retained ? "保留上次读取内容。" : ""}
+      <button type="button" disabled={disabled} onClick={onRetry}>
+        重试读取项目
+      </button>
+    </div>
+  );
+}
 export function Status({ value, text }: { value: string; text: string }) {
   return <span className={`mf-status mf-status-${value}`}>{text}</span>;
 }

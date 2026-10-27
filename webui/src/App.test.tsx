@@ -3,6 +3,8 @@ import { createRoot, Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { App } from "./App";
+import { TaskEditor } from "./projects/TaskEditor";
+import { createApi } from "./api";
 const catalog = JSON.parse(
   readFileSync("../src/manufacturing_platform/catalog.json", "utf8"),
 );
@@ -897,4 +899,204 @@ it("maps the workflow handbook backlink and prevents broken unpublished relative
   );
   host.removeEventListener("click", prevent);
   expect(policyPreserved).toBe(true);
+});
+it("executes the requested phase selection after discarding a phase draft without remounting its owner", async () => {
+  await mount();
+  await open();
+  await click("编辑阶段");
+  await field("阶段说明", "放弃的 S1 草稿");
+  await click("S2工程准备未开始");
+  await click("放弃并离开");
+  expect(host.querySelector('[aria-current="step"]')?.textContent).toContain(
+    "S2",
+  );
+  expect(host.querySelector(".mf-stage-workspace h2")?.textContent).toBe(
+    "工程准备",
+  );
+  expect(host.querySelector('[aria-label="阶段说明"]')).toBeNull();
+  expect(detail.stages[0].practice).toBe("");
+  expect(dirty).toHaveBeenLastCalledWith(false);
+});
+it("executes item changes after discard and keeps mutation failures visible in the live detail", async () => {
+  detail.tasks = [
+    {
+      id: "t1",
+      project_id: "p1",
+      stage_id: "S1",
+      title: "已有事项",
+      kind: "task",
+      status: "todo",
+      priority: "normal",
+      owner: "王工",
+      due_date: null,
+      notes: "",
+      version: 1,
+    },
+  ];
+  await mount();
+  await open();
+  await click("编辑阶段");
+  await field("阶段说明", "需要放弃的草稿");
+  fail = 503;
+  await click("完成事项");
+  await click("放弃并离开");
+  expect(
+    requests.filter(
+      (r) => r.method === "PATCH" && r.path.endsWith("/tasks/t1"),
+    ),
+  ).toHaveLength(1);
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "尚未保存",
+  );
+  expect(host.textContent).toContain("已有事项");
+  await click("完成事项");
+  expect(detail.tasks[0].status).toBe("done");
+  expect(host.textContent).toContain("重新打开事项");
+});
+it("opens the requested replacement item editor after discarding an existing item draft", async () => {
+  detail.tasks = [
+    {
+      id: "t1",
+      project_id: "p1",
+      stage_id: "S1",
+      title: "已有事项",
+      kind: "task",
+      status: "todo",
+      priority: "normal",
+      owner: "",
+      due_date: null,
+      notes: "",
+      version: 1,
+    },
+  ];
+  await mount();
+  await open();
+  await click("编辑事项");
+  await field("事项标题", "未保存的修改");
+  await click("新建事项");
+  await click("放弃并离开");
+  expect(host.querySelector(".mf-task-editor h3")?.textContent).toBe(
+    "新建事项",
+  );
+  expect(
+    (host.querySelector('[aria-label="事项标题"]') as HTMLInputElement).value,
+  ).toBe("");
+});
+it("treats a successful item POST as committed when detail refresh fails and retries only the read", async () => {
+  await mount();
+  await open();
+  await click("新建事项");
+  await field("事项标题", "只应创建一次");
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let committed = false,
+    failedRead = false;
+  vi.mocked(fetch).mockImplementation(async (...args) => {
+    if (
+      String(args[0]) === "/api/projects/p1" &&
+      (!args[1]?.method || args[1].method === "GET") &&
+      committed &&
+      !failedRead
+    ) {
+      failedRead = true;
+      return response({}, 503);
+    }
+    const result = await original(...args);
+    if (args[1]?.method === "POST") committed = true;
+    return result;
+  });
+  await click("创建事项");
+  expect(host.querySelector('[aria-label="事项标题"]')).toBeNull();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "读取失败",
+  );
+  expect(host.querySelector('[role="alert"]')?.textContent).not.toContain(
+    "尚未保存",
+  );
+  await click("重试读取项目");
+  expect(host.textContent).toContain("只应创建一次");
+  expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+  expect(detail.tasks).toHaveLength(1);
+});
+it("offers an unconditional truthful retry when the first project GET fails", async () => {
+  await mount();
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let failed = false;
+  vi.mocked(fetch).mockImplementation((...args) => {
+    if (String(args[0]) === "/api/projects/p1" && !failed) {
+      failed = true;
+      return Promise.resolve(response({}, 503));
+    }
+    return original(...args);
+  });
+  await open();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "读取失败",
+  );
+  expect(host.querySelector('[role="alert"]')?.textContent).not.toContain(
+    "尚未保存",
+  );
+  await click("重试读取项目");
+  expect(host.querySelector(".mf-phase-rail")).not.toBeNull();
+});
+it.each(["返回工作内容", "制造项目"])(
+  "restores retained work scroll when returning through %s",
+  async (label) => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    await mount();
+    await open();
+    host.scrollTop = 260;
+    const frame = host.querySelector(".mf-root") as HTMLElement;
+    frame.scrollTop = 130;
+    await click("制造手册");
+    host.scrollTop = 0;
+    frame.scrollTop = 0;
+    await click(label);
+    expect(host.scrollTop).toBe(260);
+    expect(frame.scrollTop).toBe(130);
+    expect(host.querySelector(".mf-phase-rail")).not.toBeNull();
+  },
+);
+it("never replays a committed task creation when its refresh callback rejects", async () => {
+  const api = createApi({
+    apiBase: "/api",
+    csrfToken: "csrf",
+    readOnly: false,
+  });
+  const saved = vi.fn().mockRejectedValue(new Error("读取失败"));
+  const closed = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        <TaskEditor
+          api={api}
+          projectId="p1"
+          stageId="S1"
+          stages={detail.stages}
+          readOnly={false}
+          onDirty={vi.fn()}
+          onSaved={saved}
+          onCancel={closed}
+          onReload={vi.fn()}
+        />,
+      ),
+    );
+    await field("事项标题", "已经提交的事项");
+    await click("创建事项");
+    expect(host.querySelector('[aria-label="事项标题"]')).toBeNull();
+    expect(host.textContent).toContain("事项已保存");
+    expect(host.textContent).not.toContain("尚未保存");
+    await click("重试读取项目");
+    expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+    expect(saved).toHaveBeenCalledTimes(2);
+    saved.mockResolvedValue(undefined);
+    await click("重试读取项目");
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+  } finally {
+    api.dispose();
+  }
 });
