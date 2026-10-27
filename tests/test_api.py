@@ -194,3 +194,71 @@ def test_patch_validation_is_fixed(tmp_path,body):
     response = client.patch(STAGE+'/tasks/unknown',json=body)
     assert response.status_code == 422
     assert response.json() == {'detail':'Invalid request'}
+
+
+def test_malformed_utf8_json_is_safe_and_private_after_authorization(tmp_path):
+    client, calls = make_client(tmp_path)
+    response = client.put(STAGE,content=b'\xff',headers={'content-type':'application/json'})
+    assert response.status_code == 400
+    assert response.json() == {'detail':'Invalid request'}
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert calls == [True]
+    assert not (tmp_path/'db').exists()
+
+
+@pytest.mark.parametrize('mode,status', [('anonymous',401),('denied',403)])
+def test_authorization_precedes_malformed_utf8_json_details(tmp_path,mode,status):
+    client, calls = make_client(tmp_path,mode=mode)
+    response = client.put(STAGE,content=b'\xff',headers={'content-type':'application/json'})
+    assert response.status_code == status
+    assert response.json() == {'detail':'Sign in' if status == 401 else 'Forbidden'}
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert calls == [True]
+    assert not (tmp_path/'db').exists()
+
+
+@pytest.mark.parametrize('method,path,status,detail', [
+    ('DELETE',STAGE,405,'Method not allowed'),
+    ('GET',BASE+'/assets/missing/nested.js',404,'Manufacturing resource not found'),
+    ('GET',BASE,404,'Manufacturing resource not found'),
+    ('PROPFIND',BASE+'/assets/manufacturing.js',405,'Method not allowed'),
+])
+def test_manufacturing_unmatched_and_method_errors_stay_private(tmp_path,method,path,status,detail):
+    client, calls = make_client(tmp_path)
+    response = client.request(method,path)
+    assert response.status_code == status
+    assert response.json() == {'detail':detail}
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert calls == [method not in {'GET','HEAD','OPTIONS'}]
+    assert not (tmp_path/'db').exists()
+    if status == 405:
+        assert 'GET' in response.headers['allow']
+
+
+@pytest.mark.parametrize('mode,status', [('anonymous',401),('denied',403)])
+@pytest.mark.parametrize('method,path', [
+    ('DELETE',STAGE),
+    ('GET',BASE+'/assets/missing/nested.js'),
+])
+def test_unmatched_and_method_errors_authorize_before_path_details(tmp_path,mode,status,method,path):
+    client, calls = make_client(tmp_path,mode=mode)
+    response = client.request(method,path)
+    assert response.status_code == status
+    assert response.json() == {'detail':'Sign in' if status == 401 else 'Forbidden'}
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert calls == [method != 'GET']
+    assert not (tmp_path/'db').exists()
+
+
+def test_manufacturing_error_boundary_preserves_unrelated_host_routes(tmp_path):
+    client, calls = make_client(tmp_path)
+    @client.app.get('/outside')
+    def outside():
+        return {'host':'unrelated'}
+    assert client.get('/outside').json() == {'host':'unrelated'}
+    assert client.delete('/outside').json() == {'detail':'Method Not Allowed'}
+    missing = client.get('/api/v1/manufacturing-other/assets/missing/nested.js')
+    assert missing.status_code == 404
+    assert missing.json() == {'detail':'Not Found'}
+    assert 'cache-control' not in missing.headers
+    assert calls == []

@@ -6,7 +6,9 @@ import sqlite3
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse, Response
+from starlette.routing import Match
 
 from .catalog import load_catalog
 from .models import RecordWrite, TaskCreate, TaskWrite
@@ -39,8 +41,9 @@ def build_router(*, database_path: str, assets_dir: str, authorize, release: str
                     response = await handler(request)
                 except RequestValidationError:
                     response = JSONResponse({'detail': 'Invalid request'}, status_code=422)
-                except HTTPException as exc:
-                    response = JSONResponse({'detail': exc.detail}, status_code=exc.status_code, headers=exc.headers)
+                except StarletteHTTPException as exc:
+                    detail = 'Invalid request' if exc.status_code == 400 else exc.detail
+                    response = JSONResponse({'detail': detail}, status_code=exc.status_code, headers=exc.headers)
                 except Conflict:
                     response = JSONResponse({'detail': 'Manufacturing data changed; reload before saving'}, status_code=409)
                 except (KeyError, NotFound):
@@ -114,5 +117,31 @@ def build_router(*, database_path: str, assets_dir: str, authorize, release: str
         if target.parent != root or not target.is_file():
             raise HTTPException(404, 'Manufacturing asset not found')
         return Response(target.read_bytes(), media_type=media_types[asset_name])
+
+    # Match only this prefix after all business routes. The fallback authorizes
+    # and returns errors; it cannot invoke a business handler or serve an asset.
+    business_routes = tuple(router.routes)
+
+    class PrivateFallbackRoute(PrivateRoute):
+        def matches(self, scope):
+            match, child_scope = super().matches(scope)
+            return (Match.FULL if match == Match.PARTIAL else match), child_scope
+
+        async def handle(self, scope, receive, send):
+            # Even unregistered HTTP methods must enter the private wrapper.
+            await self.app(scope, receive, send)
+
+    def unmatched(request: Request):
+        allowed_methods = set()
+        for route in business_routes:
+            match, _ = route.matches(request.scope)
+            if match != Match.NONE:
+                allowed_methods.update(route.methods or ())
+        if allowed_methods:
+            raise HTTPException(405, 'Method not allowed', headers={'Allow': ', '.join(sorted(allowed_methods))})
+        raise HTTPException(404, 'Manufacturing resource not found')
+
+    for path in ('', '/{unmatched_path:path}'):
+        router.add_api_route(path, unmatched, methods=['GET'], include_in_schema=False, route_class_override=PrivateFallbackRoute)
 
     return router
