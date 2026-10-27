@@ -316,6 +316,10 @@ def candidate(e):
         check_images(e,pre['old'])
         args=['docker','run','--rm','-i','--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--user','10001:10001','--tmpfs','/tmp:rw,noexec,nosuid,size=32m']
         args+=['--mount',f"type=bind,source={e['manufacturing_host']},target=/opt/manufacturing,readonly"]
+        if e.get('mode') == 'upgrade':
+            args+=['--mount',f"type=bind,source={previous_source(e)},target=/opt/manufacturing-previous,readonly"]
+            args+=['-e','PLATFORM_MANUFACTURING_PREVIOUS_ROOT=/opt/manufacturing-previous',
+                   '-e','PLATFORM_MANUFACTURING_PREVIOUS_RELEASE='+e['expected_old_manufacturing_commit']]
         args+=['-e','PLATFORM_MANUFACTURING_ROOT=/opt/manufacturing','-e','PLATFORM_MANUFACTURING_DATABASE_PATH=/tmp/manufacturing-candidate.sqlite3','-e','PLATFORM_MANUFACTURING_RELEASE='+e['manufacturing_commit']]
         args+=['--entrypoint','python',e['target_image_id'],'-c',(ops.STAGE/'candidate_verify.py').read_text()]
         checked=json.loads(ops.run(args,data=ops.canonical({'expected_source':pre['expected_source'],'expected_static':pre['expected_static'],'business_commit':e['manufacturing_commit']}),timeout=180))

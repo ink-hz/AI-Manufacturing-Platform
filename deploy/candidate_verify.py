@@ -219,6 +219,39 @@ auth.stale=False;auth.role=Role.MEMBER;check(client.get(stage),403)
 auth.role=Role.PLATFORM_OWNER
 response=client.put(stage,content=b'\xff',headers={**headers,'Content-Type':'application/json'})
 assert response.status_code in {400,422} and 'no-store' in response.headers.get('cache-control','')
+# Upgrade compatibility: old immutable source reads/writes the SAME disposable DB.
+previous_root=os.environ.get('PLATFORM_MANUFACTURING_PREVIOUS_ROOT')
+rollback_compatibility='not_applicable_initial'
+if previous_root:
+    previous=Path(previous_root)
+    previous_manifest=json.loads((previous/'manifest.json').read_text())
+    assert previous_manifest['commit']==os.environ['PLATFORM_MANUFACTURING_PREVIOUS_RELEASE']
+    assert os.statvfs(previous).f_flag & os.ST_RDONLY
+    for name,digest in previous_manifest['files'].items():
+        assert hashlib.sha256((previous/name).read_bytes()).hexdigest()==digest
+    legacy_reader=r"""import os,sys
+from pathlib import Path
+sys.path.insert(0,str(Path(os.environ['PLATFORM_MANUFACTURING_PREVIOUS_ROOT'])/'src'))
+from manufacturing_platform.project_repository import ProjectRepository
+from manufacturing_platform.project_models import ProjectTaskWrite
+from manufacturing_platform.catalog import load_catalog
+repo=ProjectRepository(os.environ['PLATFORM_MANUFACTURING_DATABASE_PATH'],load_catalog())
+pid,task_id=sys.argv[1:]
+detail=repo.get(pid)
+repo.list();repo.dashboard()
+item=next(row for row in detail['tasks'] if row['id']==task_id)
+repo.update_task(pid,task_id,ProjectTaskWrite(expected_version=item['version'],notes='Candidate previous-source roundtrip'),'Candidate rollback reader')
+assert repo.get(pid)['tasks']
+print('previous-source-current-db-ok')
+"""
+    assert subprocess.run([sys.executable,'-c',legacy_reader,arch['project']['id'],linked['id']],capture_output=True,check=True).stdout.strip()==b'previous-source-current-db-ok'
+    forward=check(client.get(arch_path),200).json()
+    forward_issue=next(row for row in forward['tasks'] if row['id']==linked['id'])
+    assert forward_issue['source']=={'type':'readiness','id':old['id'],'item_id':'version'}
+    assert forward_issue['notes']=='Candidate previous-source roundtrip'
+    assert forward['project']['status']=='completed'
+    rollback_compatibility='previous_immutable_source_read_write_current_disposable_database_then_forward'
+
 # Close the first app's client, then reopen through the real adapter in a NEW process.
 client.close()
 reopen = HARNESS + r'''
@@ -240,4 +273,4 @@ assert subprocess.run([sys.executable,'-c',reopen],capture_output=True,check=Tru
 client=TestClient(instance,base_url=auth.public_base_url)
 client.cookies.set(auth.cookie_name,'synthetic-candidate-session')
 auth.revoked=True;check(client.get(stage),401)
-print(json.dumps({'passed':True,'authentication':'synthetic_ASGI_with_real_middleware_authorization_csrf','persistence':'disposable_SQLite_separate_process_restart','application':'actual_app.main.create_app_routes','business_lines':3,'project_workflows':'create_phase_block_reopen_confirmation_archive_legacy_preservation','architecture_workflows':'systems_authority_frozen_versions_receipts_readiness_supersession_issue_audit','handbook':'exact_published_markdown_and_metadata','business_relationships':'registered_not_connected','production_business_writes':0,'network_calls':0,'browser_acceptance':'not_run'}))
+print(json.dumps({'passed':True,'authentication':'synthetic_ASGI_with_real_middleware_authorization_csrf','persistence':'disposable_SQLite_separate_process_restart','rollback_compatibility':rollback_compatibility,'application':'actual_app.main.create_app_routes','business_lines':3,'project_workflows':'create_phase_block_reopen_confirmation_archive_legacy_preservation','architecture_workflows':'systems_authority_frozen_versions_receipts_readiness_supersession_issue_audit','handbook':'exact_published_markdown_and_metadata','business_relationships':'registered_not_connected','production_business_writes':0,'network_calls':0,'browser_acceptance':'not_run'}))
