@@ -1,10 +1,10 @@
 # AI Manufacturing Platform
 
-大制造智能平台，面向制造业务的信息化与智能化工作。与 `AI-Agent-Platform` 同级维护，包含制造知识库、流程现状和待办工作台。
+大制造智能平台，面向制造业务的信息化与智能化工作。与 `AI-Agent-Platform` 同级维护，包含制造项目协同、事项管理、系统手册和制造知识库。
 
 ## 产品设计
 
-[大制造工作台产品设计 v0.2](docs/manufacturing-workbench-product-design.md)：首版聚焦流程总览与环节工作区，完成「选择业务 → 选择环节 → 记录现状和待办 → 保存 → 继续工作」的使用闭环。
+[大制造工作台产品设计 v0.3](docs/manufacturing-workbench-product-design.md)：以工作台、制造项目、事项和制造手册组织产品。围绕具体项目推进阶段、协调问题与确认事项，S1—S9 作为项目内部模板。
 
 ## 系统手册
 
@@ -53,10 +53,10 @@ AI-Manufacturing-Platform/
 
 ## 工作台开发与发布
 
-`src/manufacturing_platform/` 提供持久化业务 API，`webui/` 提供独立 React 资源；现有 Agent 平台负责登录、权限、导航和页面外壳。首版初始开放平台 owner/admin，支持相机、3D 打印机和 OEM 业务线，使用 SQLite 独立持久存储。
+`src/manufacturing_platform/` 提供持久化业务 API，`webui/` 提供独立 React 资源；现有 Agent 平台负责登录、权限、导航和页面外壳。当前开放平台 owner/admin，支持相机、3D 打印机和 OEM 业务线，使用 SQLite 独立持久存储。
 
-环节内可以保存现状、待办、参与方、设计/BOM 等交接资料及 ERP/MRP/MES 关系。系统关系登记不代表已连接；真实系统集成需另行核对厂商、接口和数据责任。
+项目支持列表/看板、负责人和交付目标、阶段推进、任务/问题/确认事项、资料协作和真实操作动态。手册复用平台 Markdown/Mermaid 渲染，旧流程现状保留为参考。项目内可登记参与方、设计/BOM 等交接资料及 ERP/MRP/MES 关系。系统关系登记不代表已连接；真实系统集成需另行核对厂商、接口和数据责任。
 
-前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。实际版本与验收范围见 [首版发布记录](docs/release-2026-10-27.md)。
+前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。实际版本与验收范围见 [产品重构发布记录](docs/release-product-v2-2026-10-27.md)，[首版发布记录](docs/release-2026-10-27.md)保留历史。
 
 线上入口：[大制造工作台](https://agent.orbbec.com.cn/manufacturing)（初始开放平台 owner/admin）。

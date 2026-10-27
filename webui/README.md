@@ -52,3 +52,11 @@ registration and always show `关系登记，尚未验证连接`.
 `npm test` uses Vitest/jsdom component and client tests. `test:bundle` additionally
 builds and evaluates the emitted IIFE in jsdom without Node globals; this is not
 browser automation or a substitute for the user's desktop/mobile page acceptance.
+
+## 项目管理与平台 Markdown 复用
+
+默认页面为工作台、制造项目、事项、制造手册；`LegacyWorkflow` 保留旧流程现状参考。新 API 类型见 `src/projects/types.ts`，所有请求沿用 `api.ts` 的同源、CSRF、权限失效和生命周期处理。
+
+`mount` 还接收可选 `renderMarkdown(element, { markdown, headingIds? }) => { unmount() }`。现有平台通过 `manufacturingMarkdown.tsx` 注入真实 `ArticleMarkdown`，后者沿用 `MermaidDiagram`。业务包负责章节、位置、元数据和上下文，未包含另一套 Markdown/Mermaid 依赖。原生渲染句柄按调用拥有独立 DOM 子根，替换时立即退役并延迟释放 React 根，避免旧清理删除新内容。
+
+手册正文从授权 API 读取，不复制进前端包；源文件更新需提交并发布制造制品。文档接口返回发布内容 SHA、Git 更新时间和 release；不匹配版本会拒绝，避免将新文档标成旧版本。
