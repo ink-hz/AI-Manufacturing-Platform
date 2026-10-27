@@ -2,7 +2,14 @@ export type MarkdownOptions = {
   markdown: string;
   headingIds?: Readonly<Record<number, string>>;
 };
+export interface WorkbenchUser {
+  displayName: string;
+  roleLabel: string;
+}
 export interface MountOptions {
+  user?: WorkbenchUser;
+  onNavigatePlatform?: () => void;
+  onLogout?: () => Promise<void>;
   /** Same-origin API root, e.g. /api/v1/manufacturing. */
   apiBase: string;
   csrfToken: string;

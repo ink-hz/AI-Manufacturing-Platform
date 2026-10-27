@@ -109,3 +109,70 @@ it.each([401, 403])(
     element.remove();
   },
 );
+
+it("updates account metadata in place while retaining a dirty project draft and retires updates", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async (url) =>
+        new Response(
+          JSON.stringify(
+            String(url).endsWith("/catalog")
+              ? { groups: [], lines: [], stages: [], can_edit: true }
+              : String(url).endsWith("/dashboard")
+                ? {
+                    counts: {},
+                    projects: [],
+                    attention: [],
+                    blockers: [],
+                    activity: [],
+                  }
+                : { items: [] },
+          ),
+        ),
+    ),
+  );
+  let handle!: ReturnType<typeof mount>;
+  await act(async () => {
+    handle = mount(element, {
+      apiBase: "/api",
+      csrfToken: "csrf",
+      readOnly: false,
+      user: { displayName: "旧姓名", roleLabel: "平台管理员" },
+    });
+  });
+  await act(async () =>
+    [...element.querySelectorAll("button")]
+      .find((b) => b.textContent === "新建项目")!
+      .click(),
+  );
+  const input = element.querySelector(
+    '[aria-label="项目名称"]',
+  ) as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(input, "未保存项目");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(handle.isDirty()).toBe(true);
+  const calls = vi.mocked(fetch).mock.calls.length;
+  await act(async () =>
+    handle.updateUser!({ displayName: "新姓名", roleLabel: "平台管理员" }),
+  );
+  expect(element.textContent).toContain("新姓名");
+  expect(element.textContent).not.toContain("旧姓名");
+  expect(element.querySelector('[aria-label="项目名称"]')).toBe(input);
+  expect(input.value).toBe("未保存项目");
+  expect(handle.isDirty()).toBe(true);
+  expect(fetch).toHaveBeenCalledTimes(calls);
+  await act(async () => handle.unmount());
+  await act(async () =>
+    handle.updateUser!({ displayName: "已退休", roleLabel: "" }),
+  );
+  expect(element.childElementCount).toBe(0);
+  element.remove();
+});

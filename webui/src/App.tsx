@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ConsoleShell, type ConsoleView } from "./console/ConsoleShell";
 import { createApi } from "./api";
 import type { Catalog, MountOptions } from "./types";
 import { LegacyWorkflow } from "./LegacyWorkflow";
@@ -34,14 +35,21 @@ const SystemCollaboration = lazy(() =>
     default: m.SystemCollaboration,
   })),
 );
-type View =
-  | "home"
-  | "projects"
-  | "tasks"
-  | "handbook"
-  | "legacy"
-  | "collaboration";
+type View = ConsoleView;
 export function App({ options }: { options: MountOptions }) {
+  const active = useRef(true),
+    externalBusy = useRef(false);
+  const [externalAction, setExternalAction] = useState<
+    "navigate" | "logout" | null
+  >(null);
+  const [accountBusy, setAccountBusy] = useState(false),
+    [accountError, setAccountError] = useState("");
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const callbacks = useRef(options);
   callbacks.current = options;
   const [catalog, setCatalog] = useState<Catalog | null>(null),
@@ -76,6 +84,9 @@ export function App({ options }: { options: MountOptions }) {
       y: number;
     } | null>(null);
   const deny = useCallback(() => {
+    active.current = false;
+    setPending(null);
+    setExternalAction(null);
     setDenied(true);
     setDashboard(null);
     setProjects([]);
@@ -112,6 +123,30 @@ export function App({ options }: { options: MountOptions }) {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
+  // Run only after the dirty notification and beforeunload effects have cleaned up.
+  useEffect(() => {
+    if (!externalAction || dirty || !active.current) return;
+    setExternalAction(null);
+    void (async () => {
+      try {
+        if (!active.current) return;
+        if (externalAction === "logout") await callbacks.current.onLogout?.();
+        else callbacks.current.onNavigatePlatform?.();
+      } catch {
+        if (active.current)
+          setAccountError(
+            externalAction === "logout"
+              ? "退出登录失败，请重试。"
+              : "返回平台失败，请重试。",
+          );
+      } finally {
+        if (active.current) {
+          externalBusy.current = false;
+          setAccountBusy(false);
+        }
+      }
+    })();
+  }, [externalAction, dirty]);
   useEffect(() => {
     let active = true;
     setError("");
@@ -144,6 +179,18 @@ export function App({ options }: { options: MountOptions }) {
     },
     [dirtyKeys],
   );
+  function accountAction(action: "navigate" | "logout") {
+    if (!active.current || externalBusy.current) return;
+    externalBusy.current = true;
+    setAccountBusy(true);
+    setAccountError("");
+    requestLeave(() => setExternalAction(action));
+  }
+  function cancelLeave() {
+    setPending(null);
+    externalBusy.current = false;
+    setAccountBusy(false);
+  }
   function go(next: View) {
     if (next === "handbook") {
       openBook();
@@ -228,188 +275,184 @@ export function App({ options }: { options: MountOptions }) {
   const readOnly = options.readOnly || !catalog?.can_edit;
   const actualWork = view === "handbook" ? workView : view;
   return (
-    <div className="mf-root mf-product" ref={frame}>
+    <div className="mf-root mf-product mf-console-root" ref={frame}>
       {denied ? (
         <p role="alert">无权访问大制造，请重新登录或联系管理员。</p>
       ) : (
         <>
-          <header className="mf-app-header">
-            <div>
-              <span className="mf-eyebrow">制造协同</span>
-              <h1>制造工作台</h1>
-              <p className="mf-intro">围绕项目交付，推进阶段与责任事项。</p>
-            </div>
-            <button
-              className="mf-primary"
-              disabled={readOnly}
-              onClick={() =>
-                requestLeave(() => {
-                  setCreating(true);
-                  setSelected(null);
-                  setView("projects");
-                  setWorkView("projects");
-                })
-              }
-            >
-              新建项目
-            </button>
-          </header>
-          <nav className="mf-main-nav" aria-label="制造工作区">
-            {(
-              [
-                ["home", "工作台"],
-                ["projects", "制造项目"],
-                ["tasks", "事项"],
-                ["collaboration", "系统协同"],
-                ["handbook", "制造手册"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                aria-current={view === key ? "page" : undefined}
-                onClick={() => go(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
-          {options.readOnly && <p className="mf-badge">当前为只读模式</p>}
-          {error && (
-            <p className="mf-error" role="alert">
-              {error}。{dashboard ? "保留上次读取内容。" : ""}
-              <button onClick={changed}>重试读取</button>
-            </p>
-          )}
-          {!catalog && !error && <p role="status">正在读取工作台…</p>}
-          <main hidden={view === "handbook" || view === "legacy"}>
-            {catalog && (
-              <>
-                {actualWork === "home" && dashboard && (
-                  <ProjectHome
-                    data={dashboard}
-                    onControl={openControl}
-                    onOpen={open}
-                    onFilter={(status) => {
-                      setFilters((f) => ({ ...f, status }));
-                      go("projects");
-                    }}
-                    onTasks={() => go("tasks")}
-                  />
-                )}
-                {actualWork === "projects" &&
-                  (creating ? (
-                    <ProjectForm
-                      key={`new-project-${epoch}`}
-                      api={api}
-                      catalog={catalog}
-                      readOnly={readOnly}
-                      onDirty={onDirty}
-                      onSaved={(d) => {
-                        setCreating(false);
-                        setSelected({ id: d.project.id });
-                        changed();
-                      }}
-                      onCancel={() => {
-                        setCreating(false);
-                        onDirty("project-form", false);
-                      }}
-                    />
-                  ) : selected ? (
-                    <ProjectDetail
-                      key={selected.id}
-                      draftEpoch={epoch}
-                      api={api}
-                      id={selected.id}
-                      initial={selected.initial}
-                      stageTarget={selected.stage}
-                      taskTarget={selected.task}
-                      controlTarget={selected.control}
-                      catalog={catalog}
-                      readOnly={readOnly}
-                      onDirty={onDirty}
-                      onChanged={changed}
-                      onBack={() => requestLeave(() => setSelected(null))}
-                      onHandbook={openBook}
-                      onLegacy={legacy}
-                      requestLeave={requestLeave}
-                    />
-                  ) : (
-                    <ProjectList
-                      items={projects}
-                      catalog={catalog}
-                      filters={filters}
-                      onFilters={setFilters}
+          <ConsoleShell
+            view={view}
+            creating={creating}
+            user={options.user}
+            projectName={
+              selected
+                ? projects.find((project) => project.id === selected.id)?.name
+                : undefined
+            }
+            taskCount={dashboard?.counts.open_tasks}
+            readOnly={readOnly}
+            busy={accountBusy}
+            onNavigate={go}
+            onCreate={() =>
+              requestLeave(() => {
+                setCreating(true);
+                setSelected(null);
+                setView("projects");
+                setWorkView("projects");
+              })
+            }
+            onNavigatePlatform={
+              options.onNavigatePlatform
+                ? () => accountAction("navigate")
+                : undefined
+            }
+            onLogout={
+              options.onLogout ? () => accountAction("logout") : undefined
+            }
+          >
+            {accountError && (
+              <p className="mf-error" role="alert">
+                {accountError}
+              </p>
+            )}
+            {options.readOnly && <p className="mf-badge">当前为只读模式</p>}
+            {error && (
+              <p className="mf-error" role="alert">
+                {error}。{dashboard ? "保留上次读取内容。" : ""}
+                <button onClick={changed}>重试读取</button>
+              </p>
+            )}
+            {!catalog && !error && <p role="status">正在读取工作台…</p>}
+            <div hidden={view === "handbook" || view === "legacy"}>
+              {catalog && (
+                <>
+                  {actualWork === "home" && dashboard && (
+                    <ProjectHome
+                      data={dashboard}
+                      onControl={openControl}
                       onOpen={open}
+                      onFilter={(status) => {
+                        setFilters((f) => ({ ...f, status }));
+                        go("projects");
+                      }}
+                      onTasks={() => go("tasks")}
                     />
-                  ))}
-                {actualWork === "collaboration" && (
-                  <Suspense fallback={<p role="status">正在读取系统协同…</p>}>
-                    <SystemCollaboration
-                      api={api}
+                  )}
+                  {actualWork === "projects" &&
+                    (creating ? (
+                      <ProjectForm
+                        key={`new-project-${epoch}`}
+                        api={api}
+                        catalog={catalog}
+                        readOnly={readOnly}
+                        onDirty={onDirty}
+                        onSaved={(d) => {
+                          setCreating(false);
+                          setSelected({ id: d.project.id });
+                          changed();
+                        }}
+                        onCancel={() => {
+                          setCreating(false);
+                          onDirty("project-form", false);
+                        }}
+                      />
+                    ) : selected ? (
+                      <ProjectDetail
+                        key={selected.id}
+                        draftEpoch={epoch}
+                        api={api}
+                        id={selected.id}
+                        initial={selected.initial}
+                        stageTarget={selected.stage}
+                        taskTarget={selected.task}
+                        controlTarget={selected.control}
+                        catalog={catalog}
+                        readOnly={readOnly}
+                        onDirty={onDirty}
+                        onChanged={changed}
+                        onBack={() => requestLeave(() => setSelected(null))}
+                        onHandbook={openBook}
+                        onLegacy={legacy}
+                        requestLeave={requestLeave}
+                      />
+                    ) : (
+                      <ProjectList
+                        items={projects}
+                        catalog={catalog}
+                        filters={filters}
+                        onFilters={setFilters}
+                        onOpen={open}
+                      />
+                    ))}
+                  {actualWork === "collaboration" && (
+                    <Suspense fallback={<p role="status">正在读取系统协同…</p>}>
+                      <SystemCollaboration
+                        api={api}
+                        catalog={catalog}
+                        readOnly={readOnly}
+                        onDirty={onDirty}
+                        onChanged={changed}
+                        requestLeave={requestLeave}
+                        draftEpoch={epoch}
+                        onOpen={open}
+                        onControl={openControl}
+                      />
+                    </Suspense>
+                  )}
+                  {actualWork === "tasks" && (
+                    <TaskCenter
+                      items={tasks}
                       catalog={catalog}
-                      readOnly={readOnly}
-                      onDirty={onDirty}
-                      onChanged={changed}
-                      requestLeave={requestLeave}
-                      draftEpoch={epoch}
                       onOpen={open}
                       onControl={openControl}
                     />
-                  </Suspense>
-                )}
-                {actualWork === "tasks" && (
-                  <TaskCenter
-                    items={tasks}
-                    catalog={catalog}
-                    onOpen={open}
-                    onControl={openControl}
-                  />
-                )}
-              </>
-            )}
-          </main>
-          {legacyVisited && (
-            <div hidden={view !== "legacy"} key={`legacy-${epoch}`}>
-              <div className="mf-section-heading">
-                <h2>流程现状参考</h2>
-                <button onClick={() => go("home")}>返回工作台</button>
-                <button onClick={() => openBook()}>查阅制造手册</button>
-              </div>
-              <LegacyWorkflow options={legacyOptions} />
+                  )}
+                </>
+              )}
             </div>
-          )}
-          <HandbookReader
-            options={readerOptions}
-            release={catalog?.release}
-            visible={view === "handbook"}
-            target={bookTarget}
-            onBack={returnToWork}
-            onLegacy={legacy}
-          />
-          {pending && (
-            <Dialog onClose={() => setPending(null)}>
-              <h2>尚有未保存的工作</h2>
-              <p>
-                离开会放弃当前草稿。你也可以继续编辑，或查阅制造手册后返回。
-              </p>
-              <div className="mf-actions">
-                <button className="mf-primary" onClick={() => setPending(null)}>
-                  继续编辑
-                </button>
-                <button
-                  onClick={() => {
-                    const action = pending;
-                    setPending(null);
-                    setDirtyKeys({});
-                    setEpoch((n) => n + 1);
-                    action();
-                  }}
-                >
-                  放弃并离开
-                </button>
+            {legacyVisited && (
+              <div hidden={view !== "legacy"} key={`legacy-${epoch}`}>
+                <div className="mf-section-heading">
+                  <h2>流程现状参考</h2>
+                  <button onClick={() => go("home")}>返回工作台</button>
+                  <button onClick={() => openBook()}>查阅制造手册</button>
+                </div>
+                <LegacyWorkflow options={legacyOptions} />
               </div>
-            </Dialog>
-          )}
+            )}
+            <HandbookReader
+              options={readerOptions}
+              release={catalog?.release}
+              visible={view === "handbook"}
+              target={bookTarget}
+              onBack={returnToWork}
+              onLegacy={legacy}
+            />
+            {pending && (
+              <Dialog onClose={cancelLeave}>
+                <h2>尚有未保存的工作</h2>
+                <p>
+                  离开会放弃当前草稿。你也可以继续编辑，或查阅制造手册后返回。
+                </p>
+                <div className="mf-actions">
+                  <button className="mf-primary" onClick={cancelLeave}>
+                    继续编辑
+                  </button>
+                  <button
+                    onClick={() => {
+                      const action = pending;
+                      setPending(null);
+                      setDirtyKeys({});
+                      setEpoch((n) => n + 1);
+                      action();
+                    }}
+                  >
+                    放弃并离开
+                  </button>
+                </div>
+              </Dialog>
+            )}
+          </ConsoleShell>
         </>
       )}
     </div>

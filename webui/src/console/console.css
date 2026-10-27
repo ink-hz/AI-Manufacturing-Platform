@@ -1,0 +1,390 @@
+/* Every rule belongs to the mounted manufacturing console. */
+.mf-root.mf-product.mf-console-root {
+  --mf-line: #e1e7ef;
+  --mf-muted: #66758a;
+  --mf-accent: #2563c5;
+  --mf-soft: #f3f6fa;
+  --mf-surface: #fff;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: #f3f6fa;
+  color: #1b2b42;
+  font-family: "PingFang SC", "Microsoft YaHei", Inter, system-ui, sans-serif;
+}
+.mf-root .mf-console {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100dvh;
+}
+.mf-root .mf-console-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+.mf-root .mf-console-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+.mf-root .mf-console-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-right: 1px solid var(--mf-line);
+  z-index: 35;
+  padding: 0 14px;
+}
+.mf-root .mf-console-brand {
+  height: 86px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.mf-root .mf-console-mark {
+  display: grid;
+  place-items: center;
+  background: #2059b1;
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  font-size: 22px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.mf-root .mf-console-brand strong {
+  font-size: 17px;
+  letter-spacing: 0.03em;
+}
+.mf-root .mf-console-brand small {
+  display: block;
+  font-size: 10px;
+  color: var(--mf-muted);
+  margin-top: 2px;
+}
+.mf-root .mf-console-sidebar > nav {
+  flex: 1;
+  overflow-y: auto;
+}
+.mf-root .mf-console-group {
+  padding: 12px 12px 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #8290a3;
+}
+.mf-root .mf-console-sidebar button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #53637a;
+  text-align: left;
+  border-radius: 7px;
+  padding: 10px 12px;
+  margin: 4px 0;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.mf-root .mf-console-sidebar button:hover:enabled {
+  background: #f2f6fb;
+  color: #2059b1;
+}
+.mf-root .mf-console-sidebar button[aria-current="page"] {
+  background: #eaf1fd;
+  color: #2059b1;
+  font-weight: 650;
+}
+.mf-root .mf-console-count {
+  margin-left: auto;
+  background: #e2ebf9;
+  border-radius: 5px;
+  min-width: 22px;
+  padding: 0 5px;
+  text-align: center;
+  font-size: 11px;
+}
+.mf-root .mf-console-sidebar-bottom {
+  border-top: 1px solid var(--mf-line);
+  padding: 12px 0;
+}
+.mf-root .mf-console-workspace {
+  min-width: 0;
+}
+.mf-root .mf-console-topbar {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 28px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: #fff;
+  border-bottom: 1px solid var(--mf-line);
+}
+.mf-root .mf-console-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  font-size: 12px;
+  color: #8190a3;
+}
+.mf-root .mf-console-breadcrumb strong {
+  color: #354760;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.mf-root .mf-console-breadcrumb > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mf-root .mf-console-account {
+  margin-left: auto;
+  position: relative;
+  flex-shrink: 0;
+}
+.mf-root .mf-console-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  padding: 4px 0 4px 8px;
+  font-size: 13px;
+  border-radius: 7px;
+}
+.mf-root .mf-console-avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #eaf0fb;
+  color: #255cad;
+  font-weight: 600;
+}
+.mf-root .mf-console-user-label {
+  display: grid;
+  text-align: left;
+  max-width: 180px;
+}
+.mf-root .mf-console-user-label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+.mf-root .mf-console-user-label small {
+  color: #8190a3;
+  font-size: 10px;
+}
+.mf-root .mf-console-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 190px;
+  padding: 6px;
+  border: 1px solid var(--mf-line);
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 10px 28px #182e4a1a;
+}
+.mf-root .mf-console-menu button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  padding: 10px 12px;
+  background: transparent;
+  font-size: 13px;
+}
+.mf-root .mf-console-menu button:hover:enabled {
+  background: #eef4fc;
+}
+.mf-root .mf-console-content {
+  padding: 28px clamp(16px, 2.4vw, 40px) 48px;
+}
+.mf-root .mf-console-page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 26px;
+}
+.mf-root .mf-console-page-heading p {
+  margin: 0 0 5px;
+  font-size: 11px;
+  color: #7e8ca0;
+  letter-spacing: 0.06em;
+}
+.mf-root .mf-console-page-heading h1 {
+  margin: 0;
+  font-size: 23px;
+  line-height: 1.4;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.mf-root .mf-console .mf-primary {
+  background: #2563c5;
+  color: #fff;
+  border: 1px solid #2563c5;
+  padding: 9px 17px;
+  border-radius: 7px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.mf-root .mf-console .mf-primary:hover:enabled {
+  background: #1b51a5;
+  color: #fff;
+}
+.mf-root .mf-console .mf-console-drawer-toggle,
+.mf-root .mf-console .mf-console-drawer-close {
+  display: none;
+}
+.mf-root .mf-console-collapsed .mf-console-sidebar {
+  padding: 0 8px;
+}
+.mf-root .mf-console-collapsed .mf-console-sidebar .mf-console-label,
+.mf-root .mf-console-collapsed .mf-console-count {
+  display: none;
+}
+.mf-root .mf-console-collapsed .mf-console-brand {
+  padding: 0 8px;
+}
+.mf-root .mf-console-collapsed .mf-console-sidebar button {
+  justify-content: center;
+  padding: 12px;
+}
+.mf-root .mf-console-skip {
+  position: fixed;
+  top: -60px;
+  left: 16px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: #fff;
+  color: #2059b1;
+  border-radius: 6px;
+}
+.mf-root .mf-console-skip:focus {
+  top: 8px;
+}
+.mf-root .mf-console-overlay {
+  position: fixed;
+  inset: 0;
+  background: #172b4699;
+  z-index: 50;
+}
+.mf-root .mf-console-drawer .mf-console-sidebar {
+  display: flex;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 272px;
+  max-width: calc(100vw - 36px);
+  z-index: 60;
+  padding: 0 14px;
+}
+.mf-root .mf-console-drawer .mf-console-sidebar .mf-console-label {
+  display: block;
+}
+.mf-root .mf-console-drawer .mf-console-sidebar .mf-console-count {
+  display: inline;
+}
+.mf-root .mf-console-drawer .mf-console-sidebar button {
+  justify-content: flex-start;
+}
+.mf-root .mf-console-drawer .mf-console-brand {
+  padding: 0 10px;
+}
+.mf-root .mf-console-drawer .mf-console-drawer-close {
+  display: flex;
+  width: auto;
+  margin-left: auto;
+  padding: 6px;
+}
+@media (max-width: 1100px) and (min-width: 761px) {
+  .mf-root .mf-console .mf-home-grid,
+  .mf-root .mf-console .mf-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .mf-root .mf-console .mf-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .mf-root .mf-console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mf-root .mf-console-sidebar {
+    display: none;
+  }
+  .mf-root .mf-console-topbar {
+    padding: 0 16px;
+    gap: 12px;
+  }
+  .mf-root .mf-console .mf-console-drawer-toggle {
+    display: flex;
+    border: 0;
+    background: transparent;
+    padding: 6px;
+  }
+  .mf-root .mf-console .mf-console-collapse {
+    display: none;
+  }
+  .mf-root .mf-console-breadcrumb {
+    gap: 8px;
+  }
+  .mf-root .mf-console-breadcrumb > span:first-child,
+  .mf-root .mf-console-breadcrumb > span:nth-child(2) {
+    display: none;
+  }
+  .mf-root .mf-console-content {
+    padding: 22px 16px 40px;
+  }
+  .mf-root .mf-console-user-label {
+    max-width: 100px;
+  }
+  .mf-root .mf-console-page-heading {
+    margin-bottom: 22px;
+  }
+  .mf-root .mf-console-page-heading h1 {
+    font-size: 21px;
+  }
+}
+@media (max-width: 460px) {
+  .mf-root .mf-console-topbar {
+    gap: 7px;
+    padding: 0 10px;
+  }
+  .mf-root .mf-console-breadcrumb > span {
+    display: none;
+  }
+  .mf-root .mf-console-user {
+    gap: 7px;
+  }
+  .mf-root .mf-console-user-label {
+    max-width: 84px;
+  }
+  .mf-root .mf-console-content {
+    padding: 20px 12px 36px;
+  }
+}
+
+.mf-root .mf-console-content .mf-chapter-nav {
+  top: 84px;
+}
+.mf-root .mf-console-content :is(h1, h2, h3, h4, h5, h6) {
+  scroll-margin-top: 84px;
+}

@@ -50,7 +50,9 @@ async function flush() {
 }
 function button(text: string) {
   const b = [...host.querySelectorAll("button")].find(
-    (b) => b.textContent?.trim() === text && !b.closest("[hidden]"),
+    (b) =>
+      (b.getAttribute("aria-label") || b.textContent?.trim()) === text &&
+      !b.closest("[hidden]"),
   );
   if (!b) throw new Error(`Missing ${text}: ${host.textContent}`);
   return b;
@@ -572,7 +574,9 @@ it("follows named hashes even when outline IDs override the renderer heading slu
   );
   await click("制造手册");
   expect(renderMarkdown.mock.calls.at(-1)[1].headingIds).toEqual({
-    1: "mf-chapter-0", 3: "mf-chapter-1", 5: "mf-chapter-2",
+    1: "mf-chapter-0",
+    3: "mf-chapter-1",
+    5: "mf-chapter-2",
   });
   const link = host.querySelector(".mf-article a")!;
   const event = new MouseEvent("click", { bubbles: true, cancelable: true });
@@ -1303,20 +1307,25 @@ it("renders the complete handbook through its end and keeps the same renderer wh
       const heading = document.createElement(`h${match[1].length}`);
       heading.id = options.headingIds?.[index + 1] || `unmapped-${index + 1}`;
       heading.textContent = match[2];
-      const scroll = vi.fn();heading.scrollIntoView = scroll;scrolls.set(match[2], scroll);
+      const scroll = vi.fn();
+      heading.scrollIntoView = scroll;
+      scrolls.set(match[2], scroll);
       element.append(heading);
     });
-    const unmount = vi.fn();retires.push(unmount);return {unmount};
+    const unmount = vi.fn();
+    retires.push(unmount);
+    return { unmount };
   });
   await click("制造手册");
-  const complete = "# 手册\n介绍\n## 5. S1 需求\n阶段内容\n## 6. S2 工程\n工程内容";
+  const complete =
+    "# 手册\n介绍\n## 5. S1 需求\n阶段内容\n## 6. S2 工程\n工程内容";
   expect(renderMarkdown.mock.calls.at(-1)[1].markdown).toBe(complete);
   const count = renderMarkdown.mock.calls.length;
   const handle = retires.at(-1);
   await click("6. S2 工程");
   expect(renderMarkdown).toHaveBeenCalledTimes(count);
   expect(handle).not.toHaveBeenCalled();
-  expect(scrolls.get("6. S2 工程")).toHaveBeenCalledWith({block:"start"});
+  expect(scrolls.get("6. S2 工程")).toHaveBeenCalledWith({ block: "start" });
   expect(host.querySelector(".mf-article")?.textContent).toContain("介绍");
   expect(host.querySelector(".mf-article")?.textContent).toContain("阶段内容");
   expect(host.querySelector(".mf-article")?.textContent).toContain("工程内容");
@@ -1331,24 +1340,34 @@ it("renders the complete handbook through its end and keeps the same renderer wh
 });
 
 it("waits for the shared renderer to insert the target heading while retaining the entire stage-linked document", async () => {
-  await mount();await open();await click("S2工程准备未开始");
-  const scroll = vi.fn();let insert!:()=>void;
-  renderMarkdown.mockImplementation((element:HTMLElement, options:any)=>{
-    insert=()=>{
-      element.textContent=options.markdown;
-      const heading=document.createElement("h2");heading.id=options.headingIds?.[5]||"unmapped";
-      heading.textContent="6. S2 工程";
-      heading.scrollIntoView=(options)=>{scroll(options);element.parentElement!.scrollTop=50;};
+  await mount();
+  await open();
+  await click("S2工程准备未开始");
+  const scroll = vi.fn();
+  let insert!: () => void;
+  renderMarkdown.mockImplementation((element: HTMLElement, options: any) => {
+    insert = () => {
+      element.textContent = options.markdown;
+      const heading = document.createElement("h2");
+      heading.id = options.headingIds?.[5] || "unmapped";
+      heading.textContent = "6. S2 工程";
+      heading.scrollIntoView = (options) => {
+        scroll(options);
+        element.parentElement!.scrollTop = 50;
+      };
       element.append(heading);
     };
-    return {unmount:vi.fn()};
+    return { unmount: vi.fn() };
   });
   await click("了解这个阶段");
-  expect(renderMarkdown.mock.calls.at(-1)[1].markdown).toContain("# 手册\n介绍");
+  expect(renderMarkdown.mock.calls.at(-1)[1].markdown).toContain(
+    "# 手册\n介绍",
+  );
   expect(renderMarkdown.mock.calls.at(-1)[1].markdown).toContain("阶段内容");
   expect(scroll).not.toHaveBeenCalled();
-  await act(async()=>insert());await flush();
-  expect(scroll).toHaveBeenCalledWith({block:"start"});
+  await act(async () => insert());
+  await flush();
+  expect(scroll).toHaveBeenCalledWith({ block: "start" });
   host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop = 111;
   await click("工作流总览");
   await act(async () => insert());
@@ -1374,14 +1393,20 @@ it("preserves independent document positions with asynchronous renderer commits"
       heading.textContent = options.markdown;
       element.append(heading);
     };
-    return { unmount() { active = false; element.replaceChildren(); } };
+    return {
+      unmount() {
+        active = false;
+        element.replaceChildren();
+      },
+    };
   });
   await click("制造手册");
   await act(async () => insert());
   host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop = 111;
   await click("工作流总览");
   await act(async () => insert());
-  const workflowStart = host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop;
+  const workflowStart =
+    host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop;
   host.querySelector<HTMLElement>(".mf-book-body")!.scrollTop = 222;
   await click("系统手册");
   await act(async () => insert());
@@ -1391,7 +1416,9 @@ it("preserves independent document positions with asynchronous renderer commits"
 });
 
 it("retires an unfinished stage jump when opening the general handbook", async () => {
-  await mount(); await open(); await click("S2工程准备未开始");
+  await mount();
+  await open();
+  await click("S2工程准备未开始");
   const scroll = vi.fn();
   let insert!: () => void;
   renderMarkdown.mockImplementation((element: HTMLElement, options: any) => {
@@ -1409,4 +1436,180 @@ it("retires an unfinished stage jump when opening the general handbook", async (
   await click("制造手册");
   await act(async () => insert());
   expect(scroll).not.toHaveBeenCalled();
+});
+
+it("shows the actual account and guards external navigation until dirty cleanup", async () => {
+  const onNavigatePlatform = vi.fn(() => {
+    expect(dirty).toHaveBeenLastCalledWith(false);
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+  await mount({
+    user: { displayName: "测试制造经理", roleLabel: "平台管理员" },
+    onNavigatePlatform,
+  });
+  expect(host.textContent).toContain("测试制造经理");
+  expect(host.textContent).toContain("平台管理员");
+  expect(host.querySelector(".mf-app-header")).toBeNull();
+  expect(host.querySelector('nav[aria-label="制造工作区"]')).not.toBeNull();
+  await click("新建项目");
+  await field("项目名称", "账户操作前草稿");
+  await act(async () =>
+    (
+      host.querySelector('[aria-label="账户菜单"]') as HTMLButtonElement
+    ).click(),
+  );
+  await act(async () =>
+    (host.querySelector('[role="menuitem"]') as HTMLButtonElement).click(),
+  );
+  expect(onNavigatePlatform).not.toHaveBeenCalled();
+  await click("继续编辑");
+  expect(
+    (host.querySelector('[aria-label="项目名称"]') as HTMLInputElement).value,
+  ).toBe("账户操作前草稿");
+  await click("返回 Agent 平台");
+  await click("放弃并离开");
+  expect(onNavigatePlatform).toHaveBeenCalledTimes(1);
+});
+it("guards logout, prevents repeated submission and retains the console on failure", async () => {
+  let reject!: (reason: Error) => void;
+  const onLogout = vi.fn(
+    () =>
+      new Promise<void>((_, no) => {
+        reject = no;
+      }),
+  );
+  await mount({ onLogout });
+  await click("新建项目");
+  await field("项目名称", "退出前草稿");
+  await act(async () =>
+    (
+      host.querySelector('[aria-label="账户菜单"]') as HTMLButtonElement
+    ).click(),
+  );
+  await click("退出登录");
+  expect(onLogout).not.toHaveBeenCalled();
+  await click("放弃并离开");
+  expect(onLogout).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    (
+      host.querySelector('[aria-label="账户菜单"]') as HTMLButtonElement
+    ).click(),
+  );
+  expect(button("退出登录").disabled).toBe(true);
+  await act(async () => reject(new Error("network")));
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "退出登录失败",
+  );
+  expect(host.querySelector('nav[aria-label="制造工作区"]')).not.toBeNull();
+  expect(button("退出登录").disabled).toBe(false);
+});
+it("navigates with the sidebar and restores focus for the account menu and navigation drawer", async () => {
+  await mount({ onLogout: async () => {}, onNavigatePlatform: () => {} });
+  const account = host.querySelector(
+    '[aria-label="账户菜单"]',
+  ) as HTMLButtonElement;
+  expect(account).not.toBeNull();
+  await act(async () => {
+    account.focus();
+    account.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+    );
+  });
+  expect(document.activeElement?.getAttribute("role")).toBe("menuitem");
+  await act(async () =>
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    ),
+  );
+  expect(host.querySelector('[role="menu"]')).toBeNull();
+  expect(document.activeElement).toBe(account);
+  await act(async () =>
+    (
+      host.querySelector('[aria-label="收起侧栏"]') as HTMLButtonElement
+    ).click(),
+  );
+  expect(host.querySelector('[aria-label="展开侧栏"]')).not.toBeNull();
+  await click("制造项目");
+  expect(host.querySelector(".mf-project-table")).not.toBeNull();
+  const toggle = host.querySelector(
+    '[aria-label="打开导航"]',
+  ) as HTMLButtonElement;
+  await act(async () => {
+    toggle.focus();
+    toggle.click();
+  });
+  expect(
+    host.querySelector('[role="dialog"][aria-label="制造导航"]'),
+  ).not.toBeNull();
+  await act(async () =>
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    ),
+  );
+  expect(
+    host.querySelector('[role="dialog"][aria-label="制造导航"]'),
+  ).toBeNull();
+  expect(document.activeElement).toBe(toggle);
+});
+it("closes the drawer after navigation and traps focus until it closes", async () => {
+  await mount();
+  await act(async () =>
+    (
+      host.querySelector('[aria-label="打开导航"]') as HTMLButtonElement
+    ).click(),
+  );
+  const dialog = host.querySelector('[role="dialog"][aria-label="制造导航"]')!;
+  expect(dialog.querySelector(".mf-console-collapse")).toBeNull();
+  const buttons = [
+    ...dialog.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
+  ];
+  await act(async () => {
+    buttons.at(-1)!.focus();
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Tab",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(document.activeElement).toBe(buttons[0]);
+  await click("制造项目");
+  expect(
+    host.querySelector('[role="dialog"][aria-label="制造导航"]'),
+  ).toBeNull();
+  expect(host.querySelector(".mf-project-table")).not.toBeNull();
+  expect(document.body.style.overflow).not.toBe("hidden");
+});
+it("retires account callbacks and removes private user metadata on authorization failure", async () => {
+  const onNavigatePlatform = vi.fn(),
+    onLogout = vi.fn();
+  await mount({
+    user: { displayName: "私人姓名", roleLabel: "平台管理员" },
+    onNavigatePlatform,
+    onLogout,
+  });
+  await click("新建项目");
+  await field("项目名称", "私有草稿");
+  await click("返回 Agent 平台");
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation((url, init) =>
+    String(url).endsWith("/dashboard")
+      ? Promise.resolve(response({}, 403))
+      : original(url, init),
+  );
+  // An independent refresh retires the console before its pending external action.
+  await mount({
+    user: { displayName: "私人姓名", roleLabel: "平台管理员" },
+    onNavigatePlatform,
+    onLogout,
+    csrfToken: "rotated",
+  });
+  expect(host.textContent).toContain("无权访问");
+  expect(host.textContent).not.toContain("私人姓名");
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(onNavigatePlatform).not.toHaveBeenCalled();
+  expect(onLogout).not.toHaveBeenCalled();
 });
