@@ -1,0 +1,412 @@
+{
+  "groups": [
+    {
+      "id": "internal",
+      "name": "内部业务",
+      "enabled": true,
+      "order": 1
+    },
+    {
+      "id": "external",
+      "name": "外部业务",
+      "enabled": true,
+      "order": 2
+    }
+  ],
+  "lines": [
+    {
+      "id": "cameras",
+      "name": "自研相机",
+      "description": "含数采相机",
+      "group_id": "internal",
+      "enabled": true,
+      "order": 1,
+      "stage_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9"
+      ]
+    },
+    {
+      "id": "3d-printers",
+      "name": "3D 打印机",
+      "description": "",
+      "group_id": "internal",
+      "enabled": true,
+      "order": 2,
+      "stage_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9"
+      ]
+    },
+    {
+      "id": "oem",
+      "name": "OEM 代工代料",
+      "description": "",
+      "group_id": "external",
+      "enabled": true,
+      "order": 3,
+      "stage_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9"
+      ]
+    }
+  ],
+  "stages": [
+    {
+      "id": "S1",
+      "name": "需求确认",
+      "enabled": true,
+      "purpose": "确认制造需求的来源、数量、交期与责任边界。",
+      "help": "受理不代表已经批准采购或投产，先区分评估、试产与正式执行。 参考：docs/workflows/manufacturing-process-overview.md；docs/manufacturing-workbench-product-design.md。以下分工仅为建议，实际参与方、系统与责任尚待核实。",
+      "prompts": [
+        "需求来自哪里，依据是什么？",
+        "哪些交期和责任仍需确认？"
+      ],
+      "reference_participants": [
+        {
+          "name": "建议：产品或客户接口",
+          "role": "参考职责类型",
+          "responsibility": "建议核对：确认需求依据和交付范围"
+        }
+      ],
+      "reference_handoffs": [
+        {
+          "name": "参考：制造需求",
+          "from_party": "建议核对：需求提出方",
+          "to_party": "建议核对：制造与计划",
+          "version_reference": "参考示例，适用版本与批准依据待核实",
+          "notes": "建议交接范围，非已确认公司事实"
+        }
+      ],
+      "reference_systems": [
+        {
+          "name": "参考：设计来源 / ERP / MRP / MES 能力",
+          "kind": "参考能力，实际产品待核实",
+          "objects": "需求、业务订单",
+          "maintainer": "待核实",
+          "method": "unknown",
+          "notes": "仅为建议关系；尚未验证连接，不代表已部署或已同步"
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "name": "工程准备",
+      "enabled": true,
+      "purpose": "确认产品定义、制造方法和适用版本。",
+      "help": "设计 BOM、制造 BOM、工艺和测试要求应分别标识；OEM 需要核对客户与制造方的批准责任。 参考：docs/workflows/manufacturing-process-overview.md；docs/manufacturing-workbench-product-design.md。以下分工仅为建议，实际参与方、系统与责任尚待核实。",
+      "prompts": [
+        "谁提供设计和工程 BOM，谁转成制造 BOM？",
+        "版本、变更与替代由谁确认？",
+        "哪些条件需要试产验证？"
+      ],
+      "reference_participants": [
+        {
+          "name": "建议：研发或客户技术接口",
+          "role": "参考职责类型",
+          "responsibility": "建议核对：提供设计版本并与工程、质量核对制造条件"
+        }
+      ],
+      "reference_handoffs": [
+        {
+          "name": "参考：设计 BOM / 制造 BOM",
+          "from_party": "建议核对：研发或客户设计方",
+          "to_party": "建议核对：制造工程",
+          "version_reference": "参考示例，适用版本与批准依据待核实",
+          "notes": "建议交接范围，非已确认公司事实"
+        }
+      ],
+      "reference_systems": [
+        {
+          "name": "参考：设计来源 / ERP / MRP / MES 能力",
+          "kind": "参考能力，实际产品待核实",
+          "objects": "工程 BOM、制造 BOM、版本与变更",
+          "maintainer": "待核实",
+          "method": "unknown",
+          "notes": "仅为建议关系；尚未验证连接，不代表已部署或已同步"
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "name": "计划安排",
+      "enabled": true,
+      "purpose": "核对需求、供应和能力，安排可执行的交期。",
+      "help": "MRP 是需求计算能力，可能属于 ERP；缺料建议与采购批准、排产承诺是不同事实。 参考：docs/workflows/manufacturing-process-overview.md；docs/manufacturing-workbench-product-design.md。以下分工仅为建议，实际参与方、系统与责任尚待核实。",
+      "prompts": [
+        "谁核对库存、未结供应和提前期？",
+        "缺料与能力缺口如何反馈到交期？"
+      ],
+      "reference_participants": [
+        {
+          "name": "建议：计划与采购",
+          "role": "参考职责类型",
+          "responsibility": "建议核对：核对需求、供应和资源缺口"
+        }
+      ],
+      "reference_handoffs": [
+        {
+          "name": "参考：需求与供应计划",
+          "from_party": "建议核对：计划",
+          "to_party": "建议核对：采购与生产",
+          "version_reference": "参考示例，适用版本与批准依据待核实",
+          "notes": "建议交接范围，非已确认公司事实"
+        }
+      ],
+      "reference_systems": [
+        {
+          "name": "参考：设计来源 / ERP / MRP / MES 能力",
+          "kind": "参考能力，实际产品待核实",
+          "objects": "需求、BOM、可用供应与缺料",
+          "maintainer": "待核实",
+          "method": "unknown",
+          "notes": "仅为建议关系；尚未验证连接，不代表已部署或已同步"
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "name": "物料与资源",
+      "enabled": true,
+      "purpose": "确认供料范围，以及人员、设备和工装是否就绪。",
+      "help": "奥比采购、客户供料或混合安排需按约定核实；到货不等于质量放行或允许使用。 参考：docs/workflows/manufacturing-process-overview.md；docs/manufacturing-workbench-product-design.md。以下分工仅为建议，实际参与方、系统与责任尚待核实。",
+      "prompts": [
+        "谁采购、谁供料、谁检查齐套？",
+        "供应商交期和物料批次如何交接？",
+        "哪些人员、设备或工装还未就绪？"
+      ],
+      "reference_participants": [
+        {
+          "name": "建议：采购、供应商与来料质量",
+          "role": "参考职责类型",
+          "responsibility": "建议核对：核对供料范围、交期、批次和检验状态"
+        }
+      ],
+      "reference_handoffs": [
+        {
+          "name": "参考：供料与收货检验记录",
+          "from_party": "建议核对：采购或客户供料接口",
+          "to_party": "建议核对：仓储与来料质量",
+          "version_reference": "参考示例，适用版本与批准依据待核实",
+          "notes": "建议交接范围，非已确认公司事实"
+        }
+      ],
+      "reference_systems": [
+        {
+          "name": "参考：设计来源 / ERP / MRP / MES 能力",
+          "kind": "参考能力，实际产品待核实",
+          "objects": "物料、采购、企业库存与批次",
+          "maintainer": "待核实",
+          "method": "unknown",
+          "notes": "仅为建议关系；尚未验证连接，不代表已部署或已同步"
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "name": "工单与开工",
+      "enabled": true,
+      "purpose": "把制造任务落实到数量、版本和允许执行的条件。",
+      "help": "开工应核对资料、物料、资源和授权；未满足条件的项目需要明确处置。 参考：docs/workflows/manufacturing-process-overview.md；docs/manufacturing-workbench-product-design.md。以下分工仅为建议，实际参与方、系统与责任尚待核实。",
+      "prompts": [
+        "谁下达工单，谁确认可以开工？",
+        "工单如何指向资料版本和实际领料？"
+      ],
+      "reference_participants": [
+        {
+          "name": "建议：计划、生产与工艺",
+          "role": "参考职责类型",
+          "responsibility": "建议核对：核对工单、版本、备料和开工条件"
+        }
+      ],
+      "reference_handoffs": [
+        {
+          "name": "参考：工单与开工检查",
+          "from_party": "建议核对：计划",
+          "to_party": "建议核对：生产与仓储",
+          "version_reference": "参考示例，适用版本与批准依据待核实",
+          "notes": "建议交接范围，非已确认公司事实"
+        }
+      ],
+      "reference_systems": [
+        {
+          "name": "参考：设计来源 / ERP / MRP / MES 能力",
+          "kind": "参考能力，实际产品待核实",
+          "objects": "工单、版本、领料与开工条件",
+          "maintainer": "待核实",
+          "method": "unknown",
+          "notes": "仅为建议关系；尚未验证连接，不代表已部署或已同步"
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "name": "生产执行",
+      "enabled": true,
+      "purpose": "记录实际加工装配、用料和过程质量。",
+      "help": "共用业务环节不代表产品工艺相同，具体路线、参数与返工条件需要分别核实。 参考：docs/workflows/manufacturing-process-overview.md；docs/manufacturing-workbench-product-design.md。以下分工仅为建议，实际参与方、系统与责任尚待核实。",
+      "prompts": [
+        "谁记录实际用料、工序和批次或 SN？",
+        "异常、返工和数量差异如何回传？"
+      ],
+      "reference_participants": [
+        {
+          "name": "建议：生产、工艺与过程质量",
+          "role": "参考职责类型",
+          "responsibility": "建议核对：记录实际执行与异常处置"
+        }
+      ],
+      "reference_handoffs": [
+        {
+          "name": "参考：工序与实际用料记录",
+          "from_party": "建议核对：生产",
+          "to_party": "建议核对：质量与计划",
+          "version_reference": "参考示例，适用版本与批准依据待核实",
+          "notes": "建议交接范围，非已确认公司事实"
+        }
+      ],
+      "reference_systems": [
+        {
+          "name": "参考：设计来源 / ERP / MRP / MES 能力",
+          "kind": "参考能力，实际产品待核实",
+          "objects": "工序、实际用料、批次/SN与过程结果",
+          "maintainer": "待核实",
+          "method": "unknown",
+          "notes": "仅为建议关系；尚未验证连接，不代表已部署或已同步"
+        }
+      ]
+    },
+    {
+      "id": "S7",
+      "name": "测试放行",
+      "enabled": true,
+      "purpose": "核对测试结果并明确制造方放行条件。",
+      "help": "测试通过、制造方放行与客户确认分别记录，不合格处置和追溯资料需能回查。 参考：docs/workflows/manufacturing-process-overview.md；docs/manufacturing-workbench-product-design.md。以下分工仅为建议，实际参与方、系统与责任尚待核实。",
+      "prompts": [
+        "谁维护测试规范，谁决定放行？",
+        "原始数据与不合格处置如何保留？"
+      ],
+      "reference_participants": [
+        {
+          "name": "建议：测试、质量与工程",
+          "role": "参考职责类型",
+          "responsibility": "建议核对：核对测试版本、结果和制造方放行"
+        }
+      ],
+      "reference_handoffs": [
+        {
+          "name": "参考：测试与放行记录",
+          "from_party": "建议核对：测试",
+          "to_party": "建议核对：质量与交付接口",
+          "version_reference": "参考示例，适用版本与批准依据待核实",
+          "notes": "建议交接范围，非已确认公司事实"
+        }
+      ],
+      "reference_systems": [
+        {
+          "name": "参考：设计来源 / ERP / MRP / MES 能力",
+          "kind": "参考能力，实际产品待核实",
+          "objects": "测试结果、不合格处置与放行",
+          "maintainer": "待核实",
+          "method": "unknown",
+          "notes": "仅为建议关系；尚未验证连接，不代表已部署或已同步"
+        }
+      ]
+    },
+    {
+      "id": "S8",
+      "name": "交付验收",
+      "enabled": true,
+      "purpose": "按约定完成包装、交付与相应验收。",
+      "help": "如合同要求发运前客户验收，应把该验收作为前置条件；交付、验收和付款不合并判断。 参考：docs/workflows/manufacturing-process-overview.md；docs/manufacturing-workbench-product-design.md。以下分工仅为建议，实际参与方、系统与责任尚待核实。",
+      "prompts": [
+        "包装、标签和追溯资料由谁确认？",
+        "客户或内部接收方在何时按什么依据验收？"
+      ],
+      "reference_participants": [
+        {
+          "name": "建议：仓储、物流与客户接口",
+          "role": "参考职责类型",
+          "responsibility": "建议核对：按约定核对发运、接收和验收资料"
+        }
+      ],
+      "reference_handoffs": [
+        {
+          "name": "参考：交付与约定验收资料",
+          "from_party": "建议核对：仓储或物流",
+          "to_party": "建议核对：客户或内部接收方",
+          "version_reference": "参考示例，适用版本与批准依据待核实",
+          "notes": "建议交接范围，非已确认公司事实"
+        }
+      ],
+      "reference_systems": [
+        {
+          "name": "参考：设计来源 / ERP / MRP / MES 能力",
+          "kind": "参考能力，实际产品待核实",
+          "objects": "库存、发运、交付与验收",
+          "maintainer": "待核实",
+          "method": "unknown",
+          "notes": "仅为建议关系；尚未验证连接，不代表已部署或已同步"
+        }
+      ]
+    },
+    {
+      "id": "S9",
+      "name": "结案反馈",
+      "enabled": true,
+      "purpose": "核对消耗与产出差异，跟进后续质量反馈。",
+      "help": "工单成本结案、客户验收与付款可能分别发生；反馈可形成工程改进事项。 参考：docs/workflows/manufacturing-process-overview.md；docs/manufacturing-workbench-product-design.md。以下分工仅为建议，实际参与方、系统与责任尚待核实。",
+      "prompts": [
+        "谁核对用料、工时、报废和成本差异？",
+        "质量反馈如何形成改进与版本变更？"
+      ],
+      "reference_participants": [
+        {
+          "name": "建议：制造、财务、质量与工程",
+          "role": "参考职责类型",
+          "responsibility": "建议核对：核对结案差异并跟进质量反馈"
+        }
+      ],
+      "reference_handoffs": [
+        {
+          "name": "参考：成本差异与质量反馈",
+          "from_party": "建议核对：制造与质量",
+          "to_party": "建议核对：财务与工程",
+          "version_reference": "参考示例，适用版本与批准依据待核实",
+          "notes": "建议交接范围，非已确认公司事实"
+        }
+      ],
+      "reference_systems": [
+        {
+          "name": "参考：设计来源 / ERP / MRP / MES 能力",
+          "kind": "参考能力，实际产品待核实",
+          "objects": "实际消耗、工单成本与反馈",
+          "maintainer": "待核实",
+          "method": "unknown",
+          "notes": "仅为建议关系；尚未验证连接，不代表已部署或已同步"
+        }
+      ]
+    }
+  ]
+}
