@@ -55,8 +55,8 @@ AI-Manufacturing-Platform/
 
 `src/manufacturing_platform/` 提供持久化业务 API，`webui/` 提供独立 React 资源；现有 Agent 平台负责登录、权限、导航和页面外壳。当前开放平台 owner/admin，支持相机、3D 打印机和 OEM 业务线，使用 SQLite 独立持久存储。
 
-项目支持列表/看板、负责人和交付目标、阶段推进、任务/问题/确认事项、资料协作和真实操作动态。手册复用平台 Markdown/Mermaid 渲染，旧流程现状保留为参考。项目内可登记参与方、设计/BOM 等交接资料及 ERP/MRP/MES 关系。系统关系登记不代表已连接；真实系统集成需另行核对厂商、接口和数据责任。
+项目支持列表/看板、负责人和交付目标、阶段推进、任务/问题/确认事项、资料协作和真实操作动态。手册复用平台 Markdown/Mermaid 渲染，整篇连续阅读，目录只作页内定位；旧流程现状保留为参考。项目内可登记参与方、设计/BOM 等交接资料及 ERP/MRP/MES 关系。系统关系登记不代表已连接；真实系统集成需另行核对厂商、接口和数据责任。
 
-前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。实际版本与验收范围见 [产品重构发布记录](docs/release-product-v2-2026-10-27.md)，[首版发布记录](docs/release-2026-10-27.md)保留历史。
+前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。当前版本与维护入口见 [手册连续阅读发布记录](docs/release-handbook-continuous-2026-10-27.md)；[产品重构发布记录](docs/release-product-v2-2026-10-27.md)和[首版发布记录](docs/release-2026-10-27.md)保留历史。
 
 线上入口：[大制造工作台](https://agent.orbbec.com.cn/manufacturing)（初始开放平台 owner/admin）。
