@@ -105,7 +105,7 @@ API 使用 UID/GID `10001:10001`、只读根文件系统、`cap_drop: ALL` 和 `
 | `PLATFORM_MANUFACTURING_DATABASE_PATH` | `/app/data/manufacturing/workbench.sqlite3` |
 | `PLATFORM_MANUFACTURING_RELEASE` | 已归并兄弟仓库的准确 40 位提交 |
 | 新增代码 bind | 宿主机版本目录 `/data/orbbec-agent-platform/manufacturing/releases/<兄弟SHA>` → `/opt/manufacturing`，`read_only: true`、`bind.create_host_path: false` |
-| 新增数据 bind | 宿主机独立目录 `/data/orbbec-agent-platform/manufacturing/state` → `/app/data/manufacturing`，`read_only: false`、`bind.create_host_path: false` |
+| 新增数据 bind | 宿主机独立目录 `/data/orbbec-agent-platform/manufacturing/data` → `/app/data/manufacturing`，`read_only: false`、`bind.create_host_path: false` |
 
 四项环境差异中只有 `PLATFORM_RELEASE_SHA` 覆盖现有值，其余须验证原来不存在；若实际集成从固定代码常量获得 root/path/release，可省略相应新增环境项，不能添加无消费者的设置。保留原来全部环境值，包括 `SDK_KNOWLEDGE_*`、HR 模型选择、企业/外部身份、Office、DAQ、VOC 配置。无需修改全局 `PYTHONPATH`；固定包路径的显式加载应由受审查的接入代码完成。
 
@@ -143,4 +143,4 @@ API 使用 UID/GID `10001:10001`、只读根文件系统、`cap_drop: ALL` 和 `
 
 生产阶段可以在没有员工 Cookie 的情况下确认：平台健康、匿名业务 API401、未登录壳进入既有登录契约、精确 MIME/缓存策略、全部代码/制品摘要、两个挂载及 UID权限、原有业务入口/静态摘要、旧服务和 Nginx边界保持。容器内模块/目录/资产校验与制造自有存储初始化不需要冒充任何主体，也不能据此声称已登录正向权限通过。不要导出现有 Session、制造生产身份、写合成员工会话，或在实际生产进程注入伪造 AuthContext 来填补正向验收。用户真实登录后完成工作台页面验收；若尚未进行，生产收据明确写 `authenticated_browser: not_run`，并把隔离候选合成身份验证、生产匿名边界验证和真实用户验收分别报告。
 
-回滚平台镜像和挂载组合时保留制造 state 目录；不能删除已产生的真实数据。如果后续需要备份已活动的 SQLite，采用其在线 backup 接口或在停止写入后完整处理 DB/WAL，不能只复制单个 `.sqlite3` 文件声称完成一致性备份。
+回滚平台镜像和挂载组合时保留制造 data 目录；不能删除已产生的真实数据。如果后续需要备份已活动的 SQLite，采用其在线 backup 接口或在停止写入后完整处理 DB/WAL，不能只复制单个 `.sqlite3` 文件声称完成一致性备份。

@@ -1,6 +1,6 @@
 # AI Manufacturing Platform
 
-大制造智能平台，面向制造业务的信息化与智能化工作。与 `AI-Agent-Platform` 同级维护，当前从制造知识库开始积累业务、系统、建设方法和行业案例。
+大制造智能平台，面向制造业务的信息化与智能化工作。与 `AI-Agent-Platform` 同级维护，包含制造知识库、流程现状和待办工作台。
 
 ## 产品设计
 
@@ -8,7 +8,7 @@
 
 ## 系统手册
 
-[大制造数字化系统手册](docs/manufacturing-system-handbook.md)：以五阶段学习路线（入门 → 看懂业务 → 看懂系统 → 会建设 → 精通）为主干的学习与工作手册，每个主题链回知识库详文，并给出各阶段的过关判据与精通验收表。
+[大制造数字化系统手册](docs/manufacturing-system-handbook.md)：以制造工作流为主线的翻查手册。第一部分全景（端到端工作流总图、工厂系统分层架构图、系统缩写辞典、三条贯穿数据流）；第二部分沿 S1—S9 逐节点展开（每节点：干什么 / 节点流程图 / 要懂的知识 / 涉及系统 / 核心数据 / 自有产品与 OEM 差异 / 常见断点），节点编号与制造流程底稿一致；第三部分整体集成（数据权威与接口清单、数字化平台与 AI 架构、建设次序）。全书 16 张架构与流程图，附车间行话速查。
 
 ## 制造业务流程
 
@@ -49,4 +49,12 @@ AI-Manufacturing-Platform/
     └── sources/
 ```
 
-知识库于 2026-10-27 从 `AI-Agent-Platform/docs/manufacturing-knowledge/` 完整迁入，保留全部文章、来源记录和结构化数据。当前为知识整理阶段，尚未接入平台页面或业务系统。
+知识库于 2026-10-27 从 `AI-Agent-Platform/docs/manufacturing-knowledge/` 完整迁入，保留全部文章、来源记录和结构化数据。
+
+## 工作台开发与发布
+
+`src/manufacturing_platform/` 提供持久化业务 API，`webui/` 提供独立 React 资源；现有 Agent 平台负责登录、权限、导航和页面外壳。首版初始开放平台 owner/admin，支持相机、3D 打印机和 OEM 业务线，使用 SQLite 独立持久存储。
+
+环节内可以保存现状、待办、参与方、设计/BOM 等交接资料及 ERP/MRP/MES 关系。系统关系登记不代表已连接；真实系统集成需另行核对厂商、接口和数据责任。
+
+前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。实际版本与验收范围见发布记录。
