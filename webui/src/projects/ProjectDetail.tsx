@@ -110,14 +110,8 @@ export function ProjectDetail({
     setBusy(true);
     setError("");
     try {
-      const result = await action();
-      if (active.current) {
-        if (result && typeof result === "object" && "project" in result) {
-          ++readSequence.current;
-          setData(result as ProjectDetailData);
-        }
-        await refreshed();
-      }
+      await action();
+      if (active.current) await refreshed();
     } catch (e) {
       if (active.current) setError(message(e));
     } finally {
@@ -208,13 +202,11 @@ export function ProjectDetail({
           readOnly={disabled}
           onDirty={onDirty}
           onCancel={() => setEditing(false)}
-          onSaved={(d) => {
-            // A committed core aggregate also supersedes any pending GET.
-            ++readSequence.current;
-            setReadError("");
-            setData(d);
+          onSaved={() => {
             setEditing(false);
-            onChanged();
+            // Write responses may predate concurrent child commits. Only a
+            // sequenced fresh GET can replace the displayed aggregate.
+            void refreshed();
           }}
           onReload={() =>
             requestLeave(() => {

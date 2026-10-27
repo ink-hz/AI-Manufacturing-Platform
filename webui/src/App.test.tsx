@@ -1138,10 +1138,16 @@ it.each([200, 503])(
     await open();
     const original = vi.mocked(fetch).getMockImplementation()!;
     let release!: () => void;
+    let holdNext = true;
     const pending = new Promise<void>((resolve) => (release = resolve));
     vi.mocked(fetch).mockImplementation(async (...args) => {
       const result = await original(...args);
-      if (String(args[0]) === "/api/projects/p1" && args[1]?.method === "GET") {
+      if (
+        holdNext &&
+        String(args[0]) === "/api/projects/p1" &&
+        args[1]?.method === "GET"
+      ) {
+        holdNext = false;
         await pending;
         return status === 200 ? result : response({}, status);
       }
@@ -1160,6 +1166,65 @@ it.each([200, 503])(
       "新项目责任人",
     );
     expect(host.querySelector('[role="alert"]')).toBeNull();
+  },
+);
+it.each([200, 503])(
+  "refreshes after a delayed core PATCH without replacing a newer task aggregate (GET %s)",
+  async (status) => {
+    await mount();
+    await open();
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    let coreReturned = false,
+      readsAfterCore = 0,
+      refreshStatus = status;
+    vi.mocked(fetch).mockImplementation(async (...args) => {
+      if (String(args[0]) === "/api/projects/p1") {
+        if (args[1]?.method === "PATCH") {
+          const snapshot = await original(...args);
+          await pending;
+          coreReturned = true;
+          return snapshot;
+        }
+        if (args[1]?.method === "GET" && coreReturned) {
+          readsAfterCore++;
+          if (refreshStatus === 503) return response({}, 503);
+        }
+      }
+      return original(...args);
+    });
+    await click("编辑项目资料");
+    await field("项目负责人", "已提交的项目责任人");
+    await click("保存项目");
+    await click("新建事项");
+    await field("事项标题", "核心响应前已保存的事项");
+    await click("创建事项");
+    expect(host.querySelector(".mf-task strong")?.textContent).toBe(
+      "核心响应前已保存的事项",
+    );
+    release();
+    await flush();
+    expect(host.querySelector(".mf-task strong")?.textContent).toBe(
+      "核心响应前已保存的事项",
+    );
+    expect(readsAfterCore).toBe(1);
+    expect(host.querySelector('[aria-label="项目负责人"]')).toBeNull();
+    if (status === 503) {
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        "读取失败",
+      );
+      expect(host.textContent).not.toContain("尚未保存");
+      refreshStatus = 200;
+      await click("重试读取项目");
+    }
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector(".mf-detail-heading")?.textContent).toContain(
+      "已提交的项目责任人",
+    );
+    expect(detail.tasks).toHaveLength(1);
+    expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(1);
+    expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
   },
 );
 it.each(["返回工作内容", "制造项目"])(
