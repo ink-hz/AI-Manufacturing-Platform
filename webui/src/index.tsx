@@ -11,7 +11,11 @@ export function mount(element: HTMLElement, options: MountOptions) {
     <App
       options={{
         ...options,
+        onAuthError() {
+          if (!unmounted) options.onAuthError?.();
+        },
         onDirtyChange(value) {
+          if (unmounted) return;
           dirty = value;
           options.onDirtyChange?.(value);
         },
@@ -25,6 +29,7 @@ export function mount(element: HTMLElement, options: MountOptions) {
       unmounted = true;
       root.unmount();
       dirty = false;
+      options.onDirtyChange?.(false);
     },
   };
 }

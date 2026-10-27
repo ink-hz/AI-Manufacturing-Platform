@@ -451,4 +451,95 @@ describe("two-view workbench", () => {
     });
     await flush();
   });
+  it.each(["practice", "relationships", "new task", "task edit"])(
+    "confirms retry reads before discarding a %s draft",
+    async (kind) => {
+      if (kind === "task edit")
+        tasks = [{ id: "t1", title: "待核对", completed: false, version: 1 }];
+      await mount();
+      await click(
+        kind === "task edit"
+          ? "01 需求确认 未记录 · 1 项待办 →"
+          : "01 需求确认 未记录 →",
+      );
+      failRead = 503;
+      await click("重新读取");
+      failRead = 0;
+      if (kind === "practice") {
+        await click("编辑");
+        await input("现状说明", "本地现状");
+      }
+      if (kind === "relationships") {
+        await click("编辑关系");
+        await click("添加参与方");
+        await input("参与方 1 名称", "本地参与方");
+      }
+      if (kind === "new task") {
+        await input("新待办", "待确认标题");
+        failTask = 1;
+        await click("添加待办");
+      }
+      if (kind === "task edit") {
+        await click("修改待办");
+        await input("待办标题", "本地标题");
+      }
+      const readCount = requests.filter((r) => r.method === "GET").length;
+      await click("重试读取");
+      expect(requests.filter((r) => r.method === "GET")).toHaveLength(
+        readCount,
+      );
+      expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+      await click("保留草稿");
+      expect(dirty).toHaveBeenLastCalledWith(true);
+      if (kind === "new task") {
+        await click("添加待办");
+        const posts = requests.filter((r) => r.method === "POST");
+        expect(posts).toHaveLength(2);
+        expect(posts[0].body.operation_id).toBe(posts[1].body.operation_id);
+      }
+    },
+  );
+  it("blocks retry reads during a pending write and locks repeated retry requests", async () => {
+    await mount();
+    await open();
+    failRead = 503;
+    await click("重新读取");
+    failRead = 0;
+    await click("编辑");
+    await input("现状说明", "正在保存的现状");
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    let finish!: () => void;
+    let hold = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    vi.mocked(fetch).mockImplementation(async (...args) => {
+      const response = await original(...args);
+      await hold;
+      return response;
+    });
+    await click("保存");
+    const readCount = requests.filter((r) => r.method === "GET").length;
+    expect(button("重试读取").disabled).toBe(true);
+    await click("重试读取");
+    expect(requests.filter((r) => r.method === "GET")).toHaveLength(readCount);
+    await act(async () => {
+      finish();
+    });
+    await flush();
+    hold = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const retry = button("重试读取");
+    await act(async () => {
+      retry.click();
+      retry.click();
+    });
+    expect(requests.filter((r) => r.method === "GET")).toHaveLength(
+      readCount + 1,
+    );
+    await act(async () => {
+      finish();
+    });
+    await flush();
+  });
 });

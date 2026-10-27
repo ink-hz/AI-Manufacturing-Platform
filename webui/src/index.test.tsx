@@ -31,3 +31,62 @@ it("exposes an independent mount handle and cleans up twice safely", async () =>
   expect(dirty).toHaveBeenLastCalledWith(false);
   element.remove();
 });
+
+it.each([401, 403])(
+  "retires pending %s responses even when fetch ignores abort",
+  async (status) => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const retiredAuth = vi.fn(),
+      retiredDirty = vi.fn(),
+      currentAuth = vi.fn();
+    let resolveOld!: (response: Response) => void;
+    let oldSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) => {
+        oldSignal = init?.signal as AbortSignal | undefined;
+        return new Promise<Response>((resolve) => {
+          resolveOld = resolve;
+        });
+      }),
+    );
+    let old!: ReturnType<typeof mount>;
+    await act(async () => {
+      old = mount(element, {
+        apiBase: "/api/v1/manufacturing",
+        csrfToken: "",
+        readOnly: true,
+        onAuthError: retiredAuth,
+        onDirtyChange: retiredDirty,
+      });
+    });
+    await act(async () => old.unmount());
+    const callbackCount = retiredDirty.mock.calls.length;
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({ groups: [], lines: [], stages: [], can_edit: false }),
+      ),
+    );
+    let current!: ReturnType<typeof mount>;
+    await act(async () => {
+      current = mount(element, {
+        apiBase: "/api/v1/manufacturing",
+        csrfToken: "",
+        readOnly: true,
+        onAuthError: currentAuth,
+      });
+    });
+    await act(async () => {
+      resolveOld(new Response("{}", { status }));
+    });
+    expect(retiredAuth).not.toHaveBeenCalled();
+    expect(oldSignal?.aborted).toBe(true);
+    expect(currentAuth).not.toHaveBeenCalled();
+    expect(retiredDirty).toHaveBeenCalledTimes(callbackCount);
+    expect(element.textContent).not.toContain("无权访问");
+    expect(old.isDirty()).toBe(false);
+    await act(async () => current.unmount());
+    element.remove();
+  },
+);

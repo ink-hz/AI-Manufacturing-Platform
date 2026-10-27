@@ -35,6 +35,7 @@ export function App({ options }: { options: MountOptions }) {
     () => createApi(options, deny),
     [options.apiBase, options.csrfToken, deny],
   );
+  useEffect(() => () => api.dispose(), [api]);
   useEffect(() => {
     options.onDirtyChange?.(dirty);
     return () => options.onDirtyChange?.(false);

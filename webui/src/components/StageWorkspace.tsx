@@ -95,6 +95,8 @@ export function StageWorkspace({
     };
   }, [dialog]);
   async function load() {
+    if (lock.current) return;
+    lock.current = true;
     const sequence = ++readSequence.current;
     setLoading(true);
     setReadError(false);
@@ -113,9 +115,18 @@ export function StageWorkspace({
       if (active.current && sequence === readSequence.current)
         setReadError(true);
     } finally {
+      lock.current = false;
       if (active.current && sequence === readSequence.current)
         setLoading(false);
     }
+  }
+  function requestRead(discardConfirmed = false) {
+    if (lock.current) return;
+    if (dirty && !discardConfirmed) {
+      setDialog("reload");
+      return;
+    }
+    void load();
   }
   useEffect(() => {
     active.current = true;
@@ -272,10 +283,7 @@ export function StageWorkspace({
         >
           ← 返回流程
         </button>
-        <button
-          disabled={busy || loading}
-          onClick={() => (dirty ? setDialog("reload") : void load())}
-        >
+        <button disabled={busy || loading} onClick={() => requestRead()}>
           重新读取
         </button>
       </div>
@@ -284,7 +292,9 @@ export function StageWorkspace({
         <div role="alert" className="mf-error">
           读取失败。
           {data ? "保留上次读取的内容及更新时间。" : "尚未取得业务记录。"}{" "}
-          <button onClick={() => void load()}>重试读取</button>
+          <button disabled={busy || loading} onClick={() => requestRead()}>
+            重试读取
+          </button>
         </div>
       )}
       {data && draft && (
@@ -560,7 +570,7 @@ export function StageWorkspace({
                   <button disabled={busy} onClick={() => setDialog(null)}>
                     保留草稿
                   </button>
-                  <button disabled={busy} onClick={() => void load()}>
+                  <button disabled={busy} onClick={() => requestRead(true)}>
                     放弃草稿并重新读取
                   </button>
                 </>

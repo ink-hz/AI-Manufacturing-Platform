@@ -32,39 +32,62 @@ export function createApi(
   )
     throw new Error("apiBase must be a same-origin path");
   let revoked = false;
+  let disposed = false;
+  const controllers = new Set<AbortController>();
+  function assertActive() {
+    if (disposed)
+      throw new DOMException("Manufacturing instance retired", "AbortError");
+    if (revoked) throw new ApiError(403);
+  }
   async function request<T>(
     path: string,
     method = "GET",
     body?: unknown,
   ): Promise<T> {
-    if (revoked) throw new ApiError(403);
-    const response = await fetch(base + path, {
-      method,
-      credentials: "same-origin",
-      cache: "no-store",
-      headers:
-        body === undefined
-          ? {}
-          : {
-              "Content-Type": "application/json",
-              "X-CSRF-Token": options.csrfToken,
-            },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    if (response.status === 401 || response.status === 403) {
-      if (!revoked) {
+    assertActive();
+    const controller = new AbortController();
+    controllers.add(controller);
+    try {
+      const response = await fetch(base + path, {
+        method,
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+        headers:
+          body === undefined
+            ? {}
+            : {
+                "Content-Type": "application/json",
+                "X-CSRF-Token": options.csrfToken,
+              },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      // Some transports may still resolve after abort. Lifetime checks, rather
+      // than the abort signal alone, prevent retired instances notifying hosts.
+      assertActive();
+      if (response.status === 401 || response.status === 403) {
         revoked = true;
         onAuthError?.();
+        throw new ApiError(response.status);
       }
-      throw new ApiError(response.status);
+      if (!response.ok) throw new ApiError(response.status);
+      const result = (await response.json()) as T;
+      assertActive();
+      return result;
+    } finally {
+      controllers.delete(controller);
     }
-    if (revoked) throw new ApiError(403);
-    if (!response.ok) throw new ApiError(response.status);
-    return response.json() as Promise<T>;
   }
+
   const scope = (line: string, stage?: string) =>
     `/lines/${encodeURIComponent(line)}${stage ? `/stages/${encodeURIComponent(stage)}` : ""}`;
   return {
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const controller of controllers) controller.abort();
+      controllers.clear();
+    },
     catalog: () => request<Catalog>("/catalog"),
     line: (line: string) => request<LineOverview>(scope(line)),
     stage: (line: string, stage: string) =>
