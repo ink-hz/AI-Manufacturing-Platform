@@ -73,6 +73,7 @@ def check(response,status):
     return response
 
 check(client.get(prefix+'/catalog'),401)
+check(client.get(prefix+'/assets/manufacturing.js',params={'release':'stale-candidate-release'}),401)
 client.cookies.set(auth.cookie_name,'synthetic-candidate-session');client.cookies.set(auth.csrf_cookie_name,'synthetic-candidate-csrf')
 assert check(client.get(prefix+'/access'),200).json()['allowed']
 catalog=check(client.get(prefix+'/catalog'),200).json()
@@ -96,6 +97,9 @@ for name,mime in [('manufacturing.js','javascript'),('manufacturing.css','text/c
     response=check(client.get(prefix+'/assets/'+name),200)
     assert mime in response.headers['content-type']
     assert hashlib.sha256(response.content).hexdigest()==manifest['files']['webui/dist/'+name]
+    tagged=check(client.get(prefix+'/assets/'+name,params={'release':expected['business_commit']}),200)
+    assert tagged.content==response.content
+    check(client.get(prefix+'/assets/'+name,params={'release':'stale-candidate-release'}),409)
 auth.stale=True;check(client.get(stage),200);check(client.put(stage,json={**body,'expected_version':1},headers=headers),503)
 auth.stale=False;auth.role=Role.MEMBER;check(client.get(stage),403)
 auth.role=Role.PLATFORM_OWNER
