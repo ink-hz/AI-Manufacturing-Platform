@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { App } from "./App";
 import { TaskEditor } from "./projects/TaskEditor";
+import { ProjectDetail } from "./projects/ProjectDetail";
 import { createApi } from "./api";
 const catalog = JSON.parse(
   readFileSync("../src/manufacturing_platform/catalog.json", "utf8"),
@@ -1039,6 +1040,128 @@ it("offers an unconditional truthful retry when the first project GET fails", as
   await click("重试读取项目");
   expect(host.querySelector(".mf-phase-rail")).not.toBeNull();
 });
+it.each([
+  ["initial", 200],
+  ["initial", 503],
+  ["stage save", 200],
+  ["stage save", 503],
+  ["retry", 200],
+  ["retry", 503],
+] as const)(
+  "retires a late %s detail response (%s) after an independent task save",
+  async (source, status) => {
+    const api = createApi({
+      apiBase: "/api",
+      csrfToken: "csrf",
+      readOnly: false,
+    });
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    let holdNext = source === "initial",
+      failNext = false,
+      release!: () => void;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    const held = vi.fn();
+    vi.mocked(fetch).mockImplementation(async (...args) => {
+      if (String(args[0]) === "/api/projects/p1" && args[1]?.method === "GET") {
+        if (failNext) {
+          failNext = false;
+          return response({}, 503);
+        }
+        if (holdNext) {
+          holdNext = false;
+          const snapshot = await original(...args);
+          held();
+          await pending;
+          return status === 200 ? snapshot : response({}, status);
+        }
+      }
+      return original(...args);
+    });
+    try {
+      await act(async () =>
+        root.render(
+          <ProjectDetail
+            api={api}
+            draftEpoch={0}
+            id="p1"
+            initial={structuredClone(detail)}
+            catalog={catalog}
+            readOnly={false}
+            onDirty={vi.fn()}
+            onChanged={vi.fn()}
+            onBack={vi.fn()}
+            onHandbook={vi.fn()}
+            onLegacy={vi.fn()}
+            requestLeave={(action) => action()}
+          />,
+        ),
+      );
+      await flush();
+      if (source === "stage save") {
+        holdNext = true;
+        await click("开始阶段");
+      } else if (source === "retry") {
+        failNext = true;
+        await click("开始阶段");
+        expect(host.querySelector('[role="alert"]')).not.toBeNull();
+        holdNext = true;
+        await click("重试读取项目");
+      }
+      expect(held).toHaveBeenCalledTimes(1);
+      await click("新建事项");
+      await field("事项标题", "并行保存后必须保留");
+      await click("创建事项");
+      expect(host.querySelector(".mf-task strong")?.textContent).toBe(
+        "并行保存后必须保留",
+      );
+      expect(host.querySelector('[aria-label="事项标题"]')).toBeNull();
+      release();
+      await flush();
+      expect(detail.tasks).toHaveLength(1);
+      expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+      expect(host.querySelector(".mf-task strong")?.textContent).toBe(
+        "并行保存后必须保留",
+      );
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+      expect(host.textContent).not.toContain("正在读取项目");
+      expect(button("新建事项").disabled).toBe(false);
+    } finally {
+      release();
+      api.dispose();
+    }
+  },
+);
+it.each([200, 503])(
+  "retires a pending detail read (%s) when a core save returns a newer aggregate",
+  async (status) => {
+    await mount();
+    await open();
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    vi.mocked(fetch).mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (String(args[0]) === "/api/projects/p1" && args[1]?.method === "GET") {
+        await pending;
+        return status === 200 ? result : response({}, status);
+      }
+      return result;
+    });
+    await click("开始阶段");
+    await click("编辑项目资料");
+    await field("项目负责人", "新项目责任人");
+    await click("保存项目");
+    expect(host.querySelector(".mf-detail-heading")?.textContent).toContain(
+      "新项目责任人",
+    );
+    release();
+    await flush();
+    expect(host.querySelector(".mf-detail-heading")?.textContent).toContain(
+      "新项目责任人",
+    );
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  },
+);
 it.each(["返回工作内容", "制造项目"])(
   "restores retained work scroll when returning through %s",
   async (label) => {

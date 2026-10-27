@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Api } from "../api";
 import type { Catalog } from "../types";
 import {
@@ -58,6 +58,7 @@ export function ProjectDetail({
     [reload, setReload] = useState(0);
   const itemsElement = useRef<HTMLElement>(null);
   const active = useRef(true),
+    readSequence = useRef(0),
     lock = useRef(false);
   useEffect(() => {
     active.current = true;
@@ -65,25 +66,28 @@ export function ProjectDetail({
       active.current = false;
     };
   }, []);
-  useEffect(() => {
-    let current = true;
-    setError("");
+  const readDetail = useCallback(async () => {
+    // Initial, retry and independent post-save reads share one ordering.
+    const sequence = ++readSequence.current;
     setReadError("");
-    api
-      .project(id)
-      .then((d) => {
-        if (current) {
-          setData(d);
-          setStageId((s) => s || d.project.current_stage_id || d.stages[0]?.id);
-        }
-      })
-      .catch((e) => {
-        if (current) setReadError(message(e));
-      });
+    try {
+      const d = await api.project(id);
+      if (active.current && sequence === readSequence.current) {
+        setData(d);
+        setStageId((s) => s || d.project.current_stage_id || d.stages[0]?.id);
+      }
+    } catch (e) {
+      if (active.current && sequence === readSequence.current)
+        setReadError(message(e));
+    }
+  }, [api, id]);
+  useEffect(() => {
+    setError("");
+    void readDetail();
     return () => {
-      current = false;
+      ++readSequence.current;
     };
-  }, [api, id, reload]);
+  }, [readDetail, reload]);
   useEffect(() => {
     if (stageTarget) setStageId(stageTarget);
   }, [stageTarget]);
@@ -98,13 +102,7 @@ export function ProjectDetail({
     // The write has committed. A following GET failure must never turn it
     // back into an unsaved mutation or cause a new create operation.
     onChanged();
-    setReadError("");
-    try {
-      const d = await api.project(id);
-      if (active.current) setData(d);
-    } catch (e) {
-      if (active.current) setReadError(message(e));
-    }
+    await readDetail();
   }
   async function mutate(action: () => Promise<unknown>) {
     if (lock.current || readOnly) return;
@@ -114,8 +112,10 @@ export function ProjectDetail({
     try {
       const result = await action();
       if (active.current) {
-        if (result && typeof result === "object" && "project" in result)
+        if (result && typeof result === "object" && "project" in result) {
+          ++readSequence.current;
           setData(result as ProjectDetailData);
+        }
         await refreshed();
       }
     } catch (e) {
@@ -209,6 +209,9 @@ export function ProjectDetail({
           onDirty={onDirty}
           onCancel={() => setEditing(false)}
           onSaved={(d) => {
+            // A committed core aggregate also supersedes any pending GET.
+            ++readSequence.current;
+            setReadError("");
             setData(d);
             setEditing(false);
             onChanged();
