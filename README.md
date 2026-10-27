@@ -4,7 +4,7 @@
 
 ## 产品设计
 
-[大制造工作台产品设计 v0.3](docs/manufacturing-workbench-product-design.md)：以工作台、制造项目、事项和制造手册组织产品。围绕具体项目推进阶段、协调问题与确认事项，S1—S9 作为项目内部模板。
+[大制造工作台产品设计 v0.4](docs/manufacturing-workbench-product-design.md)：以工作台、制造项目、事项和制造手册组织产品。围绕具体项目推进阶段、协调问题与确认事项，S1—S9 作为项目内部模板。
 
 ## 系统手册
 
