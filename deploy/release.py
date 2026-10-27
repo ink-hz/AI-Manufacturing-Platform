@@ -12,8 +12,23 @@ import stat
 import sys
 import time
 import uuid
-from release_guard import validate_candidate
+from release_guard import validate_candidate,validate_upgrade_candidate
 import release_support as ops
+
+READINESS_CODE = '''import os,sys,json
+assert os.getuid()==10001
+sys.path.insert(0,'/opt/manufacturing/src')
+from manufacturing_platform.repository import Repository
+from manufacturing_platform.project_repository import ProjectRepository
+from manufacturing_platform.catalog import load_catalog
+database=os.environ['PLATFORM_MANUFACTURING_DATABASE_PATH']
+Repository(database).health()
+projects=ProjectRepository(database,load_catalog())
+with projects._connection() as connection:
+    connection.execute('SELECT 1').fetchone()
+assert os.statvfs('/opt/manufacturing').f_flag & os.ST_RDONLY
+print(json.dumps({'schema_ready':True,'source_read_only':True,'business_records_written':0}))
+'''
 
 
 def require(value, reason):
@@ -29,6 +44,10 @@ def request_data(stage):
     value=json.loads((stage/'request.json').read_text())
     for key in ['platform_commit','manufacturing_commit']:
         require(re.fullmatch(r'[0-9a-f]{40}',value[key]) is not None,'invalid_release_commit')
+    require(value.get('mode','initial') in {'initial','upgrade'},'invalid_release_mode')
+    if value.get('mode')=='upgrade':
+        for key in ['expected_old_platform_commit','expected_old_manufacturing_commit']:
+            require(re.fullmatch(r'[0-9a-f]{40}',value[key]) is not None,'invalid_baseline_release')
     return value
 
 
@@ -42,6 +61,40 @@ def environment_delta(e):
 def added_mounts(e):
     return [{'type':'bind','source':e['manufacturing_host'],'target':'/opt/manufacturing','read_only':True,'bind':{'create_host_path':False}},
             {'type':'bind','source':e['data_host'],'target':'/app/data/manufacturing','read_only':False,'bind':{'create_host_path':False}}]
+
+
+def overlay_mounts(e):
+    return added_mounts(e)[:1] if e.get('mode')=='upgrade' else added_mounts(e)
+
+
+def baseline_environment(e):
+    return {**environment_delta(e),'PLATFORM_RELEASE_SHA':e['expected_old_platform_commit'],
+            'PLATFORM_MANUFACTURING_RELEASE':e['expected_old_manufacturing_commit']}
+
+
+def previous_source(e):
+    return '/data/orbbec-agent-platform/manufacturing/releases/'+e['expected_old_manufacturing_commit']
+
+
+def validate_baseline(e,old):
+    if e.get('mode')!='upgrade':return
+    env=ops.actual_environment(old)
+    require(all(env.get(key)==value for key,value in baseline_environment(e).items()),'upgrade_baseline_environment_drift')
+    require(len({m['Destination'] for m in old['Mounts']})==len(old['Mounts']),'baseline_duplicate_mount')
+    mounts={m['Destination']:m for m in old['Mounts']}
+    code=mounts.get('/opt/manufacturing',{});data=mounts.get('/app/data/manufacturing',{})
+    require(code.get('Type')=='bind' and code.get('Source')==previous_source(e) and code.get('RW') is False and code.get('Propagation')=='rprivate','baseline_code_mount')
+    require(data.get('Type')=='bind' and data.get('Source')==e['data_host'] and data.get('RW') is True and data.get('Propagation')=='rprivate','baseline_data_mount')
+    declarations=[m for m in old['HostConfig'].get('Mounts',[]) if m.get('Target')=='/opt/manufacturing']
+    require(len(declarations)==1 and declarations[0].get('Source')==previous_source(e),'baseline_code_declaration')
+
+
+def validate_configuration(e,baseline,candidate):
+    if e.get('mode')=='upgrade':
+        validate_upgrade_candidate(baseline,candidate,target_image=e['target_image'],environment_delta=environment_delta(e),
+            baseline_environment=baseline_environment(e),new_code_mount=added_mounts(e)[0],data_mount=added_mounts(e)[1])
+    else:
+        validate_candidate(baseline,candidate,target_image=e['target_image'],environment_delta=environment_delta(e),new_mounts=added_mounts(e))
 
 
 def validate_paths(e):
@@ -93,7 +146,7 @@ def publish_success(receipt,maintenance):
 
 
 def snapshot_files(e):
-    names=['request.json','release.py','release_support.py','release_guard.py','candidate_verify.py']
+    names=['request.json','release.py','release_support.py','release_guard.py','candidate_verify.py','sqlite_backup.py']
     result={name:ops.digest(ops.STAGE/name) for name in names}
     validate_paths(e)
     release=ops.safe_path(e['manufacturing_host'],directory=True)
@@ -111,23 +164,44 @@ def snapshot_files(e):
     require(observed==manifest['files'],'business_tree_mismatch')
     require(not any(p.is_symlink() for p in release.rglob('*')),'business_symlink')
     result['business_metadata']=hashlib.sha256(ops.canonical(ops.file_tree(release))).hexdigest()
+    if e.get('mode')=='upgrade':
+        previous=ops.safe_path(previous_source(e),directory=True)
+        validate_release_metadata(previous)
+        prior=json.loads((previous/'manifest.json').read_text())
+        require(prior['commit']==e['expected_old_manufacturing_commit'],'previous_business_commit')
+        actual=tree_hashes(previous);actual.pop('manifest.json')
+        require(actual==prior['files'],'previous_business_content')
+        result['previous_business_metadata']=hashlib.sha256(ops.canonical(ops.file_tree(previous))).hexdigest()
     return result
 
 
 def compare_runtime(old, new, e):
     require(new['Image']==e['target_image_id'],'deployed_image_mismatch')
     require(ops.actual_environment(new)=={**ops.actual_environment(old),**environment_delta(e)},'runtime_environment_changed')
-    old_mounts={v['Destination']:v for v in old['Mounts']}
+    old_mounts={v['Destination']:v for v in copy.deepcopy(old['Mounts'])}
     new_mounts={v['Destination']:v for v in new['Mounts']}
+    require(len(old_mounts)==len(old['Mounts']),'baseline_duplicate_mount')
     require(len(new_mounts)==len(new['Mounts']),'runtime_duplicate_mounts')
-    for mount in added_mounts(e):
-        row=new_mounts.pop(mount['target'],None)
-        require(row and row['Type']=='bind' and row['Source']==mount['source'] and row['RW'] is (not mount['read_only']) and row.get('Propagation')=='rprivate','runtime_manufacturing_mount_mismatch')
+    upgrade=e.get('mode')=='upgrade'
+    if upgrade:
+        validate_baseline(e,old)
+        old_mounts['/opt/manufacturing']['Source']=e['manufacturing_host']
+    else:
+        for mount in added_mounts(e):
+            row=new_mounts.pop(mount['target'],None)
+            require(row and row['Type']=='bind' and row['Source']==mount['source'] and row['RW'] is (not mount['read_only']) and row.get('Propagation')=='rprivate','runtime_manufacturing_mount_mismatch')
     require(old_mounts==new_mounts,'existing_mount_changed')
     for field in ['Config','HostConfig']:
         before,after=copy.deepcopy(old[field]),copy.deepcopy(new[field])
+        if field=='HostConfig' and upgrade:
+            selected=[m for m in before.get('Mounts',[]) if m.get('Target')=='/opt/manufacturing']
+            require(len(selected)==1,'runtime_code_declaration')
+            selected[0]['Source']=e['manufacturing_host']
+            for row in [before,after]:
+                if row.get('Mounts'):row['Mounts']=sorted(row['Mounts'],key=lambda m:m['Target'])
+                if row.get('Binds'):row['Binds']=sorted(row['Binds'])
         for row in [before,after]:
-            for key in (['Hostname','Image','Env','Labels'] if field=='Config' else ['Binds','Mounts']):row.pop(key,None)
+            for key in (['Hostname','Image','Env','Labels'] if field=='Config' else [] if upgrade else ['Binds','Mounts']):row.pop(key,None)
         require(before==after,'runtime_'+field+'_changed')
     for item in [old,new]:
         require(item['Config'].get('Hostname')==item['Id'][:12],'custom_hostname_changed')
@@ -166,6 +240,7 @@ def prepare(e):
         old=ops.inspect(ops.API)
         require(old['State'].get('Health',{}).get('Status')=='healthy','baseline_unhealthy')
         require(old['Image']==e['expected_old_image'],'baseline_image_drift')
+        validate_baseline(e,old)
         check_images(e,old)
         files=ops.discover_files(old)
         require(len(files)==e['expected_chain_length'],'compose_chain_length_drift')
@@ -181,10 +256,10 @@ def prepare(e):
                 name=baseline['volumes'][mount['source']]['name']
                 volumes[name]=json.loads(ops.run(['docker','volume','inspect',name]))[0]
         replay=ops.replay_equivalence(baseline,old,image,probe,volumes)
-        overlay={'services':{'platform-api':{'image':e['target_image'],'environment':environment_delta(e),'volumes':added_mounts(e)}}}
+        overlay={'services':{'platform-api':{'image':e['target_image'],'environment':environment_delta(e),'volumes':overlay_mounts(e)}}}
         ops.write('overlay.json',overlay)
         candidate=json.loads(ops.run(ops.compose(files,True)+['config','--format','json'],env=env))
-        validate_candidate(baseline,candidate,target_image=e['target_image'],environment_delta=environment_delta(e),new_mounts=added_mounts(e))
+        validate_configuration(e,baseline,candidate)
         current=ops.maps(ops.API)
         for path,expected in e['backend_base_hashes'].items():
             require(current['source'].get(path)==expected,'baseline_source_drift:'+path)
@@ -227,7 +302,7 @@ def candidate(e):
 
 def http_checks(e,pre):
     statuses={}
-    for path,expected in [('/api/health',200),('/manufacturing',200),('/api/v1/manufacturing/access',401),('/api/v1/manufacturing/catalog',401),('/api/v1/manufacturing/health',401),('/api/v1/manufacturing/assets/manufacturing.js',401),('/sdk-admin',200),('/sdk/api.php/v1/users',403)]:
+    for path,expected in [('/api/health',200),('/manufacturing',200),('/api/v1/manufacturing/access',401),('/api/v1/manufacturing/catalog',401),('/api/v1/manufacturing/health',401),('/api/v1/manufacturing/dashboard',401),('/api/v1/manufacturing/projects',401),('/api/v1/manufacturing/project-tasks',401),('/api/v1/manufacturing/handbook',401),('/api/v1/manufacturing/assets/manufacturing.js',401),('/sdk-admin',200),('/sdk/api.php/v1/users',403)]:
         status,body,headers=ops.http(ops.DOMAIN+path);require(status==expected,'http_status:'+path)
         require('no-store' in headers.get('cache-control',''),'http_cache:'+path)
         statuses[path]=status
@@ -244,24 +319,34 @@ def cutover(e):
     with ops.Locks(input_lock=True) as locks:
         pre=ops.read('preflight.json');checked=ops.read('candidate-validation.json');unchanged(e,pre)
         require(not (ops.STAGE/'cutover.json').exists(),'cutover_already_done')
+        require(checked.get('passed') is True,'candidate_not_passed')
         require(checked['preflight_sha256']==ops.digest(ops.STAGE/'preflight.json') and checked['request_sha256']==ops.digest(ops.STAGE/'request.json') and checked['image']==e['target_image_id'],'candidate_receipt_changed')
         old=ops.inspect(ops.API);require(old['Id']==pre['old']['Id'] and old['Image']==pre['old']['Image'],'baseline_drift')
         require(ops.discover_files(old)==pre['files'],'compose_chain_drift')
         env=ops.environment(old)
         baseline=json.loads(ops.run(ops.compose(pre['files'])+['config','--format','json'],env=env))
         candidate_config=json.loads(ops.run(ops.compose(pre['files'],True)+['config','--format','json'],env=env))
-        validate_candidate(baseline,candidate_config,target_image=e['target_image'],environment_delta=environment_delta(e),new_mounts=added_mounts(e))
+        validate_configuration(e,baseline,candidate_config)
         check_images(e,old)  # Both target defaults and rollback tag are pinned before mutation.
+        validate_baseline(e,old)
+        backup=None
+        if e.get('mode')=='upgrade':
+            backup=json.loads(ops.run(['docker','exec','--user','10001:10001',ops.API,'python','-c',(ops.STAGE/'sqlite_backup.py').read_text()],timeout=45))
+            require(backup.get('verified') is True and backup.get('legacy_schema_present') is True,'sqlite_backup_not_verified')
+            ops.write('sqlite-backup.private.json',backup)
+        # Backup can take time. Recheck immutable rollback/target and live state
+        # immediately before the first live container mutation.
+        unchanged(e,pre);check_images(e,old)
+        require(ops.inspect(ops.API)['Id']==old['Id'],'baseline_drift_after_backup')
         try:
             ops.run(ops.compose(pre['files'],True)+['up','-d','--no-build','--no-deps','--force-recreate','platform-api'],env=env,timeout=180)
             new=ready(e['target_image_id']);compare_runtime(old,new,e)
             require(ops.discover_files(new)==pre['files']+[str(ops.STAGE/'overlay.json')],'new_chain_mismatch')
             require(ops.maps(ops.API)=={'source':pre['expected_source'],'static':pre['expected_static']},'deployed_content_mismatch')
             # Initializes new SQLite schema under the actual UID; writes no business records.
-            verify="import os,sys,json; from pathlib import Path; assert os.getuid()==10001; sys.path.insert(0,'/opt/manufacturing/src'); from manufacturing_platform.repository import Repository; r=Repository(os.environ['PLATFORM_MANUFACTURING_DATABASE_PATH']); r.health(); assert os.statvfs('/opt/manufacturing').f_flag & os.ST_RDONLY; print(json.dumps({'schema_ready':True,'source_read_only':True,'business_records_written':0}))"
-            readiness=json.loads(ops.run(['docker','exec',ops.API,'python','-c',verify]))
+            readiness=json.loads(ops.run(['docker','exec',ops.API,'python','-c',READINESS_CODE]))
             statuses=http_checks(e,pre);unchanged(e,pre)
-            receipt={'status':'healthy','platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'container':new['Id'],'compose_files':pre['files']+[str(ops.STAGE/'overlay.json')],'readiness':readiness,'http_statuses':statuses,'browser_acceptance':'not_run','production_erp_connections':'unverified'}
+            receipt={'status':'healthy','platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'container':new['Id'],'compose_files':pre['files']+[str(ops.STAGE/'overlay.json')],'readiness':readiness,'http_statuses':statuses,'database_backup':backup,'browser_acceptance':'not_run','production_erp_connections':'unverified'}
             publish_success(receipt,{'compose_files_in_order':receipt['compose_files'],'platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'previous_manifest':e['previous_manifest'],'preservation':'All prior ordered overlays, mounts, networks, runtime security and Git capability retained.'})
             print(json.dumps({'deployed':True,'platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'compose_files':len(receipt['compose_files'])}))
         except BaseException as error:

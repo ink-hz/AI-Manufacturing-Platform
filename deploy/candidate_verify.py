@@ -72,7 +72,8 @@ def check(response,status):
     assert 'no-store' in response.headers.get('cache-control','')
     return response
 
-check(client.get(prefix+'/catalog'),401)
+for path in ['/catalog','/dashboard','/projects','/project-tasks','/handbook']:
+    check(client.get(prefix+path),401)
 check(client.get(prefix+'/assets/manufacturing.js',params={'release':'stale-candidate-release'}),401)
 client.cookies.set(auth.cookie_name,'synthetic-candidate-session');client.cookies.set(auth.csrf_cookie_name,'synthetic-candidate-csrf')
 assert check(client.get(prefix+'/access'),200).json()['allowed']
@@ -100,6 +101,50 @@ for name,mime in [('manufacturing.js','javascript'),('manufacturing.css','text/c
     tagged=check(client.get(prefix+'/assets/'+name,params={'release':expected['business_commit']}),200)
     assert tagged.content==response.content
     check(client.get(prefix+'/assets/'+name,params={'release':'stale-candidate-release'}),409)
+# Actual project workflows on isolated storage; legacy rows must remain unchanged.
+legacy_snapshot=check(client.get(stage),200).json()
+project_body={'name':'Disposable camera pilot','line_id':'cameras','owner':'Candidate coordinator','product':'Candidate camera','operation_id':str(uuid4())}
+check(client.post(prefix+'/projects',json=project_body),403)
+created=check(client.post(prefix+'/projects',json=project_body,headers=headers),200).json()
+assert check(client.post(prefix+'/projects',json=project_body,headers=headers),200).json()==created
+check(client.post(prefix+'/projects',json={**project_body,'owner':'Changed request'},headers=headers),409)
+project_id=created['project']['id'];project_path=prefix+'/projects/'+project_id
+second=check(client.post(prefix+'/projects',json={**project_body,'name':'Disposable OEM pilot','line_id':'oem','operation_id':str(uuid4())},headers=headers),200).json()
+phase=created['stages'][0];phase_path=project_path+'/stages/'+phase['id']
+fields=['status','owner','due_date','blocker','practice','participants','handoffs','systems']
+def phase_body(value,**changes):
+    return {**{k:value[k] for k in fields},'expected_version':value['version'],**changes}
+phase=check(client.put(phase_path,json=phase_body(phase,status='doing',practice='Disposable project practice',owner='Candidate coordinator'),headers=headers),200).json()
+phase=check(client.put(phase_path,json=phase_body(phase,status='blocked',blocker='Disposable BOM confirmation pending'),headers=headers),200).json()
+assert check(client.get(prefix+'/dashboard'),200).json()['counts']['blocked_projects']==1
+phase=check(client.put(phase_path,json=phase_body(phase,status='done',blocker=''),headers=headers),200).json()
+phase=check(client.put(phase_path,json=phase_body(phase,status='doing'),headers=headers),200).json()
+check(client.put(phase_path,json=phase_body(phase,expected_version=1),headers=headers),409)
+item_body={'stage_id':phase['id'],'title':'Confirm disposable BOM revision','kind':'confirmation','owner':'Candidate engineer','priority':'high','operation_id':str(uuid4())}
+item=check(client.post(project_path+'/tasks',json=item_body,headers=headers),200).json()
+assert check(client.post(project_path+'/tasks',json=item_body,headers=headers),200).json()==item
+assert check(client.get(prefix+'/dashboard'),200).json()['counts']['pending_confirmations']==1
+item=check(client.patch(project_path+'/tasks/'+item['id'],json={'expected_version':item['version'],'status':'done'},headers=headers),200).json()
+check(client.patch(project_path+'/tasks/'+item['id'],json={'expected_version':1,'status':'doing'},headers=headers),409)
+assert check(client.get(prefix+'/dashboard'),200).json()['counts']['pending_confirmations']==0
+assert check(client.get(stage),200).json()==legacy_snapshot
+assert check(client.get(prefix+'/projects/'+second['project']['id']),200).json()['stages'][0]['practice']==''
+archived=check(client.patch(project_path,json={'expected_version':1,'archived':True},headers=headers),200).json()
+assert archived['project']['status']=='archived'
+assert len(check(client.get(prefix+'/dashboard'),200).json()['projects'])==1
+check(client.patch(project_path,json={'expected_version':archived['project']['version'],'archived':False},headers=headers),200)
+for doc,path in [('handbook','docs/manufacturing-system-handbook.md'),('workflow','docs/workflows/manufacturing-process-overview.md')]:
+    read=check(client.get(prefix+'/handbook',params={'document':doc,'release':expected['business_commit']}),200).json()
+    assert read['source_path']==path and read['sha256']==manifest['files'][path]
+    assert hashlib.sha256(read['markdown'].encode()).hexdigest()==read['sha256']
+check(client.get(prefix+'/handbook',params={'release':'wrong-release'}),409)
+auth.stale=True
+check(client.get(project_path),200);check(client.get(prefix+'/handbook'),200)
+check(client.patch(project_path,json={'expected_version':2,'name':'Must not write'},headers=headers),503)
+auth.stale=False;auth.role=Role.MEMBER
+for path in ['/dashboard','/projects','/project-tasks','/handbook']:
+    check(client.get(prefix+path),403)
+auth.role=Role.PLATFORM_OWNER
 auth.stale=True;check(client.get(stage),200);check(client.put(stage,json={**body,'expected_version':1},headers=headers),503)
 auth.stale=False;auth.role=Role.MEMBER;check(client.get(stage),403)
 auth.role=Role.PLATFORM_OWNER
@@ -118,8 +163,9 @@ assert r.json()['tasks'][0]['completed']
 c.close()
 print('process-restart-persistence-ok')
 '''
+reopen=reopen.replace("c.close()\nprint('process-restart-persistence-ok')", "r=c.get("+repr(project_path)+")\nassert r.status_code==200\nassert r.json()['stages'][0]['practice']=='Disposable project practice'\nassert r.json()['tasks'][0]['status']=='done'\nc.close()\nprint('process-restart-persistence-ok')")
 assert subprocess.run([sys.executable,'-c',reopen],capture_output=True,check=True).stdout.strip()==b'process-restart-persistence-ok'
 client=TestClient(instance,base_url=auth.public_base_url)
 client.cookies.set(auth.cookie_name,'synthetic-candidate-session')
 auth.revoked=True;check(client.get(stage),401)
-print(json.dumps({'passed':True,'authentication':'synthetic_ASGI_with_real_middleware_authorization_csrf','persistence':'disposable_SQLite_separate_process_restart','application':'actual_app.main.create_app_routes','business_lines':3,'business_relationships':'registered_not_connected','production_business_writes':0,'network_calls':0,'browser_acceptance':'not_run'}))
+print(json.dumps({'passed':True,'authentication':'synthetic_ASGI_with_real_middleware_authorization_csrf','persistence':'disposable_SQLite_separate_process_restart','application':'actual_app.main.create_app_routes','business_lines':3,'project_workflows':'create_phase_block_reopen_confirmation_archive_legacy_preservation','handbook':'exact_published_markdown_and_metadata','business_relationships':'registered_not_connected','production_business_writes':0,'network_calls':0,'browser_acceptance':'not_run'}))
