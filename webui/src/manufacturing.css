@@ -1,0 +1,327 @@
+.mf-root {
+  --mf-line: var(--border-color, #dfe4e9);
+  --mf-muted: var(--text-secondary, #65717c);
+  --mf-accent: var(--primary-color, #2b6574);
+  color: inherit;
+  font: inherit;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px clamp(12px, 3vw, 36px) 48px;
+  line-height: 1.65;
+}
+.mf-root *,
+.mf-root *::before,
+.mf-root *::after {
+  box-sizing: border-box;
+}
+.mf-root h1 {
+  font-size: 1.6em;
+  margin: 0 0 4px;
+  font-weight: 650;
+}
+.mf-root h2 {
+  font-size: 1.4em;
+  margin: 4px 0 10px;
+}
+.mf-root h3 {
+  font-size: 1em;
+  margin: 0 0 10px;
+  font-weight: 650;
+}
+.mf-root p {
+  margin: 8px 0 14px;
+}
+.mf-root button,
+.mf-root input,
+.mf-root textarea,
+.mf-root select {
+  font: inherit;
+  color: inherit;
+}
+.mf-root button {
+  border: 1px solid var(--mf-line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: var(--surface-color, transparent);
+  cursor: pointer;
+  line-height: 1.5;
+}
+.mf-root button:hover:enabled {
+  border-color: var(--mf-accent);
+  color: var(--mf-accent);
+}
+.mf-root button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+.mf-root :is(button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--mf-accent);
+  outline-offset: 3px;
+}
+.mf-root :is(input, textarea, select) {
+  display: block;
+  width: 100%;
+  background: var(--surface-color, transparent);
+  border: 1px solid var(--mf-line);
+  border-radius: 5px;
+  padding: 8px 10px;
+  min-height: 40px;
+}
+.mf-root textarea {
+  resize: vertical;
+}
+.mf-root summary {
+  cursor: pointer;
+  padding: 8px 0;
+  font-weight: 550;
+}
+.mf-root .mf-muted,
+.mf-root .mf-meta,
+.mf-root .mf-breadcrumb,
+.mf-root .mf-intro {
+  color: var(--mf-muted);
+  font-size: 0.9em;
+}
+.mf-tabs,
+.mf-lines,
+.mf-actions,
+.mf-toolbar,
+.mf-section-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.mf-tabs {
+  border-bottom: 1px solid var(--mf-line);
+  margin: 24px 0 14px;
+  gap: 20px;
+}
+.mf-root .mf-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 10px 2px;
+}
+.mf-root .mf-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--mf-accent);
+  color: var(--mf-accent);
+  font-weight: 650;
+}
+.mf-lines {
+  margin-bottom: 12px;
+}
+.mf-root .mf-lines button[aria-pressed="true"] {
+  border-color: var(--mf-accent);
+  color: var(--mf-accent);
+}
+.mf-stages {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+  border: 1px solid var(--mf-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.mf-stages li + li {
+  border-top: 1px solid var(--mf-line);
+}
+.mf-root .mf-stages button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  gap: 12px;
+  padding: 16px 18px;
+}
+.mf-stage-number {
+  color: var(--mf-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+}
+.mf-stage-name {
+  flex: 1;
+  font-weight: 550;
+}
+.mf-stage-state,
+.mf-task-count {
+  color: var(--mf-muted);
+  font-size: 0.85em;
+}
+.mf-toolbar {
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.mf-root .mf-link {
+  border: 0;
+  padding-left: 0;
+  color: var(--mf-accent);
+}
+.mf-panel {
+  margin-top: 24px;
+  border-top: 1px solid var(--mf-line);
+  padding-top: 20px;
+}
+.mf-section-heading {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.mf-section-heading h3 {
+  margin: 0;
+}
+.mf-help {
+  padding: 6px 14px;
+  border: 1px solid var(--mf-line);
+  border-radius: 6px;
+}
+.mf-help[open] {
+  padding-bottom: 12px;
+}
+.mf-help p,
+.mf-help ul {
+  font-size: 0.9em;
+}
+.mf-practice {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mf-field {
+  display: block;
+  width: 100%;
+  font-size: 0.92em;
+}
+.mf-task-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.mf-task-form .mf-field {
+  flex: 1;
+}
+.mf-task-form button {
+  flex-shrink: 0;
+  min-height: 40px;
+}
+.mf-task-list {
+  list-style: none;
+  padding: 0;
+}
+.mf-task {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--mf-line);
+}
+.mf-task-title {
+  overflow-wrap: anywhere;
+  flex: 1;
+}
+.mf-task .mf-actions {
+  font-size: 0.85em;
+}
+.mf-task-edit {
+  border-left: 2px solid var(--mf-accent);
+  margin: 16px 0;
+  padding: 0 0 0 14px;
+}
+.mf-task-edit .mf-actions {
+  margin-top: 10px;
+}
+.mf-root .mf-primary {
+  background: var(--mf-accent);
+  color: #fff;
+  border-color: var(--mf-accent);
+}
+.mf-root .mf-primary:hover:enabled {
+  color: #fff;
+}
+.mf-error {
+  color: #a13232;
+  padding: 10px 12px;
+  border: 1px solid #dca4a4;
+  border-radius: 5px;
+}
+.mf-badge {
+  display: inline-block;
+  font-size: 0.85em;
+  color: var(--mf-muted);
+  border: 1px solid var(--mf-line);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.mf-relations > section {
+  margin-top: 20px;
+}
+.mf-relation-row {
+  border: 1px solid var(--mf-line);
+  border-radius: 6px;
+  margin: 10px 0 14px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+.mf-relation-row legend {
+  color: var(--mf-muted);
+  font-size: 0.85em;
+  padding: 0 5px;
+}
+.mf-relation-row label {
+  font-size: 0.9em;
+}
+.mf-relation-row > button {
+  justify-self: start;
+  align-self: end;
+}
+.mf-dialog-backdrop {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  background: #0002;
+}
+.mf-dialog {
+  position: fixed;
+  z-index: 1000;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--mf-line);
+  border-radius: 10px;
+  box-shadow: 0 10px 60px #0003;
+  background: var(--background-color, #fff);
+}
+@media (max-width: 600px) {
+  .mf-root {
+    padding-top: 12px;
+  }
+  .mf-task {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .mf-task-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .mf-stages button {
+    flex-wrap: wrap;
+    gap: 8px !important;
+    padding: 14px 10px !important;
+  }
+  .mf-stage-name {
+    min-width: 40%;
+  }
+  .mf-task-count {
+    font-size: 0.75em;
+  }
+  .mf-root button {
+    min-height: 36px;
+  }
+}
