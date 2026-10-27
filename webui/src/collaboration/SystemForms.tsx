@@ -7,6 +7,7 @@ import type {
   SystemFields,
   Authority,
   AuthorityFields,
+  Handoff,
 } from "./types";
 import { Field, Note, MutationForm, type EditorHost } from "./ui";
 import { methods, objects, usages } from "./labels";
@@ -25,8 +26,24 @@ export function SystemForm({
   api,
   catalog,
   system,
+  authorities,
+  handoffs,
+  onAuthority,
+  onHandoff,
   ...host
-}: { api: Api; catalog: Catalog; system?: SystemRecord } & EditorHost) {
+}: {
+  api: Api;
+  catalog: Catalog;
+  system?: SystemRecord;
+  authorities: Authority[];
+  handoffs: Handoff[];
+  onAuthority: (authority: Authority) => void;
+  onHandoff: (handoff: Handoff) => void;
+} & EditorHost) {
+  const relatedAuthorities = authorities.filter((a) => a.system_id === system?.id);
+  const unfinishedHandoffs = handoffs.filter((h) =>
+    h.to_system_id === system?.id && ["draft", "sent", "returned"].includes(h.status),
+  );
   const [initial] = useState(() => systemFields(system, catalog.lines[0]?.id));
   const [d, set] = useState(initial);
   const update = <K extends keyof SystemFields>(k: K, v: SystemFields[K]) =>
@@ -121,6 +138,30 @@ export function SystemForm({
           </button>
         )}
       </MutationForm>
+      {system && (
+        <section aria-label="系统关联上下文">
+          <h4>关联责任对象</h4>
+          {relatedAuthorities.map((a) => (
+            <article key={a.id} className="mf-control-row">
+              <button type="button" className="mf-link" onClick={() => onAuthority(a)}>
+                {objects[a.object_type]} · {a.entry_point}
+              </button>
+              <p>{catalog.lines.find((l) => l.id === a.line_id)?.name || a.line_id} · {a.owner} · {a.active ? "有效" : "已停用 / 历史"}</p>
+            </article>
+          ))}
+          {!relatedAuthorities.length && <p>暂无关联责任对象。</p>}
+          <h4>未完成交接</h4>
+          {unfinishedHandoffs.map((h) => (
+            <article key={h.id} className="mf-control-row">
+              <button type="button" className="mf-link" onClick={() => onHandoff(h)}>
+                {h.project_name || h.project_id} · {h.to_party}
+              </button>
+              <p>固定资料修订 {h.package_revision} · 人工交接记录</p>
+            </article>
+          ))}
+          {!unfinishedHandoffs.length && <p>暂无未完成交接。</p>}
+        </section>
+      )}
     </>
   );
 }

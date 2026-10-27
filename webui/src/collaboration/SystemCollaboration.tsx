@@ -104,6 +104,22 @@ export function SystemCollaboration({
             api={api}
             catalog={catalog}
             system={selected === "new" ? undefined : (selected as SystemRecord)}
+            authorities={c.data.authorities}
+            handoffs={c.data.handoffs}
+            onAuthority={(authority) =>
+              change(() => {
+                setTab("authorities");
+                setSelected(authority);
+              })
+            }
+            onHandoff={(handoff) =>
+              onControl
+                ? onControl(handoff.project_id, {
+                    object_type: "handoff",
+                    object_id: handoff.id,
+                  })
+                : onOpen(handoff.project_id)
+            }
             {...host}
           />
         ) : (

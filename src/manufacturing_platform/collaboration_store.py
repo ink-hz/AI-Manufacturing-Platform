@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS manufacturing_readiness (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES manufacturing_projects(id),
  package_id TEXT NOT NULL REFERENCES manufacturing_packages(id), body TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS manufacturing_task_sources (
+ project_id TEXT NOT NULL REFERENCES manufacturing_projects(id), task_id TEXT NOT NULL,
+ readiness_id TEXT NOT NULL REFERENCES manufacturing_readiness(id), item_id TEXT NOT NULL,
+ PRIMARY KEY(project_id,task_id)
+);
 CREATE TABLE IF NOT EXISTS manufacturing_control_events (
  sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
  project_id TEXT, object_type TEXT NOT NULL, object_id TEXT NOT NULL, body TEXT NOT NULL

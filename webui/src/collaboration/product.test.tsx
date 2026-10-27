@@ -646,7 +646,17 @@ it("registers independent send and return actions with a required reason", async
   await click("生产");
   await click("登记交出");
   await click("确认操作");
-  expect(calls.find((c) => c.method === "PATCH")?.body.action).toBe("send");
+  expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  expect((host.querySelector('[aria-label="操作凭据"]') as HTMLInputElement).required).toBe(true);
+  expect((host.querySelector('[aria-label="业务发生时间"]') as HTMLInputElement).required).toBe(true);
+  await field("操作凭据", "交出凭据");
+  await click("确认操作");
+  expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  await field("业务发生时间", "2026-10-27T13:00");
+  await click("确认操作");
+  expect(calls.find((c) => c.method === "PATCH")?.body).toMatchObject({
+    action: "send", evidence: "交出凭据", occurred_at: new Date("2026-10-27T13:00").toISOString(), expected_version: 1,
+  });
   await click("生产");
   await click("登记退回");
   await field("操作原因", "版本不符");
@@ -1287,3 +1297,80 @@ it.each(["准备项负责人", "不适用来源", "不适用凭据", "不适用�
     ).toHaveLength(0);
   },
 );
+
+
+it.each(["record", "item"])("rejects all optional checks in a mandatory record, then permits correction via %s", async (correction) => {
+  packages = [pkg()];
+  await mount();
+  await openTab("生产准备");
+  await click("新建准备核对");
+  await field("核对名称", "首批核对");
+  await field("工单编号", "WO1");
+  await field("执行范围", "首批");
+  await field("计划使用日期", "2026-11-01");
+  await field("核对负责人", "王工");
+  async function toggle(label: string) {
+    const el = [...host.querySelectorAll("label")].find((l) => l.textContent?.trim() === label)!.querySelector("input")!;
+    await act(async () => el.click());
+  }
+  await toggle("必需准备项");
+  await click("建立核对");
+  expect(calls.some((c) => c.url.endsWith("/readiness") && c.body)).toBe(false);
+  expect(host.textContent).toContain("纳入项目必需准备时，至少选择一个必需准备项");
+  await click("重置本次请求并继续编辑");
+  await toggle(correction === "record" ? "纳入项目必需准备" : "必需准备项");
+  await click("建立核对");
+  expect(calls.find((c) => c.url.endsWith("/readiness") && c.body)?.body).toMatchObject({
+    required: correction !== "record", items: [expect.objectContaining({required: correction === "item"})],
+  });
+});
+
+it.each(["edit", "readonly", "frozen"])("shows scoped selected-system authority and unfinished handoffs with working navigation (%s)", async (mode) => {
+  const readOnly = mode === "readonly";
+  systems = [{id: "s1", version: 1, name: "ERP", kind: "ERP", line_ids: ["cameras"], active: true, usage: "manual_effective", method: "manual"}];
+  authorities = [
+    {id: "a1", version: 1, line_id: "cameras", object_type: "mbom", system_id: "s1", entry_point: "清单入口", owner: "王工", active: true},
+    {id: "a2", version: 1, line_id: "cameras", object_type: "material", system_id: "s2", entry_point: "无关入口", owner: "李工", active: true},
+  ];
+  packages = [pkg()];
+  handoffs = [
+    {id: "h1", version: 1, project_id: "p1", project_name: "试产项目", to_system_id: "s1", package_id: "pk1", package_revision: 1, from_party: "工程", to_party: "生产", status: "sent", code: "HO-1", method: "file"},
+    {id: "h2", to_system_id: "s2", to_party: "无关接收方", status: "sent"},
+    {id: "h3", to_system_id: "s1", to_party: "已结束接收方", status: "received"},
+    {id: "h4", to_system_id: "s1", to_party: "已取消接收方", status: "cancelled"},
+  ];
+  await mount(readOnly);
+  await click("系统协同");
+  await click("ERP");
+  expect(host.textContent).toContain("关联责任对象");
+  expect(host.textContent).toContain("未完成交接");
+  expect(host.textContent).toContain(catalog.lines[0].name);
+  expect(host.textContent).not.toContain("无关入口");
+  expect(host.textContent).not.toContain("无关接收方");
+  expect(host.textContent).not.toContain("已结束接收方");
+  expect(host.textContent).not.toContain("已取消接收方");
+  const authority = [...host.querySelectorAll("button")].find(b => b.textContent?.includes("清单入口"))!;
+  expect(authority).toBeDefined();
+  expect(authority.closest("fieldset[disabled]")).toBeNull();
+  if (!readOnly) await field("系统名称", "未保存系统名");
+  if (mode === "frozen") {
+    failure = "/api/systems/s1";
+    await click("保存系统");
+    expect(host.querySelector('[aria-label="系统名称"]')?.closest("fieldset")?.disabled).toBe(true);
+  }
+  await act(async () => authority.click());
+  await flush();
+  if (!readOnly) { expect(host.textContent).toContain("放弃并离开"); await click("放弃并离开"); }
+  expect((host.querySelector('[aria-label="录入入口"]') as HTMLInputElement).value).toBe("清单入口");
+  await click("业务系统");
+  await click("ERP");
+  if (!readOnly) await field("系统名称", "交接前未保存名");
+  await click("试产项目 · 生产");
+  if (!readOnly) await click("放弃并离开");
+  for (let n = 0; n < 25 && !host.textContent?.includes("HO-1"); n++) await flush();
+  expect(host.textContent).not.toContain("尚有未保存的工作");
+  expect(host.textContent).toContain("HO-1");
+  expect(host.textContent).toContain("工程 → 生产");
+  expect(host.textContent).toContain("已登记交出");
+  expect(calls.filter(c => c.method !== "GET")).toHaveLength(mode === "frozen" ? 1 : 0);
+});

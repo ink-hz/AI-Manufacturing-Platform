@@ -83,12 +83,32 @@ class ProjectRepository:
         row = db.execute('SELECT body FROM manufacturing_projects WHERE id=?', (project_id,)).fetchone()
         if not row:
             raise NotFound()
-        return ProjectDetail.model_validate_json(row[0]).model_dump(mode='json')
+        return ProjectRepository._enrich(db, ProjectDetail.model_validate_json(row[0]).model_dump(mode='json'))
+
+    @staticmethod
+    def _enrich(db, detail):
+        links = {task_id: {'type': 'readiness', 'id': readiness_id, 'item_id': item_id}
+                 for task_id, readiness_id, item_id in db.execute(
+                     'SELECT task_id,readiness_id,item_id FROM manufacturing_task_sources WHERE project_id=?',
+                     (detail['project']['id'],))}
+        for task in detail['tasks']:
+            task['source'] = links.get(task['id'], task.get('source'))
+        return detail
 
     @staticmethod
     def _save(db, detail):
-        detail['project'] = _summary(detail)
-        db.execute('UPDATE manufacturing_projects SET body=? WHERE id=?', (_json(detail), detail['project']['id']))
+        # Keep the legacy aggregate readable by the deployed rollback version.
+        # Sources are additive references, persisted in this same transaction.
+        project_id = detail['project']['id']
+        for task in detail['tasks']:
+            source = task.get('source')
+            if source is not None:
+                db.execute('INSERT INTO manufacturing_task_sources VALUES (?,?,?,?) '
+                           'ON CONFLICT(project_id,task_id) DO NOTHING',
+                           (project_id, task['id'], source['id'], source['item_id']))
+        legacy = {**detail, 'project': _summary(detail),
+                  'tasks': [{k: v for k, v in task.items() if k != 'source'} for task in detail['tasks']]}
+        db.execute('UPDATE manufacturing_projects SET body=? WHERE id=?', (_json(legacy), project_id))
 
     @staticmethod
     def _activity(detail, actor, action, summary, *, stage_id=None, task_id=None):
@@ -107,11 +127,16 @@ class ProjectRepository:
         if row:
             if row[:4] != (actor, kind, scope, payload):
                 raise Conflict()
-            return json.loads(row[4]), payload
+            response = json.loads(row[4])
+            if kind == 'task':
+                response.setdefault('source', None)
+            return response, payload
         return None, payload
 
     @staticmethod
     def _remember(db, value, actor, kind, scope, payload, response):
+        if kind == 'task':
+            response = {k: v for k, v in response.items() if k != 'source'}
         db.execute('INSERT INTO manufacturing_project_operations VALUES (?,?,?,?,?,?)', (str(value.operation_id), actor, kind, scope, payload, _json(response)))
 
     def create(self, value, actor_id, actor_label):
@@ -152,7 +177,8 @@ class ProjectRepository:
         if db is None:
             with self._connection() as connection:
                 return self._all(connection)
-        return [ProjectDetail.model_validate_json(row[0]).model_dump(mode='json') for row in db.execute('SELECT body FROM manufacturing_projects ORDER BY rowid DESC')]
+        return [self._enrich(db, ProjectDetail.model_validate_json(row[0]).model_dump(mode='json'))
+                for row in db.execute('SELECT body FROM manufacturing_projects ORDER BY rowid DESC')]
 
     def list(self):
         with self._connection() as db:

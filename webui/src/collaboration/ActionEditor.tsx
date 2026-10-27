@@ -93,13 +93,13 @@ export function HandoffActionEditor({
         <Field
           label="操作凭据"
           value={d.evidence}
-          required={action === "receive"}
+          required={action === "send" || action === "receive"}
           onChange={(v) => set({ ...d, evidence: v })}
         />
         <Field
           label="业务发生时间"
           type="datetime-local"
-          required={action === "receive"}
+          required={action === "send" || action === "receive"}
           value={local}
           onChange={(v) => {
             setLocal(v);

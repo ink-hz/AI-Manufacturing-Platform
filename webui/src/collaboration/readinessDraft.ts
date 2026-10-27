@@ -24,6 +24,8 @@ export function validateReadinessCreate(
   body: ReadinessFields,
   replacement: boolean,
 ) {
+  if (body.required && !body.items.some((i) => i.required))
+    throw new Error("纳入项目必需准备时，至少选择一个必需准备项");
   if (
     body.items.some(
       (i) => i.kind === "version" && !i.package_item_id && i.status !== "na",

@@ -1,0 +1,5 @@
+Trusted repository source, no business data.
+Git commit: 161292be7c01038cc7c25b5f36aea04577c19823
+Export: git archive 161292be7c01038cc7c25b5f36aea04577c19823 src/manufacturing_platform | gzip (mtime=0)
+SHA256: ae37d3d9ef165408616aeb8ee08a99c812a2acd6764d6308031ba82a3ddd6fea
+All source files are unmodified; tests verify the archive digest and paths before extraction.

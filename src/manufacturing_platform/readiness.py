@@ -59,6 +59,8 @@ class ReadinessService(CollaborationStore):
             else:
                 value = self.new(self.fields(request),actor)
                 value.update(project_id=project_id,superseded_by=None)
+                require(not value['required'] or any(item['required'] for item in value['items']),
+                        'Required readiness needs at least one required item')
             package = self.object(db,'packages',value['package_id'],project_id)
             if not readiness_id:
                 require(package['status']=='verified', 'Readiness requires a fixed verified package')
