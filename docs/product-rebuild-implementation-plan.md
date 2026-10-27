@@ -49,7 +49,7 @@ Schemas (all writes forbid unknown fields; strict strings/integers/bools):
 ProjectCreate: operation_id:UUID, name:nonblank<=200, line_id:enabled catalog ID,
  owner:nonblank<=200, product:string<=200='', customer:string<=200='',
  due_date:date|null=null, target_quantity:int1..1e9|null=null, summary:string<=6000=''
-ProjectUpdate: expected_version:int>=1, name, owner, product, customer,
+ProjectUpdate: expected_version:int>=1, optional PATCH fields name, owner, product, customer,
  due_date, target_quantity, summary (same limits), archived:bool
 ProjectSummary: id:UUID, code:string, name,line_id,line_name,group_id,owner,product,customer,
  due_date,target_quantity,summary,archived,version,created_at,updated_at,updated_by,
@@ -60,22 +60,22 @@ ProjectStage: id,name,purpose,help,prompts,reference_participants,reference_hand
  status:todo|doing|blocked|done,owner:string<=200,due_date:date|null,blocker:string<=2000,
  practice:string<=12000,participants,handoffs,systems (legacy bounded RecordContent shapes),
  version:int>=1,updated_at,updated_by
-ProjectStageWrite: expected_version:int>=1 plus status,owner,due_date,blocker,practice,participants,handoffs,systems
+ProjectStageWrite: expected_version:int>=1 plus REQUIRED status,owner,due_date,blocker,practice,participants,handoffs,systems (full PUT, no omission defaults)
 ProjectTaskCreate: operation_id:UUID,stage_id, title:nonblank<=300,
  kind:task|issue|confirmation='task',owner:string<=200='',due_date:date|null=null,
  priority:normal|high|urgent='normal',notes:string<=6000=''
 ProjectTask: id,project_id,stage_id,title,kind,owner,due_date,priority,notes,
  status:todo|doing|blocked|done,version:int>=1,created_at,updated_at,updated_by
-ProjectTaskWrite: expected_version:int>=1 plus stage_id,title,kind,owner,due_date,priority,notes,status
+ProjectTaskWrite: expected_version:int>=1 plus optional PATCH fields stage_id,title,kind,owner,due_date,priority,notes,status (omitted preserves; null only nullable dates)
 TaskWithProject: ProjectTask plus project_name,project_code,line_id,line_name,group_id,stage_name
 Blocker: project_id,project_name,stage_id,stage_name,task_id:string|null,title,reason,owner,due_date
 Activity: id,created_at,actor,action,summary (server-defined safe factual label),stage_id:null|string,task_id:null|string
 ActivityWithProject: Activity plus project_id,project_name
 ```
 
-Persistence can use one JSON aggregate per project in NEW `manufacturing_projects` and one NEW globally unique UUID idempotency table. Serialize transactionally using BEGIN IMMEDIATE, busy_timeout, WAL and one connection per operation. Preserve entire current aggregate on a child update; check per-entity versions before change. Creation operation ID compares actor, operation kind, scope and normalized full payload; same request returns immutable original response and adds no duplicate activity, changed payload conflicts409. Stage blocked requires nonblank blocker. Project status: archived first; completed iff all stages done; blocked iff a stage/task is blocked; active iff any stage doing/done or task doing/done; otherwise planned. Current stage is first doing/blocked, otherwise first unfinished, otherwise final stage. Project core version changes only on core PATCH; child versions change on corresponding child mutations. Every real change appends activity, return newest50, retain latest200. Reopening completed stages/tasks is allowed. Unarchived dashboard counts use actual records; due_soon means incomplete due_date within next7days including today, not overdue. Attention sorts blocked, priority urgent/high/normal then dates with overdue first; cap20, project summary cap8; GET projects remains full actual summaries. Dashboard/flat tasks exclude archived. No DROP/DELETE legacy schema.
+Persistence can use one JSON aggregate per project in NEW `manufacturing_projects` and one NEW globally unique UUID idempotency table. Serialize transactionally using BEGIN IMMEDIATE, busy_timeout, WAL and one connection per operation. Preserve entire current aggregate on a child update; check per-entity versions before change. Creation operation ID compares actor, operation kind, scope and normalized full payload; same request returns immutable original response and adds no duplicate activity, changed payload conflicts409. Stage blocked requires nonblank blocker. Project status precedence: archived first; blocked iff any stage/task is blocked; completed iff all stages AND all tasks are done; active iff any stage/task doing/done (including all stages done with pending confirmation); otherwise planned. Current stage is first doing/blocked, otherwise first unfinished, otherwise final stage. Project core version changes only on core PATCH; child versions change on corresponding child mutations. Every real change appends activity, return newest50, retain latest200. Reopening completed stages/tasks is allowed. Unarchived dashboard counts use actual records; due_soon means incomplete due_date within next7days including today, not overdue. Attention sorts blocked, priority urgent/high/normal then dates with overdue first; cap20, project summary cap8; GET projects remains full actual summaries. Dashboard/flat tasks exclude archived. No DROP/DELETE legacy schema.
 
-Handbook reader derives fixed root from resolved assets_dir ../..; enum document selects only the two fixed files. Reject supplied mismatched release409 BEFORE content filesystem I/O, after auth. Require matching metadata sha256 and readable regular files confined to root; missing/corrupt -> safe503. No arbitrary path selection. Router construction does no I/O. `handbook-metadata.json` shape:
+Handbook reader derives fixed root from resolved assets_dir ../..; enum document selects only the two fixed files. Reject supplied mismatched release409 BEFORE content filesystem I/O, after auth. Read metadata at root/handbook-metadata.json. Require matching metadata sha256 and readable regular files confined to root; missing/corrupt -> safe503. No arbitrary path selection. Router construction does no I/O. `handbook-metadata.json` shape:
 ```json
 {"files":{"docs/manufacturing-system-handbook.md":{"updated_at":"2026-10-27T00:00:00+00:00","sha256":"64lowerhex"},"docs/workflows/manufacturing-process-overview.md":{"updated_at":"2026-10-27T00:00:00+00:00","sha256":"64lowerhex"}}}
 ```
