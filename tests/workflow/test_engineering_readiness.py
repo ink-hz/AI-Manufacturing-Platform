@@ -158,7 +158,7 @@ def test_trial_first_article_is_not_circular_and_material_is_honestly_blocked(wo
     )
 
 
-def test_public_work_order_allocation_and_forecast_denial(workflow):
+def test_public_work_order_allocation_and_unknown_order_denial(workflow):
     p, order, wo, rev = workflow.order_workorder(quantity="5")
     workflow.command(
         p["id"],
@@ -386,3 +386,128 @@ def test_pending_package_item_cannot_be_fixed_as_approved_revision(workflow):
         expected_status=409,
     )
     assert result["code"] == "PRECONDITION_FAILED"
+
+
+def test_readiness_record_needs_live_project_verification_qualification(workflow):
+    p, _, wo, _ = workflow.order_workorder()
+    workflow.grant(p["id"], "engineering", ["engineering"], [])
+    other = workflow.create_project()
+    workflow.grant(
+        other["id"], "engineering", ["engineering"], ["readiness_verification"]
+    )
+    workflow.grant(p["id"], "owner", ["project_owner", "engineering"], [])
+    fields = {
+        "work_order_id": wo["id"],
+        "kind": "equipment",
+        "reference": "cal-1",
+        "evidence": "calibration certificate checked",
+        "valid_until": "2027-01-01T00:00:00+00:00",
+        "decision": "verified",
+    }
+    assert (
+        workflow.command(
+            p["id"],
+            "readiness.record",
+            actor_name="engineering",
+            **fields,
+            expected_status=403,
+        )["code"]
+        == "FORBIDDEN"
+    )
+    assert (
+        workflow.command(
+            p["id"],
+            "readiness.record",
+            actor_name="owner",
+            **fields,
+            expected_status=403,
+        )["code"]
+        == "FORBIDDEN"
+    )
+    assert (
+        _check(_evaluate(workflow, p["id"], wo["id"], "trial"), "equipment").status
+        == "blocked"
+    )
+    workflow.grant(p["id"], "engineering", ["engineering"], ["readiness_verification"])
+    workflow.command(p["id"], "readiness.record", actor_name="engineering", **fields)
+    assert (
+        _check(_evaluate(workflow, p["id"], wo["id"], "trial"), "equipment").status
+        == "ready"
+    )
+    workflow.grant(p["id"], "engineering", ["engineering"], [])
+    assert (
+        workflow.command(
+            p["id"],
+            "readiness.record",
+            actor_name="engineering",
+            **{**fields, "kind": "people"},
+            expected_status=403,
+        )["code"]
+        == "FORBIDDEN"
+    )
+    assert (
+        _check(_evaluate(workflow, p["id"], wo["id"], "trial"), "people").status
+        == "blocked"
+    )
+
+
+def test_forecast_demand_cannot_authorize_formal_work_order(workflow):
+    p = workflow.create_project()
+    forecast = workflow.command(
+        p["id"],
+        "demand.record",
+        kind="forecast",
+        product="Camera",
+        quantity="5",
+        unit="piece",
+        due_date="2026-12-01",
+        source=workflow.source("forecast-for-wo"),
+    )["object_id"]
+    for dimension in ("technical", "material", "capacity", "commercial", "quality"):
+        workflow.command(
+            p["id"],
+            "demand.review",
+            demand_id=forecast,
+            dimension=dimension,
+            decision="approved",
+            evidence="forecast review",
+        )
+    assert (
+        workflow.command(
+            p["id"],
+            "order.register",
+            demand_id=forecast,
+            source=workflow.source("forecast-order", object_type="order_line"),
+            quantity="5",
+            unit="piece",
+            due_date="2026-12-01",
+            expected_status=409,
+        )["code"]
+        == "PRECONDITION_FAILED"
+    )
+    rev = workflow.revision(p["id"])
+    workflow.grant(p["id"], "planner", ["planner"])
+    assert (
+        workflow.command(
+            p["id"],
+            "work_order.register",
+            actor_name="planner",
+            order_line_id=forecast,
+            revision_id=rev["id"],
+            source=workflow.source("forecast-wo", object_type="work_order"),
+            quantity="5",
+            unit="piece",
+            purpose="trial",
+            trial_quantity="1",
+            planned_start="2026-12-01T00:00:00+00:00",
+            planned_end="2026-12-02T00:00:00+00:00",
+            expected_status=404,
+        )["code"]
+        == "NOT_FOUND"
+    )
+    assert (
+        workflow.client()
+        .get(f"/api/v1/manufacturing/workflow/projects/{p['id']}/objects/work_order")
+        .json()["total"]
+        == 0
+    )

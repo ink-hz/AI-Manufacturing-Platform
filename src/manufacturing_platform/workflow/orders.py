@@ -288,19 +288,30 @@ def dispatch_change_order(tx, context, command: ChangeOrder):
             None,
         ),
     )
+    registered = {
+        r["id"]: r["q_atoms"]
+        for r in tx.execute(
+            "SELECT id,q_atoms FROM work_orders WHERE project_id=? AND order_line_id=?",
+            (str(context.project_id), str(command.order_line_id)),
+        )
+    }
     rows = tx.execute(
         "SELECT work_order_id,SUM(q_atoms) AS quantity FROM allocations WHERE project_id=? AND order_line_id=? GROUP BY work_order_id",
         (str(context.project_id), str(command.order_line_id)),
     ).fetchall()
     for r in rows:
+        registered[r["work_order_id"]] = max(
+            registered.get(r["work_order_id"], 0), r["quantity"]
+        )
+    for work_order_id, quantity in sorted(registered.items()):
         tx.execute(
             "INSERT INTO change_impacts VALUES (?,?,?,?,?,?,?,?)",
             (
                 ident,
                 str(context.project_id),
                 "work_order",
-                r["work_order_id"],
-                r["quantity"],
+                work_order_id,
+                quantity,
                 order["unit"],
                 None,
                 None,
@@ -329,6 +340,23 @@ def dispatch_resolve_change(tx, context, command: ResolveOrderChange):
     supplied = {(d.object_type, str(d.object_id)) for d in command.dispositions}
     if len(supplied) != len(command.dispositions) or supplied != expected:
         fail("Every affected obligation requires one disposition")
+    registered_total = tx.execute(
+        "SELECT COALESCE(SUM(q_atoms),0) FROM work_orders WHERE project_id=? AND order_line_id=?",
+        (str(context.project_id), order["id"]),
+    ).fetchone()[0]
+    if change["new_q_atoms"] < registered_total:
+        fail(
+            "Authoritative cancellation or split of registered work orders is required",
+            reasons=["registered work orders"],
+        )
+    if any(
+        d.object_type == "work_order" and d.decision != "retain"
+        for d in command.dispositions
+    ):
+        fail(
+            "Work order cancellation or transfer requires an authoritative receipt",
+            reasons=["registered work orders"],
+        )
     allocation = allocated(tx, context.project_id, order_id=order["id"])
     if change["new_q_atoms"] < allocation:
         fail(
@@ -392,13 +420,15 @@ def dispatch_allocate_order(tx, context, command: AllocateOrder):
     ).fetchone():
         fail("Work order registration is unavailable")
     work_order = tx.execute(
-        "SELECT project_id,q_atoms,unit FROM work_orders WHERE id=?",
+        "SELECT project_id,order_line_id,q_atoms,unit FROM work_orders WHERE id=?",
         (str(command.work_order_id),),
     ).fetchone()
     if work_order is None or work_order["project_id"] != str(context.project_id):
         fail("Workflow resource not found", code="NOT_FOUND")
     if work_order["unit"] != command.unit:
         fail("Work order unit does not match allocation")
+    if work_order["order_line_id"] != order["id"]:
+        fail("Work order is bound to a different formal order")
     if (
         allocated(tx, context.project_id, order_id=order["id"]) + q
         > order["current_q_atoms"]

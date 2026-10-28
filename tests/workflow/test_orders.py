@@ -433,9 +433,10 @@ def test_allocations_conserve_both_order_and_work_order_with_pending_change(work
         )
         .json()["value"]["impacts"]
     )
-    assert [(i["object_type"], i["object_id"], i["quantity"]) for i in impact] == [
-        ("work_order", wo, "60")
-    ]
+    assert {(i["object_type"], i["object_id"], i["quantity"]) for i in impact} == {
+        ("work_order", wo, "60"),
+        ("work_order", second_wo, "40"),
+    }
     assert (
         workflow.command(
             p["id"],
@@ -452,10 +453,11 @@ def test_allocations_conserve_both_order_and_work_order_with_pending_change(work
     disposition = [
         {
             "object_type": "work_order",
-            "object_id": wo,
+            "object_id": target,
             "decision": "cancel",
             "evidence": "requested cancellation",
         }
+        for target in (wo, second_wo)
     ]
     assert (
         workflow.command(
@@ -670,3 +672,164 @@ def test_read_quantity_models_reject_noncanonical_or_nonfinite_values(workflow):
     for bad in ("junk", "-1", "NaN", "Infinity"):
         with pytest.raises(ValidationError):
             ObjectSummary.model_validate({**summary, "quantity": bad})
+
+
+def test_allocation_rejects_same_project_wrong_formal_work_order_basis(workflow):
+    p = workflow.create_project()
+    demand = record(workflow, p["id"])
+    approve(workflow, p["id"], demand)
+    first = workflow.command(
+        p["id"],
+        "order.register",
+        demand_id=demand,
+        quantity="50",
+        unit="piece",
+        due_date="2026-12-01",
+        source=workflow.source("basis-a", object_type="order_line"),
+    )["object_id"]
+    second = workflow.command(
+        p["id"],
+        "order.register",
+        demand_id=demand,
+        quantity="50",
+        unit="piece",
+        due_date="2026-12-01",
+        source=workflow.source("basis-b", object_type="order_line"),
+    )["object_id"]
+    wo = _registered_work_order(workflow, p["id"], first, 20)
+    before_version = (
+        workflow.client().get(f"{BASE}/projects/{p['id']}").json()["version"]
+    )
+    with workflow.db() as db:
+        before_audit = db.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
+    result = workflow.command(
+        p["id"],
+        "order.allocate",
+        actor_name="planner",
+        order_line_id=second,
+        work_order_id=wo,
+        quantity="10",
+        unit="piece",
+        expected_status=409,
+    )
+    assert result["code"] == "PRECONDITION_FAILED"
+    assert workflow.object(p["id"], "order_line", first)["allocated"] == "0"
+    assert workflow.object(p["id"], "order_line", second)["allocated"] == "0"
+    assert (
+        workflow.client().get(f"{BASE}/projects/{p['id']}").json()["version"]
+        == before_version
+    )
+    with workflow.db() as db:
+        assert (
+            db.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
+            == before_audit
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM allocations WHERE work_order_id=?", (wo,)
+            ).fetchone()[0]
+            == 0
+        )
+
+
+@pytest.mark.parametrize("cancel,new_quantity", [(True, "100"), (False, "10")])
+def test_registered_unallocated_work_order_blocks_cancel_or_shrink(
+    workflow, cancel, new_quantity
+):
+    p = workflow.create_project()
+    demand = record(workflow, p["id"])
+    approve(workflow, p["id"], demand)
+    order = register(workflow, p["id"], demand)
+    wo = _registered_work_order(workflow, p["id"], order, 20)
+    change = workflow.command(
+        p["id"],
+        "order.change",
+        order_line_id=order,
+        new_quantity=new_quantity,
+        new_due_date="2026-12-02",
+        cancel=cancel,
+        reason="customer revision",
+        source=workflow.source("order-1", version=2, object_type="order_line"),
+    )["object_id"]
+    read = workflow.object(p["id"], "commitment_change", change)
+    assert [
+        (i["object_id"], i["quantity"], i["decision"]) for i in read["impacts"]
+    ] == [(wo, "20", None)]
+    before_version = (
+        workflow.client().get(f"{BASE}/projects/{p['id']}").json()["version"]
+    )
+    with workflow.db() as db:
+        before_audit = db.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
+    response = workflow.command(
+        p["id"],
+        "order.resolve_change",
+        change_id=change,
+        dispositions=[
+            {
+                "object_type": "work_order",
+                "object_id": wo,
+                "decision": "cancel",
+                "evidence": "requested cancellation only",
+            }
+        ],
+        expected_status=409,
+    )
+    assert response["code"] == "PRECONDITION_FAILED"
+    assert workflow.object(p["id"], "commitment_change", change)["state"] == "pending"
+    assert (
+        workflow.object(p["id"], "commitment_change", change)["impacts"][0]["decision"]
+        is None
+    )
+    assert workflow.object(p["id"], "order_line", order)["current_quantity"] == "100"
+    assert (
+        workflow.client().get(f"{BASE}/projects/{p['id']}").json()["version"]
+        == before_version
+    )
+    with workflow.db() as db:
+        assert (
+            db.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
+            == before_audit
+        )
+    history = (
+        workflow.client()
+        .get(f"{BASE}/projects/{p['id']}/objects/order_line/{order}")
+        .json()["history"]
+    )
+    assert [event["action"] for event in history] == ["order.register", "order.change"]
+    workflow.reopen()
+    assert workflow.object(p["id"], "commitment_change", change)["state"] == "pending"
+    assert workflow.object(p["id"], "work_order", wo)["order_line_id"] == order
+
+
+def test_shrink_can_retain_registered_work_order_within_new_quantity(workflow):
+    p = workflow.create_project()
+    demand = record(workflow, p["id"])
+    approve(workflow, p["id"], demand)
+    order = register(workflow, p["id"], demand)
+    wo = _registered_work_order(workflow, p["id"], order, 20)
+    change = workflow.command(
+        p["id"],
+        "order.change",
+        order_line_id=order,
+        new_quantity="50",
+        new_due_date="2026-12-02",
+        cancel=False,
+        reason="customer reduced unplanned amount",
+        source=workflow.source("order-1", version=2, object_type="order_line"),
+    )["object_id"]
+    workflow.command(
+        p["id"],
+        "order.resolve_change",
+        change_id=change,
+        dispositions=[
+            {
+                "object_type": "work_order",
+                "object_id": wo,
+                "decision": "retain",
+                "evidence": "retained twenty of fifty",
+            }
+        ],
+    )
+    assert workflow.object(p["id"], "order_line", order)["current_quantity"] == "50"
+    assert workflow.object(p["id"], "commitment_change", change)["state"] == "applied"
+    assert workflow.object(p["id"], "work_order", wo)["order_line_id"] == order

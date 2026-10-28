@@ -146,6 +146,7 @@ class CommandRegistry:
             "inspection",
             "disposition",
             "quality_release",
+            "readiness_verification",
         }:
             raise ValueError("invalid action policy")
         self._entries[action] = CommandRegistration(

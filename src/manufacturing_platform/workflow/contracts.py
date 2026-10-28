@@ -126,9 +126,11 @@ class GrantChange(CommandBase):
             "warehouse",
         ]
     ] = Field(max_length=20)
-    qualifications: list[Literal["inspection", "disposition", "quality_release"]] = (
-        Field(max_length=20)
-    )
+    qualifications: list[
+        Literal[
+            "inspection", "disposition", "quality_release", "readiness_verification"
+        ]
+    ] = Field(max_length=20)
     active: bool = Field(strict=True)
     evidence: str = Field(min_length=1, max_length=2000)
 

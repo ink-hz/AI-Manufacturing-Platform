@@ -220,7 +220,7 @@ def workflow(tmp_path):
 
 
 def _revision(self, project_id, *, internal_revision="M1", customer_revision="C1"):
-    self.grant(project_id, "engineering", ["engineering"])
+    self.grant(project_id, "engineering", ["engineering"], ["readiness_verification"])
     result = self.command(
         project_id,
         "engineering.revision",

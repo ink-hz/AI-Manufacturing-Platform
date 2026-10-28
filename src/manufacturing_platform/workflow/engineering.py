@@ -444,7 +444,12 @@ def register():
         (RecordReadiness, {"engineering"}, record_readiness),
     ):
         COMMAND_REGISTRY.register(
-            model, roles=roles, qualifications=set(), handler=handler
+            model,
+            roles=roles,
+            qualifications={"readiness_verification"}
+            if model is RecordReadiness
+            else set(),
+            handler=handler,
         )
     OBJECT_REGISTRY.register(
         ObjectKind.revision,
