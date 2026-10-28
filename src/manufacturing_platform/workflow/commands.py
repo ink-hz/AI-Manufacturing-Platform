@@ -163,6 +163,19 @@ class CommandRegistry:
             raise DomainError("UNSUPPORTED_ACTION", 422, "Unsupported action")
         return entry
 
+    @staticmethod
+    def permits(entry, roles, qualifications):
+        return bool(entry.roles.intersection(roles)) and entry.qualifications.issubset(
+            qualifications
+        )
+
+    def allowed_actions(self, roles, qualifications):
+        return [
+            action
+            for action, entry in self._entries.items()
+            if self.permits(entry, roles, qualifications)
+        ]
+
     def parse(self, value: object) -> WorkflowCommand:
         if isinstance(value, WorkflowCommand):
             value = value.model_dump(mode="json")

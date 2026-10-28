@@ -115,6 +115,10 @@ class WorkflowStore:
 
 `Actor(user_id,display_name,read_only,configuration_admin)` 是可信后端值。`ProjectCreate(operation_id,name,line_id,product,customer_id,mode:'internal'|'oem',unit,quantity,contract,legacy_project_id=None)`；contract 是严格 `ContractPolicy(customer_approval_required,customer_release_required,acceptance_required,customer_revision,internal_revision,material_ownership_rules)`，不明值为 unknown，不能当 false。创建项目 CAS 1，创建者只有 project_owner grant（不自动质量）；configuration_admin 只创建配置不自动读其业务项目以外数据，legacy_admin 可读旧域与手册仍无新域签批。
 
+A4 增加 `ProjectDetail.allowed_actions: list[str]`：详情和项目列表按当前 actor 的实时 active project grant、只读状态及注册动作的 any-role/all-qualification 规则派生；`CommandRegistry.permits` 同时用于执行授权和只读能力枚举，枚举不写拒绝日志。此字段只表示动作权限，不承诺来源、数量、业务前置或版本条件已满足；执行时仍重新验证。创建/重放返回的详情可为空列表，客户端随后重读项目详情取得当前权限。
+
+前端 `WorkspaceProps={api,project,onChanged(result),onOpen({projectId,kind,id}),onDirty(key,dirty),readOnly}` 不接受角色或 actor 切换。`CommandFields` / `WorkflowCommand` 和 `DomainValue` 为当前 A 的严格联合；B/C 通过增加真实 DTO 与工作区扩展。`MountOptions.findSubjects?(query,signal)` 仅配置管理员获得，PF 复用 `listManagedUsers(signal)` 过滤 active 账号，真实显示名选择；取消/换账号即退役，无额外身份服务。
+
 `ProjectDetail.stages` 始终是严格类型的列表，元素为 `{stage:S1..S9,status:pending|active|blocked|complete,reason?:string}`。D1 建立真实阶段事实之前返回空列表，不能预填完成状态。订单和项目的已知零数量以规范字符串 `"0"` 返回；数量字段拒绝非数字、负数、NaN、Infinity 和非规范指数表示。
 
 权限最小矩阵：project_owner 需求/评审/承诺/履约关闭；engineering 资料/校准依据/ECO，readiness.record 另需项目范围内有效的 readiness_verification 资格（核验设备/人员依据，不声称核验者执行校准）；planner 计划/工单/分配/准备/开工请求；supply 供应与到货协同；production 执行登记、异常、制造放行；quality 严格资格 inspection+disposition+quality_release；warehouse 发运及签收登记；customer_confirmation、external_receipt 只允许经配置的来源适配器或明确人工证据登记动作，不能用 production/IT 身份冒充外部主体。所有角色可读其项目，外部客户维度按 project.customer_id 与关联 customer_id 同时检查。GrantScope = {kind:'project',project_id:UUID}，必须匹配 URL project_id，禁止 wildcard/global。GrantChange = operation_id,expected_version,scope:GrantScope,roles[],qualifications[],active,evidence；GrantView/ScopeGrantView 包含 scope,user_id,roles[],qualifications[],active；配置 revocation 递增 project.version 并审计；每次 read/write重新检查。

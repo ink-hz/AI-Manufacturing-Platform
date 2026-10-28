@@ -10,9 +10,11 @@ export function HandbookReader({
   onBack,
   onLegacy,
   release,
+  loadHandbook,
 }: {
   options: MountOptions;
   release?: string;
+  loadHandbook?: () => Promise<Handbook>;
   visible: boolean;
   target: { stage?: string; serial: number };
   onBack: () => void;
@@ -20,16 +22,23 @@ export function HandbookReader({
 }) {
   const [document, setDocument] = useState<DocumentName>("handbook"),
     [loaded, setLoaded] = useState<{
-      document: DocumentName; targetSerial: number; data: Handbook;
+      document: DocumentName;
+      targetSerial: number;
+      data: Handbook;
     } | null>(null),
     [selected, setSelected] = useState(""),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [retry, setRetry] = useState(0);
-  const data = loaded?.document === document && loaded.targetSerial === target.serial
-    ? loaded.data : null;
+  const data =
+    loaded?.document === document && loaded.targetSerial === target.serial
+      ? loaded.data
+      : null;
   const [jump, setJump] = useState({
-    id: "", serial: 0, targetSerial: target.serial, document: "handbook" as DocumentName,
+    id: "",
+    serial: 0,
+    targetSerial: target.serial,
+    document: "handbook" as DocumentName,
   });
   const completedJump = useRef(0);
   const appliedStageTarget = useRef<number | null>(null);
@@ -39,31 +48,33 @@ export function HandbookReader({
   const chapters = useMemo(() => splitChapters(data?.markdown || ""), [data]);
   const chapter = chapters.find((c) => c.id === selected) || chapters[0];
   const headingIds = useMemo(
-    () => Object.fromEntries(
-      chapters.filter((c) => c.line !== null).map((c) => [c.line!, c.id]),
-    ),
+    () =>
+      Object.fromEntries(
+        chapters.filter((c) => c.line !== null).map((c) => [c.line!, c.id]),
+      ),
     [chapters],
   );
   useEffect(() => {
     if (!visible) return;
     let active = true;
-    const api = createApi(options);
+    const api = loadHandbook ? null : createApi(options);
     setError("");
     setNotice("");
     setLoaded(null);
-    api
-      .handbook(document, release)
+    (loadHandbook ? loadHandbook() : api!.handbook(document, release))
       .then((d) => {
-        if (active) setLoaded({ document, targetSerial: target.serial, data: d });
+        if (active)
+          setLoaded({ document, targetSerial: target.serial, data: d });
       })
       .catch((e) => {
         if (active) setError(message(e));
       });
     return () => {
       active = false;
-      api.dispose();
+      api?.dispose();
     };
   }, [
+    loadHandbook,
     visible,
     document,
     target.serial,
@@ -82,13 +93,22 @@ export function HandbookReader({
   useEffect(() => {
     if (data) {
       const all = splitChapters(data.markdown);
-      if (target.stage && document === "handbook" && appliedStageTarget.current !== target.serial) {
-        const id = all.find((c) => c.stageId === target.stage)?.id || all[0]?.id || "";
+      if (
+        target.stage &&
+        document === "handbook" &&
+        appliedStageTarget.current !== target.serial
+      ) {
+        const id =
+          all.find((c) => c.stageId === target.stage)?.id || all[0]?.id || "";
         setSelected(id);
-        setJump((old) => ({ id, serial: old.serial + 1, targetSerial: target.serial, document }));
+        setJump((old) => ({
+          id,
+          serial: old.serial + 1,
+          targetSerial: target.serial,
+          document,
+        }));
         appliedStageTarget.current = target.serial;
-      }
-      else
+      } else
         setSelected((s) =>
           all.some((c) => c.id === s) ? s : all[0]?.id || "",
         );
@@ -118,7 +138,8 @@ export function HandbookReader({
     const observer = new MutationObserver(() => {
       if (restore()) observer.disconnect();
     });
-    if (!restore()) observer.observe(element, { childList: true, subtree: true });
+    if (!restore())
+      observer.observe(element, { childList: true, subtree: true });
     return () => {
       observer.disconnect();
       if (body) savedScroll.current[key] = body.scrollTop;
@@ -128,10 +149,15 @@ export function HandbookReader({
   useEffect(() => {
     const element = article.current;
     if (
-      !visible || !data || !jump.id || !element ||
-      jump.document !== document || jump.targetSerial !== target.serial ||
+      !visible ||
+      !data ||
+      !jump.id ||
+      !element ||
+      jump.document !== document ||
+      jump.targetSerial !== target.serial ||
       completedJump.current === jump.serial
-    ) return;
+    )
+      return;
     const scroll = () => {
       const target = chapters.find((c) => c.id === jump.id);
       if (target?.line === null) {
@@ -140,8 +166,9 @@ export function HandbookReader({
         completedJump.current = jump.serial;
         return true;
       }
-      const destination = [...element.querySelectorAll<HTMLElement>("[id]")]
-        .find((node) => node.id === jump.id);
+      const destination = [
+        ...element.querySelectorAll<HTMLElement>("[id]"),
+      ].find((node) => node.id === jump.id);
       if (!destination) return false;
       destination.scrollIntoView?.({ block: "start" });
       completedJump.current = jump.serial;
@@ -150,7 +177,8 @@ export function HandbookReader({
     const observer = new MutationObserver(() => {
       if (scroll()) observer.disconnect();
     });
-    if (!scroll()) observer.observe(element, { childList: true, subtree: true });
+    if (!scroll())
+      observer.observe(element, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [visible, data, jump, document, chapters, target.serial]);
   function follow(event: React.MouseEvent) {
@@ -171,10 +199,16 @@ export function HandbookReader({
       // Preserve author-written Markdown hashes when TOC IDs override headings.
       if (!element) {
         const counts = new Map<string, number>();
-        for (const heading of article.current.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")) {
-          const base = (heading.textContent || "").normalize("NFKC").trim()
-            .toLocaleLowerCase("zh-CN").replace(/\s+/g, "-")
-            .replace(/[^\p{Letter}\p{Number}_-]/gu, "") || "section";
+        for (const heading of article.current.querySelectorAll<HTMLElement>(
+          "h1,h2,h3,h4,h5,h6",
+        )) {
+          const base =
+            (heading.textContent || "")
+              .normalize("NFKC")
+              .trim()
+              .toLocaleLowerCase("zh-CN")
+              .replace(/\s+/g, "-")
+              .replace(/[^\p{Letter}\p{Number}_-]/gu, "") || "section";
           const count = (counts.get(base) || 0) + 1;
           counts.set(base, count);
           if ((count === 1 ? base : `${base}-${count}`) === id) {
@@ -194,8 +228,12 @@ export function HandbookReader({
     ) {
       event.preventDefault();
       setNotice("");
-      setDocument("workflow");
-      setSelected("");
+      if (loadHandbook) {
+        setNotice("当前工作区提供完整制造手册；该补充文档暂未接入，阅读位置已保留。");
+      } else {
+        setDocument("workflow");
+        setSelected("");
+      }
       return;
     }
     if (
@@ -229,13 +267,17 @@ export function HandbookReader({
           )}
         </div>
         <div className="mf-actions">
-          <button onClick={onBack}>返回工作内容</button>
-          <button className="mf-link mf-small" onClick={onLegacy}>
-            流程现状参考
+          <button onClick={onBack}>
+            {loadHandbook ? "返回工作区" : "返回工作内容"}
           </button>
+          {!loadHandbook && (
+            <button className="mf-link mf-small" onClick={onLegacy}>
+              流程现状参考
+            </button>
+          )}
         </div>
       </div>
-      <div className="mf-actions mf-book-switch">
+      <div hidden={!!loadHandbook} className="mf-actions mf-book-switch">
         <button
           aria-pressed={document === "handbook"}
           onClick={() => {
@@ -276,7 +318,12 @@ export function HandbookReader({
                 aria-current={c.id === chapter?.id ? "location" : undefined}
                 onClick={() => {
                   setSelected(c.id);
-                  setJump((old) => ({ id: c.id, serial: old.serial + 1, targetSerial: target.serial, document }));
+                  setJump((old) => ({
+                    id: c.id,
+                    serial: old.serial + 1,
+                    targetSerial: target.serial,
+                    document,
+                  }));
                 }}
               >
                 {c.title}

@@ -154,6 +154,7 @@ class ProjectStageView(StrictModel):
 
 
 class ProjectDetail(StrictModel):
+    allowed_actions: list[str] = Field(default_factory=list)
     id: UUID
     version: int
     name: str

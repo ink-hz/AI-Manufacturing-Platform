@@ -7,6 +7,11 @@ export interface WorkbenchUser {
   roleLabel: string;
 }
 export interface MountOptions {
+  bootstrap?: import("./workflow/types").WorkflowBootstrap;
+  findSubjects?: (
+    query: string,
+    signal: AbortSignal,
+  ) => Promise<{ id: string; displayName: string }[]>;
   user?: WorkbenchUser;
   onNavigatePlatform?: () => void;
   onLogout?: () => Promise<void>;

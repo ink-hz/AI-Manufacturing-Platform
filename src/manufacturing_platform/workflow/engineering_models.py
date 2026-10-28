@@ -6,8 +6,7 @@ from uuid import UUID
 
 from pydantic import BeforeValidator, ConfigDict, Field, model_validator
 
-from manufacturing_platform.collaboration_models import EventTime, PackageItem
-
+from ..collaboration_models import EventTime, PackageItem
 from .commands import WorkflowCommand
 from .contracts import DomainValue, Quantity, SourceRef, StrictModel
 

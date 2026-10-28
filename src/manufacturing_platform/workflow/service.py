@@ -237,7 +237,20 @@ class WorkflowService:
 
     def detail(self, actor: Actor, project_id: UUID) -> ProjectDetail:
         with self.store.transaction() as tx:
-            return project(require_project(tx, actor, project_id), tx)
+            value = project(require_project(tx, actor, project_id), tx)
+            grant = tx.execute(
+                "SELECT roles_json, qualifications_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
+                (str(project_id), str(actor.user_id)),
+            ).fetchone()
+            value.allowed_actions = (
+                []
+                if actor.read_only
+                else self.command_registry.allowed_actions(
+                    json.loads(grant["roles_json"]),
+                    json.loads(grant["qualifications_json"]),
+                )
+            )
+            return value
 
     def members(self, actor, project_id):
         with self.store.transaction() as tx:
@@ -340,10 +353,10 @@ class WorkflowService:
                 "SELECT roles_json, qualifications_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
                 (str(project_id), str(actor.user_id)),
             ).fetchone()
-            if not entry.roles.intersection(
-                json.loads(grant["roles_json"])
-            ) or not entry.qualifications.issubset(
-                json.loads(grant["qualifications_json"])
+            if not self.command_registry.permits(
+                entry,
+                json.loads(grant["roles_json"]),
+                json.loads(grant["qualifications_json"]),
             ):
                 raise DomainError("FORBIDDEN", 403, "Action permission denied")
             replay = self._replay(tx, actor, command.operation_id, payload)

@@ -57,7 +57,13 @@ export function ConsoleShell({
   onNavigatePlatform,
   onLogout,
   children,
+  navigation,
+  modeAction,
+  canCreate = true,
 }: {
+  navigation?: readonly (readonly [Exclude<ConsoleView, "legacy">, string])[];
+  modeAction?: { label: string; run(): void };
+  canCreate?: boolean;
   view: ConsoleView;
   projectName?: string;
   creating: boolean;
@@ -81,7 +87,9 @@ export function ConsoleShell({
     menuBox = useRef<HTMLDivElement>(null);
   const id = useId();
   const displayName = user?.displayName.trim() || "企业账号";
-  const title = modules.find(([key]) => key === view)?.[1] || "流程现状参考";
+  const actualModules = navigation || modules;
+  const title =
+    actualModules.find(([key]) => key === view)?.[1] || "流程现状参考";
   function closeMenu(restore = true) {
     setMenu(false);
     if (restore) trigger.current?.focus();
@@ -199,7 +207,7 @@ export function ConsoleShell({
         </div>
         <nav aria-label="制造工作区">
           <p className="mf-console-group mf-console-label">业务工作区</p>
-          {modules.map(([key, label]) => (
+          {actualModules.map(([key, label]) => (
             <button
               key={key}
               aria-label={label}
@@ -358,13 +366,22 @@ export function ConsoleShell({
               </p>
               <h1>{title}</h1>
             </div>
-            <button
-              className="mf-primary"
-              disabled={readOnly || busy}
-              onClick={onCreate}
-            >
-              新建项目
-            </button>
+            <div className="mf-actions">
+              {modeAction && (
+                <button disabled={busy} onClick={modeAction.run}>
+                  {modeAction.label}
+                </button>
+              )}
+              {canCreate && (
+                <button
+                  className="mf-primary"
+                  disabled={readOnly || busy}
+                  onClick={onCreate}
+                >
+                  新建项目
+                </button>
+              )}
+            </div>
           </div>
           {children}
         </main>

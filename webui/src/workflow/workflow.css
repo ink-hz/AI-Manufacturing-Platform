@@ -1,0 +1,87 @@
+.wf-root table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+}
+.wf-root th,
+.wf-root td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+.wf-root th {
+  color: #526073;
+  background: #f8fafc;
+}
+.wf-form {
+  max-width: 960px;
+  padding: 20px;
+  margin: 18px 0;
+  border: 1px solid #dce3eb;
+  border-radius: 12px;
+  background: #fff;
+}
+.wf-form fieldset {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+}
+.wf-form > fieldset {
+  border: 0;
+  padding: 0;
+}
+.wf-form fieldset > fieldset {
+  grid-column: 1/-1;
+}
+.wf-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: #334155;
+}
+.wf-form input,
+.wf-form select {
+  padding: 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  min-width: 0;
+}
+.wf-form input[type="checkbox"] {
+  align-self: flex-start;
+}
+.wf-form p {
+  grid-column: 1/-1;
+}
+.wf-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 16px;
+  background: #f8fafc;
+  padding: 20px;
+  border-radius: 8px;
+}
+.wf-facts dt {
+  color: #64748b;
+  font-size: 13px;
+}
+.wf-facts dd {
+  margin: 6px 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.wf-detail h4 {
+  margin-top: 24px;
+}
+.wf-root [role="alert"] {
+  color: #a33426;
+}
+.wf-root section {
+  min-width: 0;
+}

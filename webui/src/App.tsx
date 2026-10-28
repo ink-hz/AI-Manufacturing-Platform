@@ -35,8 +35,41 @@ const SystemCollaboration = lazy(() =>
     default: m.SystemCollaboration,
   })),
 );
+import { WorkflowApp } from "./workflow/WorkflowApp";
 type View = ConsoleView;
 export function App({ options }: { options: MountOptions }) {
+  const [legacy, setLegacy] = useState(false);
+  if (!options.bootstrap) return <LegacyApp options={options} />;
+  if (
+    (legacy && options.bootstrap.legacy_access) ||
+    (!options.bootstrap.workflow_available && options.bootstrap.legacy_access)
+  )
+    return (
+      <LegacyApp
+        options={options}
+        onWorkflow={
+          options.bootstrap.workflow_available
+            ? () => setLegacy(false)
+            : undefined
+        }
+      />
+    );
+  return (
+    <WorkflowApp
+      options={options}
+      onLegacy={
+        options.bootstrap.legacy_access ? () => setLegacy(true) : undefined
+      }
+    />
+  );
+}
+function LegacyApp({
+  options,
+  onWorkflow,
+}: {
+  options: MountOptions;
+  onWorkflow?: () => void;
+}) {
   const active = useRef(true),
     externalBusy = useRef(false);
   const [externalAction, setExternalAction] = useState<
@@ -281,6 +314,14 @@ export function App({ options }: { options: MountOptions }) {
       ) : (
         <>
           <ConsoleShell
+            modeAction={
+              onWorkflow
+                ? {
+                    label: "进入全流程工作区",
+                    run: () => requestLeave(onWorkflow),
+                  }
+                : undefined
+            }
             view={view}
             creating={creating}
             user={options.user}
@@ -310,6 +351,13 @@ export function App({ options }: { options: MountOptions }) {
               options.onLogout ? () => accountAction("logout") : undefined
             }
           >
+            {options.bootstrap && (
+              <p className="mf-badge">
+                旧项目协同 · 既有数据独立保存。全流程数据集「
+                {options.bootstrap.dataset?.label || "未启用"}
+                」未自动导入旧记录。
+              </p>
+            )}
             {accountError && (
               <p className="mf-error" role="alert">
                 {accountError}
