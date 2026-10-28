@@ -16,7 +16,7 @@ from .contracts import (
     ObjectRelation,
     ObjectSummary,
 )
-from .orders import _history_rows, own
+from .orders import _history_rows, own, source_key
 from .queries import OBJECT_REGISTRY
 from .supply_models import (
     CommitmentValue,
@@ -54,7 +54,7 @@ def atoms(value, unit, expected_unit, scale):
 
 
 def source_ok(source, expected_type, now, *, retain_bad_time=False):
-    if source.object_type != expected_type or source.mode != "manual":
+    if source_key(source)[1] != expected_type or source.mode != "manual":
         fail("manual source type or mode mismatch")
     if source.collected_at < source.occurred_at:
         fail("source collected before occurrence")
@@ -66,9 +66,10 @@ def source_ok(source, expected_type, now, *, retain_bad_time=False):
 
 
 def source_free(tx, table, source, *, versioned=False):
+    key = source_key(source)
     row = tx.execute(
         f"SELECT MAX(source_version) FROM {table} WHERE source_system=? AND source_type=? AND source_external_id=?",
-        (source.system, source.object_type, source.external_id),
+        key,
     ).fetchone()
     if row[0] is not None and (not versioned or source.version <= row[0]):
         fail("source identity or version already recorded", "SOURCE_CONFLICT")
@@ -90,7 +91,7 @@ def current_plan_id(tx, project_id, work_order_id):
     row = tx.execute(
         """SELECT p.id FROM plans p JOIN requirements r ON r.plan_id=p.id
            WHERE p.project_id=? AND r.work_order_id=? AND p.state='confirmed'
-           ORDER BY p.created_at DESC,p.source_version DESC,p.id DESC LIMIT 1""",
+           ORDER BY p.accepted_seq DESC LIMIT 1""",
         (str(project_id), str(work_order_id)),
     ).fetchone()
     return row["id"] if row else None
@@ -112,6 +113,7 @@ def define_material(tx, context, command: DefineMaterial):
     ):
         fail("material definition conflicts with existing unit, scale or owner")
     ident = str(uuid4())
+    key = source_key(command.source)
     tx.execute(
         "INSERT INTO material_lots VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
@@ -124,9 +126,7 @@ def define_material(tx, context, command: DefineMaterial):
             command.scale,
             command.expiry.isoformat(),
             "active",
-            command.source.system,
-            command.source.object_type,
-            command.source.external_id,
+            *key,
             command.source.version,
             command.source.model_dump_json(),
             context.now.isoformat(),
@@ -175,25 +175,33 @@ def receive_plan(tx, context, command: ReceivePlan):
         q = atoms(req.quantity, req.unit, material["unit"], material["scale"])
         material_meta[id(req)] = (q, material["scale"])
     for revision_id in revisions:
-        own(tx, "engineering_revisions", context.project_id, revision_id)
+        if tx.execute(
+            "SELECT 1 FROM engineering_revisions WHERE project_id=? AND id=?",
+            (str(context.project_id), revision_id),
+        ).fetchone() is None:
+            reasons.append("declared revision input missing or inaccessible")
     for order_id, version in versions.items():
-        order = own(tx, "order_lines", context.project_id, order_id)
-        if order["source_version"] != version:
+        order = tx.execute(
+            "SELECT source_version FROM order_lines WHERE project_id=? AND id=?",
+            (str(context.project_id), order_id),
+        ).fetchone()
+        if order is None:
+            reasons.append("declared order input missing or inaccessible")
+        elif order["source_version"] != version:
             reasons.append("order source version mismatch")
     ident = str(uuid4())
     state = "rejected" if reasons else "confirmed"
     reason = "; ".join(dict.fromkeys(reasons))
+    key = source_key(command.source)
     tx.execute(
-        "INSERT INTO plans VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO plans VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             ident,
             str(context.project_id),
             state,
             reason,
             command.source.model_dump_json(),
-            command.source.system,
-            command.source.object_type,
-            command.source.external_id,
+            *key,
             command.source.version,
             command.source.cutoff.isoformat() if command.source.cutoff else None,
             json.dumps(
@@ -205,6 +213,10 @@ def receive_plan(tx, context, command: ReceivePlan):
                 }
             ),
             context.now.isoformat(),
+            tx.execute(
+                "SELECT COALESCE(MAX(accepted_seq),0)+1 FROM plans WHERE project_id=?",
+                (str(context.project_id),),
+            ).fetchone()[0],
         ),
     )
     if state == "confirmed":
@@ -214,7 +226,7 @@ def receive_plan(tx, context, command: ReceivePlan):
                 """SELECT r.id,r.lineage_id FROM requirements r JOIN plans p ON p.id=r.plan_id
                    WHERE r.project_id=? AND r.work_order_id=? AND r.execution_scope=?
                      AND r.material_id=? AND r.owner_id=? AND r.unit=? AND p.state='confirmed'
-                   ORDER BY p.created_at DESC,p.source_version DESC,p.id DESC,r.id DESC LIMIT 1""",
+                   ORDER BY p.accepted_seq DESC,r.id DESC LIMIT 1""",
                 (
                     str(context.project_id),
                     str(req.work_order_id),
@@ -256,8 +268,8 @@ def commit_supply(tx, context, command: CommitSupply):
         fail("supply owner mismatch")
     q = atoms(command.quantity, command.unit, req["unit"], req["scale"])
     source_ok(command.source, "commitment", context.now)
-    source_free(tx, "supply_promise_revisions", command.source, versioned=True)
     if command.commitment_id is None:
+        source_free(tx, "supply_promise_revisions", command.source)
         ident = str(uuid4())
         tx.execute(
             "INSERT INTO supply_commitments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -296,11 +308,9 @@ def commit_supply(tx, context, command: CommitSupply):
                 (str(context.project_id), prior["id"]),
             ).fetchone()[0]
         )
-        if (command.source.system, command.source.external_id) != (
-            original_source["system"],
-            original_source["external_id"],
-        ):
+        if source_key(command.source) != source_key(original_source):
             fail("promise amendment must retain source identity")
+        source_free(tx, "supply_promise_revisions", command.source, versioned=True)
         ident = prior["id"]
         tx.execute(
             "UPDATE supply_commitments SET current_q_atoms=?,current_due=?,source_json=?,source_version=? WHERE id=?",
@@ -312,6 +322,7 @@ def commit_supply(tx, context, command: CommitSupply):
                 ident,
             ),
         )
+    key = source_key(command.source)
     tx.execute(
         "INSERT INTO supply_promise_revisions VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (
@@ -321,9 +332,7 @@ def commit_supply(tx, context, command: CommitSupply):
             q,
             command.current_due.isoformat(),
             command.source.model_dump_json(),
-            command.source.system,
-            command.source.object_type,
-            command.source.external_id,
+            *key,
             command.source.version,
             context.now.isoformat(),
         ),
@@ -351,6 +360,7 @@ def receive_supply(tx, context, command: ReceiveSupply):
     source_ok(command.source, "receipt", context.now)
     source_free(tx, "supply_receipts", command.source)
     ident = str(uuid4())
+    key = source_key(command.source)
     tx.execute(
         "INSERT INTO supply_receipts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (
@@ -361,9 +371,7 @@ def receive_supply(tx, context, command: ReceiveSupply):
             q,
             command.unit,
             command.source.model_dump_json(),
-            command.source.system,
-            command.source.object_type,
-            command.source.external_id,
+            *key,
             command.source.version,
             context.now.isoformat(),
         ),
@@ -807,7 +815,7 @@ def _page(kind, table):
                 """SELECT r.*,p.cutoff,p.source_version,
                    CASE WHEN r.plan_id=(SELECT p2.id FROM plans p2 JOIN requirements r2 ON r2.plan_id=p2.id
                         WHERE p2.project_id=r.project_id AND r2.work_order_id=r.work_order_id
-                          AND p2.state='confirmed' ORDER BY p2.created_at DESC,p2.source_version DESC,p2.id DESC LIMIT 1)
+                          AND p2.state='confirmed' ORDER BY p2.accepted_seq DESC LIMIT 1)
                         THEN 'required' ELSE 'superseded' END requirement_state
                    FROM requirements r JOIN plans p ON p.id=r.plan_id
                    WHERE r.project_id=? ORDER BY r.created_at,r.id LIMIT ? OFFSET ?""",

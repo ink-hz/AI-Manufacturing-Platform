@@ -78,6 +78,18 @@ def source_ok(source, object_type):
         fail("Source collection precedes occurrence")
 
 
+def source_key(source):
+    """Normalize persisted source identity while retaining the raw SourceRef snapshot."""
+    def part(name):
+        return source[name] if isinstance(source, dict) else getattr(source, name)
+
+    return (
+        part("system").strip().casefold(),
+        part("object_type").strip().casefold(),
+        part("external_id").strip(),
+    )
+
+
 def source_conflict(tx, source):
     key = (source.system, source.object_type, source.external_id)
     for table in ("demands", "order_lines"):

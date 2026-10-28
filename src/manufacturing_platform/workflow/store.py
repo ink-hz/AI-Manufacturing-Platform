@@ -1,9 +1,11 @@
 """Isolated, lazy SQLite storage with dataset validation."""
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+from .orders import source_key
 from .schema import (
     ENGINEERING_SCHEMA,
     ORDER_SCHEMA,
@@ -81,6 +83,42 @@ class WorkflowStore:
                 for statement in SUPPLY_SCHEMA.split(";"):
                     if statement.strip():
                         conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=?", (SCHEMA_VERSION,))
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 4:
+                conn.execute("ALTER TABLE plans ADD COLUMN accepted_seq INTEGER")
+                # Every v4 command wrote its plan and audit event in one transaction.
+                # Audit IDs retain insertion order even when business clocks coincide.
+                plans = conn.execute(
+                    """SELECT p.id,p.project_id,a.id audit_id FROM plans p
+                       LEFT JOIN audit_events a ON a.object_id=p.id
+                         AND a.project_id=p.project_id AND a.action='plan.receive'
+                       ORDER BY p.project_id,a.id"""
+                ).fetchall()
+                if any(row["audit_id"] is None for row in plans):
+                    raise ValueError("unmigratable supply plan without audit event")
+                prior_project = None
+                seq = 0
+                for row in plans:
+                    if row["project_id"] != prior_project:
+                        prior_project, seq = row["project_id"], 0
+                    seq += 1
+                    conn.execute(
+                        "UPDATE plans SET accepted_seq=? WHERE id=?", (seq, row["id"])
+                    )
+                conn.execute(
+                    "CREATE UNIQUE INDEX plans_acceptance_order ON plans(project_id,accepted_seq)"
+                )
+                for table in (
+                    "material_lots", "plans", "supply_promise_revisions", "supply_receipts"
+                ):
+                    rows = conn.execute(f"SELECT id,source_json FROM {table}").fetchall()
+                    for row in rows:
+                        conn.execute(
+                            f"""UPDATE {table} SET source_system=?,source_type=?,
+                                source_external_id=? WHERE id=?""",
+                            (*source_key(json.loads(row["source_json"])), row["id"]),
+                        )
                 conn.execute("UPDATE schema_version SET version=?", (SCHEMA_VERSION,))
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             metadata = conn.execute(

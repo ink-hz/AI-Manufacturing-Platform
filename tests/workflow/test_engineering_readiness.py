@@ -324,7 +324,7 @@ def test_v2_database_migrates_without_losing_reviewed_order(workflow):
     )
     assert workflow.revision(p["id"], internal_revision="M2")["id"]
     with workflow.db() as db:
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 4
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 5
 
 
 def test_measurement_limits_accept_finite_zero_and_negative_bounds():

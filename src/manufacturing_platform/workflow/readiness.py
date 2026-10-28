@@ -103,7 +103,7 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
     plan_rows = tx.execute(
         """SELECT DISTINCT p.* FROM plans p JOIN requirements r ON r.plan_id=p.id
            WHERE p.project_id=? AND p.state='confirmed' AND r.work_order_id=?
-           ORDER BY p.created_at DESC,p.source_version DESC,p.id DESC LIMIT 1""",
+           ORDER BY p.accepted_seq DESC LIMIT 1""",
         (str(project_id), str(work_order_id)),
     ).fetchall()
     plan = plan_rows[0] if plan_rows else None

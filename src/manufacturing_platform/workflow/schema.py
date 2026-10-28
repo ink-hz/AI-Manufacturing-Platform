@@ -1,9 +1,10 @@
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 SUPPLY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS material_lots(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),material_id TEXT NOT NULL,lot_id TEXT NOT NULL,owner_id TEXT NOT NULL,unit TEXT NOT NULL,scale INTEGER NOT NULL,expiry TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('active','frozen')),source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_version INTEGER NOT NULL,source_json TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(project_id,lot_id),UNIQUE(source_system,source_type,source_external_id));
 CREATE INDEX IF NOT EXISTS material_lots_page ON material_lots(project_id,created_at,id);
-CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),state TEXT NOT NULL CHECK(state IN ('confirmed','rejected')),reason TEXT NOT NULL,source_json TEXT NOT NULL,source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_version INTEGER NOT NULL,cutoff TEXT,inputs_json TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id,source_version));
+CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),state TEXT NOT NULL CHECK(state IN ('confirmed','rejected')),reason TEXT NOT NULL,source_json TEXT NOT NULL,source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_version INTEGER NOT NULL,cutoff TEXT,inputs_json TEXT NOT NULL,created_at TEXT NOT NULL,accepted_seq INTEGER NOT NULL,UNIQUE(source_system,source_type,source_external_id,source_version));
 CREATE INDEX IF NOT EXISTS plans_page ON plans(project_id,created_at,id);
+CREATE UNIQUE INDEX IF NOT EXISTS plans_acceptance_order ON plans(project_id,accepted_seq);
 CREATE TABLE IF NOT EXISTS requirements(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),plan_id TEXT NOT NULL REFERENCES plans(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),execution_scope TEXT NOT NULL CHECK(execution_scope IN ('trial','bulk','common')),material_id TEXT NOT NULL,owner_id TEXT NOT NULL,q_atoms INTEGER NOT NULL CHECK(q_atoms>0),unit TEXT NOT NULL,scale INTEGER NOT NULL,lineage_id TEXT NOT NULL,supersedes_requirement_id TEXT REFERENCES requirements(id),created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS requirements_page ON requirements(project_id,plan_id,created_at,id);
 CREATE INDEX IF NOT EXISTS requirements_work_order ON requirements(project_id,work_order_id,execution_scope,plan_id);

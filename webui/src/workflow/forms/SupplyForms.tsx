@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { CommandFields, ObjectSummary, WorkspaceProps } from "../types";
 import { Choice, CommandForm, Field, ObjectChoice, SourceFields, source } from "./shared";
 
@@ -13,6 +13,8 @@ type Inspect=Extract<CommandFields,{action:"supply.inspect"}>;
 
 export function SupplyForms(p:Props){
   const [selectedLots,setSelectedLots]=useState<Record<number,string>>({});
+  const selectedLotIds=useRef<Record<number,string>>({});
+  const fill=<T,>(current:T,atLookup:T,fetched:T)=>current===atLookup?fetched:current;
   switch(p.action){
     case "material.define": return <CommandForm<Define> {...p} title="定义物料批次" save="保存物料批次"
       initial={()=>({action:"material.define",material_id:"",lot_id:"",owner_id:p.project.customer_id,unit:"kg",scale:3,expiry:"",source:source("material_lot")})}>
@@ -41,7 +43,7 @@ export function SupplyForms(p:Props){
                 if(d.value.kind!=="work_order")return;
                 const wo=d.value;
                 const order=p.orders.find(o=>o.id===wo.order_line_id);
-                const apply=(version:number)=>set(old=>({
+                const apply=(version:number)=>set(old=>old.requirements[i]?.work_order_id!==x?old:({
                   ...old,input_revision_ids:[...new Set([...old.input_revision_ids,wo.revision_id])],
                   input_order_versions:[...old.input_order_versions.filter(o=>o.order_line_id!==wo.order_line_id),
                     {order_line_id:wo.order_line_id,version}],
@@ -52,9 +54,9 @@ export function SupplyForms(p:Props){
             }}/>
           <ObjectChoice name={`计划物料批次 ${i+1}`} items={p.lots}
             value={selectedLots[i]||""}
-            onChange={x=>{setSelectedLots(old=>({...old,[i]:x}));if(!x)return;void p.api.object(p.project.id,"material_lot",x).then(d=>{
+            onChange={x=>{selectedLotIds.current[i]=x;setSelectedLots(old=>({...old,[i]:x}));if(!x)return;void p.api.object(p.project.id,"material_lot",x).then(d=>{
               const lot=d.value;
-              if(lot.kind==="material_lot")set(old=>({...old,requirements:old.requirements.map((e,n)=>n===i?{
+              if(lot.kind==="material_lot" && selectedLotIds.current[i]===x)set(old=>({...old,requirements:old.requirements.map((e,n)=>n===i?{
                 ...e,material_id:lot.material_id,owner_id:lot.owner_id,unit:lot.unit}:e)}));
             });}}/>
           <Choice name={`执行范围 ${i+1}`} value={r.execution_scope}
@@ -65,6 +67,8 @@ export function SupplyForms(p:Props){
             onChange={x=>set(old=>({...old,requirements:old.requirements.map((e,n)=>n===i?{...e,quantity:x}:e)}))}/>
           <p>物料 {r.material_id||"待选"} · 所有者 {r.owner_id} · 单位 {r.unit}</p>
           <button type="button" disabled={v.requirements.length===1} onClick={()=>{
+            selectedLotIds.current=Object.fromEntries(Object.entries(selectedLotIds.current).filter(([n])=>Number(n)!==i)
+              .map(([n,x])=>[Number(n)>i?Number(n)-1:Number(n),x]));
             setSelectedLots(old=>Object.fromEntries(Object.entries(old).filter(([n])=>Number(n)!==i)
               .map(([n,x])=>[Number(n)>i?Number(n)-1:Number(n),x])));
             set(old=>({...old,requirements:old.requirements.filter((_,n)=>n!==i)}));
@@ -82,16 +86,24 @@ export function SupplyForms(p:Props){
         quantity:"",unit:"kg",original_due:"",current_due:"",source:source("commitment")})}>
       {(v,set)=><>
         <ObjectChoice name="承诺对应需求" items={p.requirements} value={v.requirement_id}
-          onChange={x=>{set({...v,requirement_id:x});if(x)void p.api.object(p.project.id,"requirement",x).then(d=>{
-            if(d.value.kind==="requirement")set({...v,requirement_id:x,owner_id:d.value.owner_id,unit:d.value.unit});
+          onChange={x=>{set(old=>({...old,requirement_id:x}));if(x)void p.api.object(p.project.id,"requirement",x).then(d=>{
+            const detail=d.value;
+            if(detail.kind==="requirement")set(old=>old.requirement_id!==x?old:{...old,
+              owner_id:fill(old.owner_id,v.owner_id,detail.owner_id),unit:fill(old.unit,v.unit,detail.unit)});
           });}}/>
         <ObjectChoice name="修订既有承诺" items={p.commitments} value={v.commitment_id||""} required={false}
-          onChange={x=>{set({...v,commitment_id:x||null});if(x)void p.api.object(p.project.id,"commitment",x).then(d=>{
-            if(d.value.kind==="commitment")set({...v,commitment_id:x,requirement_id:d.value.requirement_id,type:d.value.type,
-              owner_id:d.value.owner_id,quantity:d.value.current_quantity,unit:d.value.unit,
-              original_due:d.value.original_due,current_due:d.value.current_due,
-              source:{...v.source,system:d.value.source.system,external_id:d.value.source.external_id,
-                version:d.value.source.version+1}});
+          onChange={x=>{set(old=>({...old,commitment_id:x||null}));if(x)void p.api.object(p.project.id,"commitment",x).then(d=>{
+            const detail=d.value;
+            if(detail.kind==="commitment")set(old=>old.commitment_id!==x?old:{...old,
+              requirement_id:fill(old.requirement_id,v.requirement_id,detail.requirement_id),
+              type:fill(old.type,v.type,detail.type),owner_id:fill(old.owner_id,v.owner_id,detail.owner_id),
+              quantity:fill(old.quantity,v.quantity,detail.current_quantity),
+              unit:fill(old.unit,v.unit,detail.unit),
+              original_due:fill(old.original_due,v.original_due,detail.original_due),
+              current_due:fill(old.current_due,v.current_due,detail.current_due),
+              source:{...old.source,system:fill(old.source.system,v.source.system,detail.source.system),
+                external_id:fill(old.source.external_id,v.source.external_id,detail.source.external_id),
+                version:fill(old.source.version,v.source.version,detail.source.version+1)}});
           });}}/>
         <Choice name="供应类型" value={v.type} choices={{purchase:"采购",customer:"客户供料"}}
           onChange={x=>set({...v,type:x as "purchase"|"customer"})}/>
@@ -109,8 +121,10 @@ export function SupplyForms(p:Props){
         <p>人工登记到货不改变权威库存；来料检验另行登记。</p>
         <ObjectChoice name="到货对应承诺" items={p.commitments} value={v.commitment_id} onChange={x=>set({...v,commitment_id:x})}/>
         <ObjectChoice name="到货物料批次" items={p.lots} value={v.material_lot_id}
-          onChange={x=>{set({...v,material_lot_id:x});if(x)void p.api.object(p.project.id,"material_lot",x).then(d=>{
-            if(d.value.kind==="material_lot")set({...v,material_lot_id:x,unit:d.value.unit});
+          onChange={x=>{set(old=>({...old,material_lot_id:x}));if(x)void p.api.object(p.project.id,"material_lot",x).then(d=>{
+            const detail=d.value;
+            if(detail.kind==="material_lot")set(old=>old.material_lot_id!==x?old:{...old,
+              unit:fill(old.unit,v.unit,detail.unit)});
           });}}/>
         <Field name="本次到货数量" value={v.quantity} onChange={x=>set({...v,quantity:x})}/>
         <p>计量单位：{v.unit}</p>

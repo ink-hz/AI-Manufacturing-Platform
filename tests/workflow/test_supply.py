@@ -180,7 +180,8 @@ def test_promise_amendment_retains_original_and_current(workflow):
         original_due=prior["original_due"],
         current_due="2026-12-10",
         source=workflow.source(
-            prior["source"]["external_id"], object_type="commitment", version=2
+            prior["source"]["external_id"] + " ", system=" ERP ",
+            object_type=" Commitment ", version=2
         ),
     )
     assert amended["object_id"] == commit["id"]
@@ -188,6 +189,124 @@ def test_promise_amendment_retains_original_and_current(workflow):
     assert value["original_due"] != value["current_due"]
     assert value["current_due"] == "2026-12-10"
     assert len(value["promise_revisions"]) == 2
+    assert value["source"]["system"] == " ERP "
+
+
+def test_existing_promise_source_cannot_create_second_commitment_without_id(workflow):
+    p, req, commit = workflow.material_requirement(qualified="0")
+    original = workflow.object(p["id"], "commitment", commit["id"])
+    alias = workflow.source(
+        original["source"]["external_id"] + " ",
+        system=" ERP ",
+        object_type=" Commitment ",
+        version=2,
+    )
+    before = workflow.balance(p["id"], req["id"])
+    result = workflow.command(
+        p["id"], "supply.commit", actor_name="supply", expected_status=409,
+        requirement_id=req["id"], type="customer", owner_id="Customer 1",
+        quantity="100", unit="kg", original_due=original["original_due"],
+        current_due="2026-12-10", source=alias,
+    )
+    assert result["code"] == "SOURCE_CONFLICT"
+    assert workflow.balance(p["id"], req["id"]) == before
+    assert workflow.client().get(f"{BASE}/projects/{p['id']}/objects/commitment").json()["total"] == 1
+
+
+def test_receipt_source_alias_is_not_counted_twice(workflow):
+    p, req, commit = workflow.material_requirement(qualified="0")
+    workflow.receive(p["id"], commit["id"], quantity="20", lot_id=commit["lot_id"],
+                     source=workflow.source("shipment-7", system="ERP", object_type="receipt"))
+    result = workflow.command(
+        p["id"], "supply.receive", actor_name="supply", expected_status=409,
+        commitment_id=commit["id"], material_lot_id=commit["lot_id"],
+        quantity="20", unit="kg",
+        source=workflow.source("shipment-7 ", system=" erp ", object_type=" Receipt "),
+    )
+    assert result["code"] == "SOURCE_CONFLICT"
+    assert workflow.balance(p["id"], req["id"])["received"] == "20"
+
+
+def test_amendment_requires_matching_existing_promise_identity(workflow):
+    p, req, commit = workflow.material_requirement(qualified="0")
+    original = workflow.object(p["id"], "commitment", commit["id"])
+    result = workflow.command(
+        p["id"], "supply.commit", actor_name="supply", expected_status=409,
+        commitment_id=commit["id"], requirement_id=req["id"], type="customer",
+        owner_id="Customer 1", quantity="100", unit="kg",
+        original_due=original["original_due"], current_due="2026-12-10",
+        source=workflow.source("other-promise", object_type="commitment", version=2),
+    )
+    assert result["code"] == "PRECONDITION_FAILED"
+
+
+def test_same_clock_plan_acceptance_uses_project_sequence(workflow, monkeypatch):
+    from manufacturing_platform.workflow import service
+
+    p, req, commit = workflow.material_requirement(qualified="0")
+    fixed = datetime.now(UTC)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed if tz else fixed.replace(tzinfo=None)
+
+    monkeypatch.setattr(service, "datetime", FixedDatetime)
+    first_source = workflow.object(p["id"], "plan",
+        workflow.object(p["id"], "requirement", req["id"])["plan_id"])["source"]
+
+    def plan(source, scope):
+        return workflow.command(
+            p["id"], "plan.receive", actor_name="planner", source=source,
+            input_revision_ids=[commit["revision_id"]],
+            input_order_versions=[{"order_line_id":commit["order_id"],"version":1}],
+            requirements=[{"work_order_id":commit["work_order_id"],
+                "execution_scope":scope,"material_id":"steel-1",
+                "owner_id":"Customer 1","quantity":"50","unit":"kg"}],
+        )
+
+    common = {"occurred_at":(fixed-timedelta(minutes=2)).isoformat(),
+              "collected_at":(fixed-timedelta(minutes=1)).isoformat(),
+              "cutoff":(fixed-timedelta(minutes=2)).isoformat()}
+    source_a = workflow.source(first_source["external_id"],object_type="plan",version=2)
+    source_a.update(common)
+    a = plan(source_a, "trial")
+    source_b = workflow.source(f"other-plan-{uuid4()}",object_type="plan",version=1)
+    source_b.update(common)
+    b = plan(source_b, "bulk")
+    assert a["object_id"] != b["object_id"]
+    wo = workflow.object(p["id"], "work_order", commit["work_order_id"])
+    assert wo["trial_readiness"]["input_versions"]["plan_id"] == b["object_id"]
+    assert next(c for c in wo["trial_readiness"]["checks"] if c["kind"]=="plan")["status"]=="blocked"
+    assert next(c for c in wo["bulk_readiness"]["checks"] if c["kind"]=="plan")["status"]=="ready"
+    page = workflow.client().get(f"{BASE}/projects/{p['id']}/objects/requirement").json()["items"]
+    assert next(r for r in page if r["id"]==req["id"])["state"]=="superseded"
+
+
+def test_missing_declared_plan_inputs_are_visible_rejected_evidence(workflow):
+    p, _, commit = workflow.material_requirement(qualified="0")
+    other, _, _, foreign_revision = workflow.order_workorder(quantity="5")
+    assert other["id"] != p["id"]
+    now = datetime.now(UTC)
+    source = workflow.source(f"unresolved-{uuid4()}", object_type="plan")
+    source.update(occurred_at=(now-timedelta(minutes=2)).isoformat(),
+                  collected_at=(now-timedelta(minutes=1)).isoformat(),
+                  cutoff=(now-timedelta(minutes=2)).isoformat())
+    result = workflow.command(
+        p["id"], "plan.receive", actor_name="planner", source=source,
+        input_revision_ids=[commit["revision_id"], foreign_revision["id"]],
+        input_order_versions=[{"order_line_id":commit["order_id"],"version":1},
+                              {"order_line_id":str(uuid4()),"version":1}],
+        requirements=[{"work_order_id":commit["work_order_id"],
+            "execution_scope":"bulk","material_id":"steel-1",
+            "owner_id":"Customer 1","quantity":"100","unit":"kg"}],
+    )
+    value = workflow.object(p["id"], "plan", result["object_id"])
+    assert value["state"] == "rejected"
+    assert "declared revision input missing" in value["reason"]
+    assert "declared order input missing" in value["reason"]
+    assert foreign_revision["id"] not in value["reason"]
+    assert value["requirement_ids"] == []
 
 
 def test_corrected_plan_reuses_business_identity_with_new_source_version(workflow):
@@ -517,7 +636,46 @@ def test_v3_database_migrates_supply_without_touching_existing_orders(workflow):
         == "material_lot"
     )
     with workflow.db() as db:
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 4
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 5
+
+
+def test_v4_migration_orders_audited_plans_and_normalizes_supply_keys(workflow):
+    import json
+    import sqlite3
+
+    p, req, commit = workflow.material_requirement(qualified="0")
+    plan_id = workflow.object(p["id"], "requirement", req["id"])["plan_id"]
+    with sqlite3.connect(workflow.paths.domain) as db:
+        source = json.loads(db.execute("SELECT source_json FROM plans WHERE id=?", (plan_id,)).fetchone()[0])
+        source["system"] = " ERP "
+        source["external_id"] += " "
+        db.execute("UPDATE plans SET source_json=?,source_system=?,source_type=?,source_external_id=? WHERE id=?",
+                   (json.dumps(source), " ERP ", " Plan ", source["external_id"], plan_id))
+        db.execute("DROP INDEX plans_acceptance_order")
+        db.execute("ALTER TABLE plans DROP COLUMN accepted_seq")
+        db.execute("UPDATE schema_version SET version=4")
+    workflow.reopen()
+    old = workflow.object(p["id"], "plan", plan_id)
+    assert old["source"]["system"] == " ERP "
+    with workflow.db() as db:
+        row = db.execute("SELECT source_system,source_type,source_external_id,accepted_seq FROM plans WHERE id=?", (plan_id,)).fetchone()
+        assert tuple(row) == ("erp", "plan", source["external_id"].strip(), 1)
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 5
+    source["system"] = "erp"
+    source["external_id"] = source["external_id"].strip()
+    source["version"] = 2
+    now = datetime.now(UTC)
+    source.update(occurred_at=(now - timedelta(minutes=2)).isoformat(),
+                  collected_at=(now - timedelta(minutes=1)).isoformat(),
+                  cutoff=(now - timedelta(minutes=2)).isoformat())
+    result = workflow.command(p["id"], "plan.receive", actor_name="planner", source=source,
+                              input_revision_ids=[commit["revision_id"]],
+                              input_order_versions=[{"order_line_id": commit["order_id"], "version": 1}],
+                              requirements=[{"work_order_id": commit["work_order_id"], "execution_scope": "trial",
+                                             "material_id": "steel-1", "owner_id": "Customer 1",
+                                             "quantity": "100", "unit": "kg"}])
+    with workflow.db() as db:
+        assert db.execute("SELECT accepted_seq FROM plans WHERE id=?", (result["object_id"],)).fetchone()[0] == 2
 
 
 def test_requirement_page_exposes_bounded_balance_columns(workflow):

@@ -41,6 +41,15 @@ async function field(label:string,value:string){
     e.dispatchEvent(new Event("change",{bubbles:true}));
   });
 }
+async function select(label:string,value:string){
+  const e=host.querySelector(`[aria-label="${label}"]`) as HTMLSelectElement;
+  expect(e,label).toBeTruthy();
+  await act(async()=>{e.value=value;e.dispatchEvent(new Event("change",{bubbles:true}));});
+}
+const summary=(n:number,kind:"requirement"|"commitment"|"material_lot")=>({
+  id:`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`,project_id:id,kind,title:`item-${n}`,
+  state:"active",quantity:null,unit:null,version:1,source:null,blocking_reasons:[],next_actions:[],
+});
 beforeEach(()=>{
   host=document.createElement("div");document.body.append(host);root=createRoot(host);writes=[];commandStatus=200;
   vi.stubGlobal("fetch",vi.fn(async(url:string,init:RequestInit={})=>{
@@ -132,4 +141,55 @@ it("shows the source plan version used by work order readiness",async()=>{
   await act(async()=>root.render(<DetailContent data={detail} onOpen={()=>{}}/>));
   expect(host.textContent).toContain("计划来源版本");
   expect(host.textContent).toContain("PLAN-2");
+});
+it("preserves promise edits when delayed requirement and commitment details return",async()=>{
+  const r=summary(31,"requirement"), c=summary(32,"commitment");
+  const pending=new Map<string,(x:any)=>void>();
+  const api={object:vi.fn((_p:string,_k:string,x:string)=>new Promise(resolve=>pending.set(x,resolve)))} as any;
+  await act(async()=>root.render(<SupplyForms action="supply.commit" api={api} project={project}
+    onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false}
+    workOrders={[]} orders={[]} revisions={[]} lots={[]} requirements={[r]}
+    commitments={[c]} receipts={[]}/>));
+  await select("承诺对应需求",r.id);await field("供应承诺数量","24");
+  await act(async()=>pending.get(r.id)!({value:{kind:"requirement",owner_id:"Owner",unit:"kg"}}));
+  expect((host.querySelector('[aria-label="供应承诺数量"]') as HTMLInputElement).value).toBe("24");
+  expect((host.querySelector('[aria-label="供应所有者"]') as HTMLInputElement).value).toBe("Owner");
+  await select("修订既有承诺",c.id);await field("供应承诺数量","25");
+  await field("当前承诺交期","2027-01-01");await field("来源业务编号","edited-ref");
+  await act(async()=>pending.get(c.id)!({value:{kind:"commitment",requirement_id:r.id,type:"purchase",
+    owner_id:"Owner",current_quantity:"10",unit:"kg",original_due:"2026-12-01",
+    current_due:"2026-12-02",source:{system:"ERP",external_id:"old-ref",version:1}}}));
+  expect((host.querySelector('[aria-label="供应承诺数量"]') as HTMLInputElement).value).toBe("25");
+  expect((host.querySelector('[aria-label="当前承诺交期"]') as HTMLInputElement).value).toBe("2027-01-01");
+  expect((host.querySelector('[aria-label="来源业务编号"]') as HTMLInputElement).value).toBe("edited-ref");
+});
+it("ignores a delayed lot detail after the receipt selection changes",async()=>{
+  const a=summary(33,"material_lot"), b=summary(34,"material_lot");
+  const pending=new Map<string,(x:any)=>void>();
+  const api={object:vi.fn((_p:string,_k:string,x:string)=>new Promise(resolve=>pending.set(x,resolve)))} as any;
+  await act(async()=>root.render(<SupplyForms action="supply.receive" api={api} project={project}
+    onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false}
+    workOrders={[]} orders={[]} revisions={[]} lots={[a,b]} requirements={[]}
+    commitments={[]} receipts={[]}/>));
+  await select("到货物料批次",a.id);await field("本次到货数量","7");
+  await select("到货物料批次",b.id);
+  await act(async()=>pending.get(a.id)!({value:{kind:"material_lot",unit:"kg"}}));
+  expect((host.querySelector('[aria-label="到货物料批次"]') as HTMLSelectElement).value).toBe(b.id);
+  expect((host.querySelector('[aria-label="本次到货数量"]') as HTMLInputElement).value).toBe("7");
+  await act(async()=>pending.get(b.id)!({value:{kind:"material_lot",unit:"m"}}));
+  expect(host.textContent).toContain("计量单位：m");
+});
+it("ignores stale plan material lookup after a different lot is selected",async()=>{
+  const a=summary(35,"material_lot"), b=summary(36,"material_lot");
+  const pending=new Map<string,(x:any)=>void>();
+  const api={object:vi.fn((_p:string,_k:string,x:string)=>new Promise(resolve=>pending.set(x,resolve)))} as any;
+  await act(async()=>root.render(<SupplyForms action="plan.receive" api={api} project={project}
+    onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false}
+    workOrders={[]} orders={[]} revisions={[]} lots={[a,b]} requirements={[]}
+    commitments={[]} receipts={[]}/>));
+  await select("计划物料批次 1",a.id);await select("计划物料批次 1",b.id);
+  await act(async()=>pending.get(a.id)!({value:{kind:"material_lot",material_id:"old",owner_id:"A",unit:"kg"}}));
+  expect(host.textContent).not.toContain("物料 old");
+  await act(async()=>pending.get(b.id)!({value:{kind:"material_lot",material_id:"new",owner_id:"B",unit:"m"}}));
+  expect(host.textContent).toContain("物料 new");
 });
