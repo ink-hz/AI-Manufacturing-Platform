@@ -4,9 +4,16 @@ from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import (
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    model_serializer,
+    model_validator,
+)
 
 from ..collaboration_models import EventTime, PackageItem
+from .agreements import AgreementView
 from .commands import WorkflowCommand
 from .contracts import (
     DomainValue,
@@ -38,6 +45,15 @@ MeasurementBound = Annotated[Decimal, BeforeValidator(parse_measurement_bound)]
 
 
 class RouteStep(StrictModel):
+    material_consumption: Literal["required", "none"] = "required"
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_payload(self, handler):
+        value = handler(self)
+        if self.material_consumption == "required":
+            value.pop("material_consumption", None)
+        return value
+
     station: str = Field(min_length=1, max_length=200)
     instruction_version: str = Field(min_length=1, max_length=200)
 
@@ -165,6 +181,7 @@ class EngineeringRevision(DomainValue):
     test_spec: TestSpec
     firmware_version: str
     content_hash: str
+    contract_agreement: AgreementView | None = None
     handoffs: tuple[HandoffView, ...]
     customer_approvals: tuple[CustomerApprovalView, ...]
 

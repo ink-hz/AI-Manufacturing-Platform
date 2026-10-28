@@ -46,6 +46,7 @@ export const labels: Record<string, string> = {
   "order.resolve_change": "处理承诺影响",
   "engineering.revision": "固定修订",
   "engineering.handoff": "版本交接",
+  "contract.agree": "确认修订合同条件",
   "engineering.customer_approval": "人工客户批准",
   "work_order.register": "登记工单",
   "readiness.record": "准备核验",

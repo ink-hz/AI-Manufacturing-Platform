@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -194,3 +194,10 @@ CREATE INDEX IF NOT EXISTS capa_steps_scope ON capa_steps(project_id,capa_id,seq
 CREATE INDEX IF NOT EXISTS consumption_lot_trace ON material_consumption(project_id,lot_id,unit_id);
 """
 SCHEMA += FEEDBACK_SCHEMA
+
+AGREEMENT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS contract_agreements(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),supersedes_id TEXT UNIQUE REFERENCES contract_agreements(id),contract_json TEXT NOT NULL,customer_id TEXT NOT NULL,external_signatory TEXT NOT NULL,evidence TEXT NOT NULL,project_version INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(project_id,project_version));
+CREATE INDEX IF NOT EXISTS contract_agreements_scope ON contract_agreements(project_id,revision_id,project_version DESC);
+CREATE VIEW IF NOT EXISTS current_revision_contracts AS SELECT r.project_id,r.id revision_id,COALESCE(a.contract_json,p.contract_json) contract_json FROM engineering_revisions r JOIN projects p ON p.id=r.project_id LEFT JOIN contract_agreements a ON a.id=(SELECT id FROM contract_agreements current WHERE current.project_id=r.project_id AND current.revision_id=r.id ORDER BY current.project_version DESC LIMIT 1);
+"""
+SCHEMA += AGREEMENT_SCHEMA

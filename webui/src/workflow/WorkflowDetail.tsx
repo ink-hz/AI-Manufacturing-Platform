@@ -97,7 +97,7 @@ export function DetailContent({
       </p>
       {(v.kind === "unit" || v.kind === "material_lot") && <Facts items={[["申请冻结状态",v.freeze_requested||"无申请"],["权威确认状态",v.freeze_confirmed||"尚未确认"],["回执状态",v.freeze_pending?"等待权威确认":"无待确认申请"]]}/>}
       {v.kind === "rma" && <><Facts items={[["原始客户",v.customer_id],["客户问题事实",v.reason],["状态",v.state]]}/>{v.source&&<Source value={v.source}/>}<p>原始检验记录{v.tests_truncated?"（已截断）":""}</p>{v.test_ids.map((id,i)=><button key={id} onClick={()=>onOpen({projectId:data.summary.project_id,kind:"test",id})}>查看原始检验 {i+1}</button>)}<p>RMA 登记不代表实物已经退回。</p></>}
-      {v.kind === "capa" && <><p>人工调查与实施证据 · {v.state}</p>{v.steps_truncated&&<p>仅显示最近 100 条证据。</p>}{v.steps.map(s=><section key={s.sequence}><h4>{({containment:"遏制",root_cause:"根因分析",correction:"纠正措施",verification:"有效性验证"})[s.step]}</h4><p>{s.description}</p><p>{s.evidence}</p>{s.implementation_evidence&&<p>实际实施：{s.implementation_evidence}</p>}{s.effective!==null&&<p>{s.effective?"验证通过":"验证失败，保持开放"}</p>}{s.eco_id&&<button onClick={()=>onOpen({projectId:data.summary.project_id,kind:"eco",id:s.eco_id!})}>查看实际工程实施</button>}</section>)}{v.blocking_reasons.map(r=><p key={r}>{r}</p>)}</>}
+      {v.kind === "capa" && <><p>人工调查与实施证据 · {v.state} · 当前纠正依据 {v.current_basis_sequence??"待补充"}</p>{v.steps_truncated&&<p>仅显示最近 100 条证据。</p>}{v.steps.map(s=><section key={s.sequence}><h4>{({containment:"遏制",root_cause:"根因分析",correction:"纠正措施",verification:"有效性验证"})[s.step]}</h4><p>{s.description}</p><p>{s.evidence}</p>{s.implementation_evidence&&<p>实际实施：{s.implementation_evidence}</p>}{s.effective!==null&&<p>{s.effective?"验证通过":"验证失败，保持开放"} · 验证依据 {s.basis_sequence??"历史纠正依据"}</p>}{s.eco_id&&<button onClick={()=>onOpen({projectId:data.summary.project_id,kind:"eco",id:s.eco_id!})}>查看实际工程实施</button>}</section>)}{v.blocking_reasons.map(r=><p key={r}>{r}</p>)}</>}
       {v.kind === "eco" && <>
         <Facts items={[["旧固定版本",v.old_revision],["新固定版本",v.new_revision||"仅取消剩余范围"],["变更原因",v.reason]]}/>
         {!!v.unresolved_stock_basis_ids?.length&&<p role="alert">库存来源覆盖尚未核清，关闭受阻。工程负责人需在交付工作区请求原始权威来源证明；缺少历史证明时保持阻断。</p>}
@@ -195,6 +195,7 @@ export function DetailContent({
               ["测试程序", v.test_spec.program_version],
             ]}
           />
+          {v.contract_agreement&&<><h4>本修订适用协议</h4><Facts items={[["客户签署人",v.contract_agreement.external_signatory],["协议凭据",v.contract_agreement.evidence],["接受项目版本",v.contract_agreement.project_version],["客户批准条件",String(v.contract_agreement.contract.customer_approval_required)],["客户放行条件",String(v.contract_agreement.contract.customer_release_required)],["客户验收条件",String(v.contract_agreement.contract.acceptance_required)]]}/></>}
           <h4>固定资料</h4>
           <table>
             <thead>

@@ -2,7 +2,7 @@ import { ActionForms } from './ActionForms';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { EngineeringForms } from './forms/EngineeringForms';
-import { project, order } from './testHelpers';
+import { project, order, bootstrap } from './testHelpers';
 import { it, expect, vi } from 'vitest';
 import { workflowView, flush } from './testHelpers';
 import type { ProjectDetail } from './types';
@@ -143,4 +143,21 @@ it('invalidates old progress on a genuinely newer list and fetches its selected 
     finally {
         await v.dispose();
     }
+});
+it('uses actual grant response scope as a freshness floor against delayed older project data',async()=>{
+ const late=deferred<ProjectDetail>();let changed=false;
+ const v=await workflowView({initial:'制造项目',options:{bootstrap:{...bootstrap,configuration_admin:true},findSubjects:async()=>[{id:'target-user',displayName:'Target'}]},readProject:async()=>changed?late.promise:project});
+ const prior=fetch;
+ vi.stubGlobal('fetch',vi.fn(async(raw:any,init:any)=>{
+   if(init?.method==='PUT'){changed=true;return new Response(JSON.stringify({scope:{kind:'project',project_id:project.id},user_id:'target-user',roles:['planner'],qualifications:[],active:true,project_version:9}),{status:200});}
+   if(String(raw).includes('/members'))return new Response(JSON.stringify({items:[]}),{status:200});
+   return prior(raw,init);
+ }));
+ try{
+   await v.click('成员授权');await v.field('授权成员','target-user');await flush();await v.field('授权凭据','Named authority');
+   await act(async()=>v.host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));await flush();
+   await act(async()=>late.resolve({...project,version:4}));await flush();
+   await v.click('订单与需求');await v.click('登记需求');
+   expect(v.host.textContent).toContain('草稿依据：项目版本 9');
+ }finally{await v.dispose();}
 });

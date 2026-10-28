@@ -264,3 +264,33 @@ it('shows a failed selected-object lookup without treating missing scope as a su
  const api={object:vi.fn(async()=>{throw Error('Selected requirement unavailable');}),command:vi.fn()} as any;
  await act(async()=>root.render(<SupplyForms api={api} project={{...project,allowed_actions:['reservation.request']}} action="reservation.request" onDirty={()=>{}} onChanged={()=>{}} onOpen={()=>{}} readOnly={false} workOrders={[]} orders={[]} revisions={[]} lots={[]} requirements={[{id,project_id:id,kind:'requirement',title:'Steel requirement',state:'active',version:1,next_actions:[],blocking_reasons:[],quantity:'1',unit:'kg'}]} commitments={[]} receipts={[]}/>));await select('预留对应需求',id);await flush();expect(host.querySelector('[role="alert"]')?.textContent).toContain('Selected requirement unavailable');expect(api.command).not.toHaveBeenCalled();
 });
+it("selects the 51st work order through bounded lookup paging and preserves draft",async()=>{
+  const {SupplyWorkspace}=await import('./SupplyWorkspace');
+  const workOrders=Array.from({length:51},(_,n)=>({...summary(n+100,'requirement'),kind:'work_order' as const,title:`WO-${n+1}`}));
+  const api={objects:vi.fn(async(_pid:string,kind:string,limit:number,offset:number)=>({items:kind==='work_order'?workOrders.slice(offset,offset+limit):kind==='material_lot'?[summary(999,'material_lot')]:[],total:kind==='work_order'?51:kind==='material_lot'?1:0,limit,offset})),
+    object:vi.fn(async(_pid:string,kind:string)=>kind==='work_order'?{value:{kind,revision_id:'revision-51',order_line_id:'order-51'}}:kind==='material_lot'?{value:{kind,material_id:'steel',owner_id:'客户甲',unit:'kg'}}:{summary:{version:2}}),command:vi.fn(async()=>({project_id:id,project_version:8}))} as any;
+  await act(async()=>root.render(<SupplyWorkspace api={api} project={project} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();
+  await click('接收供应计划');await field('计划物料数量 1','3');
+  const more=[...host.querySelectorAll('button')].find(b=>b.textContent?.startsWith('读取更多工单（'));
+  expect(more).toBeTruthy();await act(async()=>more!.click());await flush();
+  await select('计划依据工单 1',workOrders[50].id);await flush();
+  expect((host.querySelector('[aria-label="计划依据工单 1"]') as HTMLSelectElement).value).toBe(workOrders[50].id);
+  expect((host.querySelector('[aria-label="计划物料数量 1"]') as HTMLInputElement).value).toBe('3');
+  expect(api.objects).toHaveBeenCalledWith(id,'work_order',50,50);
+  await select('计划物料批次 1',summary(999,'material_lot').id);await flush();
+  await field('计划来源截止时间','2026-10-29T08:00');await field('来源业务编号','PLAN-51');await field('来源凭据','approved');
+  await click('保存计划');
+  expect(api.command.mock.calls[0][1]).toMatchObject({requirements:[{work_order_id:workOrders[50].id,quantity:'3'}],input_revision_ids:['revision-51'],input_order_versions:[{order_line_id:'order-51',version:2}]});
+});
+it('discards a late lookup page and old form when the project changes',async()=>{
+ const {SupplyWorkspace}=await import('./SupplyWorkspace');let finish!:(x:any)=>void;
+ const old={...summary(100,'requirement'),kind:'work_order',title:'OLD-WO'};
+ const api={objects:vi.fn(async(pid:string,kind:string,_limit:number,offset:number)=>kind==='work_order'&&offset===50?new Promise(r=>finish=r):({items:pid===id&&kind==='work_order'?Array.from({length:50},(_,i)=>({...old,id:String(i)})):[],total:pid===id&&kind==='work_order'?51:0,limit:50,offset:0}))} as any;
+ const props={api,project,readOnly:false,onChanged:()=>{},onOpen:()=>{},onDirty:()=>{},requestLeave:(f:()=>void)=>f()};
+ await act(async()=>root.render(<SupplyWorkspace {...props}/>));await flush();await click('接收供应计划');await field('计划物料数量 1','old draft');
+ const more=[...host.querySelectorAll('button')].find(b=>b.textContent?.startsWith('读取更多工单（'))!;await act(async()=>more.click());
+ await act(async()=>root.render(<SupplyWorkspace {...props} project={{...project,id:'new-project'}}/>));await flush();
+ await act(async()=>finish({items:[old],total:51,limit:50,offset:50}));await flush();
+ expect(host.textContent).not.toContain('OLD-WO');
+ expect((host.querySelector('[aria-label="计划物料数量 1"]') as HTMLInputElement).value).toBe('');
+});

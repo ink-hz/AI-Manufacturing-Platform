@@ -14,6 +14,7 @@ const actions: Record<string, string> = {
   "order.register": "登记正式订单",
   "order.change": "变更订单承诺",
   "order.allocate": "分配订单工单",
+  "contract.agree": "确认修订合同条件",
   "engineering.revision": "固定工程修订",
   "engineering.handoff": "登记版本交接",
   "engineering.customer_approval": "登记客户批准",
@@ -144,7 +145,7 @@ export function OrdersWorkspace(
   const available = Object.keys(actions).filter(
     (a) =>
       (p.engineering
-        ? a.startsWith("engineering.") ||
+        ? a.startsWith("contract.") || a.startsWith("engineering.") ||
           a.startsWith("work_order.") ||
           a.startsWith("readiness.") || a.startsWith("eco.")
         : a.startsWith("order.") || a.startsWith("demand.")) &&
@@ -207,12 +208,12 @@ export function OrdersWorkspace(
           </button>
           {p.engineering ? (
             <EngineeringForms
-              key={action + epoch}
+              key={p.project.id + action + epoch}
               {...formProps}
               action={action}
             />
           ) : (
-            <OrdersForms key={action + epoch} {...formProps} action={action} />
+            <OrdersForms key={p.project.id + action + epoch} {...formProps} action={action} />
           )}
         </>
       )}

@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from . import (  # noqa: F401 - trusted domain registration
+    agreements,
     delivery,
     eco,
     engineering,
@@ -206,20 +207,33 @@ class WorkflowService:
             raise DomainError(
                 "SCOPE_MISMATCH", 422, "Grant scope must match project path"
             )
-        if not self.resolve_subject(user_id):
-            raise DomainError("INVALID_SUBJECT", 422, "Unknown or inactive subject")
         payload = {
             "action": "grant.change",
             "project_id": str(project_id),
             "user_id": str(user_id),
             **value.model_dump(mode="json"),
         }
+        # Authorize the initiating actor before canonical replay. Target liveness
+        # applies only to a new active grant, never to an accepted result.
+        with self.store.transaction() as tx:
+            require_project(tx, actor, project_id)
+            replay = self._replay(tx, actor, value.operation_id, payload)
+            if replay is not None:
+                return replay
+            known_grant = tx.execute(
+                "SELECT 1 FROM project_grants WHERE project_id=? AND user_id=?",
+                (str(project_id), str(user_id)),
+            ).fetchone() is not None
+        target_valid, target_error = True, None
+        # A new inactive configuration still needs a known directory identity;
+        # revoking an existing grant does not depend on target liveness.
+        if value.active or not known_grant:
+            try:
+                target_valid = self.resolve_subject(user_id)
+            except Exception as exc:  # noqa: BLE001 - host failure retained until authorized canonical replay
+                target_error = exc
         with self.store.transaction(write=True) as tx:
-            row = tx.execute(
-                "SELECT * FROM projects WHERE id=?", (str(project_id),)
-            ).fetchone()
-            if not row:
-                raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+            row = require_project(tx, actor, project_id)
             replay = self._replay(tx, actor, value.operation_id, payload)
             if replay is not None:
                 return replay
@@ -230,6 +244,10 @@ class WorkflowService:
                     "Project version changed",
                     {"current_version": row["version"]},
                 )
+            if target_error is not None:
+                raise DomainError("DIRECTORY_UNAVAILABLE", 503, "Subject directory unavailable") from target_error
+            if not target_valid:
+                raise DomainError("INVALID_SUBJECT", 422, "Unknown or inactive subject")
             tx.execute(
                 "INSERT INTO project_grants VALUES (?,?,?,?,?,?) ON CONFLICT(project_id,user_id) DO UPDATE SET roles_json=excluded.roles_json, qualifications_json=excluded.qualifications_json,active=excluded.active,evidence=excluded.evidence",
                 (

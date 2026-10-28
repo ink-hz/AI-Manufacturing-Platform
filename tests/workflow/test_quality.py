@@ -1381,7 +1381,7 @@ def test_review_schema11_basis_rebuild_preserves_fresh_proof_and_fails_closed(
             ]
             for table in tables
         } == before
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 16
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 17
     if audit_fault is not None:
         refused = measure(workflow, p, unit["id"], attempt=4, expected_status=409)
         assert refused["code"] == "PRECONDITION_FAILED"

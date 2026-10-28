@@ -632,7 +632,8 @@ def decide_release(tx, context, command):
         fail("no explicit validated conditional release policy is configured")
     if command.kind == "customer":
         project = project_row(tx, pid)
-        contract = json.loads(project["contract_json"])
+        from .agreements import applicable
+        contract = applicable(tx, pid, command.revision_id)
         if (
             not all(
                 (
@@ -722,12 +723,13 @@ def decide_release(tx, context, command):
 
 def shipment_eligibility(tx, project_id, unit_ids) -> Eligibility:
     project = project_row(tx, project_id)
-    contract = json.loads(project["contract_json"])
+    from .agreements import applicable
     reasons, releases, good = [], set(), 0
     if not unit_ids or len(set(map(str, unit_ids))) != len(unit_ids):
         reasons.append("unique explicit serials required")
     for uid in dict.fromkeys(map(str, unit_ids)):
-        own(tx, "units", project_id, uid)
+        unit = own(tx, "units", project_id, uid)
+        contract = applicable(tx, project_id, unit["revision_id"])
         unit_reasons = []
         if not final_good(tx, project_id, uid):
             unit_reasons.append("no final-good measured output")

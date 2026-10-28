@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { WorkspaceProps, ObjectSummary, CommandFields, EcoValue } from "../types";
 import type { PackageItem } from "../../collaboration/types";
 import {
@@ -31,12 +31,26 @@ type Props = WorkspaceProps & {
   units?: ObjectSummary[];
 };
 export function EngineeringForms(p: Props) {
+  const [agreementLoaded,setAgreementLoaded]=useState("");
+  const [agreementError,setAgreementError]=useState("");
+  const agreementLookup=useRef(0);
+  useEffect(()=>()=>{agreementLookup.current++;},[p.api,p.project.id]);
   const families = Object.fromEntries(p.revisions.flatMap(r => r.revision_family_id ? [[r.revision_family_id,r.title.replace(/^[0-9a-f]{8}-[0-9a-f-]{27} /i,"工程修订 ")]] : []));
   if (p.action.startsWith("eco.")) return <EcoForms {...p}/>;
   switch (p.action) {
+    case "contract.agree":
+      return <CommandForm<Extract<CommandFields,{action:"contract.agree"}>> {...p} title="确认修订合同条件" save="保存适用协议" initial={()=>({action:"contract.agree",revision_id:"",supersedes_agreement_id:null,contract:p.project.contract,customer_id:p.project.customer_id,external_signatory:"",evidence:""})} canSubmit={v=>agreementLoaded===v.revision_id&&!!v.revision_id&&!!v.external_signatory.trim()&&!!v.evidence.trim()}>{(v,set)=><>
+        <p>协议仅适用于选定固定修订；原始合同及其他修订历史保留。未知条件可确认，客户工程批准与 MES 交接仍单独核验。</p>
+        <ObjectChoice name="协议适用固定修订" value={v.revision_id} items={p.revisions} onChange={x=>{set({...v,revision_id:x,supersedes_agreement_id:null});setAgreementLoaded("");setAgreementError("");const generation=++agreementLookup.current;if(x)void p.api.object(p.project.id,"revision",x).then(d=>{if(generation!==agreementLookup.current||d.value.kind!=="revision")return;const r=d.value;setAgreementLoaded(x);set(old=>old.revision_id!==x?old:({...old,supersedes_agreement_id:r.contract_agreement?.id||null,contract:{...(r.contract_agreement?.contract||p.project.contract),customer_revision:r.customer_revision,internal_revision:r.internal_revision}}));}).catch(e=>{if(generation===agreementLookup.current)setAgreementError(String(e));});}}/>
+        {agreementError&&<p role="alert">{agreementError}</p>}
+        <p>客户版本 {v.contract.customer_revision} / 厂内版本 {v.contract.internal_revision}</p>
+        {(["customer_approval_required","customer_release_required","acceptance_required"] as const).map((key,i)=><Choice key={key} name={["协议要求客户批准","协议要求客户放行","协议要求客户验收"][i]} value={String(v.contract[key])} choices={{unknown:"未确认",true:"必需",false:"明确不要求"}} onChange={x=>set({...v,contract:{...v.contract,[key]:x==="unknown"?"unknown":x==="true"}})}/>)}
+        <Field name="协议物料责任" value={v.contract.material_ownership_rules} onChange={x=>set({...v,contract:{...v.contract,material_ownership_rules:x}})}/>
+        <Field name="协议客户签署人" value={v.external_signatory} onChange={x=>set({...v,external_signatory:x})}/><Field name="协议签署凭据" value={v.evidence} onChange={x=>set({...v,evidence:x})}/>
+      </>}</CommandForm>;
     case "engineering.revision":
       return (
-        <CommandForm
+        <CommandForm<Extract<CommandFields,{action:"engineering.revision"}>>
           key={p.action}
           {...p}
           title="固定工程修订"
@@ -181,6 +195,7 @@ export function EngineeringForms(p: Props) {
               {v.route_steps.map((s, i) => (
                 <fieldset key={i}>
                   <legend>工序 {i + 1}</legend>
+                  <Choice name={`工序用料要求 ${i+1}`} value={s.material_consumption||"required"} choices={{required:"必须记录实际用料",none:"无新增物料消耗"}} onChange={x=>set({...v,route_steps:v.route_steps.map((e,n)=>n===i?{...e,material_consumption:x as "required"|"none"}:e)})}/>
                   <Field
                     name={`工位 ${i + 1}`}
                     value={s.station}

@@ -3,7 +3,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, StrictBool, model_validator
+from pydantic import Field, StrictBool, model_serializer, model_validator
 
 from .commands import WorkflowCommand
 from .contracts import DomainValue, ObjectKind, SourceRef, StrictModel
@@ -111,6 +111,14 @@ class CapaUpdate(WorkflowCommand):
         default=None, min_length=1, max_length=2000, pattern=r"\S"
     )
     eco_id: UUID | None = None
+    basis_sequence: int | None = Field(default=None, strict=True, ge=1)
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_payload(self, handler):
+        value = handler(self)
+        if self.basis_sequence is None:
+            value.pop("basis_sequence", None)
+        return value
 
 
 class CapaClose(WorkflowCommand):
@@ -120,6 +128,7 @@ class CapaClose(WorkflowCommand):
 
 class CapaStep(StrictModel):
     sequence: int
+    basis_sequence: int | None = None
     step: Literal["containment", "root_cause", "correction", "verification"]
     description: str
     evidence: str
@@ -150,6 +159,7 @@ class CapaValue(DomainValue):
     rma_id: UUID
     state: Literal["open", "closed"]
     steps: list[CapaStep]
+    current_basis_sequence: int | None = None
     steps_truncated: bool
     blocking_reasons: list[str]
 

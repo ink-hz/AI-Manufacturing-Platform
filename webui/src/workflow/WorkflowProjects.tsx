@@ -321,7 +321,7 @@ export function Members(
               const result = await p.api.grant(p.project.id, user, v);
               if (alive.current) {
                 p.onDirty("members", false);
-                p.onChanged(result);
+                p.onChanged({project_id:result.scope.project_id, project_version:result.project_version});
               }
             } catch (e) {
               if (alive.current) {

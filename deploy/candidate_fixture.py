@@ -207,7 +207,7 @@ def run_acceptance():
         require(os.statvfs(path).f_flag & os.ST_RDONLY,'private_fixture_mount_must_be_readonly')
     root=Path('/candidate-evidence');require(not (root/'runs').exists(),'private_candidate_must_be_fresh')
     for name in ['home','cache','vite-cache']: (root/name).mkdir()
-    (root/'vitest.config.mjs').write_text("import original from '/candidate-fixture/source/webui/vite.config.ts';\nexport default (ctx) => ({...original(ctx),cacheDir:'/candidate-evidence/vite-cache'});\n")
+    (root/'vitest.config.mjs').write_text("import original from '/candidate-fixture/source/webui/vite.config.ts';\nexport default (ctx) => {const config=original(ctx);return {...config,cacheDir:'/candidate-evidence/vite-cache',test:{...config.test,fsModuleCachePath:'/candidate-evidence/vitest-module-cache'}};};\n")
     runtime=json.loads(Path('/candidate-fixture/runtime-manifest.json').read_text())
     require(subprocess.check_output(['/candidate-runtime/bin/node','--version'],text=True).strip()==runtime['node_version'],'private_actual_node_version')
     sys.path.insert(0,'/candidate-fixture/source/tests')

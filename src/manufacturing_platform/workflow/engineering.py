@@ -286,7 +286,9 @@ def fixed_revision(tx, project_id, revision_id) -> EngineeringRevision:
             (row["id"], str(project_id)),
         )
     ]
+    from .agreements import view as agreement_view
     return EngineeringRevision(
+        contract_agreement=agreement_view(tx, project_id, row["id"]),
         id=row["id"],
         project_id=row["project_id"],
         package_id=row["package_id"],

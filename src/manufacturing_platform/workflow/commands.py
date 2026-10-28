@@ -32,6 +32,7 @@ WorkflowAction = Literal[
     "order.resolve_change",
     "order.allocate",
     "engineering.revision",
+    "contract.agree",
     "engineering.handoff",
     "engineering.customer_approval",
     "work_order.register",

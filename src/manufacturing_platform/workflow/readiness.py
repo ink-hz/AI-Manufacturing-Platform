@@ -23,7 +23,8 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         "SELECT * FROM projects WHERE id=?", (str(project_id),)
     ).fetchone()
     revision = fixed_revision(tx, project_id, row["revision_id"])
-    contract = json.loads(project["contract_json"])
+    from .agreements import applicable
+    contract = applicable(tx, project_id, row["revision_id"], at=now)
     checks = []
 
     def add(kind, required, passed, reason, ids=()):

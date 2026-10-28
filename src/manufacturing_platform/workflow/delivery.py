@@ -91,17 +91,17 @@ def remaining(tx, project_id, order_line_id) -> DeliveryBalance:
     from .quality import final_good_count
 
     facts = totals(tx, project_id, order_id=order_line_id)
-    values = dict(
-        ordered=order["current_q_atoms"],
-        allocated=allocated(tx, project_id, order_id=order_line_id),
-        qualified=final_good_count(tx, project_id, order_line_id) * factor,
-        pending_shipment=pending,
-        shipped=shipped,
-        signed=facts.get("sign", 0),
-        accepted=facts.get("accept", 0),
-        remaining_to_ship=max(0, order["current_q_atoms"] - shipped),
-        remaining_to_accept=max(0, order["current_q_atoms"] - facts.get("accept", 0)),
-    )
+    values = {
+        "ordered": order["current_q_atoms"],
+        "allocated": allocated(tx, project_id, order_id=order_line_id),
+        "qualified": final_good_count(tx, project_id, order_line_id) * factor,
+        "pending_shipment": pending,
+        "shipped": shipped,
+        "signed": facts.get("sign", 0),
+        "accepted": facts.get("accept", 0),
+        "remaining_to_ship": max(0, order["current_q_atoms"] - shipped),
+        "remaining_to_accept": max(0, order["current_q_atoms"] - facts.get("accept", 0)),
+    }
     return DeliveryBalance(
         **{key: amount(value, p) for key, value in values.items()}, unit=order["unit"]
     )
@@ -546,29 +546,29 @@ def value(tx, pid, row):
         remaining=remaining(tx, pid, row["order_line_id"]),
         blocking_reasons=reasons,
         issues=[
-            dict(
-                id=i["id"],
-                title=i["title"],
-                owner_id=i["owner_id"],
-                owner_name=i["owner_name"],
-                required=bool(i["required"]),
-                resolved=i["resolution_id"] is not None,
-                evidence=i["evidence"],
-            )
+            {
+                "id": i["id"],
+                "title": i["title"],
+                "owner_id": i["owner_id"],
+                "owner_name": i["owner_name"],
+                "required": bool(i["required"]),
+                "resolved": i["resolution_id"] is not None,
+                "evidence": i["evidence"],
+            }
             for i in tx.execute(
                 "SELECT i.*,r.id resolution_id,r.evidence FROM acceptance_issues i LEFT JOIN acceptance_resolutions r ON r.issue_id=i.id WHERE i.project_id=? AND i.shipment_id=? ORDER BY (r.id IS NOT NULL),i.rowid LIMIT 100",
                 (str(pid), row["id"]),
             )
         ],
         facts=[
-            dict(
-                id=f["id"],
-                action=f["action"],
-                quantity=amount(f["q_atoms"], p),
-                source=admitted_source(tx, pid, f, "delivery_" + f["action"]),
-                external_signatory=f["external_signatory"],
-                recorded_by=f["actor_id"],
-            )
+            {
+                "id": f["id"],
+                "action": f["action"],
+                "quantity": amount(f["q_atoms"], p),
+                "source": admitted_source(tx, pid, f, "delivery_" + f["action"]),
+                "external_signatory": f["external_signatory"],
+                "recorded_by": f["actor_id"],
+            }
             for f in tx.execute(
                 "SELECT * FROM delivery_facts WHERE project_id=? AND shipment_id=? ORDER BY seq DESC LIMIT 100",
                 (str(pid), row["id"]),
@@ -756,8 +756,22 @@ def close_predicates(tx, project_id, kind) -> list[str]:
                 "Shipped serial has a current quality/freeze escape: " + shipment["id"]
             )
     if kind == "fulfillment":
-        policy = json.loads(p["contract_json"])["acceptance_required"]
-        if policy == "unknown":
+        from .agreements import applicable
+        # Acceptance facts are shipment quantities, not individual serial facts.
+        # A mixed-policy shipment therefore requires its full acceptance if any
+        # member requires it; never invent which serial a partial receipt covers.
+        has_shipment = False
+        for shipment in tx.execute("SELECT DISTINCT s.* FROM shipments s JOIN shipment_items i ON i.shipment_id=s.id WHERE s.project_id=?", (str(project_id),)):
+            has_shipment = True
+            policies = [applicable(tx, project_id, r[0])["acceptance_required"] for r in tx.execute(
+                "SELECT DISTINCT u.revision_id FROM shipment_items i JOIN units u ON u.id=i.unit_id AND u.project_id=i.project_id WHERE i.project_id=? AND i.shipment_id=?",
+                (str(project_id), shipment["id"]),
+            )]
+            if "unknown" in policies:
+                reasons.append("Acceptance contract policy is unknown: " + shipment["id"])
+            elif True in policies and totals(tx, project_id, shipment_id=shipment["id"]).get("accept", 0) != shipment["q_atoms"]:
+                reasons.append("Required shipment acceptance remains incomplete: " + shipment["id"])
+        if not has_shipment and json.loads(p["contract_json"])["acceptance_required"] == "unknown":
             reasons.append("Acceptance contract policy is unknown")
         for row in tx.execute(
             "SELECT id FROM order_lines WHERE project_id=?", (str(project_id),)
@@ -766,14 +780,13 @@ def close_predicates(tx, project_id, kind) -> list[str]:
             if (
                 b.shipped != b.ordered
                 or b.signed != b.ordered
-                or (policy is True and b.accepted != b.ordered)
                 or b.pending_shipment
             ):
                 reasons.append(
                     "Order delivery/signature/acceptance remains incomplete: " + row[0]
                 )
     elif kind == "quality":
-        from .quality import quality_summary, final_good, scrapped
+        from .quality import final_good, quality_summary, scrapped
 
         if any(
             not final_good(tx, project_id, r[0]) and not scrapped(tx, project_id, r[0])

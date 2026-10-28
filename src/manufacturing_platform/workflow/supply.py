@@ -894,7 +894,6 @@ def _page_balances(tx, project_id, rows):
             JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id
             JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id
             WHERE v.project_id=? AND prior.lineage_id IN ({slots}) AND v.authority_receipt_id IS NOT NULL
-              AND EXISTS(SELECT 1 FROM material_movements m WHERE m.project_id=l.project_id AND m.material_lot_id=l.id)
             GROUP BY l.id,prior.lineage_id""",
         (str(project_id), *lineages),
     ):

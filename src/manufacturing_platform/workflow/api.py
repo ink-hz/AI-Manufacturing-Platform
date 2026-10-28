@@ -174,9 +174,8 @@ def build_workflow_router(
         a = actor(request)
         if not a.configuration_admin:
             raise HTTPException(403, "Permission denied")
-        return service.change_grant(
-            a, project_id, user_id, await parse(request, GrantChange)
-        )
+        value = await parse(request, GrantChange)
+        return await run_in_threadpool(service.change_grant, a, project_id, user_id, value)
 
     @router.get("/dashboard")
     def dashboard(request: Request, project_id: UUID | None = None):

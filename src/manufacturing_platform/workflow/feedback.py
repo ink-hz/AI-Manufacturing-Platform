@@ -119,11 +119,27 @@ def admitted_source(tx, pid, row):
         return None
 
 
-def latest_step(tx, pid, cid, step):
+CAPA_ORDER = ("containment", "root_cause", "correction", "verification")
+
+
+def latest_step_row(tx, pid, cid, step):
     row = tx.execute(
         "SELECT * FROM capa_steps WHERE project_id=? AND capa_id=? AND step=? ORDER BY seq DESC LIMIT 1",
         (str(pid), str(cid), step),
     ).fetchone()
+    if row is None:
+        return None
+    # Durable acceptance order, independent of clocks: revising an earlier
+    # prerequisite invalidates downstream evidence in the current cycle only.
+    for earlier in CAPA_ORDER[:CAPA_ORDER.index(step)]:
+        prior = latest_step_row(tx, pid, cid, earlier)
+        if prior is None or prior["seq"] >= row["seq"]:
+            return None
+    return row
+
+
+def latest_step(tx, pid, cid, step):
+    row = latest_step_row(tx, pid, cid, step)
     return CapaUpdate.model_validate_json(row["payload_json"]) if row else None
 
 
@@ -201,15 +217,14 @@ def update_capa(tx, context, command):
     index = steps.index(command.step)
     if any(latest_step(tx, pid, cid, name) is None for name in steps[:index]):
         fail("Complete prior CAPA evidence steps in order")
-    if index < 3 and any(
-        latest_step(tx, pid, cid, name) is not None for name in steps[index + 1 :]
-    ):
-        fail("Prior evidence cannot overwrite later verification; retain its history")
     if command.step == "verification":
         if command.effective is None:
             fail("Verification requires explicit effectiveness result")
-    elif command.effective is not None:
-        fail("Effectiveness result belongs only to verification")
+        basis = latest_step_row(tx, pid, cid, "correction")
+        if command.basis_sequence is not None and command.basis_sequence != basis["seq"]:
+            fail("Verification basis is stale; review the current correction")
+    elif command.effective is not None or command.basis_sequence is not None:
+        fail("Effectiveness result and basis belong only to verification")
     if command.step == "correction":
         if command.action_kind is None:
             fail("Correction requires its action kind")
@@ -377,10 +392,14 @@ def detail(tx, pid, kind, ident):
             values.append(
                 CapaStep(
                     sequence=s["seq"],
+                    basis_sequence=(tx.execute(
+                        "SELECT MAX(seq) FROM capa_steps WHERE project_id=? AND capa_id=? AND step='correction' AND seq<?",
+                        (str(pid), str(ident), s["seq"]),
+                    ).fetchone()[0] if s["step"] == "verification" else None),
                     **{
                         k: getattr(data, k)
                         for k in CapaStep.model_fields
-                        if k != "sequence"
+                        if k not in {"sequence", "basis_sequence"}
                     },
                 )
             )
@@ -389,6 +408,7 @@ def detail(tx, pid, kind, ident):
             rma_id=row["rma_id"],
             state=row["state"],
             steps=values,
+            current_basis_sequence=(basis["seq"] if (basis := latest_step_row(tx, pid, ident, "correction")) else None),
             steps_truncated=len(steps) > 100,
             blocking_reasons=capa_reasons(tx, pid, row)
             if row["state"] == "open"

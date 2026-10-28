@@ -53,3 +53,27 @@ it('retires drafts and sensitive project state when the host account changes', a
 finally {
     await v.dispose();
 } });
+it('failed logout remains usable and can retry once; successful logout retires', async () => {
+    let finish!:()=>void;
+    const logout=vi.fn().mockRejectedValueOnce(Error('offline')).mockImplementationOnce(()=>new Promise<void>(r=>{finish=r;}));
+    const v=await workflowView({initial:'制造项目',options:{onLogout:logout}});
+    try {
+        await v.click('账户菜单'); await v.click('退出登录');
+        expect(v.host.textContent).toContain('账户操作失败，请重试。');
+        expect(v.host.textContent).toContain('相机项目');
+        await v.click('账户菜单'); await v.click('退出登录');
+        expect(logout).toHaveBeenCalledTimes(2);
+        await act(async()=>finish());
+        expect(v.host.textContent).not.toContain('登记需求');
+    } finally {await v.dispose();}
+});
+it('cannot resurrect a changed identity when an old logout fails',async()=>{
+ let fail!:(x:Error)=>void;const logout=vi.fn(()=>new Promise<void>((_,reject)=>fail=reject));
+ const v=await workflowView({initial:'制造项目',options:{onLogout:logout}});
+ try{await v.click('账户菜单');await v.click('退出登录');
+ const retry=[...v.host.querySelectorAll('button')].find(b=>b.textContent==='退出登录');if(retry)await act(async()=>{retry.click();retry.click();});expect(logout).toHaveBeenCalledTimes(1);
+ await v.rerender({bootstrap:{...bootstrap,user:{id:'other-identity',display_name:'New account'}}});
+ await act(async()=>fail(Error('old logout failed')));
+ expect(v.host.textContent).not.toContain('账户操作失败，请重试。');
+ }finally{await v.dispose();}
+});

@@ -707,3 +707,28 @@ def test_review_legacy_proven_scope_ignores_unrelated_frozen_lot(
     )
     assert authority.submit(request).phase == "accepted"
     assert authority.operation_count(request.business_key) == 1
+
+
+def test_reserved_lot_without_movements_has_same_freeze_balance_in_list_and_detail(workflow):
+    from .test_execution import ready_for_trial
+
+    p, _, _, _ = ready_for_trial(workflow, quantity="1", trial_quantity="1")
+    workflow.grant(p["id"], "quality", ["quality"], ["inspection", "disposition", "quality_release"])
+    with workflow.db() as db:
+        lot = db.execute("SELECT id FROM material_lots WHERE project_id=?", (p["id"],)).fetchone()[0]
+        assert db.execute("SELECT COUNT(*) FROM material_movements").fetchone()[0] == 0
+    pending = freeze(workflow, p["id"], lots=[lot])
+    for phase in ("pending", "confirmed", "unfreeze_pending"):
+        if phase == "confirmed":
+            dispatch(workflow, p["id"], pending)
+        if phase == "unfreeze_pending":
+            freeze(workflow, p["id"], lots=[lot], state="unfrozen")
+        response = workflow.client().get(f"{BASE}/projects/{p['id']}/objects/requirement?limit=1&offset=0")
+        assert response.status_code == 200
+        page = response.json()
+        assert len(page["items"]) == 1 and page["total"] == 2
+        item = page["items"][0]
+        detail = workflow.balance(p["id"], item["id"])
+        assert item["material_balance"] == detail, phase
+        assert detail["reserved"] == "1" and detail["shortage"] == "1"
+        assert "containment" in detail["blocking_reasons"][0]

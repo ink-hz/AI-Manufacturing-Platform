@@ -88,3 +88,23 @@ it("offers explicit trial requalification while bulk stays stopped",async()=>{
   await field("复工核验凭据","renewed calibration");await click("请求 MES 恢复");
   expect(writes[0]).toMatchObject({action:"production.resume",scope:"trial"});
 });
+it('records explicit no-consumption only where the fixed initial route permits it',async()=>{
+ const {ExecutionForms}=await import('./forms/ExecutionForms');
+ const revision={kind:'revision',route_steps:[{station:'calibration',instruction_version:'S2',material_consumption:'none'}],test_spec:{program_version:'P1'},firmware_version:'F1'} as any;
+ await act(async()=>root.render(<ExecutionForms api={api} project={project} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} action="execution.record" workOrders={[workOrder]} units={[{...workOrder,kind:'unit',title:'SN-1'}]} interruptions={[]} plans={[]} lots={[]} tests={[]} revision={revision}/>));
+ await click('移除此物料');await act(async()=>{const select=host.querySelector('[aria-label="序列号"]') as HTMLSelectElement;select.value='SN-1';select.dispatchEvent(new Event('change',{bubbles:true}));});await field('来源业务编号','CAL-1');await field('来源凭据','Actual calibration');
+ await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ expect(writes[0]).toMatchObject({station:'calibration',route_version:'S2',material_uses:[]});
+ await field('工位','assembly');await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ expect(writes).toHaveLength(1);
+});
+it('loads the qualified rework route before permitting zero-use adjustment',async()=>{
+ const {ExecutionForms}=await import('./forms/ExecutionForms');let complete!:(d:any)=>void;
+ api.object.mockImplementation(()=>new Promise(r=>complete=r));
+ const revision={kind:'revision',route_steps:[{station:'adjust',instruction_version:'RW1'}],test_spec:{program_version:'P1'},firmware_version:'F1'} as any;
+ await act(async()=>root.render(<ExecutionForms api={api} project={project} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} action="execution.record" workOrders={[workOrder]} units={[{...workOrder,kind:'unit',title:'SN-1'}]} interruptions={[]} plans={[]} lots={[]} tests={[]} revision={revision} reworks={[{...workOrder,kind:'rework',title:'Qualified adjustment'}]}/>));
+ const select=host.querySelector('[aria-label="独立返工单"]') as HTMLSelectElement;await act(async()=>{select.value=id;select.dispatchEvent(new Event('change',{bubbles:true}));});
+ expect([...host.querySelectorAll('button')].some(b=>b.textContent==='移除此物料')).toBe(false);
+ await act(async()=>complete({value:{kind:'rework',id,route_steps:[{station:'adjust',instruction_version:'RW1',material_consumption:'none'}]}}));await flush();
+ await click('移除此物料');expect(host.querySelector('[aria-label="实际物料用量 1"]')).toBeNull();
+});

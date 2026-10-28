@@ -5,6 +5,7 @@ import { SupplyForms } from "./forms/SupplyForms";
 import { label } from "./labels";
 
 const kinds: ObjectKind[]=["material_lot","plan","requirement","commitment","receipt","reservation"];
+const lookups: ObjectKind[]=["work_order","order_line","revision"];
 const actions: Record<string,string>={
   "reservation.request":"请求权威库存预留",
   "material.define":"定义物料批次","plan.receive":"接收供应计划",
@@ -21,8 +22,8 @@ export function SupplyWorkspace(p:WorkspaceProps & {requestLeave(action:()=>void
   const generation=useRef(0);
   useEffect(()=>{
     const current=++generation.current;
-    setError("");
-    Promise.all([...kinds,"work_order","order_line","revision"].map(async k=>[k,await p.api.objects(p.project.id,k as ObjectKind,50,0)] as const))
+    setError(""); setItems({}); setTotals({}); setLoading({});
+    Promise.all([...kinds,...lookups].map(async k=>[k,await p.api.objects(p.project.id,k as ObjectKind,50,0)] as const))
       .then(pages=>{if(current===generation.current){
         setItems(Object.fromEntries(pages.map(([k,v])=>[k,v.items])));
         setTotals(Object.fromEntries(pages.map(([k,v])=>[k,v.total])));
@@ -50,13 +51,14 @@ export function SupplyWorkspace(p:WorkspaceProps & {requestLeave(action:()=>void
     <div className="mf-actions">{!p.readOnly&&available.map(a=><button key={a} onClick={()=>p.requestLeave(()=>{setAction(a as CommandFields["action"]);setEpoch(x=>x+1);})}>{actions[a]}</button>)}</div>
     {action&&<>
       <button onClick={()=>p.requestLeave(()=>{setAction(null);setEpoch(x=>x+1);p.onReload?.();})}>放弃草稿并重新读取</button>
-      <SupplyForms key={action+epoch} {...p} action={action}
+      <SupplyForms key={p.project.id+action+epoch} {...p} action={action}
         workOrders={items.work_order||[]} orders={items.order_line||[]}
         revisions={items.revision||[]} lots={items.material_lot||[]}
         requirements={items.requirement||[]} commitments={items.commitment||[]}
         receipts={items.receipt||[]}
         onChanged={result=>{setAction(null);p.onChanged(result);}}/>
     </>}
+    {lookups.map(k=>(items[k]||[]).length<(totals[k]||0)&&<button key={k} disabled={loading[k]} onClick={()=>void more(k)}>读取更多{label(k)}（已读取 {(items[k]||[]).length} / {totals[k]}）</button>)}
     {kinds.map(k=><section key={k}>
       <h4>{label(k)}</h4>
       {k==="requirement"?<table><thead><tr>

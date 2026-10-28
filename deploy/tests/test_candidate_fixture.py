@@ -237,3 +237,22 @@ def test_empty_prewrite_failure_archive_can_be_cleaned_only_with_exact_inventory
     monkeypatch.setattr(m,'evidence_storage',wrong_root)
     with pytest.raises(ValueError,match='private_evidence_dedicated_mount'):m.cleanup_evidence(tmp_path,pin)
     assert root.exists()
+
+
+def test_generated_vitest_config_keeps_test_options_and_owns_module_cache(tmp_path):
+    import ast
+    import subprocess
+
+    tree=ast.parse(Path(module().__file__).read_text())
+    source=next(n.value for n in ast.walk(tree) if isinstance(n,ast.Constant) and isinstance(n.value,str) and n.value.startswith("import original from"))
+    original=tmp_path/'original.mjs'
+    original.write_text("export default (ctx)=>({root:ctx.root,test:{environment:'jsdom',include:['src/**/*.test.tsx'],fileParallelism:false},define:{KEEP:'yes'}});")
+    config=tmp_path/'generated.mjs'
+    config.write_text(source.replace('/candidate-fixture/source/webui/vite.config.ts',str(original)))
+    probe="import config from "+json.dumps(config.as_uri())+";process.stdout.write(JSON.stringify(config({root:'readonly-source'})));"
+    result=json.loads(subprocess.check_output(['node','--input-type=module','-e',probe],text=True))
+    assert result['test']['fsModuleCachePath']=='/candidate-evidence/vitest-module-cache'
+    assert result['cacheDir']=='/candidate-evidence/vite-cache'
+    assert result['test']['environment']=='jsdom' and result['test']['fileParallelism'] is False
+    assert result['test']['include']==['src/**/*.test.tsx'] and result['define']=={'KEEP':'yes'}
+    assert result['root']=='readonly-source'

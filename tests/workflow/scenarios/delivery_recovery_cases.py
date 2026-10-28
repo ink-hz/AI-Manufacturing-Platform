@@ -1,33 +1,32 @@
 """E20–E29,E31–E32: genealogy, fulfillment and explicitly required host proof."""
 
-from datetime import timedelta
 import hashlib
 import json
 import os
+from datetime import timedelta
 from pathlib import Path
-import subprocess
 
 from .base import ScenarioBlocked, ScenarioContext, run_case
 from .business import (
-    released,
-    ship,
     accept,
-    closure,
-    feedback,
     assert_trace,
-    order,
-    revision,
-    work_order,
-    prepare,
-    measure,
-    release,
-    run_production,
-    dispose_eco,
+    closure,
     dispatch_exchange,
+    dispose_eco,
+    feedback,
+    measure,
+    order,
+    prepare,
+    release,
+    released,
     reserve,
+    revision,
+    run_production,
+    ship,
+    work_order,
 )
+from .fixtures import BASE, connect
 from .orders_supply_cases import material_case
-from .fixtures import connect, BASE
 
 
 def e20(context):
@@ -519,7 +518,7 @@ def host_proof(context):
             "required_assertions": HOST_ASSERTIONS[context.case_id],
         },
     )
-    from ..d3.process import run_owned, ProofTimeout
+    from ..d3.process import ProofTimeout, run_owned
     try:
         result = run_owned(args)
     except ProofTimeout as exc:

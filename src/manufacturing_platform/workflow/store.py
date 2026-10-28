@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 from .orders import source_key
 from .clock import bind_business_clock, checked_time, utc_now
 from .schema import (
+    AGREEMENT_SCHEMA,
     DELIVERY_SCHEMA,
     FEEDBACK_SCHEMA,
     ECO_REVIEW_SCHEMA,
@@ -262,6 +263,12 @@ class WorkflowStore:
 
                 migrate_source_identities(conn)
                 conn.execute("UPDATE schema_version SET version=16")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 16:
+                for statement in AGREEMENT_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=17")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1

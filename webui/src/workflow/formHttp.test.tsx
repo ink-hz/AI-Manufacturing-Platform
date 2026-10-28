@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { startHttpHost, projectInput } from './httpTestHost';
 import { EngineeringForms } from './forms/EngineeringForms';
 import { SupplyForms } from './forms/SupplyForms';
@@ -13,18 +13,24 @@ import { OrdersForms } from './forms/OrdersForms';
 import type { CommandFields, CommandResult, ProjectDetail, WorkspaceProps, ObjectKind, ObjectSummary, DomainValue } from './types';
 let http: Awaited<ReturnType<typeof startHttpHost>>, session: Awaited<ReturnType<Awaited<ReturnType<typeof startHttpHost>>['login']>>, host: HTMLDivElement, root: Root;
 beforeAll(async () => { http = await startHttpHost(); session = await http.login('owner'); vi.stubGlobal('fetch', session.transport); host = document.createElement('div'); document.body.append(host); root = createRoot(host); }, 15000);
+let preserveFailure=false;
+afterEach(context=>{if(context.task.result?.state==='fail')preserveFailure=true;});
 afterAll(async () => { if (root)
-    await act(async () => root.unmount()); host?.remove(); vi.unstubAllGlobals(); await http?.close(); });
+    await act(async () => root.unmount()); host?.remove(); vi.unstubAllGlobals(); if(preserveFailure)console.error(`HTTP failure fixture retained at ${http?.root}`); await http?.close(preserveFailure); });
 async function field(name: string, value: string) { const e = host.querySelector(`input[aria-label="${name}"],select[aria-label="${name}"]`) as HTMLInputElement; expect(e, name).toBeTruthy(); await act(async () => { Object.getOwnPropertyDescriptor(e.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype, 'value')!.set!.call(e, value); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); }); }
 async function button(text: string) { const b = [...host.querySelectorAll('button')].find(b => b.textContent === text); expect(b, text).toBeTruthy(); await act(async () => b!.click()); }
 async function check(text: string) { const l = [...host.querySelectorAll('label')].find(l => l.textContent?.includes(text) && l.querySelector('input[type="checkbox"]')); expect(l, text).toBeTruthy(); await act(async () => (l!.querySelector('input') as HTMLInputElement).click()); }
 async function settle() { await act(async () => { await new Promise(r => setTimeout(r, 40)); }); }
-async function submit() { await act(async () => { host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await new Promise(r => setTimeout(r, 40)); }); }
+async function submit() {
+    await act(async () => { host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+    // Await actual request completion, not a 40ms assumption about loopback I/O.
+    await vi.waitFor(async()=>{await act(async()=>{await new Promise(r=>setTimeout(r,10));});expect(host.querySelector('form fieldset:disabled')).toBeNull();},{timeout:2000,interval:10});
+}
 it('submits actual named OEM forms including customer release without a viewed unit through real HTTP SQLite facts', async () => {
     const input = projectInput();
     const p = await session.api.createProject({ ...input, mode: 'oem', contract: { ...input.contract, customer_release_required: true } });
     let result: CommandResult | undefined;
-    const props = async (): Promise<WorkspaceProps> => ({ api: session.api, project: await session.api.project(p.id), onChanged: r => result = r, onDirty: () => { }, onOpen: () => { }, readOnly: false });
+    const props = async (): Promise<WorkspaceProps> => ({ api: session.api, project: await session.api.project(p.id), onChanged: r => {if (!("operation_id" in r)) throw Error("Expected command acknowledgement"); result = r;}, onDirty: () => { }, onOpen: () => { }, readOnly: false });
     await act(async () => root.render(<OrdersForms {...await props()} action="demand.record" demands={[]} orders={[]} workOrders={[]}/>));
     await field('需求数量', '2');
     await field('需求交期', '2026-12-01');
@@ -287,7 +293,7 @@ it('submits actual named OEM forms including customer release without a viewed u
 it('rebases a real conflicted named draft only after reading and choosing current server facts', async () => {
     const p = await session.api.createProject(projectInput());
     let result: CommandResult | undefined;
-    await act(async () => root.render(<OrdersForms key="rebase-http" api={session.api} project={await session.api.project(p.id)} action="demand.record" demands={[]} orders={[]} workOrders={[]} onChanged={r => result = r} onOpen={() => { }} onDirty={() => { }} readOnly={false}/>));
+    await act(async () => root.render(<OrdersForms key="rebase-http" api={session.api} project={await session.api.project(p.id)} action="demand.record" demands={[]} orders={[]} workOrders={[]} onChanged={r => {if (!("operation_id" in r)) throw Error("Expected command acknowledgement"); result = r;}} onOpen={() => { }} onDirty={() => { }} readOnly={false}/>));
     await field('需求数量', '2');
     await field('需求交期', '2026-12-01');
     await field('来源业务编号', 'CAS-DEMAND');

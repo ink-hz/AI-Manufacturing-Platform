@@ -52,3 +52,13 @@ it("failed selected-grant loading cannot submit an invented empty grant",async()
  expect(button.disabled).toBe(true);
  await act(async()=>host.querySelector("form")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));await flush();expect(submitted).toBeNull();
 });
+it("normalizes the real grant wire response into project freshness metadata",async()=>{
+ const changed=vi.fn();const real=api();
+ const fetchBefore=fetch;
+ vi.stubGlobal('fetch',vi.fn(async(raw:any,init:any)=>init?.method==='PUT'?response({...target,roles:['quality'],active:false,project_version:9}):fetchBefore(raw,init)));
+ await act(async()=>root.render(<Members api={real} project={project} readOnly={false} onDirty={()=>{}} onChanged={changed} onOpen={()=>{}} findSubjects={async()=>[{id:target.user_id,displayName:'Quality 51'}]}/>));await flush();await selectTarget();
+ const e=host.querySelector('[aria-label="授权凭据"]') as HTMLInputElement;
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(e,'signed');e.dispatchEvent(new Event('input',{bubbles:true}));});
+ await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));await flush();
+ expect(changed).toHaveBeenCalledWith(expect.objectContaining({project_id:pid,project_version:9}));
+});

@@ -102,6 +102,8 @@ export interface CommandResult {
   exchange_id?: string | null;
   replayed: boolean;
 }
+export type MutationAcknowledgement = CommandResult | (Pick<CommandResult, "project_id" | "project_version" | "current_project_version"> & {object_type?:never;object_id?:never;exchange_id?:never});
+export interface GrantResult extends Grant { project_version: number; }
 export interface Grant {
   display_name?:string|null;
   scope: { kind: "project"; project_id: string };
@@ -132,7 +134,7 @@ export interface RevisionFields {
   customer_revision: string;
   internal_revision: string;
   items: PackageItem[];
-  route_steps: { station: string; instruction_version: string }[];
+  route_steps: { station: string; instruction_version: string; material_consumption?:"required"|"none" }[];
   test_spec: TestSpec;
   firmware_version: string;
 }
@@ -174,13 +176,15 @@ export type DeliveryCommand =
  | ({action:"ownership.reconcile";received:string;consumed:string;scrapped:string;returned:string;balance:string;source:SourceRef}&MaterialScope)
  | {action:"stock_basis.reconcile";eco_id:string;reservation_id:string};
 export interface ShipmentReceiptDetail {key:string;unit_id:string;sn:string;work_order_id:string;order_line_id:string;box_id:string|null}
+export interface ContractAgreement {id:string;supersedes_agreement_id:string|null;revision_id:string;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string;project_version:number;recorded_at:string}
 export type CommandFields =
+  | {action:"contract.agree";revision_id:string;supersedes_agreement_id:string|null;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string}
   | {action:"project.stage";stage:"S1"|"S2"|"S3"|"S4"|"S5"|"S6"|"S7"|"S8"|"S9";status:"pending"|"active"|"blocked"|"complete";reason:string}
   | FeedbackCommand
   | DeliveryCommand
   | {action:"test.record";source:SourceRef;unit_id:string;attempt:number;program_version:string;limit_version:string;firmware_version:string;measurements:Measurement[];rework_order_id?:string|null}
   | {action:"nonconformance.open";test_id:string;defect:string;evidence:string}
-  | {action:"nonconformance.disposition";nonconformance_id:string;decision:"rework"|"scrap"|"concession";route_id?:string|null;route_steps:{station:string;instruction_version:string}[];evidence:string}
+  | {action:"nonconformance.disposition";nonconformance_id:string;decision:"rework"|"scrap"|"concession";route_id?:string|null;route_steps:{station:string;instruction_version:string;material_consumption?:"required"|"none"}[];evidence:string}
   | {action:"rework.complete";rework_order_id:string;execution_event_ids:string[];test_ids:string[]}
   | {action:"release.decide";kind:ReleaseKind;unit_ids:string[];decision:"approved"|"rejected"|"conditional";evidence:string;customer_id?:string|null;revision_id?:string|null;customer_revision?:string|null;external_signatory?:string|null;method?:"manual"|null;source?:SourceRef|null}
   | {action:"eco.open";old_revision_id:string;new_revision_id:string|null;effective_work_order_ids:string[];effective_sn_ids:string[];reason:string}
@@ -361,7 +365,7 @@ export type DomainValue =
   | {kind:"closure";id:string;closure_kind:"fulfillment"|"quality"|"cost";status:"closed"|"blocked";source:SourceRef|null;evidence:string;blocking_reasons:string[]}
   | {kind:"test";current_qualified?:boolean|null;current_blocking_reasons?:string[];id:string;unit_id:string;revision_id:string;attempt:number;scope:TestScope;measurements:Measurement[];outcome:"pass"|"fail";rework_order_id:string|null;execution_event_ids:string[];source:SourceRef|null;actor_id:string;occurred_at:string;recorded_at:string}
   | {kind:"nonconformance";id:string;unit_id:string;test_id:string;defect:string;evidence:string;state:"open"|"rework"|"resolved"|"scrapped";rework_order_id:string|null;disposition:"rework"|"scrap"|null;disposition_evidence:string|null}
-  | {kind:"rework";candidate_execution_events?:{id:string;station:string;route_version:string;occurred_at:string;result:"pass"|"fail";rework_order_id?:string|null}[];id:string;unit_id:string;nonconformance_id:string;revision_id:string;route_id:string;route_steps:{station:string;instruction_version:string}[];state:"open"|"complete";execution_event_ids:string[];test_ids:string[]}
+  | {kind:"rework";candidate_execution_events?:{id:string;station:string;route_version:string;occurred_at:string;result:"pass"|"fail";rework_order_id?:string|null}[];id:string;unit_id:string;nonconformance_id:string;revision_id:string;route_id:string;route_steps:{station:string;instruction_version:string;material_consumption?:"required"|"none"}[];state:"open"|"complete";execution_event_ids:string[];test_ids:string[]}
   | {kind:"release";id:string;release_kind:ReleaseKind;unit_ids:string[];decision:"approved"|"rejected";evidence:string;test_ids:string[];actor_id:string;customer_id:string|null;revision_id:string|null;customer_revision:string|null;external_signatory:string|null;method:"manual"|null;source:SourceRef|null;recorded_at:string}
   | EcoValue
   | ExchangeValue
@@ -417,6 +421,7 @@ export type DomainValue =
     }
   | ({
       kind: "revision";
+      contract_agreement?:ContractAgreement|null;
       id: string;
       project_id: string;
       content_hash: string;
@@ -496,7 +501,7 @@ export interface Dashboard {
 export interface WorkspaceProps {
   api: import("./api").WorkflowApi;
   project: ProjectDetail;
-  onChanged(result: CommandResult): void;
+  onChanged(result: MutationAcknowledgement): void;
   onOpen(target: WorkflowTarget): void;
   onDirty(key: string, dirty: boolean): void;
   readOnly: boolean;
@@ -505,12 +510,12 @@ export interface WorkspaceProps {
 export type FeedbackCommand =
  | {action:"freeze.request";unit_ids:string[];lot_ids:string[];state:"frozen"|"unfrozen";reason:string}
  | {action:"rma.open";unit_id:string;shipment_id:string;reason:string;source:SourceRef}
- | {action:"capa.update";capa_id:string|null;rma_id:string;step:CapaStepName;description:string;evidence:string;effective?:boolean|null;action_kind?:"engineering"|"supplier"|"training"|"process"|null;implementation_evidence?:string|null;eco_id?:string|null}
+ | {action:"capa.update";basis_sequence?:number|null;capa_id:string|null;rma_id:string;step:CapaStepName;description:string;evidence:string;effective?:boolean|null;action_kind?:"engineering"|"supplier"|"training"|"process"|null;implementation_evidence?:string|null;eco_id?:string|null}
  | {action:"capa.close";capa_id:string};
 export type CapaStepName="containment"|"root_cause"|"correction"|"verification";
-export type CapaStep={sequence:number;step:CapaStepName;description:string;evidence:string;effective:boolean|null;action_kind:"engineering"|"supplier"|"training"|"process"|null;implementation_evidence:string|null;eco_id:string|null};
+export type CapaStep={sequence:number;basis_sequence?:number|null;step:CapaStepName;description:string;evidence:string;effective:boolean|null;action_kind:"engineering"|"supplier"|"training"|"process"|null;implementation_evidence:string|null;eco_id:string|null};
 export interface RmaValue {kind:"rma";id:string;unit_id:string;shipment_id:string;order_line_id:string;customer_id:string;revision_id:string;test_ids:string[];tests_truncated:boolean;reason:string;source:SourceRef|null;state:"open"|"closed"}
-export interface CapaValue {kind:"capa";id:string;rma_id:string;state:"open"|"closed";steps:CapaStep[];steps_truncated:boolean;blocking_reasons:string[]}
+export interface CapaValue {kind:"capa";current_basis_sequence?:number|null;id:string;rma_id:string;state:"open"|"closed";steps:CapaStep[];steps_truncated:boolean;blocking_reasons:string[]}
 export interface TraceResult {nodes:{id:string;kind:ObjectKind;project_id:string;title:string;customer_id:string|null}[];edges:{source_kind:ObjectKind;source_id:string;target_kind:ObjectKind;target_id:string;relation:"order"|"revision"|"work_order"|"consumed"|"test"|"prior_test"|"rework"|"release"|"shipment"|"rma"|"capa"}[];truncated:boolean}
 
 export interface FreezeReceiptDetail {key:string;object_kind:"unit"|"material_lot";object_id:string;state:"frozen"|"unfrozen"}

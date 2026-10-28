@@ -364,3 +364,37 @@ def test_invalid_rma_source_is_suppressed_in_value_and_restricted_audit_projecti
         "foreign-source-secret" not in read.text
         and "unsafe-source-evidence" not in read.text
     )
+
+
+def test_failed_capa_revised_correction_binds_new_effectiveness_and_retains_history(workflow):
+    p, _, _, _, rma = open_rma(workflow)
+    pid = p["id"]
+    cid = step(workflow, pid, rma, "containment")["object_id"]
+    step(workflow, pid, rma, "root_cause", cid)
+    step(workflow, pid, rma, "correction", cid, action_kind="supplier", implementation_evidence="Initial supplier action")
+    old_basis = workflow.object(pid, "capa", cid)["steps"][-1]["sequence"]
+    step(workflow, pid, rma, "verification", cid, effective=False)
+    step(workflow, pid, rma, "correction", cid, action_kind="supplier", implementation_evidence="Improved supplier action")
+    workflow.command(pid, "capa.close", actor_name="quality", capa_id=cid, expected_status=409)
+    step(workflow, pid, rma, "verification", cid, effective=True, basis_sequence=old_basis, expected_status=409)
+    detail = workflow.object(pid, "capa", cid)
+    assert len(detail["steps"]) == 5 and detail["steps"][3]["effective"] is False
+    basis = detail["current_basis_sequence"]
+    step(workflow, pid, rma, "verification", cid, effective=True, basis_sequence=basis)
+    workflow.command(pid, "capa.close", actor_name="quality", capa_id=cid)
+    assert workflow.object(pid, "capa", cid)["state"] == "closed"
+
+
+def test_new_capa_investigation_invalidates_successful_prior_verification(workflow):
+    p, _, _, _, rma = open_rma(workflow)
+    pid = p["id"]
+    cid = step(workflow, pid, rma, "containment")["object_id"]
+    step(workflow, pid, rma, "root_cause", cid)
+    step(workflow, pid, rma, "correction", cid, action_kind="process", implementation_evidence="Implemented")
+    step(workflow, pid, rma, "verification", cid, effective=True)
+    step(workflow, pid, rma, "root_cause", cid)
+    workflow.command(pid, "capa.close", actor_name="quality", capa_id=cid, expected_status=409)
+    step(workflow, pid, rma, "verification", cid, effective=True, expected_status=409)
+    step(workflow, pid, rma, "correction", cid, action_kind="process", implementation_evidence="New basis implemented")
+    step(workflow, pid, rma, "verification", cid, effective=True)
+    workflow.command(pid, "capa.close", actor_name="quality", capa_id=cid)

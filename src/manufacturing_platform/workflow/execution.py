@@ -632,6 +632,7 @@ def historical_use_changed(tx, project_id, wo, occurred_at):
     for table, predicate, values in (
         ("readiness_checks", "work_order_id=?", (wo["id"],)),
         ("customer_approvals", "revision_id=?", (wo["revision_id"],)),
+        ("contract_agreements", "revision_id=?", (wo["revision_id"],)),
         ("handoffs", "revision_id=? AND to_system='MES'", (wo["revision_id"],)),
         ("plans", "id=?", (current_plan_id(tx, project_id, wo["id"]),)),
     ):
@@ -707,7 +708,7 @@ def record_execution(tx, context, command: RecordExecution):
         reason = "execution readiness at occurrence requires reassessment"
     else:
         revision = fixed_revision(tx, context.project_id, wo["revision_id"])
-        route = {s.station: s.instruction_version for s in revision.route_steps}
+        route = {s.station: s for s in revision.route_steps}
         from .quality import rework_route, scrapped
 
         if scrapped(tx, context.project_id, unit["id"]):
@@ -720,19 +721,22 @@ def record_execution(tx, context, command: RecordExecution):
                 qualified_rework_id = rework["id"]
                 if command.occurred_at < datetime.fromisoformat(rework["created_at"]):
                     reason = "rework execution predates the qualified route"
-                route = {s.station: s.instruction_version for s in steps}
+                route = {s.station: s for s in steps}
             except DomainError as exc:
                 reason = exc.message
         if reason:
             pass
         elif (
-            route.get(command.station) != command.route_version
+            command.station not in route
+            or route[command.station].instruction_version != command.route_version
             or command.program_version != revision.test_spec.program_version
             or command.firmware_version != revision.firmware_version
         ):
             reason = "station, SOP, program or firmware differs from fixed package"
-        elif not command.material_uses:
+        elif not command.material_uses and route[command.station].material_consumption == "required":
             reason = "material usage links required"
+        elif command.material_uses and route[command.station].material_consumption == "none":
+            reason = "fixed route step declares no material consumption"
         else:
             proposed_by_lot = {}
             for use in command.material_uses:

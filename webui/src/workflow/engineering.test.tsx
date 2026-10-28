@@ -583,3 +583,10 @@ it("records explicit full retained quantity and labels retention separately from
   await act(async()=>root.render(<WorkflowDetail api={api} target={{projectId:id,kind:"eco",id:order}} onOpen={()=>{}}/>));await flush();
   expect(box.textContent).toContain("保留旧版，未执行工程切换");
 });
+it('records a named revision-scoped successor agreement with current predecessor',async()=>{
+  const originalFetch=fetch;
+  vi.stubGlobal('fetch',vi.fn(async(url:any,init:any)=>String(url).includes('/objects/revision/')?response({value:{kind:'revision',id:revision,customer_revision:'C2',internal_revision:'M2',contract_agreement:{id:'prior-agreement',contract:{...project.contract,customer_revision:'C2',internal_revision:'M2',customer_release_required:'unknown'}}}}):originalFetch(url,init)));
+  await mount('contract.agree');await field('协议适用固定修订',revision);await flush();
+  await field('协议要求客户放行','true');await field('协议客户签署人','Customer authority');await field('协议签署凭据','Signed C2 terms');await click('保存适用协议');
+  expect(commands[0]).toMatchObject({action:'contract.agree',revision_id:revision,supersedes_agreement_id:'prior-agreement',customer_id:'客户甲',external_signatory:'Customer authority',contract:{customer_revision:'C2',internal_revision:'M2',customer_release_required:true}});
+});

@@ -13,7 +13,7 @@ import type {
   ProjectDetail,
   Dashboard,
   WorkflowTarget,
-  CommandResult,
+  MutationAcknowledgement,
   ObjectDetail,
 } from "./types";
 import { WorkflowHome } from "./WorkflowHome";
@@ -122,10 +122,11 @@ export function WorkflowApp({
     void (async () => {
       try {
         if (accountAction === "logout") {
+          await callbacks.current.onLogout?.();
+          if (!alive.current) return;
           api.dispose();
           alive.current = false;
           setDenied(true); setProject(null); setProjects([]); setDashboard(null); setDetail(null); setTarget(null); setCurrentTask(null); projectVersions.current.clear(); scroll.current=[];
-          await callbacks.current.onLogout?.();
         }
         else callbacks.current.onNavigatePlatform?.();
       } catch {
@@ -221,7 +222,7 @@ export function WorkflowApp({
       }
     });
   }
-  function changed(result: CommandResult) {
+  function changed(result: MutationAcknowledgement) {
     const version = Math.max(
       result.project_version,
       result.current_project_version || 0,
@@ -252,7 +253,7 @@ export function WorkflowApp({
         "revision",
         "work_order",
         "plan", "requirement", "commitment", "material_lot", "receipt", "reservation", "exchange", "unit", "interruption",
-      ].includes(result.object_type)
+      ].includes(result.object_type || "") && result.object_id
     ) {
       setTarget({
         projectId: result.project_id,
@@ -265,7 +266,7 @@ export function WorkflowApp({
       setTarget(null);
     }
   }
-  const readOnly = options.readOnly || !b.can_edit;
+  const readOnly = options.readOnly || !b.can_edit || busy;
   const props = project
     ? { api, project, onChanged: changed, onOpen: open, onDirty, readOnly }
     : null;

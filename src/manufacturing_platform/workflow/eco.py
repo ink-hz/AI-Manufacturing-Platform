@@ -394,7 +394,8 @@ def revision_ready(tx, pid, revision_id):
     ):
         fail("new revision requires matching MES handoff")
     p = project(tx, pid)
-    contract = json.loads(p["contract_json"])
+    from .agreements import applicable
+    contract = applicable(tx, pid, revision_id)
     if contract["customer_approval_required"] is not False:
         approval = tx.execute(
             "SELECT * FROM customer_approvals WHERE project_id=? AND revision_id=? ORDER BY accepted_seq DESC LIMIT 1",
