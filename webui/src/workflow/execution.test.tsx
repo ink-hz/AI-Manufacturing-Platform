@@ -53,3 +53,38 @@ it("offers a scoped MES safety stop for an accepted start held locally",async()=
   await click("请求生产中断");await field("中断原因与异常","calibration changed");await click("请求 MES 停机");
   expect(writes[0]).toMatchObject({action:"production.interrupt",work_order_id:id,start_id:held,reason:"calibration changed"});
 });
+
+it("loads a second bounded page for plans, material lots and test selectors",async()=>{
+  const titles:Record<string,string>={plan:"MRP-current-51",material_lot:"Steel-required-51",test:"Fresh-calibration-test-51"};
+  api.objects.mockImplementation(async(_p:string,k:string,limit:number,offset:number)=>{
+    const title=titles[k];
+    const items=title?(offset===0?Array.from({length:50},(_,i)=>({...workOrder,id:`${k}-${i}`,kind:k,title:`${k}-${i}`,state:"confirmed"})):[{...workOrder,id:`${k}-51`,kind:k,title,state:"confirmed"}]):k==="work_order"?[workOrder]:[];
+    return {items,total:title?51:items.length,limit,offset};
+  });
+  await act(async()=>root.render(<ExecutionWorkspace api={api} project={project} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} requestLeave={f=>f()}/>));await flush();
+  expect(api.objects).toHaveBeenCalledTimes(6);
+  for(const kind of Object.keys(titles)){
+    const button=[...host.querySelectorAll("button")].find(b=>b.textContent?.startsWith("读取更多")&&b.textContent.includes(kind==="plan"?"计划":kind==="material_lot"?"物料":"测试"));
+    expect(button,kind).toBeTruthy();
+    await act(async()=>button!.click());await flush();
+    expect(api.objects).toHaveBeenCalledWith(id,kind,50,50);
+  }
+  await click("恢复生产");
+  expect(host.querySelector('[aria-label="新确认计划"]')?.textContent).toContain(titles.plan);
+  await click("放弃草稿并重新读取");await click("记录工位执行");
+  expect(host.querySelector('[aria-label="实际物料批次 1"]')?.textContent).toContain(titles.material_lot);
+  await click("放弃草稿并重新读取");await click("记录首件检验");
+  expect(host.querySelector('[aria-label="完整通过的测试 1"]')?.textContent).toContain(titles.test);
+  expect(api.objects).toHaveBeenCalledTimes(9);
+});
+
+it("offers explicit trial requalification while bulk stays stopped",async()=>{
+  api.objects.mockImplementation(async(_p:string,k:string)=>({items:k==="work_order"?[workOrder]:k==="interruption"?[{...workOrder,kind:k,title:"Calibration stop",state:"stopped"}]:k==="plan"?[{...workOrder,kind:k,title:"Replan",state:"confirmed"}]:[],total:1,limit:50,offset:0}));
+  await act(async()=>root.render(<ExecutionWorkspace api={api} project={project} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} requestLeave={f=>f()}/>));await flush();
+  await click("恢复生产");
+  const scope=host.querySelector('[aria-label="恢复范围"]') as HTMLSelectElement;
+  expect(scope).toBeTruthy();
+  await act(async()=>{scope.value="trial";scope.dispatchEvent(new Event("change",{bubbles:true}));});
+  await field("复工核验凭据","renewed calibration");await click("请求 MES 恢复");
+  expect(writes[0]).toMatchObject({action:"production.resume",scope:"trial"});
+});

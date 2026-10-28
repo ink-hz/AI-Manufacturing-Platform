@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_serializer, model_validator
 
 from .commands import WorkflowCommand
 from .contracts import (
@@ -83,6 +83,14 @@ class ResumePayload(StrictModel):
     interruption_id: UUID
     work_order_id: UUID
     plan_id: UUID
+    scope: Literal["all", "trial"] = "all"
+
+    @model_serializer(mode="wrap")
+    def preserve_existing_all_scope_hash(self, handler):
+        data = handler(self)
+        if self.scope == "all":
+            data.pop("scope", None)
+        return data
 
 
 class ExternalRequest(StrictModel):
@@ -130,6 +138,13 @@ class UnitReceiptDetail(StrictModel):
     state: Literal["running", "stopped"]
 
 
+class ControlReceiptDetail(StrictModel):
+    key: str = Field(min_length=1, max_length=200)
+    work_order_id: UUID
+    scope: Literal["all", "trial"]
+    state: Literal["running", "partial"]
+
+
 class ExternalReceipt(StrictModel):
     receipt_id: UUID
     business_key: str = Field(min_length=1, max_length=200)
@@ -142,7 +157,9 @@ class ExternalReceipt(StrictModel):
     ]
     accepted_quantity: NonnegativeQuantity
     rejected_quantity: NonnegativeQuantity
-    details: list[ReceiptDetail | UnitReceiptDetail] = Field(max_length=500)
+    details: list[ReceiptDetail | UnitReceiptDetail | ControlReceiptDetail] = Field(
+        max_length=500
+    )
     occurred_at: datetime
     error: str | None = Field(default=None, max_length=2000)
     _timezone = field_validator("occurred_at")(require_timezone)

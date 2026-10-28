@@ -92,6 +92,7 @@ PUBLIC_REASONS = frozenset(
         "Identity, version, sequence and keyed quantities validated",
         "Authority approved reservation",
         "Authority approved production transition",
+        "MES accepted transition; local safety hold requires scoped stop and replan",
         "Readiness changed before authority acceptance",
         "File evidence received",
         "Entire bounded batch validated; no authority acceptance inferred",
@@ -206,6 +207,21 @@ def receipt_scope(tx, row, receipt):
                         str(payload.work_order_id),
                     ),
                 ).fetchone()
+            )
+        if isinstance(payload, ResumePayload) and receipt.phase == "accepted":
+            if not receipt.details and payload.scope == "all":
+                return bool(scoped)  # v7 immutable whole-WO receipt
+            return (
+                bool(scoped)
+                and len(receipt.details) == 1
+                and all(
+                    getattr(d, "work_order_id", None) == payload.work_order_id
+                    and getattr(d, "scope", None) == payload.scope
+                    and d.key == source_id
+                    and getattr(d, "state", None)
+                    == ("partial" if payload.scope == "trial" else "running")
+                    for d in receipt.details
+                )
             )
         return bool(scoped) and start_scoped and not receipt.details
     if row["action"] != "reservation.request":
@@ -838,30 +854,36 @@ class ExchangeService:
                     (json.dumps([str(uid) for uid, _ in payload.units]),),
                 )
         elif receipt.phase == "accepted":
-            if isinstance(payload, (StartPayload, ResumePayload)):
-                from .readiness import evaluate
-                from .supply import current_plan_id
+            from .execution import project_production_controls
+            from .readiness import evaluate
+            from .supply import current_plan_id
 
+            held = False
+            if isinstance(payload, (StartPayload, ResumePayload)):
                 if isinstance(payload, StartPayload):
                     modes = [payload.mode]
                     plan_matches = True
                     safe_to_start = not tx.execute(
-                        "SELECT 1 FROM interruptions WHERE project_id=? AND work_order_id=? AND resolved_at IS NULL LIMIT 1",
+                        "SELECT 1 FROM interruptions WHERE project_id=? AND work_order_id=? AND resolved_at IS NULL AND superseded_by IS NULL LIMIT 1",
                         (str(context.project_id), str(payload.work_order_id)),
                     ).fetchone()
                 else:
                     modes = [
                         r[0]
                         for r in tx.execute(
-                            "SELECT DISTINCT mode FROM start_requests WHERE project_id=? AND work_order_id=? AND accepted_receipt_id IS NOT NULL",
-                            (str(context.project_id), str(payload.work_order_id)),
+                            "SELECT DISTINCT s.mode FROM start_requests s JOIN exchanges e ON e.id=s.exchange_id WHERE s.project_id=? AND s.work_order_id=? AND (s.accepted_receipt_id IS NOT NULL OR e.phase!='rejected' OR e.receipt_json IS NULL) AND (?='all' OR s.mode='trial')",
+                            (
+                                str(context.project_id),
+                                str(payload.work_order_id),
+                                payload.scope,
+                            ),
                         )
                     ]
                     plan_matches = current_plan_id(
                         tx, context.project_id, payload.work_order_id
                     ) == str(payload.plan_id)
                     safe_to_start = True
-                if (
+                held = (
                     not plan_matches
                     or not safe_to_start
                     or not all(
@@ -874,55 +896,7 @@ class ExchangeService:
                         ).ready
                         for mode in modes
                     )
-                ):
-                    if isinstance(payload, StartPayload):
-                        tx.execute(
-                            "UPDATE exchanges SET receipt_json=?,source_sequence=? WHERE id=?",
-                            (receipt.model_dump_json(), receipt.sequence, row["id"]),
-                        )
-                        tx.execute(
-                            "UPDATE start_requests SET accepted_receipt_id=?,accepted_seq=? WHERE id=?",
-                            (str(receipt.receipt_id), receipt.sequence, source_id),
-                        )
-                        for uid, _ in payload.units:
-                            tx.execute(
-                                "UPDATE units SET accepted_start_id=? WHERE id=? AND project_id=? AND state='start_pending'",
-                                (source_id, str(uid), str(context.project_id)),
-                            )
-                        event(
-                            tx,
-                            row,
-                            "accepted",
-                            "MES accepted start; local safety hold requires scoped stop and replan",
-                        )
-                    else:
-                        tx.execute(
-                            "UPDATE exchanges SET receipt_json=?,source_sequence=? WHERE id=?",
-                            (receipt.model_dump_json(), receipt.sequence, row["id"]),
-                        )
-                        tx.execute(
-                            "UPDATE interruptions SET resolved_at=? WHERE id=? AND project_id=?",
-                            (
-                                receipt.occurred_at.isoformat(),
-                                source_id,
-                                str(context.project_id),
-                            ),
-                        )
-                        tx.execute(
-                            "UPDATE units SET state='start_pending' WHERE project_id=? AND work_order_id=? AND state='stopped' AND accepted_start_id IS NOT NULL",
-                            (str(context.project_id), str(payload.work_order_id)),
-                        )
-                        event(
-                            tx,
-                            row,
-                            "accepted",
-                            "MES accepted resume; local safety hold requires a new scoped stop",
-                        )
-                    return MutationResult(
-                        object_type="exchange",
-                        object_id=UUID(row["id"]),
-                        exchange_id=UUID(row["id"]),
-                    )
+                )
             event(
                 tx,
                 row,
@@ -940,36 +914,63 @@ class ExchangeService:
                 )
                 for uid, _ in payload.units:
                     tx.execute(
-                        "UPDATE units SET state='running',accepted_start_id=? WHERE id=? AND project_id=?",
-                        (source_id, str(uid), str(context.project_id)),
+                        "UPDATE units SET state=?,accepted_start_id=? WHERE id=? AND project_id=?",
+                        (
+                            "start_pending" if held else "running",
+                            source_id,
+                            str(uid),
+                            str(context.project_id),
+                        ),
                     )
-            elif isinstance(payload, StopPayload):
+            else:
                 tx.execute(
-                    "UPDATE interruptions SET authority_stopped_at=? WHERE id=? AND project_id=?",
+                    "INSERT INTO production_controls VALUES (?,?,?,?,?,?,?)",
                     (
-                        receipt.occurred_at.isoformat(),
-                        source_id,
+                        row["id"],
                         str(context.project_id),
+                        str(payload.work_order_id),
+                        receipt.sequence,
+                        "stop" if isinstance(payload, StopPayload) else "resume",
+                        "all" if isinstance(payload, StopPayload) else payload.scope,
+                        int(held),
                     ),
                 )
-                tx.execute(
-                    "UPDATE units SET state='stopped' WHERE project_id=? AND work_order_id=? AND (state='running' OR (state='start_pending' AND accepted_start_id IS NOT NULL))",
-                    (str(context.project_id), str(payload.work_order_id)),
-                )
-            elif isinstance(payload, ResumePayload):
-                tx.execute(
-                    "UPDATE interruptions SET resolved_at=? WHERE id=? AND project_id=?",
-                    (
-                        receipt.occurred_at.isoformat(),
-                        source_id,
-                        str(context.project_id),
-                    ),
-                )
-                tx.execute(
-                    "UPDATE units SET state='running' WHERE project_id=? AND work_order_id=? AND state='stopped'",
-                    (str(context.project_id), str(payload.work_order_id)),
-                )
-            event(tx, row, "accepted", "Authority approved production transition")
+                if isinstance(payload, StopPayload):
+                    tx.execute(
+                        "UPDATE interruptions SET authority_stopped_at=? WHERE id=? AND project_id=?",
+                        (
+                            receipt.occurred_at.isoformat(),
+                            source_id,
+                            str(context.project_id),
+                        ),
+                    )
+                elif payload.scope == "trial":
+                    tx.execute(
+                        "UPDATE interruptions SET trial_resumed_at=? WHERE id=? AND project_id=?",
+                        (
+                            receipt.occurred_at.isoformat(),
+                            source_id,
+                            str(context.project_id),
+                        ),
+                    )
+                elif payload.scope == "all":
+                    tx.execute(
+                        "UPDATE interruptions SET resolved_at=? WHERE id=? AND project_id=?",
+                        (
+                            receipt.occurred_at.isoformat(),
+                            source_id,
+                            str(context.project_id),
+                        ),
+                    )
+            project_production_controls(tx, context.project_id, payload.work_order_id)
+            event(
+                tx,
+                row,
+                "accepted",
+                "MES accepted transition; local safety hold requires scoped stop and replan"
+                if held
+                else "Authority approved production transition",
+            )
         else:
             event(tx, row, receipt.phase, "Awaiting authoritative acceptance")
         return MutationResult(

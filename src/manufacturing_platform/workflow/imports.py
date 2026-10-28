@@ -25,6 +25,7 @@ from .supply import (
 from .supply_models import InspectSupply, ReceiveSupply
 
 SOURCE_POLICIES = {
+    "execution": "execution.record",
     "receipt": "supply.receive",
     "iqc": "supply.inspect",
     "customer_approval": "engineering.customer_approval",
@@ -89,6 +90,7 @@ def parse_import(content: bytes, format, object_type) -> list[TypedInboundRecord
 
 
 def validate_record(record, context, *, trusted):
+    from .execution_models import ExecutionSourceRecord
     from .supply import MAX_CLOCK_SKEW
 
     if record.project_id != context.project_id:
@@ -98,12 +100,21 @@ def validate_record(record, context, *, trusted):
         {"mock", "api"} if trusted else {"manual", "file"}
     ):
         raise DomainError("IMPORT_INVALID", 422, "Invalid source type or provenance")
+    if isinstance(record, ExecutionSourceRecord) and source.mode != "manual":
+        raise DomainError(
+            "IMPORT_INVALID", 422, "Direct execution requires manual provenance"
+        )
     if (
         source.collected_at < source.occurred_at
         or source.occurred_at > context.now + MAX_CLOCK_SKEW
         or source.collected_at > context.now + MAX_CLOCK_SKEW
     ):
         raise DomainError("IMPORT_INVALID", 422, "Invalid source clock")
+    if isinstance(record, ExecutionSourceRecord) and (
+        record.occurred_at > context.now + MAX_CLOCK_SKEW
+        or record.occurred_at > source.collected_at + MAX_CLOCK_SKEW
+    ):
+        raise DomainError("IMPORT_INVALID", 422, "Invalid execution occurrence clock")
 
 
 def record_scope(
@@ -134,7 +145,22 @@ def record_scope(
         (*key, str(project_id)),
     ).fetchone():
         raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
-    if isinstance(record, InboundReceipt):
+    from .execution_models import ExecutionSourceRecord
+
+    if isinstance(record, ExecutionSourceRecord):
+        own(tx, "work_orders", project_id, record.work_order_id)
+        if record.unit_id:
+            unit = own(tx, "units", project_id, record.unit_id)
+            if unit["work_order_id"] != str(record.work_order_id):
+                raise DomainError("SOURCE_DISCREPANCY", 409, "Serial scope mismatch")
+        for ident in record.material_lot_ids:
+            own(tx, "material_lots", project_id, ident)
+        if tx.execute(
+            "SELECT 1 FROM execution_events e LEFT JOIN execution_admissions a ON a.event_id=e.id AND a.project_id=e.project_id WHERE e.source_system=? AND e.source_type=? AND e.source_external_id=? AND e.project_id<>? AND COALESCE(a.admitted,e.status='accepted')=1 LIMIT 1",
+            (*key, str(project_id)),
+        ).fetchone():
+            raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+    elif isinstance(record, InboundReceipt):
         own(tx, "supply_commitments", project_id, record.commitment_id)
         own(tx, "material_lots", project_id, record.material_lot_id)
     elif isinstance(record, InboundIQC):

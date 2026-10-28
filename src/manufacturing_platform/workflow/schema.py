@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -10,7 +10,7 @@ CREATE INDEX IF NOT EXISTS execution_events_source ON execution_events(source_sy
 CREATE INDEX IF NOT EXISTS execution_events_unit ON execution_events(project_id,unit_id,accepted_seq);
 CREATE TABLE IF NOT EXISTS material_consumption(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),execution_event_id TEXT NOT NULL REFERENCES execution_events(id),unit_id TEXT NOT NULL REFERENCES units(id),lot_id TEXT NOT NULL REFERENCES material_lots(id),material_id TEXT NOT NULL,owner_id TEXT NOT NULL,q_atoms INTEGER NOT NULL CHECK(q_atoms>0),unit TEXT NOT NULL,accepted_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS material_consumption_unit ON material_consumption(project_id,unit_id,accepted_seq);
-CREATE TABLE IF NOT EXISTS interruptions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),reason TEXT NOT NULL,exception_id TEXT,requested_at TEXT NOT NULL,authority_stopped_at TEXT,resolved_at TEXT,interrupted_plan_id TEXT REFERENCES plans(id),plan_id TEXT REFERENCES plans(id),stop_exchange_id TEXT NOT NULL UNIQUE REFERENCES exchanges(id),resume_exchange_id TEXT UNIQUE REFERENCES exchanges(id));
+CREATE TABLE IF NOT EXISTS interruptions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),reason TEXT NOT NULL,exception_id TEXT,requested_at TEXT NOT NULL,authority_stopped_at TEXT,resolved_at TEXT,interrupted_plan_id TEXT REFERENCES plans(id),plan_id TEXT REFERENCES plans(id),stop_exchange_id TEXT NOT NULL UNIQUE REFERENCES exchanges(id),resume_exchange_id TEXT UNIQUE REFERENCES exchanges(id),trial_resumed_at TEXT,superseded_by TEXT REFERENCES interruptions(id));
 CREATE INDEX IF NOT EXISTS interruptions_work_order ON interruptions(project_id,work_order_id,requested_at);
 CREATE TABLE IF NOT EXISTS execution_exceptions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),interruption_id TEXT NOT NULL UNIQUE REFERENCES interruptions(id),kind TEXT NOT NULL CHECK(kind IN ('S3','S4','other')),reason TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS interruption_actions(seq INTEGER PRIMARY KEY AUTOINCREMENT,project_id TEXT NOT NULL REFERENCES projects(id),interruption_id TEXT NOT NULL REFERENCES interruptions(id),exchange_id TEXT NOT NULL UNIQUE REFERENCES exchanges(id),kind TEXT NOT NULL CHECK(kind IN ('stop','resume')));
@@ -99,3 +99,10 @@ CREATE TABLE audit_events(id INTEGER PRIMARY KEY, project_id TEXT NOT NULL REFER
     + EXCHANGE_SCHEMA
     + EXECUTION_SCHEMA
 )
+
+EXECUTION_REVIEW_SCHEMA = """
+CREATE TABLE IF NOT EXISTS execution_admissions(event_id TEXT PRIMARY KEY REFERENCES execution_events(id),project_id TEXT NOT NULL REFERENCES projects(id),admitted INTEGER NOT NULL,record_json TEXT NOT NULL,claimed_correction_id TEXT);
+CREATE TABLE IF NOT EXISTS production_controls(exchange_id TEXT PRIMARY KEY REFERENCES exchanges(id),project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),source_sequence INTEGER NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('stop','resume')),scope TEXT NOT NULL CHECK(scope IN ('all','trial')),held INTEGER NOT NULL CHECK(held IN (0,1)));
+CREATE INDEX IF NOT EXISTS production_control_scope ON production_controls(project_id,work_order_id,source_sequence);
+"""
+SCHEMA += EXECUTION_REVIEW_SCHEMA

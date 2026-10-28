@@ -9,6 +9,7 @@ from .orders import source_key
 from .schema import (
     ENGINEERING_SCHEMA,
     EXCHANGE_SCHEMA,
+    EXECUTION_REVIEW_SCHEMA,
     EXECUTION_SCHEMA,
     ORDER_SCHEMA,
     SCHEMA,
@@ -156,6 +157,30 @@ class WorkflowStore:
                     if statement.strip():
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=7")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 7:
+                for statement in EXECUTION_REVIEW_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                columns = {
+                    r[1] for r in conn.execute("PRAGMA table_info(interruptions)")
+                }
+                for name, declaration in (
+                    ("trial_resumed_at", "TEXT"),
+                    ("superseded_by", "TEXT REFERENCES interruptions(id)"),
+                ):
+                    if name not in columns:
+                        conn.execute(
+                            f"ALTER TABLE interruptions ADD COLUMN {name} {declaration}"
+                        )
+                # Reconstruct ordered projections only from immutable accepted receipts.
+                conn.execute("""INSERT OR IGNORE INTO production_controls
+                    SELECT e.id,e.project_id,json_extract(e.request_json,'$.typed_payload.work_order_id'),e.source_sequence,
+                    CASE e.action WHEN 'production.interrupt' THEN 'stop' ELSE 'resume' END,'all',
+                    CASE WHEN e.action='production.resume' AND EXISTS(SELECT 1 FROM units u WHERE u.project_id=e.project_id AND u.work_order_id=json_extract(e.request_json,'$.typed_payload.work_order_id') AND u.state='start_pending' AND u.accepted_start_id IS NOT NULL) THEN 1 ELSE 0 END
+                    FROM exchanges e WHERE e.action IN ('production.interrupt','production.resume')
+                    AND e.phase='accepted' AND json_extract(e.receipt_json,'$.phase')='accepted' AND e.source_sequence>0""")
+                conn.execute("UPDATE schema_version SET version=8")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             metadata = conn.execute(
                 "SELECT id,mode,label FROM dataset_metadata"

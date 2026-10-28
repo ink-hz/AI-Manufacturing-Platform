@@ -51,6 +51,15 @@ class MockStore:
             for statement in SCHEMA.split(";"):
                 if statement.strip() and "IF NOT EXISTS authority_" in statement:
                     conn.execute(statement)
+            if "state" not in {
+                r[1] for r in conn.execute("PRAGMA table_info(authority_start_units)")
+            }:
+                conn.execute(
+                    "ALTER TABLE authority_start_units ADD COLUMN state TEXT NOT NULL DEFAULT 'running'"
+                )
+                conn.execute(
+                    "UPDATE authority_start_units SET state=COALESCE((SELECT state FROM authority_work_orders w WHERE w.project_id=authority_start_units.project_id AND w.work_order_id=authority_start_units.work_order_id),'running')"
+                )
             yield conn
             conn.commit()
         except BaseException:

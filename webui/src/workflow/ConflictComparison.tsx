@@ -67,7 +67,7 @@ function facts(v: DomainValue): [string, string][] {
     case "exchange":return [["阶段",label(v.phase)],["请求数量",v.requested],["已接受",v.accepted],["原因",v.reason]];
     case "reservation":return [["请求数量",v.requested],["确认预留",v.confirmed],["待确认余量",v.remaining]];
     case "unit":return [["序列号",v.sn],["状态",label(v.state)],["执行范围",v.mode?label(v.mode):"未开工"]];
-    case "interruption":return [["原因",v.reason],["本地安全请求",v.requested_at],["MES 停机",v.authority_stopped_at||"尚未确认"],["MES 恢复",v.resolved_at||"尚未确认"]];
+    case "interruption":return [["原因",v.reason],["本地安全请求",v.requested_at],["MES 停机",v.authority_stopped_at||"尚未确认"],["MES 试产恢复",v.trial_resumed_at||"尚未确认"],["MES 全部恢复",v.resolved_at||"尚未确认"]];
     case "demand":
       return [
         ["需求类别", label(v.demand_kind)],

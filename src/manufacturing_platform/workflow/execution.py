@@ -1,7 +1,8 @@
 """Serial scopes, source genealogy and authority-backed production transitions."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
+from types import SimpleNamespace
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -18,6 +19,7 @@ from .contracts import (
 from .engineering import fixed_revision
 from .exchange_models import ExternalRequest, ResumePayload, StartPayload, StopPayload
 from .execution_models import (
+    ExecutionSourceRecord,
     InterruptionValue,
     InterruptProduction,
     RecordExecution,
@@ -25,6 +27,7 @@ from .execution_models import (
     RegisterUnits,
     ResumeProduction,
     StartProduction,
+    TestEvidenceScope,
     UnitValue,
     sn_key,
 )
@@ -37,12 +40,19 @@ from .supply import atoms as material_atoms
 
 class TestEvidenceReader(Protocol):
     def complete_pass(
-        self, tx, project_id: UUID, test_id: UUID, unit_id: UUID, revision_id: UUID
+        self,
+        tx,
+        project_id: UUID,
+        test_id: UUID,
+        unit_id: UUID,
+        revision_id: UUID,
+        *,
+        scope: TestEvidenceScope,
     ) -> bool: ...
 
 
 class NoTestEvidence:
-    def complete_pass(self, tx, project_id, test_id, unit_id, revision_id):
+    def complete_pass(self, tx, project_id, test_id, unit_id, revision_id, *, scope):
         return False
 
 
@@ -110,7 +120,7 @@ def register_units(tx, context, command: RegisterUnits):
 
 def _active_interruption(tx, project_id, work_order_id):
     return tx.execute(
-        "SELECT * FROM interruptions WHERE project_id=? AND work_order_id=? AND resolved_at IS NULL ORDER BY rowid DESC LIMIT 1",
+        "SELECT * FROM interruptions WHERE project_id=? AND work_order_id=? AND resolved_at IS NULL AND superseded_by IS NULL ORDER BY rowid DESC LIMIT 1",
         (str(project_id), str(work_order_id)),
     ).fetchone()
 
@@ -141,6 +151,7 @@ def outbound_execution_ready(tx, project_id, payload, now):
         not interruption
         or not interruption["authority_stopped_at"]
         or interruption["resolved_at"]
+        or interruption["superseded_by"]
         or current_plan_id(tx, project_id, payload.work_order_id)
         != str(payload.plan_id)
         or interruption["interrupted_plan_id"] == str(payload.plan_id)
@@ -149,10 +160,11 @@ def outbound_execution_ready(tx, project_id, payload, now):
     modes = [
         r[0]
         for r in tx.execute(
-            "SELECT DISTINCT mode FROM start_requests WHERE project_id=? AND work_order_id=? AND accepted_receipt_id IS NOT NULL",
+            "SELECT DISTINCT s.mode FROM start_requests s JOIN exchanges e ON e.id=s.exchange_id WHERE s.project_id=? AND s.work_order_id=? AND (s.accepted_receipt_id IS NOT NULL OR e.phase!='rejected' OR e.receipt_json IS NULL)",
             (str(project_id), str(payload.work_order_id)),
         )
     ]
+    modes = [m for m in modes if payload.scope == "all" or m == "trial"]
     return bool(modes) and all(
         evaluate(tx, project_id, payload.work_order_id, mode, now).ready
         for mode in modes
@@ -250,6 +262,14 @@ def start_production(tx, context, command: StartProduction):
 def interrupt_production(tx, context, command: InterruptProduction):
     wo = own(tx, "work_orders", context.project_id, command.work_order_id)
     active = _active_interruption(tx, context.project_id, wo["id"])
+    replaced = None
+    if active and active["trial_resumed_at"] and not command.interruption_id:
+        prior_resume = tx.execute(
+            "SELECT phase FROM exchanges WHERE id=? AND project_id=?",
+            (active["resume_exchange_id"], str(context.project_id)),
+        ).fetchone()
+        if prior_resume and prior_resume["phase"] == "accepted":
+            replaced, active = active, None
     if active:
         prior = tx.execute(
             "SELECT phase,receipt_json FROM exchanges WHERE id=? AND project_id=?",
@@ -354,6 +374,11 @@ def interrupt_production(tx, context, command: InterruptProduction):
                 context.now.isoformat(),
             ),
         )
+    if replaced:
+        tx.execute(
+            "UPDATE interruptions SET superseded_by=? WHERE id=? AND project_id=?",
+            (str(iid), replaced["id"], str(context.project_id)),
+        )
     tx.execute(
         "INSERT INTO interruption_actions(project_id,interruption_id,exchange_id,kind) VALUES (?,?,?,'stop')",
         (str(context.project_id), str(iid), str(eid)),
@@ -363,14 +388,33 @@ def interrupt_production(tx, context, command: InterruptProduction):
 
 def resume_production(tx, context, command: ResumeProduction):
     interruption = own(tx, "interruptions", context.project_id, command.interruption_id)
-    if interruption["resolved_at"] or not interruption["authority_stopped_at"]:
+    if (
+        interruption["resolved_at"]
+        or interruption["superseded_by"]
+        or not interruption["authority_stopped_at"]
+    ):
         fail("interruption is not confirmed stopped or already resuming")
     if interruption["resume_exchange_id"]:
         prior = tx.execute(
-            "SELECT phase,receipt_json FROM exchanges WHERE id=? AND project_id=?",
+            "SELECT phase,receipt_json,request_json FROM exchanges WHERE id=? AND project_id=?",
             (interruption["resume_exchange_id"], str(context.project_id)),
         ).fetchone()
-        if not prior or prior["phase"] != "rejected" or not prior["receipt_json"]:
+        prior_scope = (
+            ExternalRequest.model_validate_json(
+                prior["request_json"]
+            ).typed_payload.scope
+            if prior
+            else None
+        )
+        finished_trial = (
+            prior
+            and prior["phase"] == "accepted"
+            and prior_scope == "trial"
+            and command.scope == "all"
+        )
+        if not finished_trial and (
+            not prior or prior["phase"] != "rejected" or not prior["receipt_json"]
+        ):
             fail("resume already requested; query authority before another attempt")
     if current_plan_id(tx, context.project_id, interruption["work_order_id"]) != str(
         command.plan_id
@@ -381,10 +425,21 @@ def resume_production(tx, context, command: ResumeProduction):
     modes = [
         r[0]
         for r in tx.execute(
-            "SELECT DISTINCT mode FROM start_requests WHERE project_id=? AND work_order_id=? AND accepted_receipt_id IS NOT NULL",
+            "SELECT DISTINCT s.mode FROM start_requests s JOIN exchanges e ON e.id=s.exchange_id WHERE s.project_id=? AND s.work_order_id=? AND (s.accepted_receipt_id IS NOT NULL OR e.phase!='rejected' OR e.receipt_json IS NULL)",
             (str(context.project_id), interruption["work_order_id"]),
         )
     ]
+    if (
+        command.scope == "trial"
+        and not tx.execute(
+            "SELECT 1 FROM start_requests WHERE project_id=? AND work_order_id=? AND mode='bulk' AND accepted_receipt_id IS NOT NULL LIMIT 1",
+            (str(context.project_id), interruption["work_order_id"]),
+        ).fetchone()
+    ):
+        fail("trial recovery requires an existing bulk scope to remain stopped")
+    modes = [m for m in modes if command.scope == "all" or m == "trial"]
+    if not modes:
+        fail("no accepted scope eligible for resume")
     for mode in modes:
         readiness = evaluate(
             tx, context.project_id, interruption["work_order_id"], mode, context.now
@@ -412,6 +467,7 @@ def resume_production(tx, context, command: ResumeProduction):
             interruption_id=command.interruption_id,
             work_order_id=UUID(interruption["work_order_id"]),
             plan_id=command.plan_id,
+            scope=command.scope,
         ),
     )
     context.exchange_service.prepare(tx, context, request)
@@ -428,38 +484,125 @@ def resume_production(tx, context, command: ResumeProduction):
     )
 
 
+def project_production_controls(tx, project_id, work_order_id):
+    """Project accepted membership by source order, independent of receipt arrival."""
+    for mode in ("trial", "bulk"):
+        control = tx.execute(
+            "SELECT * FROM production_controls WHERE project_id=? AND work_order_id=? AND (scope='all' OR ?='trial') ORDER BY source_sequence DESC LIMIT 1",
+            (str(project_id), str(work_order_id), mode),
+        ).fetchone()
+        if control:
+            state = (
+                "stopped"
+                if control["kind"] == "stop"
+                else "start_pending"
+                if control["held"]
+                else "running"
+            )
+            tx.execute(
+                """UPDATE units SET state=? WHERE project_id=? AND work_order_id=? AND mode=?
+                   AND accepted_start_id IN (SELECT id FROM start_requests WHERE project_id=? AND work_order_id=?
+                   AND accepted_receipt_id IS NOT NULL AND accepted_seq<?)""",
+                (
+                    state,
+                    str(project_id),
+                    str(work_order_id),
+                    mode,
+                    str(project_id),
+                    str(work_order_id),
+                    control["source_sequence"],
+                ),
+            )
+
+
+def unit_interrupted(tx, project_id, work_order_id, unit):
+    active = _active_interruption(tx, project_id, work_order_id)
+    if not active:
+        return False
+    stop = tx.execute(
+        "SELECT source_sequence FROM exchanges WHERE id=? AND project_id=?",
+        (active["stop_exchange_id"], str(project_id)),
+    ).fetchone()
+    if not active["authority_stopped_at"] or not stop:
+        return True
+    return not tx.execute(
+        "SELECT 1 FROM production_controls WHERE project_id=? AND work_order_id=? AND kind='resume' AND held=0 AND source_sequence>? AND (scope='all' OR ?='trial') LIMIT 1",
+        (str(project_id), str(work_order_id), stop[0], unit["mode"]),
+    ).fetchone()
+
+
+def historical_use_changed(tx, project_id, wo, occurred_at):
+    for table, predicate, values in (
+        ("readiness_checks", "work_order_id=?", (wo["id"],)),
+        ("customer_approvals", "revision_id=?", (wo["revision_id"],)),
+        ("handoffs", "revision_id=? AND to_system='MES'", (wo["revision_id"],)),
+        ("plans", "id=?", (current_plan_id(tx, project_id, wo["id"]),)),
+    ):
+        latest = tx.execute(
+            f"SELECT created_at FROM {table} WHERE project_id=? AND {predicate} ORDER BY rowid DESC LIMIT 1",
+            (str(project_id), *values),
+        ).fetchone()
+        if latest and datetime.fromisoformat(latest[0]) > occurred_at:
+            return True
+    return False
+
+
 def record_execution(tx, context, command: RecordExecution):
     wo = own(tx, "work_orders", context.project_id, command.work_order_id)
     source = command.source
     key = source_key(source)
     prior = tx.execute(
-        "SELECT id FROM execution_events WHERE source_system=? AND source_type=? AND source_external_id=? ORDER BY accepted_seq DESC LIMIT 1",
-        key,
+        "SELECT id FROM execution_events WHERE project_id=? AND source_system=? AND source_type=? AND source_external_id=? ORDER BY accepted_seq DESC LIMIT 1",
+        (str(context.project_id), *key),
     ).fetchone()
     unit = tx.execute(
         "SELECT * FROM units WHERE sn_key=? AND project_id=?",
         (sn_key(command.sn), str(context.project_id)),
     ).fetchone()
+    from .imports import admit_records
+
+    record = ExecutionSourceRecord(
+        project_id=context.project_id,
+        source=source,
+        work_order_id=command.work_order_id,
+        unit_id=UUID(unit["id"])
+        if unit and unit["work_order_id"] == wo["id"]
+        else None,
+        material_lot_ids=[u.lot_id for u in command.material_uses],
+        occurred_at=command.occurred_at,
+    )
     reason = ""
-    if (
-        source.object_type != "execution"
-        or source.mode not in {"manual", "file"}
-        or source.collected_at < source.occurred_at
-    ):
-        reason = "execution source identity or provenance invalid"
-    elif (
-        command.occurred_at > context.now + timedelta(minutes=5)
-        or source.collected_at + timedelta(minutes=5) < command.occurred_at
-    ):
-        reason = "execution occurrence is future or after source collection"
+    admitted = True
+    try:
+        admit_records(tx, context, [record], object_type="execution", mode="manual")
+    except DomainError as exc:
+        if exc.status in {401, 403}:
+            raise
+        admitted = False
+        reason = "execution source admission: " + exc.message
+    if reason:
+        pass
     elif prior:
         reason = "duplicate execution source event"
     elif not unit or unit["work_order_id"] != wo["id"]:
         reason = "unknown or wrong work order serial"
-    elif unit["state"] != "running" or _active_interruption(
-        tx, context.project_id, wo["id"]
+    elif unit["state"] != "running" or unit_interrupted(
+        tx, context.project_id, wo["id"], unit
     ):
         reason = "serial is not authority-confirmed running"
+    elif historical_use_changed(tx, context.project_id, wo, command.occurred_at):
+        reason = "historical execution requires explicit prerequisite reassessment; current evidence postdates occurrence"
+    elif not evaluate(
+        tx, context.project_id, wo["id"], unit["mode"], context.now
+    ).ready:
+        blocked = evaluate(tx, context.project_id, wo["id"], unit["mode"], context.now)
+        reason = "current readiness requires reassessment: " + "; ".join(
+            c.kind + ": " + c.reason for c in blocked.checks if c.status == "blocked"
+        )
+    elif not evaluate(
+        tx, context.project_id, wo["id"], unit["mode"], command.occurred_at
+    ).ready:
+        reason = "execution readiness at occurrence requires reassessment"
     elif command.rework_order_id:
         reason = "rework route requires C1 qualified rework order"
     else:
@@ -536,6 +679,7 @@ def record_execution(tx, context, command: RecordExecution):
                 ):
                     reason = "material use exceeds scoped accepted reservation"
                     break
+    correction_id = None
     if command.supersedes_event_id:
         old = tx.execute(
             "SELECT * FROM execution_events WHERE id=? AND project_id=?",
@@ -543,6 +687,13 @@ def record_execution(tx, context, command: RecordExecution):
         ).fetchone()
         if not old or old["status"] != "rejected" or old["work_order_id"] != wo["id"]:
             reason = "correction must link a rejected event in this work order"
+        elif (
+            admitted
+            and admitted_execution_source(tx, context.project_id, old) is not None
+        ):
+            correction_id = str(command.supersedes_event_id)
+        else:
+            reason = "correction requires admitted source evidence"
     ident = str(uuid4())
     seq = tx.execute(
         "SELECT COALESCE(MAX(accepted_seq),0)+1 FROM execution_events"
@@ -553,7 +704,7 @@ def record_execution(tx, context, command: RecordExecution):
             ident,
             str(context.project_id),
             wo["id"],
-            unit["id"] if unit else None,
+            str(record.unit_id) if record.unit_id else None,
             command.sn,
             *key,
             source.version,
@@ -567,10 +718,20 @@ def record_execution(tx, context, command: RecordExecution):
             reason,
             "rework" if command.rework_order_id else "initial",
             str(command.rework_order_id) if command.rework_order_id else None,
-            str(command.supersedes_event_id) if command.supersedes_event_id else None,
+            correction_id,
             command.occurred_at.isoformat(),
             context.now.isoformat(),
             seq,
+        ),
+    )
+    tx.execute(
+        "INSERT INTO execution_admissions VALUES (?,?,?,?,?)",
+        (
+            ident,
+            str(context.project_id),
+            int(admitted),
+            record.model_dump_json(),
+            str(command.supersedes_event_id) if command.supersedes_event_id else None,
         ),
     )
     if not reason:
@@ -592,8 +753,8 @@ def record_execution(tx, context, command: RecordExecution):
                 ),
             )
     return MutationResult(
-        object_type="unit",
-        object_id=UUID(unit["id"]) if unit else command.work_order_id,
+        object_type="unit" if record.unit_id else "work_order",
+        object_id=record.unit_id or command.work_order_id,
     )
 
 
@@ -605,17 +766,6 @@ def record_first_article(tx, context, command: RecordFirstArticle):
         fail("first article requires one unique complete test per trial serial")
     reader = context.exchange_service.workflow.test_evidence_reader
     revision = fixed_revision(tx, context.project_id, wo["revision_id"])
-    for uid, tid in zip(command.unit_ids, command.test_ids, strict=True):
-        unit = own(tx, "units", context.project_id, uid)
-        if (
-            unit["work_order_id"] != wo["id"]
-            or unit["mode"] != "trial"
-            or unit["state"] != "running"
-            or not reader.complete_pass(
-                tx, context.project_id, tid, uid, UUID(wo["revision_id"])
-            )
-        ):
-            fail("first_article requires complete matching trial test evidence")
     equipment = tx.execute(
         "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' ORDER BY rowid DESC LIMIT 1",
         (str(context.project_id), wo["id"]),
@@ -626,6 +776,24 @@ def record_first_article(tx, context, command: RecordFirstArticle):
         or datetime.fromisoformat(equipment["valid_until"]) < context.now
     ):
         fail("first_article equipment calibration expired")
+    scope = TestEvidenceScope(
+        route_fingerprint=revision.content_hash,
+        test_version=revision.test_spec.version,
+        program_version=revision.test_spec.program_version,
+        firmware_version=revision.firmware_version,
+        equipment_check_id=UUID(equipment["id"]),
+    )
+    for uid, tid in zip(command.unit_ids, command.test_ids, strict=True):
+        unit = own(tx, "units", context.project_id, uid)
+        if (
+            unit["work_order_id"] != wo["id"]
+            or unit["mode"] != "trial"
+            or unit["state"] != "running"
+            or not reader.complete_pass(
+                tx, context.project_id, tid, uid, UUID(wo["revision_id"]), scope=scope
+            )
+        ):
+            fail("first_article requires complete matching trial test evidence")
     ident = str(uuid4())
     seq = tx.execute(
         "SELECT COALESCE(MAX(accepted_seq),0)+1 FROM first_articles"
@@ -669,7 +837,43 @@ def unit_summary(row):
     )
 
 
+def admitted_execution_source(tx, pid, e):
+    from .imports import record_scope, validate_record
+
+    admission = tx.execute(
+        "SELECT * FROM execution_admissions WHERE event_id=? AND project_id=?",
+        (e["id"], str(pid)),
+    ).fetchone()
+    if admission is None or admission["admitted"]:
+        record = (
+            ExecutionSourceRecord.model_validate_json(admission["record_json"])
+            if admission
+            else ExecutionSourceRecord(
+                project_id=UUID(e["project_id"]),
+                source=json.loads(e["source_json"]),
+                work_order_id=UUID(e["work_order_id"]),
+                unit_id=UUID(e["unit_id"]) if e["unit_id"] else None,
+                occurred_at=datetime.fromisoformat(e["occurred_at"]),
+            )
+        )
+        try:
+            record_scope(tx, pid, record, object_type="execution", mode="manual")
+            validate_record(
+                record,
+                SimpleNamespace(
+                    project_id=UUID(str(pid)),
+                    now=datetime.fromisoformat(e["recorded_at"]),
+                ),
+                trusted=False,
+            )
+            return record.source
+        except DomainError:
+            pass
+    return None
+
+
 def event_view(tx, pid, e):
+    source = admitted_execution_source(tx, pid, e)
     uses = [
         {
             "lot_id": u["lot_id"],
@@ -686,7 +890,7 @@ def event_view(tx, pid, e):
     return {
         "id": e["id"],
         "claimed_sn": e["claimed_sn"],
-        "source": json.loads(e["source_json"]),
+        "source": source.model_dump(mode="json") if source else None,
         "status": e["status"],
         "reason": e["reason"],
         "station": e["station"],
@@ -765,8 +969,12 @@ def unit_detail(tx, pid, ident):
 
 def interruption_summary(row):
     state = (
-        "resumed"
+        "stop_superseded"
+        if row["superseded_by"]
+        else "resumed"
         if row["resolved_at"]
+        else "partially_resumed"
+        if row["trial_resumed_at"]
         else "stopped"
         if row["authority_stopped_at"]
         else "stop_requested"
@@ -778,7 +986,9 @@ def interruption_summary(row):
         title=row["reason"][:120],
         state=state,
         version=1,
-        next_actions=["production.resume"] if state == "stopped" else [],
+        next_actions=["production.resume"]
+        if state in {"stopped", "partially_resumed"}
+        else [],
     )
 
 
@@ -817,6 +1027,8 @@ def interruption_detail(tx, pid, ident):
             requested_at=row["requested_at"],
             authority_stopped_at=row["authority_stopped_at"],
             resolved_at=row["resolved_at"],
+            trial_resumed_at=row["trial_resumed_at"],
+            superseded_by=row["superseded_by"],
             plan_id=row["plan_id"],
             stop_exchange_id=row["stop_exchange_id"],
             recovery_start_id=recovery_start_id,

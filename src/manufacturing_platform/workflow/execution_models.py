@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_serializer, model_validator
 
 from .commands import WorkflowCommand
 from .contracts import DomainValue, Quantity, SourceRef, StrictModel, require_timezone
@@ -59,12 +59,33 @@ class ResumeProduction(WorkflowCommand):
     interruption_id: UUID
     plan_id: UUID
     evidence: str = Field(min_length=1, max_length=2000)
+    scope: Literal["all", "trial"] = "all"
+
+    @model_serializer(mode="wrap")
+    def preserve_existing_all_scope_hash(self, handler):
+        data = handler(self)
+        if self.scope == "all":
+            data.pop("scope", None)
+        return data
 
 
 class MaterialUse(StrictModel):
     lot_id: UUID
     quantity: Quantity
     unit: str = Field(min_length=1, max_length=40)
+
+
+class ExecutionSourceRecord(StrictModel):
+    """Internal typed manual envelope; not a pull/import catalogue entry."""
+
+    object_type: Literal["execution"] = "execution"
+    project_id: UUID
+    source: SourceRef
+    work_order_id: UUID
+    unit_id: UUID | None = None
+    material_lot_ids: list[UUID] = Field(default_factory=list, max_length=200)
+    occurred_at: datetime
+    _aware = field_validator("occurred_at")(require_timezone)
 
 
 class RecordExecution(WorkflowCommand):
@@ -82,6 +103,14 @@ class RecordExecution(WorkflowCommand):
     supersedes_event_id: UUID | None = None
     rework_order_id: UUID | None = None
     _aware = field_validator("occurred_at")(require_timezone)
+
+
+class TestEvidenceScope(StrictModel):
+    route_fingerprint: str
+    test_version: str
+    program_version: str
+    firmware_version: str
+    equipment_check_id: UUID
 
 
 class RecordFirstArticle(WorkflowCommand):
@@ -127,7 +156,7 @@ class MaterialConsumptionView(StrictModel):
 class ExecutionEventView(StrictModel):
     id: UUID
     claimed_sn: str
-    source: SourceRef
+    source: SourceRef | None
     status: Literal["accepted", "rejected"]
     reason: str
     station: str
@@ -152,6 +181,8 @@ class InterruptionValue(DomainValue):
     requested_at: datetime
     authority_stopped_at: datetime | None
     resolved_at: datetime | None
+    trial_resumed_at: datetime | None
+    superseded_by: UUID | None
     plan_id: UUID | None
     stop_exchange_id: UUID
     recovery_start_id: UUID | None

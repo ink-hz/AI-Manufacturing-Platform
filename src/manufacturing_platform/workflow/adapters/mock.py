@@ -250,7 +250,7 @@ class MockAuthorityAdapter:
                     )
                     for uid, sn in payload.units:
                         tx.execute(
-                            "INSERT INTO authority_start_units VALUES (?,?,?,?,?,?)",
+                            "INSERT INTO authority_start_units(project_id,work_order_id,unit_id,sn_key,mode,start_id) VALUES (?,?,?,?,?,?)",
                             (
                                 str(request.project_id),
                                 str(payload.work_order_id),
@@ -289,7 +289,7 @@ class MockAuthorityAdapter:
             if (
                 wo
                 and wo["started_units"] > 0
-                and wo["state"] == "running"
+                and wo["state"] in {"running", "partial"}
                 and start_scoped
                 and fault_name != "reject"
             ):
@@ -304,6 +304,10 @@ class MockAuthorityAdapter:
                 )
                 tx.execute(
                     "UPDATE authority_work_orders SET state='stopped' WHERE project_id=? AND work_order_id=?",
+                    (str(request.project_id), str(payload.work_order_id)),
+                )
+                tx.execute(
+                    "UPDATE authority_start_units SET state='stopped' WHERE project_id=? AND work_order_id=?",
                     (str(request.project_id), str(payload.work_order_id)),
                 )
                 accepted = True
@@ -327,17 +331,49 @@ class MockAuthorityAdapter:
                 and stop["stopped"]
                 and not stop["resumed"]
                 and wo
-                and wo["state"] == "stopped"
+                and wo["state"] in {"stopped", "partial"}
+                and tx.execute(
+                    "SELECT 1 FROM authority_start_units WHERE project_id=? AND work_order_id=? AND state='stopped' AND (?='all' OR mode='trial') LIMIT 1",
+                    (
+                        str(request.project_id),
+                        str(payload.work_order_id),
+                        payload.scope,
+                    ),
+                ).fetchone()
                 and fault_name != "reject"
             ):
                 tx.execute(
-                    "UPDATE authority_interruptions SET resumed=1 WHERE id=?",
-                    (str(payload.interruption_id),),
+                    "UPDATE authority_start_units SET state='running' WHERE project_id=? AND work_order_id=? AND (?='all' OR mode='trial')",
+                    (
+                        str(request.project_id),
+                        str(payload.work_order_id),
+                        payload.scope,
+                    ),
+                )
+                remaining = tx.execute(
+                    "SELECT COUNT(*) FROM authority_start_units WHERE project_id=? AND work_order_id=? AND state='stopped'",
+                    (str(request.project_id), str(payload.work_order_id)),
+                ).fetchone()[0]
+                tx.execute(
+                    "UPDATE authority_interruptions SET resumed=? WHERE id=?",
+                    (int(not remaining), str(payload.interruption_id)),
                 )
                 tx.execute(
-                    "UPDATE authority_work_orders SET state='running' WHERE project_id=? AND work_order_id=?",
-                    (str(request.project_id), str(payload.work_order_id)),
+                    "UPDATE authority_work_orders SET state=? WHERE project_id=? AND work_order_id=?",
+                    (
+                        "partial" if remaining else "running",
+                        str(request.project_id),
+                        str(payload.work_order_id),
+                    ),
                 )
+                details = [
+                    {
+                        "key": str(payload.interruption_id),
+                        "work_order_id": payload.work_order_id,
+                        "scope": payload.scope,
+                        "state": "partial" if remaining else "running",
+                    }
+                ]
                 accepted = True
             source_object = str(payload.interruption_id)
             quantity = "1"
@@ -360,7 +396,10 @@ class MockAuthorityAdapter:
         if fault_name == "stale_sequence":
             receipt.sequence = 0
         if fault_name == "wrong_unit" and receipt.details:
-            receipt.details[0].sn = "wrong-SN"
+            if hasattr(receipt.details[0], "sn"):
+                receipt.details[0].sn = "wrong-SN"
+            else:
+                receipt.details[0].work_order_id = uuid4()
         if fault_name == "changed_detail_same_total" and receipt.details:
             receipt.details[0].key = str(uuid4())
         return receipt
