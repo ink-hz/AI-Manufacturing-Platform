@@ -437,7 +437,7 @@ def record_test(tx, context, command):
         prior_test_id = rework_parent_test(tx, pid, command.rework_order_id)
         require_fresh_route(tx, pid, prior_test_id, events)
     equipment = tx.execute(
-        "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' AND julianday(created_at)<=julianday(?) ORDER BY rowid DESC LIMIT 1",
+        "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' AND julianday(created_at)<=julianday(?) ORDER BY accepted_seq DESC LIMIT 1",
         (str(pid), unit["work_order_id"], command.source.occurred_at.isoformat()),
     ).fetchone()
     if (

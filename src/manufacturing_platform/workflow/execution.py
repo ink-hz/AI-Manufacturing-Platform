@@ -901,7 +901,7 @@ def record_first_article(tx, context, command: RecordFirstArticle):
     reader = test_reader(tx)
     revision = fixed_revision(tx, context.project_id, wo["revision_id"])
     equipment = tx.execute(
-        "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' ORDER BY rowid DESC LIMIT 1",
+        "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' ORDER BY accepted_seq DESC LIMIT 1",
         (str(context.project_id), wo["id"]),
     ).fetchone()
     if (

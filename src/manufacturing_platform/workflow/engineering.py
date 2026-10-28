@@ -1,5 +1,7 @@
 """Immutable engineering snapshots and attributable work order evidence."""
 
+from .clock import business_time
+
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -107,7 +109,7 @@ def record_handoff(tx, context, command: RecordHandoff):
         else "rejected"
     )
     tx.execute(
-        "INSERT INTO handoffs VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO handoffs VALUES (?,?,?,?,?,?,?,?,?,?)",
         (
             ident,
             str(context.project_id),
@@ -118,6 +120,7 @@ def record_handoff(tx, context, command: RecordHandoff):
             status,
             command.evidence,
             context.now.isoformat(),
+            tx.execute("SELECT COALESCE(MAX(accepted_seq),0)+1 FROM handoffs WHERE project_id=?", (str(context.project_id),)).fetchone()[0],
         ),
     )
     return MutationResult(
@@ -221,7 +224,7 @@ def record_readiness(tx, context, command: RecordReadiness):
     own(tx, "work_orders", context.project_id, command.work_order_id)
     ident = str(uuid4())
     tx.execute(
-        "INSERT INTO readiness_checks VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO readiness_checks VALUES (?,?,?,?,?,?,?,?,?,?)",
         (
             ident,
             str(context.project_id),
@@ -232,6 +235,7 @@ def record_readiness(tx, context, command: RecordReadiness):
             command.valid_until.isoformat(),
             command.decision,
             context.now.isoformat(),
+            tx.execute("SELECT COALESCE(MAX(accepted_seq),0)+1 FROM readiness_checks WHERE project_id=?", (str(context.project_id),)).fetchone()[0],
         ),
     )
     return MutationResult(
@@ -264,7 +268,7 @@ def fixed_revision(tx, project_id, revision_id) -> EngineeringRevision:
             evidence=r["evidence"],
         )
         for r in tx.execute(
-            "SELECT * FROM handoffs WHERE revision_id=? AND project_id=? ORDER BY created_at,id",
+            "SELECT * FROM handoffs WHERE revision_id=? AND project_id=? ORDER BY accepted_seq",
             (row["id"], str(project_id)),
         )
     ]
@@ -397,7 +401,7 @@ def work_order_detail(tx, project_id, object_id):
     from .execution import work_order_events
     from .readiness import evaluate
 
-    now = datetime.now(UTC)
+    now = business_time(tx)
     event_total, events = work_order_events(tx, project_id, object_id)
     held_rows = tx.execute(
         """SELECT s.id,s.mode,s.exchange_id,s.accepted_receipt_id,u.sn
@@ -462,7 +466,7 @@ def work_order_detail(tx, project_id, object_id):
     evidence += [
         ObjectEvidence(reference=r["evidence"])
         for r in tx.execute(
-            "SELECT evidence FROM readiness_checks WHERE project_id=? AND work_order_id=? ORDER BY created_at,id",
+            "SELECT evidence FROM readiness_checks WHERE project_id=? AND work_order_id=? ORDER BY accepted_seq",
             (str(project_id), str(object_id)),
         )
     ]

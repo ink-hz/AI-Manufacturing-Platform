@@ -1011,12 +1011,8 @@ def test_review_rework_causality_survives_interleaving_and_equal_clocks(
     last = measure(workflow, p, uid, value="12")
     fixed = datetime.now(UTC)
 
-    class Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return fixed
-
-    monkeypatch.setattr(service, "datetime", Clock)
+    workflow.business_clock = lambda: fixed
+    workflow.reopen()
 
     def test_source():
         source = workflow.source(str(uuid4()), object_type="test")
@@ -1385,7 +1381,7 @@ def test_review_schema11_basis_rebuild_preserves_fresh_proof_and_fails_closed(
             ]
             for table in tables
         } == before
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 14
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 15
     if audit_fault is not None:
         refused = measure(workflow, p, unit["id"], attempt=4, expected_status=409)
         assert refused["code"] == "PRECONDITION_FAILED"

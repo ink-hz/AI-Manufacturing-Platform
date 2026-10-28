@@ -31,8 +31,9 @@ def build_workflow_router(
     dataset,
     test_evidence_reader=None,
     resolve_subject_profiles=None,
+    business_clock=None,
 ):
-    store = WorkflowStore(database_path, authority_database_path, dataset)
+    store = WorkflowStore(database_path, authority_database_path, dataset, business_clock=business_clock)
     service = WorkflowService(
         store,
         resolve_subject,

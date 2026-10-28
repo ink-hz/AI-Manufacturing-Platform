@@ -86,6 +86,7 @@ class WorkflowHarness:
                     "label": "Workflow test",
                 },
                 test_evidence_reader=getattr(self, "test_evidence_reader", None),
+                business_clock=getattr(self, "business_clock", None),
             )
         )
         self._client = TestClient(app)

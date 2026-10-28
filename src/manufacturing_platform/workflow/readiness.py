@@ -40,7 +40,7 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         )
 
     handoff = tx.execute(
-        "SELECT * FROM handoffs WHERE project_id=? AND revision_id=? AND to_system='MES' ORDER BY rowid DESC LIMIT 1",
+        "SELECT * FROM handoffs WHERE project_id=? AND revision_id=? AND to_system='MES' ORDER BY accepted_seq DESC LIMIT 1",
         (str(project_id), row["revision_id"]),
     ).fetchone()
     version_ok = (
@@ -60,7 +60,7 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
     start = datetime.fromisoformat(row["planned_start"])
     for kind in ("equipment", "people"):
         evidence = tx.execute(
-            "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind=? ORDER BY rowid DESC LIMIT 1",
+            "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind=? ORDER BY accepted_seq DESC LIMIT 1",
             (str(project_id), str(work_order_id), kind),
         ).fetchone()
         valid = (
@@ -186,7 +186,7 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         (str(project_id), str(work_order_id)),
     ).fetchone()
     current_equipment = tx.execute(
-        "SELECT id FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' ORDER BY rowid DESC LIMIT 1",
+        "SELECT id FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' ORDER BY accepted_seq DESC LIMIT 1",
         (str(project_id), str(work_order_id)),
     ).fetchone()
     article_ok = bool(

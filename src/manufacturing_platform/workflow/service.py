@@ -19,6 +19,7 @@ from . import (  # noqa: F401 - trusted domain registration
     stock_proofs,
     supply,
 )
+from .clock import business_time
 from .authorization import require_project
 from .commands import COMMAND_REGISTRY, CommandContext, WorkflowCommand
 from .contracts import (
@@ -711,7 +712,7 @@ class WorkflowService:
                 actor,
                 project_id,
                 row["version"],
-                datetime.now(UTC),
+                business_time(tx),
                 Dataset.model_validate(self.store.dataset),
                 self.exchange_service,
                 profiles,

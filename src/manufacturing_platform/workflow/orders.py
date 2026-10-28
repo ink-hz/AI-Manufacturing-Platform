@@ -147,7 +147,7 @@ def dispatch_record_demand(tx, context, command: RecordDemand):
 def dispatch_review_demand(tx, context, command: ReviewDemand):
     own(tx, "demands", context.project_id, command.demand_id)
     tx.execute(
-        "INSERT INTO reviews VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO reviews VALUES (?,?,?,?,?,?,?,?,?)",
         (
             str(uuid4()),
             str(context.project_id),
@@ -157,6 +157,7 @@ def dispatch_review_demand(tx, context, command: ReviewDemand):
             command.evidence,
             str(context.actor.user_id),
             context.now.isoformat(),
+            tx.execute("SELECT COALESCE(MAX(accepted_seq),0)+1 FROM reviews WHERE project_id=?", (str(context.project_id),)).fetchone()[0],
         ),
     )
     return MutationResult(object_type=ObjectKind.demand, object_id=command.demand_id)
@@ -165,7 +166,7 @@ def dispatch_review_demand(tx, context, command: ReviewDemand):
 def latest_reviews(tx, project_id, demand_id):
     rows = tx.execute(
         "SELECT dimension,decision FROM reviews WHERE project_id=? AND demand_id=? "
-        "ORDER BY reviewed_at,id",
+        "ORDER BY accepted_seq",
         (str(project_id), str(demand_id)),
     ).fetchall()
     return {r["dimension"]: r["decision"] for r in rows}

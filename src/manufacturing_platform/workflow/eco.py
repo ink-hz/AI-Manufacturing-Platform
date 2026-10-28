@@ -384,7 +384,7 @@ def dispose(tx, context, command):
 def revision_ready(tx, pid, revision_id):
     rev = fixed_revision(tx, pid, revision_id)
     handoff = tx.execute(
-        "SELECT * FROM handoffs WHERE project_id=? AND revision_id=? AND to_system='MES' ORDER BY rowid DESC LIMIT 1",
+        "SELECT * FROM handoffs WHERE project_id=? AND revision_id=? AND to_system='MES' ORDER BY accepted_seq DESC LIMIT 1",
         (str(pid), str(revision_id)),
     ).fetchone()
     if (

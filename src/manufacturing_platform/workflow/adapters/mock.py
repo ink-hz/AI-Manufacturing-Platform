@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
+from ..clock import business_time, checked_time
 from ..contracts import DomainError
 from ..exchange_models import (
     AuthoritySnapshot,
@@ -35,8 +36,8 @@ def digest(value):
 class MockAuthorityAdapter:
     mode = "mock"
 
-    def __init__(self, database_path, dataset_id):
-        self.store = MockStore(database_path, dataset_id)
+    def __init__(self, database_path, dataset_id, *, business_clock=None):
+        self.store = MockStore(database_path, dataset_id, business_clock=business_clock)
 
     @staticmethod
     def _system(system):
@@ -221,7 +222,7 @@ class MockAuthorityAdapter:
             accepted_quantity="0" if rejected else str(payload.quantity),
             rejected_quantity=str(payload.quantity) if rejected else "0",
             details=receipt_details(payload),
-            occurred_at=datetime.now(UTC),
+            occurred_at=business_time(tx),
             error=material_reason if rejected else None,
         )
 
@@ -252,7 +253,7 @@ class MockAuthorityAdapter:
                 (str(request.project_id), str(payload.lot_id)),
             ).fetchone()
             and lot["state"] == "active"
-            and lot["expiry"] >= datetime.now(UTC).date().isoformat()
+            and lot["expiry"] >= business_time(tx).date().isoformat()
         )
         accepted, error = 0, "Ineligible or insufficient quality stock"
         target = requested
@@ -359,7 +360,7 @@ class MockAuthorityAdapter:
                     **({"stock_basis": stock_basis} if stock_basis is not None else {}),
                 }
             ],
-            occurred_at=datetime.now(UTC),
+            occurred_at=business_time(tx),
             error=error,
         )
         if fault_name == "stale_sequence":
@@ -588,7 +589,7 @@ class MockAuthorityAdapter:
             accepted_quantity=quantity if accepted else "0",
             rejected_quantity="0" if accepted else quantity,
             details=details,
-            occurred_at=datetime.now(UTC),
+            occurred_at=business_time(tx),
             error=None if accepted else material_reason or reason,
         )
         if fault_name == "stale_sequence":
@@ -697,7 +698,7 @@ class MockAuthorityAdapter:
             accepted_quantity=str(payload.remaining_quantity) if accepted else "0",
             rejected_quantity="0" if accepted else str(payload.remaining_quantity),
             details=details,
-            occurred_at=datetime.now(UTC),
+            occurred_at=business_time(tx),
             error=None
             if accepted
             else "Authority remaining scope changed or cancellation rejected",
@@ -839,9 +840,8 @@ class MockAuthorityAdapter:
                 records=[json.loads(r["payload_json"]) for r in rows],
             )
 
-    @staticmethod
-    def _source(object_type, external_id, signature):
-        now = datetime.now(UTC).isoformat()
+    def _source(self, object_type, external_id, signature):
+        now = checked_time(self.store.business_clock).isoformat()
         return {
             "system": "erp",
             "object_type": object_type,

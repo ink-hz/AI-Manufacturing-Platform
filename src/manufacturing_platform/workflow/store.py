@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .execution import TestEvidenceReader
 
 from .orders import source_key
+from .clock import bind_business_clock, checked_time, utc_now
 from .schema import (
     DELIVERY_SCHEMA,
     FEEDBACK_SCHEMA,
@@ -29,7 +30,9 @@ from .schema import (
 
 
 class WorkflowStore:
-    def __init__(self, database_path, authority_database_path, dataset):
+    def __init__(self, database_path, authority_database_path, dataset, *, business_clock=None):
+        self.business_clock = business_clock or utc_now
+        checked_time(self.business_clock)
         self.database_path = database_path
         self.authority_database_path = authority_database_path
         self.dataset = dataset
@@ -243,6 +246,17 @@ class WorkflowStore:
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=14")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 14:
+                # Reconstruct extant supported insertion order, not source chronology.
+                # Original business facts, operations and audit payloads are untouched.
+                for table in ("reviews", "handoffs", "readiness_checks"):
+                    columns = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+                    if "accepted_seq" not in columns:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN accepted_seq INTEGER")
+                        conn.execute(f"UPDATE {table} SET accepted_seq=rowid")
+                    conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {table}_acceptance_order ON {table}(project_id,accepted_seq)")
+                conn.execute("UPDATE schema_version SET version=15")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1
                 or version[0][0] != SCHEMA_VERSION
@@ -254,7 +268,7 @@ class WorkflowStore:
             from . import quality
             from .execution import bind_test_reader
 
-            with bind_test_reader(conn, self._test_evidence_reader or quality):
+            with bind_test_reader(conn, self._test_evidence_reader or quality), bind_business_clock(conn, self.business_clock):
                 yield conn
             conn.commit()
         except BaseException:

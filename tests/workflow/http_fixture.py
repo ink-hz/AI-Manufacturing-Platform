@@ -5,7 +5,8 @@ import json
 import secrets
 import socket
 from pathlib import Path
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
+from datetime import datetime
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -13,11 +14,11 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from manufacturing_platform import build_workflow_router
 
 
-def serve(root: Path):
+def build_app(root: Path):
     config = json.loads((root / "fixture.json").read_text())
     identities = {
         name: {
-            "user_id": str(uuid4()),
+            "user_id": str(uuid5(NAMESPACE_URL, f"fixture:{config.get('seed', root.name)}:{name}")),
             "display_name": name,
             "read_only": False,
             "configuration_admin": name == "owner",
@@ -30,9 +31,14 @@ def serve(root: Path):
             "production",
             "quality",
             "warehouse",
+            "outsider",
         )
     }
     sessions = {}
+    inactive = set()
+    clock = datetime.fromisoformat(config["business_clock"]) if config.get("business_clock") else None
+    dataset_id = config.get("dataset_id", "http-" + root.name)
+    dataset_label = config.get("dataset_label", "Disposable HTTP fixture")
     app = FastAPI()
 
     @app.post("/fixture/login")
@@ -52,7 +58,7 @@ def serve(root: Path):
 
     def authenticate(request: Request, write=False):
         current = sessions.get(request.cookies.get("workflow_fixture", ""))
-        if current is None:
+        if current is None or current[0]["display_name"] in inactive:
             raise HTTPException(401, "Fixture session required")
         identity, csrf = current
         if write and (
@@ -62,25 +68,38 @@ def serve(root: Path):
             raise HTTPException(403, "Fixture Origin and CSRF required")
         return identity
 
+    @app.post("/fixture/revoke")
+    async def revoke(request: Request):
+        identity = authenticate(request, write=True)
+        if not identity["configuration_admin"]:
+            raise HTTPException(403, "Fixture owner required")
+        body = await request.json()
+        inactive.add(body["name"])
+        return {"revoked": body["name"]}
+
     @app.post("/fixture/authority")
     async def authority(request: Request):
         authenticate(request, write=True)
         from manufacturing_platform.workflow.adapters.mock import MockAuthorityAdapter
 
         body = await request.json()
-        if body.get("action") not in {"receive", "inspect"}:
+        if body.get("action") not in {"receive", "inspect", "customer_approval", "configure_fault", "balance", "operation_count", "snapshot", "submit"}:
             raise HTTPException(422, "Unsupported fixture source fact")
-        adapter = MockAuthorityAdapter(str(root / "authority.db"), "http-" + root.name)
+        adapter = MockAuthorityAdapter(str(root / "authority.db"), dataset_id, business_clock=(lambda: clock) if clock else None)
+        if body["action"] == "submit":
+            from manufacturing_platform.workflow.exchange_models import ExternalRequest
+            from starlette.concurrency import run_in_threadpool
+            return await run_in_threadpool(adapter.submit, ExternalRequest.model_validate(body["fields"]["request"]))
         return getattr(adapter, body["action"])(**body["fields"])
 
     app.include_router(
         build_workflow_router(
             database_path=str(root / "workflow.db"),
             authority_database_path=str(root / "authority.db"),
-            assets_dir=str(root),
+            assets_dir=config.get("assets_dir") or str(root),
             authenticate=authenticate,
             resolve_subject=lambda uid: any(
-                str(uid) == v["user_id"] for v in identities.values()
+                str(uid) == v["user_id"] and v["display_name"] not in inactive for v in identities.values()
             ),
             resolve_subject_profiles=lambda ids: [
                 {"user_id": v["user_id"], "display_name": v["display_name"]}
@@ -88,13 +107,19 @@ def serve(root: Path):
                 if v["user_id"] in set(map(str, ids))
             ],
             release="fixture",
+            business_clock=(lambda: clock) if clock else None,
             dataset={
-                "id": "http-" + root.name,
+                "id": dataset_id,
                 "mode": "test",
-                "label": "Disposable HTTP fixture",
+                "label": dataset_label,
             },
         )
     )
+    return app
+
+
+def serve(root: Path):
+    app = build_app(root)
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     print(json.dumps({"port": sock.getsockname()[1]}), flush=True)

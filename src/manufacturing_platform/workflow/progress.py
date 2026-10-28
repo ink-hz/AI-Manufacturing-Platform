@@ -1,5 +1,7 @@
 """Current business progress. Collaboration hints never waive domain predicates."""
 
+from .clock import business_time
+
 import json
 from datetime import UTC, datetime
 from typing import Literal
@@ -115,7 +117,7 @@ def aggregate(tx, project_id) -> ProgressSummary:
         (pid,),
     ).fetchall()
     readiness_checks = []
-    now = datetime.now(UTC)
+    now = business_time(tx)
     for work_order in work_orders[:20]:
         checks = [
             evaluate(tx, pid, work_order["id"], mode, now) for mode in ("trial", "bulk")

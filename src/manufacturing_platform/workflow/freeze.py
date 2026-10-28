@@ -1,5 +1,7 @@
 """Continuing local safety holds and independent ordered authority confirmation."""
 
+from .clock import business_time
+
 import json
 from uuid import UUID, uuid4
 
@@ -312,7 +314,7 @@ def authority_apply(tx, request, h, sequence, fault_name):
         accepted_quantity="0",
         rejected_quantity="0",
         details=details,
-        occurred_at=datetime.now(UTC),
+        occurred_at=business_time(tx),
         error="Stale freeze version"
         if stale
         else "Authority rejected request"

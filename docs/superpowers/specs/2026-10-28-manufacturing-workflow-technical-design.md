@@ -406,3 +406,15 @@ Test-only `tests/workflow/http_fixture.py` runs a disposable loopback FastAPI/uv
 D1 customer-release scope correction: unit summaries add nullable `revision_id` from the immutable unit row without additional option-detail reads. Customer release derives its receipt revision only from explicitly selected serials, independent of the separately viewed serial. Missing revision metadata or a mixed-revision selection keeps submission unavailable with an explanation; the existing backend still validates customer, contract revision, every unit's fixed revision and current quality. An older host omitting this additive metadata cannot silently infer a release revision. Checkbox edits preserve other receipt/source fields, while the shared command form retains same-payload retry UUID and captured timestamps. External customer signatory remains distinct from the authenticated local recorder.
 
 D1 selected-project read ownership correction: equal-version list summaries and same-project object navigation preserve the selected authoritative detail. An actually newer list version or acknowledged mutation invalidates progress/tasks and schedules a version-guarded exact project read, rather than copying old detail into the new version. Accepted detail synchronizes the lightweight list metadata/version; the accepted-version floor continues to reject delayed older snapshots. Object release capabilities omit `release.decide` entirely when the live `quality.release_kinds` predicate yields no authorized variants, matching the existing project-level filter.
+
+## D2：可信业务时钟与同刻事实顺序
+
+`build_workflow_router(..., business_clock=None)` 是主机组合层的可选可信 callable，不是 HTTP 字段。默认返回真实 UTC；显式时钟必须返回带时区且 UTC offset=0 的 datetime。WorkflowStore/MockStore 在各自事务内用 ContextVar 栈绑定 `(exact Connection, clock)`，嵌套事务、异常退出与不同线程隔离并恢复；普通 SQLite connection 使用真实 UTC。C1 的 exact-connection TestEvidenceReader 绑定保持独立。
+
+业务时间覆盖 CommandContext.now、工单/进度/物料准备投影、下达前二次核对、外部模拟库存有效期、源事实及权威回执/交换事实。身份 session/JWT、授权提供方新鲜度、服务启动超时、不可变审计 recorded_at、证据 recorded_at 与 monotonic 耗时不使用模拟时间。没有全局 datetime monkeypatch；旧测试通过可信构造参数固定业务时钟。F01 的 source/cutoff/planned use/expiry/calibration 均从00:00Z时钟派生。
+
+A2 reviews 的 reviewed_at+随机UUID排序、A3 handoff/readiness 的展示排序与最新事实选择曾采用不同依据，固定时钟会使审批/拒绝顺序不确定。schema15 为 reviews、handoffs、readiness_checks 加持久化 accepted_seq，各项目在 BEGIN IMMEDIATE 内分配 MAX+1，最新值和历史展示统一采用该顺序。客户批准沿用既有 accepted_seq，B1计划及后续域沿用各自明确的接收序号；来源版本/发生时间独立保留。不得通过时间微调或 UUID 排序掩盖冲突。
+
+v14迁移从受支持 SQLite 文件**现存 rowid 插入顺序**重建这些序号；该边界保留既有A3语义，不能证明文件在更早外部重写前的历史因果顺序。迁移保留原业务列、SourceRef、operation payload/hash/result及audit payload字节，不合并/删除历史事实；唯一索引拒绝无法满足顺序约束的冲突。回归使用相同业务时间的相反审批、交接、客户批准和准备事实，检查最新接受事实、重启及迁移原始值不变。
+
+D2验收驱动、合成身份、loopback HTTP host、注册36场景、独立UI测试桥全部位于 `tests/workflow`、`scripts` 或前端测试文件，不进入生产 wheel/host loader。运行与证据协议、E30私有Node运行时、E29/E31/E32必须完成的D3证据钩子见[运行手册](../../testing/manufacturing-full-workflow-runbook.md)。实现可运行不等于36组通过；D4按相同注册表执行完整验收。

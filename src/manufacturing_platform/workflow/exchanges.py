@@ -1,5 +1,7 @@
 """Durable outbox: intent commit, independent authority I/O, then validated apply."""
 
+from .clock import business_time
+
 import base64
 import binascii
 import json
@@ -372,7 +374,7 @@ def event(tx, row, phase, reason, payload=None):
             phase,
             reason,
             canonical(payload or {}),
-            datetime.now(UTC).isoformat(),
+            business_time(tx).isoformat(),
         ),
     )
     tx.execute(
@@ -390,7 +392,8 @@ class ExchangeService:
         # A production configuration can be available locally while its source is unconnected.
         if workflow.store.dataset["mode"] in {"test", "demo"}:
             self.adapter = MockAuthorityAdapter(
-                workflow.store.authority_database_path, workflow.store.dataset["id"]
+                workflow.store.authority_database_path, workflow.store.dataset["id"],
+                business_clock=workflow.store.business_clock
             )
 
     def authorize(self, tx, actor, project_id, command):
@@ -535,7 +538,7 @@ class ExchangeService:
                                 live_tx,
                                 project_id,
                                 request.typed_payload,
-                                datetime.now(UTC),
+                                business_time(live_tx),
                             )
                     elif request.action == "reservation.request":
                         from .freeze import lot_hold
@@ -625,7 +628,7 @@ class ExchangeService:
                 actor,
                 UUID(str(project_id)),
                 project["version"],
-                datetime.now(UTC),
+                business_time(tx),
                 Dataset.model_validate(self.workflow.store.dataset),
                 self,
             )

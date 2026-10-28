@@ -1841,15 +1841,9 @@ def test_review_execution_rechecks_use_readiness(workflow, monkeypatch, invalid)
             evidence="approval revoked",
         )
     else:
-        # Advance the actual admission clock; do not alter persisted plan evidence.
-        from manufacturing_platform.workflow import service
-
-        class Later(datetime):
-            @classmethod
-            def now(cls, tz=None):
-                return datetime.now(UTC) + timedelta(days=3)
-
-        monkeypatch.setattr(service, "datetime", Later)
+        # Advance trusted business admission time without changing auth/audit time.
+        workflow.business_clock = lambda: datetime.now(UTC) + timedelta(days=3)
+        workflow.reopen()
     base["occurred_at"] = datetime.now(UTC).isoformat()
     workflow.command(
         p["id"],
@@ -2537,7 +2531,7 @@ def test_review_v7_resume_envelope_survives_additive_migration(
         )
         for key in ("request_json", "request_hash", "business_key"):
             assert after[key] == row[key]
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 14
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 15
     with authority.store.transaction() as tx:
         assert tx.execute(
             "SELECT 1 FROM sqlite_master WHERE type='index' AND name='authority_stop_lineage'"

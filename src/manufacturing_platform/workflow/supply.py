@@ -1,5 +1,7 @@
 """Versioned plan evidence, manual receipt/IQC facts and authority-only reservations."""
 
+from .clock import business_time
+
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -600,7 +602,7 @@ def _detail(tx, project_id, kind, object_id):
             ObjectEvidence(reference=value.source.evidence, source=value.source)
         ]
     elif kind == "requirement":
-        bal = available(tx, project_id, object_id, datetime.now().astimezone())
+        bal = available(tx, project_id, object_id, business_time(tx))
         value = RequirementValue(
             plan_id=row["plan_id"],
             lineage_id=row["lineage_id"],

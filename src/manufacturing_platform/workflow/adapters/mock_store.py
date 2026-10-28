@@ -4,6 +4,8 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+from ..clock import bind_business_clock, checked_time, utc_now
+
 SCHEMA = """
 CREATE TABLE metadata(dataset TEXT NOT NULL);
 CREATE TABLE inventory(lot_id TEXT PRIMARY KEY,project_id TEXT NOT NULL,material_id TEXT NOT NULL,owner_id TEXT NOT NULL,unit TEXT NOT NULL,scale INTEGER NOT NULL,expiry TEXT NOT NULL,state TEXT NOT NULL,received INTEGER NOT NULL DEFAULT 0,qualified INTEGER NOT NULL DEFAULT 0,reserved INTEGER NOT NULL DEFAULT 0,version INTEGER NOT NULL DEFAULT 1,CHECK(received>=qualified AND qualified>=reserved AND reserved>=0));
@@ -24,7 +26,9 @@ CREATE INDEX IF NOT EXISTS authority_stop_lineage ON authority_operations(json_e
 
 
 class MockStore:
-    def __init__(self, path, dataset):
+    def __init__(self, path, dataset, *, business_clock=None):
+        self.business_clock = business_clock or utc_now
+        checked_time(self.business_clock)
         if not Path(path).is_absolute() or str(path) == "/:memory:":
             raise ValueError("authority requires explicit persistent path")
         self.path, self.dataset = str(path), dataset
@@ -66,7 +70,8 @@ class MockStore:
                 conn.execute(
                     "UPDATE authority_start_units SET state=COALESCE((SELECT state FROM authority_work_orders w WHERE w.project_id=authority_start_units.project_id AND w.work_order_id=authority_start_units.work_order_id),'running')"
                 )
-            yield conn
+            with bind_business_clock(conn, self.business_clock):
+                yield conn
             conn.commit()
         except BaseException:
             conn.rollback()
