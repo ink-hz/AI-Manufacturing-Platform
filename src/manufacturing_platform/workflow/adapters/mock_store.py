@@ -11,6 +11,9 @@ CREATE TABLE source_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,system TEXT NOT
 CREATE TABLE authority_operations(seq INTEGER PRIMARY KEY AUTOINCREMENT,system TEXT NOT NULL,business_key TEXT NOT NULL,request_hash TEXT NOT NULL,request_json TEXT NOT NULL,receipt_json TEXT,UNIQUE(system,business_key));
 CREATE TABLE authority_reservations(id TEXT PRIMARY KEY,lot_id TEXT NOT NULL REFERENCES inventory(lot_id),project_id TEXT NOT NULL,business_key TEXT NOT NULL UNIQUE,q_atoms INTEGER NOT NULL CHECK(q_atoms>0));
 CREATE TABLE faults(name TEXT PRIMARY KEY,value TEXT);
+CREATE TABLE IF NOT EXISTS authority_work_orders(project_id TEXT NOT NULL,work_order_id TEXT NOT NULL,revision_id TEXT NOT NULL,total_units INTEGER NOT NULL,trial_units INTEGER NOT NULL,started_units INTEGER NOT NULL DEFAULT 0,started_trial INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'running',PRIMARY KEY(project_id,work_order_id));
+CREATE TABLE IF NOT EXISTS authority_start_units(project_id TEXT NOT NULL,work_order_id TEXT NOT NULL,unit_id TEXT NOT NULL UNIQUE,sn_key TEXT NOT NULL UNIQUE,mode TEXT NOT NULL,start_id TEXT NOT NULL,PRIMARY KEY(project_id,work_order_id,unit_id));
+CREATE TABLE IF NOT EXISTS authority_interruptions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,work_order_id TEXT NOT NULL,stopped INTEGER NOT NULL,resumed INTEGER NOT NULL DEFAULT 0);
 """
 
 
@@ -45,6 +48,9 @@ class MockStore:
                 self.dataset
             ]:
                 raise ValueError("authority dataset mismatch")
+            for statement in SCHEMA.split(";"):
+                if statement.strip() and "IF NOT EXISTS authority_" in statement:
+                    conn.execute(statement)
             yield conn
             conn.commit()
         except BaseException:

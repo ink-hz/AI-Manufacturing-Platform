@@ -9,6 +9,7 @@ from .orders import source_key
 from .schema import (
     ENGINEERING_SCHEMA,
     EXCHANGE_SCHEMA,
+    EXECUTION_SCHEMA,
     ORDER_SCHEMA,
     SCHEMA,
     SCHEMA_VERSION,
@@ -149,6 +150,12 @@ class WorkflowStore:
                     "CREATE UNIQUE INDEX approvals_acceptance_order ON customer_approvals(project_id,accepted_seq)"
                 )
                 conn.execute("UPDATE schema_version SET version=6")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 6:
+                for statement in EXECUTION_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=7")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             metadata = conn.execute(
                 "SELECT id,mode,label FROM dataset_metadata"

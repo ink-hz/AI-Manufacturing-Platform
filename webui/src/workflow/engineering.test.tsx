@@ -347,6 +347,8 @@ it("renders rejected handoff and blocked trial/bulk readiness without a generic 
       planned_end: "2026-11-02T00:00:00Z",
       state: "planned",
       trial_readiness: common,
+      execution_event_total: 0,
+      execution_events: [],
       bulk_readiness: {
         ...common,
         checks: [

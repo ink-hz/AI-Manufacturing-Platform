@@ -40,7 +40,7 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         )
 
     handoff = tx.execute(
-        "SELECT * FROM handoffs WHERE project_id=? AND revision_id=? AND to_system='MES' ORDER BY created_at DESC,id DESC LIMIT 1",
+        "SELECT * FROM handoffs WHERE project_id=? AND revision_id=? AND to_system='MES' ORDER BY rowid DESC LIMIT 1",
         (str(project_id), row["revision_id"]),
     ).fetchone()
     version_ok = (
@@ -60,7 +60,7 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
     start = datetime.fromisoformat(row["planned_start"])
     for kind in ("equipment", "people"):
         evidence = tx.execute(
-            "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind=? ORDER BY created_at DESC,id DESC LIMIT 1",
+            "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind=? ORDER BY rowid DESC LIMIT 1",
             (str(project_id), str(work_order_id), kind),
         ).fetchone()
         valid = (
@@ -174,14 +174,34 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         else "accepted scoped material reservation missing or ineligible",
         [UUID(req["id"]) for req in applicable],
     )
-    # B3/C1 will supply actual complete first article evidence on this fixed scope.
+    article = tx.execute(
+        "SELECT * FROM first_articles WHERE project_id=? AND work_order_id=? ORDER BY accepted_seq DESC LIMIT 1",
+        (str(project_id), str(work_order_id)),
+    ).fetchone()
+    current_equipment = tx.execute(
+        "SELECT id FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' ORDER BY rowid DESC LIMIT 1",
+        (str(project_id), str(work_order_id)),
+    ).fetchone()
+    article_ok = bool(
+        article
+        and article["revision_id"] == row["revision_id"]
+        and article["route_fingerprint"] == revision.content_hash
+        and article["test_version"] == revision.test_spec.version
+        and article["program_version"] == revision.test_spec.program_version
+        and article["firmware_version"] == revision.firmware_version
+        and current_equipment
+        and article["equipment_check_id"] == current_equipment["id"]
+    )
     add(
         "first_article",
         mode == "bulk",
-        False,
-        "matching tested first article absent"
+        article_ok,
+        "matching tested first article recorded"
+        if article_ok
+        else "matching tested first article absent"
         if mode == "bulk"
         else "trial does not require first article",
+        [UUID(article["id"])] if article else [],
     )
     return ReadinessResult(
         ready=all(c.status != "blocked" for c in checks),

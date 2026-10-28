@@ -260,6 +260,7 @@ export function DetailContent({
           />
           <ReadinessView title="试产准备" value={v.trial_readiness} />
           <ReadinessView title="量产准备" value={v.bulk_readiness} />
+          <h4>工位来源事件（最近 100 条，共 {v.execution_event_total||0} 条）</h4><ol>{(v.execution_events||[]).map(e=><li key={e.id}>{e.claimed_sn} · {e.station} / {e.route_version} · {label(e.status)} · {e.reason||e.result} · {e.source.system} / {e.source.external_id}</li>)}</ol>
         </>
       )}
       {v.kind === "plan" && <>
@@ -287,12 +288,16 @@ export function DetailContent({
       {v.kind === "receipt" && <Facts items={[["原始登记数量",(v.original_quantity||v.quantity)+" "+v.unit],["当前到货事实",v.quantity+" "+v.unit],["检验合格",v.accepted],
         ["拒收",v.rejected],["待检",v.uninspected]]}/>}
       {v.kind === "reservation" && <Facts items={[["请求预留",v.requested+" "+v.unit],["确认预留",v.confirmed],["尚未接受",v.remaining],["权威对象版本",v.source_version]]}/>}
+      {v.kind === "unit" && <Facts items={[["序列号",v.sn],["状态",label(v.state)],["执行范围",v.mode?label(v.mode):"未开工"],["来源事件数",v.execution_event_ids.length]]}/>}
+      {v.kind === "unit" && <><h4>工位来源事件（最近 100 条，共 {v.execution_event_total} 条）</h4><ol>{v.execution_events.map(e=><li key={e.id}>{e.occurred_at} · {e.station} / {e.route_version} · {label(e.status)} · {e.reason||e.result} · {e.source.system} / {e.source.external_id}{e.supersedes_event_id&&" · 新事件纠正旧记录"}{e.material_uses.map((u,i)=><p key={i}>用料：{u.material_id} · 所有者 {u.owner_id} · {u.quantity} {u.unit}</p>)}</li>)}</ol></>}
+      {v.kind === "interruption" && <Facts items={[["异常类别",v.exception_kind],["中断原因",v.reason],["本地安全请求",v.requested_at],["MES 确认停机",v.authority_stopped_at||"尚未确认"],["MES 确认恢复",v.resolved_at||"尚未确认"]]}/>}
+      {v.kind === "interruption" && <><h4>MES 操作历史</h4>{v.stop_exchange_ids.map((id,i)=><button key={id} onClick={()=>onOpen({projectId:data.summary.project_id,kind:"exchange",id})}>停机尝试 {i+1}</button>)}{v.resume_exchange_ids.map((id,i)=><button key={id} onClick={()=>onOpen({projectId:data.summary.project_id,kind:"exchange",id})}>恢复尝试 {i+1}</button>)}</>}
       {v.kind === "exchange" && <>
         <p>{v.mode==="mock"?"模拟权威系统":v.mode==="unavailable"?"权威系统未接入":label(v.mode)}</p>
         <Facts items={[["权威系统",v.system],["阶段",label(v.phase)],["请求数量",v.requested+" "+v.unit],["已接受",v.accepted],["未接受",v.rejected],["原因",v.reason]]}/>
         {!!v.discrepancies?.length&&<><h4>对账异常与处理</h4><ol>{v.discrepancies.map(d=><li key={d.sequence}>负责人 {d.owner_name} · {d.reason} · {d.evidence}{d.resolves_sequence&&" · 已追加处理记录"}</li>)}</ol></>}
         <h4>阶段记录（最近 100 条）</h4><ol>{v.events.map(e=><li key={e.sequence}>{label(e.phase)} · {e.reason}</li>)}</ol>
-        {v.receipt&&<><h4>权威明细</h4><table><thead><tr><th>所有者</th><th>接受数量</th><th>单位</th></tr></thead><tbody>{v.receipt.details.map(d=><tr key={d.key}><td>{d.owner_id}</td><td>{d.quantity}</td><td>{d.unit}</td></tr>)}</tbody></table></>}
+        {v.receipt&&<><h4>权威明细</h4><table><thead><tr><th>对象</th><th>接受数量或状态</th><th>单位</th></tr></thead><tbody>{v.receipt.details.map(d=><tr key={d.key}><td>{"lot_id" in d?d.owner_id:d.sn}</td><td>{"lot_id" in d?d.quantity:label(d.state)}</td><td>{"lot_id" in d?d.unit:"件"}</td></tr>)}</tbody></table></>}
       </>}
       {v.kind === "receipt" && v.corrections?.map(c=><p key={c.sequence}>追加纠正 · 到货 {c.received_delta} · 合格 {c.accepted_delta} · 拒收 {c.rejected_delta} · {c.evidence}</p>)}
       {v.kind === "receipt" && v.confirmations?.map(c=><section key={c.sequence}><h4>来源确认 · {label(c.source.mode)}</h4><p>外部签署人：{c.external_actor} · {c.signature}</p><Source value={c.source}/></section>)}

@@ -52,7 +52,7 @@ export function ExchangeWorkspace(p:Props){
     </CommandForm>}
     {(form==="dispatch"||form==="query")&&<CommandForm<Extract<CommandFields,{action:"exchange.dispatch"|"exchange.query"}>> key={epoch} {...shared}
       title={form==="dispatch"?"发送权威请求":"查询已有回执"} save={form==="dispatch"?"查询后发送原请求":"查询权威结果"}
-      initial={()=>({action:form==="dispatch"?"exchange.dispatch":"exchange.query",exchange_id:""})} canSubmit={v=>!!v.exchange_id && !!canExchange && (selected?.action==="reservation.request"||selected?.action==="source.pull")}>
+      initial={()=>({action:form==="dispatch"?"exchange.dispatch":"exchange.query",exchange_id:""})} canSubmit={v=>!!v.exchange_id && !!canExchange && ["reservation.request","source.pull","production.start","production.interrupt","production.resume"].includes(selected?.action||"")}>
       {(v,set)=><><ObjectChoice name="待处理交换" items={items} value={v.exchange_id} onChange={x=>{
         set({...v,exchange_id:x});setSelected(null);activeSelection.current=x;if(x)void p.api.object(p.project.id,"exchange",x).then(d=>{if(activeSelection.current===x&&d.value.kind==="exchange")setSelected(d.value);});
       }}/>{selected&&<p>{label(selected.phase)} · 请求 {selected.requested} {selected.unit} · 已接受 {selected.accepted} · {selected.reason}</p>}
@@ -63,7 +63,7 @@ export function ExchangeWorkspace(p:Props){
       canSubmit={v=>!!v.exchange_id&&!!canExchange}>
       {(v,set)=><><ObjectChoice name="对账交换记录" items={items} value={v.exchange_id} onChange={x=>{
         set({...v,exchange_id:x});setSelected(null);activeSelection.current=x;if(x)void p.api.object(p.project.id,"exchange",x).then(d=>{if(activeSelection.current!==x||d.value.kind!=="exchange")return;const value=d.value;setSelected(value);
-          set(old=>old.exchange_id!==x?old:{...old,details:value.receipt?.details||[],source_version:value.source?.version||value.receipt?.source_version||1,
+          set(old=>old.exchange_id!==x?old:{...old,details:(value.receipt?.details||[]).filter((d):d is import("./types").ReceiptDetail=>"lot_id" in d),source_version:value.source?.version||value.receipt?.source_version||1,
             object_type:value.source_object_type||"reservation",resolution:value.source?"accept_authority":"compare",
             source:value.source?{...value.source,mode:"manual"}:{...old.source,external_id:value.business_key}});
         });

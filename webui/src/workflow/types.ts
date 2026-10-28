@@ -28,7 +28,7 @@ export type ObjectKind =
   | "commitment_change"
   | "revision"
   | "work_order"
-  | "plan" | "requirement" | "commitment" | "material_lot" | "receipt" | "reservation" | "exchange";
+  | "plan" | "requirement" | "commitment" | "material_lot" | "receipt" | "reservation" | "exchange" | "unit" | "interruption" | "test";
 export interface SourceRef {
   system: string;
   object_type: string;
@@ -126,6 +126,7 @@ export type TypedInboundRecord={project_id:string;source:SourceRef;external_acto
   {object_type:"iqc";receipt_system:string;receipt_external_id:string;accepted:string;rejected:string;evidence:string;manual_iqc_id?:string|null} |
   {object_type:"customer_approval";revision_id:string;customer_id:string;decision:"approved"|"rejected";evidence:string});
 export interface ReceiptDetail {key:string;lot_id:string;owner_id:string;quantity:string;unit:string}
+export interface UnitReceiptDetail {key:string;unit_id:string;sn:string;state:"running"|"stopped"}
 export interface SourceConfirmation {source:SourceRef;external_actor:string;signature:string;recorded_by:string;sequence:number}
 export interface ExchangeValue {
   kind:"exchange";action:string;policy_action:CommandFields["action"];system:string;business_key:string;
@@ -134,9 +135,15 @@ export interface ExchangeValue {
   events:{sequence:number;phase:string;reason:string}[];reservation_id:string|null;
   source:SourceRef|null;source_object_type:InboundKind|null;
   receipt:{receipt_id:string;business_key:string;request_hash:string;source_object_id:string;source_version:number;sequence:number;
-    phase:string;accepted_quantity:string;rejected_quantity:string;details:ReceiptDetail[];occurred_at:string;error:string|null}|null;
+    phase:string;accepted_quantity:string;rejected_quantity:string;details:(ReceiptDetail|UnitReceiptDetail)[];occurred_at:string;error:string|null}|null;
 }
 export type CommandFields =
+  | {action:"unit.register";work_order_id:string;sns:string[]}
+  | {action:"production.start";work_order_id:string;mode:"trial"|"bulk";unit_ids:string[];quantity:string}
+  | {action:"production.interrupt";work_order_id:string;reason:string;kind:"S3"|"S4"|"other";interruption_id?:string|null}
+  | {action:"production.resume";interruption_id:string;plan_id:string;evidence:string}
+  | {action:"execution.record";source:SourceRef;work_order_id:string;sn:string;station:string;route_version:string;program_version:string;firmware_version:string;material_uses:{lot_id:string;quantity:string;unit:string}[];result:"pass"|"fail";occurred_at:string;supersedes_event_id?:string|null;rework_order_id?:string|null}
+  | {action:"first_article.record";work_order_id:string;unit_ids:string[];test_ids:string[];inspection_id:string}
   | {action:"reservation.request";work_order_id:string;requirement_id:string;lot_id:string;quantity:string;unit:string}
   | {action:"exchange.dispatch";exchange_id:string}
   | {action:"exchange.query";exchange_id:string}
@@ -297,6 +304,8 @@ export interface WorkOrderImpactPreview {
 }
 export type DomainValue =
   | ExchangeValue
+  | {kind:"unit";id:string;project_id:string;work_order_id:string;revision_id:string;sn:string;state:"registered"|"start_pending"|"running"|"stopped";mode:"trial"|"bulk"|null;accepted_start_id:string|null;execution_event_ids:string[];execution_event_total:number;execution_events:{id:string;source:SourceRef;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[]}
+  | {kind:"interruption";id:string;work_order_id:string;reason:string;exception_id:string|null;exception_kind:"S3"|"S4"|"other";requested_at:string;authority_stopped_at:string|null;resolved_at:string|null;plan_id:string|null;stop_exchange_id:string;resume_exchange_id:string|null;stop_exchange_ids:string[];resume_exchange_ids:string[]}
   | {kind:"reservation";requirement_id:string;work_order_id:string;material_lot_id:string;requested:string;confirmed:string;remaining:string;unit:string;source_version:number;authority_receipt_id:string|null;exchange_id:string}
   | {
       kind: "demand";
@@ -382,6 +391,8 @@ export type DomainValue =
       state: string;
       trial_readiness: Readiness;
       bulk_readiness: Readiness;
+      execution_event_total:number;
+      execution_events:{id:string;claimed_sn:string;source:SourceRef;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[];
     }
   | {kind:"plan";state:"confirmed"|"rejected";reason:string;source:SourceRef;input_revision_ids:string[];input_order_versions:{order_line_id:string;version:number}[];requirement_ids:string[];cutoff:string|null}
   | {kind:"requirement";plan_id:string;lineage_id:string;supersedes_requirement_id:string|null;work_order_id:string;execution_scope:"trial"|"bulk"|"common";material_id:string;owner_id:string;quantity:string;unit:string;balance:MaterialBalance;unqualified_quantity:string}

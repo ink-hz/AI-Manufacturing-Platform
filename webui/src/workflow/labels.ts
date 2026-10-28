@@ -1,6 +1,9 @@
 import type { ObjectSummary } from "./types";
 export const labels: Record<string, string> = {
   exchange:"同步交换", reservation:"库存预留", iqc:"来料检验", customer_approval:"客户批准", requested:"已请求", validated:"已校验", posted:"已过账", unavailable:"未接入",
+  unit:"序列号", interruption:"生产中断", test:"测试记录", registered:"已登记", start_pending:"开工待确认", running:"MES 已确认运行", stopped:"MES 已确认停机", stop_requested:"本地请求停机", resumed:"MES 已确认恢复",
+  "unit.register":"登记序列号", "production.start":"请求开工", "production.interrupt":"请求停机", "production.resume":"请求恢复", "execution.record":"记录工位执行", "first_article.record":"记录首件检验",
+  "matching tested first article recorded":"首件检验与固定版本匹配",
   "MES receipt matches fixed revision": "MES 接收版本与固定修订一致",
   "fixed revision lacks matching accepted MES receipt":
     "固定修订缺少匹配的 MES 接收回执",

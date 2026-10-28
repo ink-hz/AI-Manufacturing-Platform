@@ -16,6 +16,7 @@ import { WorkflowProjects, ProjectForm, Members } from "./WorkflowProjects";
 import { OrdersWorkspace } from "./OrdersWorkspace";
 import { ExchangeWorkspace } from "./ExchangeWorkspace";
 import { SupplyWorkspace } from "./SupplyWorkspace";
+import { ExecutionWorkspace } from "./ExecutionWorkspace";
 import { WorkflowDetail } from "./WorkflowDetail";
 import { OrdersForms } from "./forms/OrdersForms";
 import "./workflow.css";
@@ -33,7 +34,7 @@ export function WorkflowApp({
     [project, setProject] = useState<ProjectDetail | null>(null),
     [view, setView] = useState<ConsoleView>("home"),
     [creating, setCreating] = useState(false),
-    [workspace, setWorkspace] = useState<"orders" | "engineering" | "supply" | "exchange" | "members">(
+    [workspace, setWorkspace] = useState<"orders" | "engineering" | "supply" | "execution" | "exchange" | "members">(
       "orders",
     ),
     [target, setTarget] = useState<WorkflowTarget | null>(null),
@@ -203,7 +204,7 @@ export function WorkflowApp({
         "commitment_change",
         "revision",
         "work_order",
-        "plan", "requirement", "commitment", "material_lot", "receipt", "reservation", "exchange",
+        "plan", "requirement", "commitment", "material_lot", "receipt", "reservation", "exchange", "unit", "interruption",
       ].includes(result.object_type)
     ) {
       setTarget({
@@ -378,6 +379,7 @@ export function WorkflowApp({
                       ["orders", "订单与需求"],
                       ["engineering", "工程与工单"],
                       ["supply", "供应与物料"],
+                      ["execution", "生产执行"],
                       ["exchange", "同步与回执"],
                       ...(b.configuration_admin
                         ? [["members", "成员授权"]]
@@ -454,6 +456,8 @@ export function WorkflowApp({
                     requestLeave={requestLeave}
                     onReload={() => setRefresh((r) => r + 1)}
                   />
+                ) : workspace === "execution" ? (
+                  <ExecutionWorkspace {...props} requestLeave={requestLeave} />
                 ) : (
                   <OrdersWorkspace
                     {...props}

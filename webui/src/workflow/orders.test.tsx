@@ -689,6 +689,8 @@ function businessFixtures(): Record<string, ObjectDetail> {
       state: "planned",
       trial_readiness: readiness,
       bulk_readiness: readiness,
+      execution_event_total: 0,
+      execution_events: [],
     },
     relations: [],
     evidence: [],

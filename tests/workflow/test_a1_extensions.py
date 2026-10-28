@@ -39,6 +39,8 @@ def test_extension_contracts_exist_and_production_registry_contains_only_real_ac
         "supply.inspect",
         "reservation.request", "exchange.dispatch", "exchange.query",
         "source.pull", "source.import", "source.import_file", "exchange.reconcile",
+        "unit.register", "production.start", "production.interrupt", "production.resume",
+        "execution.record", "first_article.record",
     }
 
 

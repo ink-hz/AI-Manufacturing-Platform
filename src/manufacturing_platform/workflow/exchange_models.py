@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from .commands import WorkflowCommand
 from .contracts import (
@@ -15,6 +15,7 @@ from .contracts import (
     StrictModel,
     require_timezone,
 )
+from .execution_models import sn_key
 
 Phase = Literal[
     "requested",
@@ -44,14 +45,73 @@ class ReservePayload(StrictModel):
     plan_version: int = Field(strict=True, ge=1)
 
 
+class StartPayload(StrictModel):
+    kind: Literal["start"] = "start"
+    start_id: UUID
+    work_order_id: UUID
+    revision_id: UUID
+    mode: Literal["trial", "bulk"]
+    work_order_quantity: int = Field(strict=True, ge=1)
+    trial_quantity: int = Field(strict=True, ge=1)
+    units: list[tuple[UUID, str]] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def whole_unique_scope(self):
+        if (
+            len(self.units) > self.work_order_quantity
+            or (self.mode == "trial" and len(self.units) > self.trial_quantity)
+            or len({uid for uid, _ in self.units}) != len(self.units)
+            or len({sn_key(sn) for _, sn in self.units}) != len(self.units)
+            or any(not sn_key(sn) or len(sn) > 200 for _, sn in self.units)
+        ):
+            raise ValueError(
+                "authority start scope must contain distinct whole serials within budget"
+            )
+        return self
+
+
+class StopPayload(StrictModel):
+    kind: Literal["stop"] = "stop"
+    interruption_id: UUID
+    work_order_id: UUID
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class ResumePayload(StrictModel):
+    kind: Literal["resume"] = "resume"
+    interruption_id: UUID
+    work_order_id: UUID
+    plan_id: UUID
+
+
 class ExternalRequest(StrictModel):
     id: UUID
     system: str = Field(min_length=1, max_length=200)
-    action: Literal["reservation.request"]
+    action: Literal[
+        "reservation.request",
+        "production.start",
+        "production.interrupt",
+        "production.resume",
+    ]
     business_key: str = Field(min_length=1, max_length=200)
     source_version: int = Field(strict=True, ge=1)
     project_id: UUID
-    typed_payload: ReservePayload
+    typed_payload: Annotated[
+        ReservePayload | StartPayload | StopPayload | ResumePayload,
+        Field(discriminator="kind"),
+    ]
+
+    @model_validator(mode="after")
+    def matching_action(self):
+        expected = {
+            "reservation.request": "reserve",
+            "production.start": "start",
+            "production.interrupt": "stop",
+            "production.resume": "resume",
+        }
+        if self.typed_payload.kind != expected[self.action]:
+            raise ValueError("request action and payload differ")
+        return self
 
 
 class ReceiptDetail(StrictModel):
@@ -60,6 +120,13 @@ class ReceiptDetail(StrictModel):
     owner_id: str = Field(min_length=1, max_length=200)
     quantity: NonnegativeQuantity
     unit: str = Field(min_length=1, max_length=40)
+
+
+class UnitReceiptDetail(StrictModel):
+    key: str = Field(min_length=1, max_length=200)
+    unit_id: UUID
+    sn: str = Field(min_length=1, max_length=200)
+    state: Literal["running", "stopped"]
 
 
 class ExternalReceipt(StrictModel):
@@ -74,7 +141,7 @@ class ExternalReceipt(StrictModel):
     ]
     accepted_quantity: NonnegativeQuantity
     rejected_quantity: NonnegativeQuantity
-    details: list[ReceiptDetail] = Field(max_length=500)
+    details: list[ReceiptDetail | UnitReceiptDetail] = Field(max_length=500)
     occurred_at: datetime
     error: str | None = Field(default=None, max_length=2000)
     _timezone = field_validator("occurred_at")(require_timezone)

@@ -9,6 +9,7 @@ from pydantic import BeforeValidator, ConfigDict, Field, model_validator
 from ..collaboration_models import EventTime, PackageItem
 from .commands import WorkflowCommand
 from .contracts import DomainValue, Quantity, SourceRef, StrictModel
+from .execution_models import ExecutionEventView
 
 
 def parse_measurement_bound(value):
@@ -198,3 +199,5 @@ class WorkOrder(DomainValue):
     state: Literal["planned"] = "planned"
     trial_readiness: ReadinessResult
     bulk_readiness: ReadinessResult
+    execution_event_total: int
+    execution_events: list[ExecutionEventView]

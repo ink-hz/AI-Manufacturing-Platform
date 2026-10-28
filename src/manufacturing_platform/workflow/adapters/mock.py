@@ -14,7 +14,11 @@ from ..exchange_models import (
     InboundApproval,
     InboundIQC,
     InboundReceipt,
+    ResumePayload,
+    StartPayload,
+    StopPayload,
 )
+from ..execution_models import sn_key
 from ..supply import amount, atoms
 from .mock_store import MockStore
 
@@ -61,8 +65,6 @@ class MockAuthorityAdapter:
         system = self._system(request.system)
         body = request.model_dump(mode="json")
         h = digest(body)
-        payload = request.typed_payload
-        timeout = False
         with self.store.transaction(write=True) as tx:
             prior = tx.execute(
                 "SELECT * FROM authority_operations WHERE system=? AND business_key=?",
@@ -82,95 +84,274 @@ class MockAuthorityAdapter:
             ).lastrowid
             fault = tx.execute("SELECT name,value FROM faults").fetchone()
             fault_name, fault_value = tuple(fault) if fault else (None, None)
-            lot = tx.execute(
-                "SELECT * FROM inventory WHERE lot_id=?", (str(payload.lot_id),)
-            ).fetchone()
-            requested = atoms(
-                payload.quantity, payload.unit, payload.unit, payload.scale
-            )
-            eligible = (
-                lot
-                and (
-                    lot["project_id"],
-                    lot["material_id"],
-                    lot["owner_id"],
-                    lot["unit"],
-                    lot["scale"],
+            if request.action == "reservation.request":
+                result = self._reserve(
+                    tx, request, h, sequence, fault_name, fault_value
                 )
-                == (
+            elif request.action in {
+                "production.start",
+                "production.interrupt",
+                "production.resume",
+            }:
+                result = self._submit_execution(tx, request, h, sequence, fault_name)
+                tx.execute(
+                    "UPDATE authority_operations SET receipt_json=? WHERE seq=?",
+                    (result.model_dump_json(), sequence),
+                )
+            else:
+                raise DomainError(
+                    "UNSUPPORTED_ACTION", 422, "Unknown authority operation"
+                )
+        # The operation committed before a response can be lost.
+        if fault_name == "timeout_after_commit":
+            raise TimeoutError("authority committed; reply lost")
+        return result
+
+    def _reserve(self, tx, request, h, sequence, fault_name, fault_value):
+        payload = request.typed_payload
+        lot = tx.execute(
+            "SELECT * FROM inventory WHERE lot_id=?", (str(payload.lot_id),)
+        ).fetchone()
+        requested = atoms(payload.quantity, payload.unit, payload.unit, payload.scale)
+        eligible = (
+            lot
+            and (
+                lot["project_id"],
+                lot["material_id"],
+                lot["owner_id"],
+                lot["unit"],
+                lot["scale"],
+            )
+            == (
+                str(request.project_id),
+                payload.material_id,
+                payload.owner_id,
+                payload.unit,
+                payload.scale,
+            )
+            and lot["state"] == "active"
+            and lot["expiry"] >= datetime.now(UTC).date().isoformat()
+        )
+        accepted, error = 0, "Ineligible or insufficient quality stock"
+        target = requested
+        if fault_name == "partial_quantity":
+            target = min(
+                requested,
+                atoms(Decimal(fault_value), payload.unit, payload.unit, payload.scale),
+            )
+        if (
+            eligible
+            and 0 < target <= lot["qualified"] - lot["reserved"]
+            and fault_name != "reject"
+        ):
+            accepted, error = target, None
+            tx.execute(
+                "UPDATE inventory SET reserved=reserved+?,version=version+1 WHERE lot_id=?",
+                (accepted, str(payload.lot_id)),
+            )
+            tx.execute(
+                "INSERT INTO authority_reservations VALUES (?,?,?,?,?)",
+                (
+                    str(payload.reservation_id),
+                    str(payload.lot_id),
                     str(request.project_id),
-                    payload.material_id,
-                    payload.owner_id,
-                    payload.unit,
-                    payload.scale,
-                )
-                and lot["state"] == "active"
-                and lot["expiry"] >= datetime.now(UTC).date().isoformat()
+                    request.business_key,
+                    accepted,
+                ),
             )
-            accepted, error = 0, "Ineligible or insufficient quality stock"
-            target = requested
-            if fault_name == "partial_quantity":
-                target = min(
-                    requested,
-                    atoms(
-                        Decimal(fault_value), payload.unit, payload.unit, payload.scale
-                    ),
+        receipt = ExternalReceipt(
+            receipt_id=uuid4(),
+            business_key=request.business_key,
+            request_hash=h,
+            source_object_id=str(payload.reservation_id),
+            source_version=request.source_version,
+            sequence=sequence,
+            phase="accepted" if accepted else "rejected",
+            accepted_quantity=amount(accepted, payload.scale),
+            rejected_quantity=amount(requested - accepted, payload.scale),
+            details=[
+                {
+                    "key": str(payload.requirement_id),
+                    "lot_id": payload.lot_id,
+                    "owner_id": payload.owner_id,
+                    "quantity": amount(accepted, payload.scale),
+                    "unit": payload.unit,
+                }
+            ],
+            occurred_at=datetime.now(UTC),
+            error=error,
+        )
+        if fault_name == "stale_sequence":
+            receipt.sequence = 0
+        if fault_name == "wrong_unit":
+            receipt.details[0].unit = "wrong-unit"
+        if fault_name == "changed_detail_same_total":
+            receipt.details[0].key = str(uuid4())
+        tx.execute(
+            "UPDATE authority_operations SET receipt_json=? WHERE seq=?",
+            (receipt.model_dump_json(), sequence),
+        )
+        return receipt
+
+    def _submit_execution(self, tx, request, h, sequence, fault_name):
+        payload = request.typed_payload
+        accepted = False
+        reason = "Authority production scope rejected"
+        details = []
+        if isinstance(payload, StartPayload):
+            wo = tx.execute(
+                "SELECT * FROM authority_work_orders WHERE project_id=? AND work_order_id=?",
+                (str(request.project_id), str(payload.work_order_id)),
+            ).fetchone()
+            if wo and (wo["revision_id"], wo["total_units"], wo["trial_units"]) != (
+                str(payload.revision_id),
+                payload.work_order_quantity,
+                payload.trial_quantity,
+            ):
+                reason = "Authority work order basis changed"
+            elif (not wo or wo["state"] == "running") and fault_name != "reject":
+                count = len(payload.units)
+                used = wo["started_units"] if wo else 0
+                trial_used = wo["started_trial"] if wo else 0
+                repeated = any(
+                    tx.execute(
+                        "SELECT 1 FROM authority_start_units WHERE unit_id=? OR sn_key=?",
+                        (str(uid), sn_key(sn)),
+                    ).fetchone()
+                    for uid, sn in payload.units
                 )
+                if (
+                    not repeated
+                    and used + count <= payload.work_order_quantity
+                    and (
+                        payload.mode != "trial"
+                        or trial_used + count <= payload.trial_quantity
+                    )
+                ):
+                    if not wo:
+                        tx.execute(
+                            "INSERT INTO authority_work_orders VALUES (?,?,?,?,?,0,0,'running')",
+                            (
+                                str(request.project_id),
+                                str(payload.work_order_id),
+                                str(payload.revision_id),
+                                payload.work_order_quantity,
+                                payload.trial_quantity,
+                            ),
+                        )
+                    tx.execute(
+                        "UPDATE authority_work_orders SET started_units=started_units+?,started_trial=started_trial+? WHERE project_id=? AND work_order_id=?",
+                        (
+                            count,
+                            count if payload.mode == "trial" else 0,
+                            str(request.project_id),
+                            str(payload.work_order_id),
+                        ),
+                    )
+                    for uid, sn in payload.units:
+                        tx.execute(
+                            "INSERT INTO authority_start_units VALUES (?,?,?,?,?,?)",
+                            (
+                                str(request.project_id),
+                                str(payload.work_order_id),
+                                str(uid),
+                                sn_key(sn),
+                                payload.mode,
+                                str(payload.start_id),
+                            ),
+                        )
+                        details.append(
+                            {
+                                "key": str(uid),
+                                "unit_id": uid,
+                                "sn": sn,
+                                "state": "running",
+                            }
+                        )
+                    accepted = True
+            source_object = str(payload.start_id)
+            quantity = str(len(payload.units))
+        elif isinstance(payload, StopPayload):
+            wo = tx.execute(
+                "SELECT * FROM authority_work_orders WHERE project_id=? AND work_order_id=?",
+                (str(request.project_id), str(payload.work_order_id)),
+            ).fetchone()
             if (
-                eligible
-                and 0 < target <= lot["qualified"] - lot["reserved"]
+                wo
+                and wo["started_units"] > 0
+                and wo["state"] == "running"
                 and fault_name != "reject"
             ):
-                accepted, error = target, None
                 tx.execute(
-                    "UPDATE inventory SET reserved=reserved+?,version=version+1 WHERE lot_id=?",
-                    (accepted, str(payload.lot_id)),
-                )
-                tx.execute(
-                    "INSERT INTO authority_reservations VALUES (?,?,?,?,?)",
+                    "INSERT INTO authority_interruptions VALUES (?,?,?,?,0)",
                     (
-                        str(payload.reservation_id),
-                        str(payload.lot_id),
+                        str(payload.interruption_id),
                         str(request.project_id),
-                        request.business_key,
-                        accepted,
+                        str(payload.work_order_id),
+                        1,
                     ),
                 )
-            receipt = ExternalReceipt(
-                receipt_id=uuid4(),
-                business_key=request.business_key,
-                request_hash=h,
-                source_object_id=str(payload.reservation_id),
-                source_version=request.source_version,
-                sequence=sequence,
-                phase="accepted" if accepted else "rejected",
-                accepted_quantity=amount(accepted, payload.scale),
-                rejected_quantity=amount(requested - accepted, payload.scale),
-                details=[
-                    {
-                        "key": str(payload.requirement_id),
-                        "lot_id": payload.lot_id,
-                        "owner_id": payload.owner_id,
-                        "quantity": amount(accepted, payload.scale),
-                        "unit": payload.unit,
-                    }
-                ],
-                occurred_at=datetime.now(UTC),
-                error=error,
-            )
-            if fault_name == "stale_sequence":
-                receipt.sequence = 0
-            if fault_name == "wrong_unit":
-                receipt.details[0].unit = "wrong-unit"
-            if fault_name == "changed_detail_same_total":
-                receipt.details[0].key = str(uuid4())
-            tx.execute(
-                "UPDATE authority_operations SET receipt_json=? WHERE seq=?",
-                (receipt.model_dump_json(), sequence),
-            )
-            timeout = fault_name == "timeout_after_commit"
-        if timeout:
-            raise TimeoutError("authority committed; reply lost")
+                tx.execute(
+                    "UPDATE authority_work_orders SET state='stopped' WHERE project_id=? AND work_order_id=?",
+                    (str(request.project_id), str(payload.work_order_id)),
+                )
+                accepted = True
+            source_object = str(payload.interruption_id)
+            quantity = "1"
+        elif isinstance(payload, ResumePayload):
+            stop = tx.execute(
+                "SELECT * FROM authority_interruptions WHERE id=? AND project_id=? AND work_order_id=?",
+                (
+                    str(payload.interruption_id),
+                    str(request.project_id),
+                    str(payload.work_order_id),
+                ),
+            ).fetchone()
+            wo = tx.execute(
+                "SELECT * FROM authority_work_orders WHERE project_id=? AND work_order_id=?",
+                (str(request.project_id), str(payload.work_order_id)),
+            ).fetchone()
+            if (
+                stop
+                and stop["stopped"]
+                and not stop["resumed"]
+                and wo
+                and wo["state"] == "stopped"
+                and fault_name != "reject"
+            ):
+                tx.execute(
+                    "UPDATE authority_interruptions SET resumed=1 WHERE id=?",
+                    (str(payload.interruption_id),),
+                )
+                tx.execute(
+                    "UPDATE authority_work_orders SET state='running' WHERE project_id=? AND work_order_id=?",
+                    (str(request.project_id), str(payload.work_order_id)),
+                )
+                accepted = True
+            source_object = str(payload.interruption_id)
+            quantity = "1"
+        else:
+            raise DomainError("UNSUPPORTED_ACTION", 422, "Unknown authority operation")
+        receipt = ExternalReceipt(
+            receipt_id=uuid4(),
+            business_key=request.business_key,
+            request_hash=h,
+            source_object_id=source_object,
+            source_version=request.source_version,
+            sequence=sequence,
+            phase="accepted" if accepted else "rejected",
+            accepted_quantity=quantity if accepted else "0",
+            rejected_quantity="0" if accepted else quantity,
+            details=details,
+            occurred_at=datetime.now(UTC),
+            error=None if accepted else reason,
+        )
+        if fault_name == "stale_sequence":
+            receipt.sequence = 0
+        if fault_name == "wrong_unit" and receipt.details:
+            receipt.details[0].sn = "wrong-SN"
+        if fault_name == "changed_detail_same_total" and receipt.details:
+            receipt.details[0].key = str(uuid4())
         return receipt
 
     def query(self, system, business_key):

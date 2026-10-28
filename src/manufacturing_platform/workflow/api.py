@@ -29,9 +29,12 @@ def build_workflow_router(
     resolve_subject,
     release,
     dataset,
+    test_evidence_reader=None,
 ):
     store = WorkflowStore(database_path, authority_database_path, dataset)
-    service = WorkflowService(store, resolve_subject)
+    service = WorkflowService(
+        store, resolve_subject, test_evidence_reader=test_evidence_reader
+    )
 
     class PrivateRoute(APIRoute):
         def get_route_handler(self):
@@ -191,11 +194,15 @@ def build_workflow_router(
             payload = await request.json()
         except ValueError:
             raise HTTPException(422, "Invalid request")
-        return await run_in_threadpool(service.execute, actor(request), project_id, payload)
+        return await run_in_threadpool(
+            service.execute, actor(request), project_id, payload
+        )
 
     @router.get("/projects/{project_id}/exchanges")
     def exchanges(project_id: UUID, request: Request, limit: int = 50, offset: int = 0):
-        return service.objects(actor(request), project_id, ObjectKind.exchange, limit=limit, offset=offset)
+        return service.objects(
+            actor(request), project_id, ObjectKind.exchange, limit=limit, offset=offset
+        )
 
     @router.get("/projects/{project_id}/trace")
     def unavailable_project(project_id: UUID, request: Request):

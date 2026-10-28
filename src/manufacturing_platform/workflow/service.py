@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from . import (  # noqa: F401 - trusted domain registration
     engineering,
     exchanges,
+    execution,
     orders,
     supply,
 )
@@ -58,10 +59,17 @@ def project(row, tx):
 
 class WorkflowService:
     def __init__(
-        self, store, resolve_subject, *, command_registry=None, object_registry=None
+        self,
+        store,
+        resolve_subject,
+        *,
+        command_registry=None,
+        object_registry=None,
+        test_evidence_reader=None,
     ):
         self.store, self.resolve_subject = store, resolve_subject
         self.exchange_service = exchanges.ExchangeService(self)
+        self.test_evidence_reader = test_evidence_reader or execution.NoTestEvidence()
         self.command_registry = (
             COMMAND_REGISTRY if command_registry is None else command_registry
         )

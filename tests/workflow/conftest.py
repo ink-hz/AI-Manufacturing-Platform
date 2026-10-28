@@ -84,6 +84,7 @@ class WorkflowHarness:
                     "mode": "test",
                     "label": "Workflow test",
                 },
+                test_evidence_reader=getattr(self, "test_evidence_reader", None),
             )
         )
         self._client = TestClient(app)
@@ -174,14 +175,16 @@ class WorkflowHarness:
         object_type="demand",
         mode="manual",
     ):
+        from datetime import UTC, datetime
+        current = datetime.now(UTC).isoformat() if object_type == "execution" else None
         return {
             "system": system,
             "object_type": object_type,
             "external_id": external_id,
             "version": version,
             "mode": mode,
-            "occurred_at": "2026-10-28T08:00:00+00:00",
-            "collected_at": "2026-10-28T08:01:00+00:00",
+            "occurred_at": current or "2026-10-28T08:00:00+00:00",
+            "collected_at": current or "2026-10-28T08:01:00+00:00",
             "cutoff": "2026-10-28T08:00:00+00:00",
             "evidence": f"manual entry: {external_id}",
         }

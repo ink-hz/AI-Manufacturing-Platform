@@ -34,6 +34,9 @@ from .exchange_models import (
     RequestReservation,
     ReservationValue,
     ReservePayload,
+    ResumePayload,
+    StartPayload,
+    StopPayload,
 )
 from .imports import SOURCE_POLICIES, admit_records, ingest, parse_import, record_scope
 from .orders import _history_rows, own
@@ -88,6 +91,8 @@ PUBLIC_REASONS = frozenset(
         "Reservation already confirmed",
         "Identity, version, sequence and keyed quantities validated",
         "Authority approved reservation",
+        "Authority approved production transition",
+        "Readiness changed before authority acceptance",
         "File evidence received",
         "Entire bounded batch validated; no authority acceptance inferred",
         "Authoritative correction appended",
@@ -126,6 +131,71 @@ def public_reason(reason):
 
 def receipt_scope(tx, row, receipt):
     """Receipt evidence is visible only after binding all referenced identities to the request."""
+    if row["action"] in {
+        "production.start",
+        "production.interrupt",
+        "production.resume",
+    }:
+        request = ExternalRequest.model_validate_json(row["request_json"])
+        payload = request.typed_payload
+        source_id = str(
+            payload.start_id
+            if isinstance(payload, StartPayload)
+            else payload.interruption_id
+        )
+        if (
+            receipt.business_key != row["business_key"]
+            or receipt.request_hash != row["request_hash"]
+            or receipt.source_object_id != source_id
+        ):
+            return False
+        if tx.execute(
+            "SELECT 1 FROM exchange_receipts WHERE receipt_id=? AND exchange_id<>? AND valid=1",
+            (str(receipt.receipt_id), row["id"]),
+        ).fetchone():
+            return False
+        if isinstance(payload, StartPayload):
+            scoped = tx.execute(
+                "SELECT 1 FROM start_requests WHERE id=? AND project_id=? AND work_order_id=? AND exchange_id=?",
+                (
+                    str(payload.start_id),
+                    row["project_id"],
+                    str(payload.work_order_id),
+                    row["id"],
+                ),
+            ).fetchone()
+            expected = {(str(uid), sn) for uid, sn in payload.units}
+            actual = {
+                (d.key, str(d.unit_id), d.sn)
+                for d in receipt.details
+                if hasattr(d, "unit_id")
+            }
+            local = {
+                (r["id"], r["sn"])
+                for r in tx.execute(
+                    "SELECT u.id,u.sn FROM start_units su JOIN units u ON u.id=su.unit_id AND u.project_id=su.project_id WHERE su.start_id=? AND su.project_id=?",
+                    (str(payload.start_id), row["project_id"]),
+                )
+            }
+            expected_details = {(str(uid), str(uid), sn) for uid, sn in payload.units}
+            return (
+                bool(scoped)
+                and local == expected
+                and not any(not hasattr(d, "unit_id") for d in receipt.details)
+                and actual <= expected_details
+                and len(actual) == len(receipt.details)
+            )
+        scoped = tx.execute(
+            """SELECT 1 FROM interruptions i JOIN interruption_actions ia ON ia.interruption_id=i.id AND ia.project_id=i.project_id WHERE i.id=? AND i.project_id=? AND i.work_order_id=? AND ia.exchange_id=? AND ia.kind=?""",
+            (
+                source_id,
+                row["project_id"],
+                str(payload.work_order_id),
+                row["id"],
+                "stop" if isinstance(payload, StopPayload) else "resume",
+            ),
+        ).fetchone()
+        return bool(scoped) and not receipt.details
     if row["action"] != "reservation.request":
         return False
     request = ExternalRequest.model_validate_json(row["request_json"])
@@ -226,7 +296,9 @@ class ExchangeService:
             (
                 str(request.id),
                 str(context.project_id),
-                str(request.typed_payload.reservation_id),
+                str(request.typed_payload.reservation_id)
+                if isinstance(request.typed_payload, ReservePayload)
+                else None,
                 request.action,
                 request.action,
                 request.system,
@@ -504,6 +576,12 @@ class ExchangeService:
         receipt = public_receipt(receipt)
         request = ExternalRequest.model_validate_json(row["request_json"])
         payload = request.typed_payload
+        if request.action in {
+            "production.start",
+            "production.interrupt",
+            "production.resume",
+        }:
+            return self._apply_execution(tx, context, row, request, receipt)
         reason = ""
         if (
             receipt.phase == "rejected"
@@ -651,6 +729,185 @@ class ExchangeService:
             exchange_id=UUID(row["id"]),
         )
 
+    def _apply_execution(self, tx, context, row, request, receipt):
+        payload = request.typed_payload
+        source_id = str(
+            payload.start_id
+            if isinstance(payload, StartPayload)
+            else payload.interruption_id
+        )
+        requested = len(payload.units) if isinstance(payload, StartPayload) else 1
+        reason = ""
+        if (
+            receipt.source_version != request.source_version
+            or receipt.sequence < 1
+            or receipt.sequence <= row["source_sequence"]
+        ):
+            reason = "Receipt hash, source object or version mismatch"
+        elif receipt.accepted_quantity + receipt.rejected_quantity != requested:
+            reason = "Receipt detail quantity differs from requested total"
+        elif receipt.phase == "accepted" and receipt.accepted_quantity != requested:
+            reason = "Accepted receipt contains no quantity"
+        elif receipt.phase == "rejected" and receipt.accepted_quantity != 0:
+            reason = "Rejected receipt claims accepted quantity"
+        elif (
+            isinstance(payload, StartPayload)
+            and receipt.phase == "accepted"
+            and (
+                len(receipt.details) != requested
+                or {
+                    (d.key, str(d.unit_id), d.sn, d.state)
+                    for d in receipt.details
+                    if hasattr(d, "unit_id")
+                }
+                != {(str(uid), str(uid), sn, "running") for uid, sn in payload.units}
+            )
+        ):
+            reason = "Receipt detail keys differ"
+        elif (
+            receipt.occurred_at > context.now
+            and (receipt.occurred_at - context.now).total_seconds() > 300
+        ):
+            reason = "Future receipt clock"
+        if row["receipt_json"] == receipt.model_dump_json() and row["phase"] in {
+            "accepted",
+            "rejected",
+        }:
+            return MutationResult(
+                object_type="exchange",
+                object_id=UUID(row["id"]),
+                exchange_id=UUID(row["id"]),
+            )
+        tx.execute(
+            "INSERT OR IGNORE INTO exchange_receipts(exchange_id,project_id,receipt_id,payload_json,valid,reason) VALUES (?,?,?,?,?,?)",
+            (
+                row["id"],
+                str(context.project_id),
+                str(receipt.receipt_id),
+                receipt.model_dump_json(),
+                int(not reason),
+                reason,
+            ),
+        )
+        event(tx, row, "received", "Receipt received", receipt.model_dump(mode="json"))
+        if reason:
+            self._reject(tx, context, row, reason)
+        elif receipt.phase == "rejected":
+            self._reject(tx, context, row, "Authority rejected request")
+            tx.execute(
+                "UPDATE exchanges SET receipt_json=?,source_sequence=? WHERE id=?",
+                (receipt.model_dump_json(), receipt.sequence, row["id"]),
+            )
+            if isinstance(payload, StartPayload):
+                tx.execute("DELETE FROM start_units WHERE start_id=?", (source_id,))
+                tx.execute(
+                    "UPDATE units SET state='registered',mode=NULL WHERE id IN (SELECT json_each.value FROM json_each(?)) AND accepted_start_id IS NULL",
+                    (json.dumps([str(uid) for uid, _ in payload.units]),),
+                )
+        elif receipt.phase == "accepted":
+            if isinstance(payload, (StartPayload, ResumePayload)):
+                from .readiness import evaluate
+                from .supply import current_plan_id
+
+                if isinstance(payload, StartPayload):
+                    modes = [payload.mode]
+                    plan_matches = True
+                    safe_to_start = not tx.execute(
+                        "SELECT 1 FROM interruptions WHERE project_id=? AND work_order_id=? AND resolved_at IS NULL LIMIT 1",
+                        (str(context.project_id), str(payload.work_order_id)),
+                    ).fetchone()
+                else:
+                    modes = [
+                        r[0]
+                        for r in tx.execute(
+                            "SELECT DISTINCT mode FROM start_requests WHERE project_id=? AND work_order_id=? AND accepted_receipt_id IS NOT NULL",
+                            (str(context.project_id), str(payload.work_order_id)),
+                        )
+                    ]
+                    plan_matches = current_plan_id(
+                        tx, context.project_id, payload.work_order_id
+                    ) == str(payload.plan_id)
+                    safe_to_start = True
+                if (
+                    not plan_matches
+                    or not safe_to_start
+                    or not all(
+                        evaluate(
+                            tx,
+                            context.project_id,
+                            payload.work_order_id,
+                            mode,
+                            context.now,
+                        ).ready
+                        for mode in modes
+                    )
+                ):
+                    self._reject(
+                        tx,
+                        context,
+                        row,
+                        "Readiness changed before authority acceptance",
+                    )
+                    return MutationResult(
+                        object_type="exchange",
+                        object_id=UUID(row["id"]),
+                        exchange_id=UUID(row["id"]),
+                    )
+            event(
+                tx,
+                row,
+                "validated",
+                "Identity, version, sequence and keyed quantities validated",
+            )
+            tx.execute(
+                "UPDATE exchanges SET receipt_json=?,source_sequence=? WHERE id=?",
+                (receipt.model_dump_json(), receipt.sequence, row["id"]),
+            )
+            if isinstance(payload, StartPayload):
+                tx.execute(
+                    "UPDATE start_requests SET accepted_receipt_id=?,accepted_seq=? WHERE id=?",
+                    (str(receipt.receipt_id), receipt.sequence, source_id),
+                )
+                for uid, _ in payload.units:
+                    tx.execute(
+                        "UPDATE units SET state='running',accepted_start_id=? WHERE id=? AND project_id=?",
+                        (source_id, str(uid), str(context.project_id)),
+                    )
+            elif isinstance(payload, StopPayload):
+                tx.execute(
+                    "UPDATE interruptions SET authority_stopped_at=? WHERE id=? AND project_id=?",
+                    (
+                        receipt.occurred_at.isoformat(),
+                        source_id,
+                        str(context.project_id),
+                    ),
+                )
+                tx.execute(
+                    "UPDATE units SET state='stopped' WHERE project_id=? AND work_order_id=? AND state='running'",
+                    (str(context.project_id), str(payload.work_order_id)),
+                )
+            elif isinstance(payload, ResumePayload):
+                tx.execute(
+                    "UPDATE interruptions SET resolved_at=? WHERE id=? AND project_id=?",
+                    (
+                        receipt.occurred_at.isoformat(),
+                        source_id,
+                        str(context.project_id),
+                    ),
+                )
+                tx.execute(
+                    "UPDATE units SET state='running' WHERE project_id=? AND work_order_id=? AND state='stopped'",
+                    (str(context.project_id), str(payload.work_order_id)),
+                )
+            event(tx, row, "accepted", "Authority approved production transition")
+        else:
+            event(tx, row, receipt.phase, "Awaiting authoritative acceptance")
+        return MutationResult(
+            object_type="exchange",
+            object_id=UUID(row["id"]),
+            exchange_id=UUID(row["id"]),
+        )
+
 
 def request_reservation(tx, context, command):
     req = own(tx, "requirements", context.project_id, command.requirement_id)
@@ -747,7 +1004,13 @@ def prepare_io(tx, context, command):
         row = own(tx, "exchanges", context.project_id, eid)
     else:
         row = own(tx, "exchanges", context.project_id, command.exchange_id)
-    if row["action"] not in {"reservation.request", "source.pull"}:
+    if row["action"] not in {
+        "reservation.request",
+        "source.pull",
+        "production.start",
+        "production.interrupt",
+        "production.resume",
+    }:
         fail("Imported file evidence has no authority dispatch action")
     if row["phase"] not in {"accepted", "posted"}:
         tx.execute("UPDATE exchanges SET attempted=1 WHERE id=?", (row["id"],))
@@ -937,7 +1200,14 @@ def summary(tx, pid, kind, row):
             version=row["source_sequence"] or 1,
             next_actions=["exchange.query", "exchange.dispatch"]
             if row["phase"] not in {"accepted", "posted"}
-            and row["action"] in {"reservation.request", "source.pull"}
+            and row["action"]
+            in {
+                "reservation.request",
+                "source.pull",
+                "production.start",
+                "production.interrupt",
+                "production.resume",
+            }
             else [],
         )
     req = own(tx, "requirements", pid, row["requirement_id"])
@@ -980,7 +1250,13 @@ def detail(tx, pid, kind, ident):
             )
         req = (
             ExternalRequest.model_validate_json(row["request_json"])
-            if row["action"] == "reservation.request"
+            if row["action"]
+            in {
+                "reservation.request",
+                "production.start",
+                "production.interrupt",
+                "production.resume",
+            }
             else None
         )
         saved = tx.execute(
@@ -1024,15 +1300,35 @@ def detail(tx, pid, kind, ident):
             business_key=row["business_key"],
             mode=row["mode"],
             phase=row["phase"],
-            requested=str(req.typed_payload.quantity) if req else "0",
-            accepted=amount(
-                own(tx, "reservations", pid, row["reservation_id"])["confirmed_atoms"],
-                req.typed_payload.scale,
+            requested=(
+                str(req.typed_payload.quantity)
+                if isinstance(req.typed_payload, ReservePayload)
+                else str(len(req.typed_payload.units))
+                if isinstance(req.typed_payload, StartPayload)
+                else "1"
+            )
+            if req
+            else "0",
+            accepted=(
+                amount(
+                    own(tx, "reservations", pid, row["reservation_id"])[
+                        "confirmed_atoms"
+                    ],
+                    req.typed_payload.scale,
+                )
+                if isinstance(req.typed_payload, ReservePayload)
+                else str(receipt.accepted_quantity)
+                if receipt and row["phase"] == "accepted"
+                else "0"
             )
             if req
             else "0",
             rejected=str(receipt.rejected_quantity) if receipt else "0",
-            unit=req.typed_payload.unit if req else "",
+            unit=req.typed_payload.unit
+            if req and isinstance(req.typed_payload, ReservePayload)
+            else "piece"
+            if req
+            else "",
             reason=public_reason(row["reason"]),
             events=[
                 {**dict(r), "reason": public_reason(r["reason"])}

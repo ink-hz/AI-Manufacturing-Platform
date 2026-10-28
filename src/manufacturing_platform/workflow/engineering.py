@@ -393,9 +393,11 @@ def work_order_detail(tx, project_id, object_id):
         return None
     p = project(tx, project_id)
     source = json.loads(row["source_json"])
+    from .execution import work_order_events
     from .readiness import evaluate
 
     now = datetime.now(UTC)
+    event_total, events = work_order_events(tx, project_id, object_id)
     value = WorkOrder(
         order_line_id=row["order_line_id"],
         revision_id=row["revision_id"],
@@ -408,6 +410,8 @@ def work_order_detail(tx, project_id, object_id):
         planned_end=row["planned_end"],
         trial_readiness=evaluate(tx, project_id, object_id, "trial", now),
         bulk_readiness=evaluate(tx, project_id, object_id, "bulk", now),
+        execution_event_total=event_total,
+        execution_events=events,
     )
     relations = [
         ObjectRelation(
