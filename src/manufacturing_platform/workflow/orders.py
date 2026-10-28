@@ -229,6 +229,22 @@ def shipped_atoms(tx, project_id, order_id, project_row):
     return count * (10 ** project_row["unit_scale"])
 
 
+def project_shipped_atoms(tx, project_row):
+    if not tx.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='shipment_items'"
+    ).fetchone():
+        return 0
+    # C2 contract: one accepted shipment_items row per unit_id, with project_id
+    # and order_line_id matching its linked order_lines row.
+    count = tx.execute(
+        "SELECT COUNT(DISTINCT si.unit_id) FROM shipment_items si "
+        "JOIN order_lines o ON o.id=si.order_line_id AND o.project_id=si.project_id "
+        "WHERE si.project_id=?",
+        (project_row["id"],),
+    ).fetchone()[0]
+    return count * (10 ** project_row["unit_scale"])
+
+
 def dispatch_change_order(tx, context, command: ChangeOrder):
     p = project(tx, context.project_id)
     order = own(tx, "order_lines", context.project_id, command.order_line_id)
@@ -473,7 +489,7 @@ def _summary(row, kind, project_row):
         project_id=row["project_id"],
         title=title,
         state=state,
-        quantity=amount(q, project_row) if q > 0 else None,
+        quantity=amount(q, project_row),
         unit=row["unit"],
         source=source,
         version=row["source_version"],
@@ -661,10 +677,7 @@ def project_summary(tx, project_row):
     ).fetchone()
     allocation = allocated(tx, pid)
     original, current = totals
-    shipped = sum(
-        shipped_atoms(tx, pid, r["id"], project_row)
-        for r in tx.execute("SELECT id FROM order_lines WHERE project_id=?", (pid,))
-    )
+    shipped = project_shipped_atoms(tx, project_row)
     return ProjectQuantitySummary(
         original_order_quantity=amount(original, project_row),
         current_order_quantity=amount(current, project_row),

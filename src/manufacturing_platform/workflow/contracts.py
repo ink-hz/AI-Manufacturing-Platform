@@ -43,18 +43,31 @@ class ContractPolicy(StrictModel):
 
 
 def parse_quantity(value):
+    amount = parse_nonnegative_quantity(value)
+    if amount <= 0:
+        raise ValueError("quantity must be positive")
+    return amount
+
+
+def parse_nonnegative_quantity(value):
     if not isinstance(value, str) or not 1 <= len(value) <= 40:
         raise ValueError("quantity must be a bounded decimal string")
     try:
         amount = Decimal(value)
     except InvalidOperation as exc:
         raise ValueError("invalid quantity") from exc
-    if not amount.is_finite() or amount <= 0 or format(amount, "f") != value:
-        raise ValueError("quantity must be a positive canonical decimal")
+    if (
+        not amount.is_finite()
+        or amount < 0
+        or (amount == 0 and amount.is_signed())
+        or format(amount, "f") != value
+    ):
+        raise ValueError("quantity must be a nonnegative canonical decimal")
     return amount
 
 
 Quantity = Annotated[Decimal, BeforeValidator(parse_quantity)]
+NonnegativeQuantity = Annotated[Decimal, BeforeValidator(parse_nonnegative_quantity)]
 
 
 class ProjectCreate(StrictModel):
@@ -132,6 +145,12 @@ class ScopeGrantView(GrantView):
     """A grant always carries its explicit project boundary."""
 
 
+class ProjectStageView(StrictModel):
+    stage: Literal["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9"]
+    status: Literal["pending", "active", "blocked", "complete"]
+    reason: str | None = Field(default=None, max_length=2000)
+
+
 class ProjectDetail(StrictModel):
     id: UUID
     version: int
@@ -144,19 +163,20 @@ class ProjectDetail(StrictModel):
     quantity: Decimal
     contract: ContractPolicy
     legacy_project_id: UUID | None = None
+    stages: list[ProjectStageView]
     summary: "ProjectQuantitySummary"
 
 
 class ProjectQuantitySummary(StrictModel):
-    original_order_quantity: Decimal = Field(ge=0)
-    current_order_quantity: Decimal = Field(ge=0)
-    allocated: Decimal = Field(ge=0)
-    produced_good: Decimal = Field(ge=0)
-    shipped: Decimal = Field(ge=0)
-    signed: Decimal = Field(ge=0)
-    accepted: Decimal = Field(ge=0)
-    remaining_to_ship: Decimal = Field(ge=0)
-    remaining_to_accept: Decimal = Field(ge=0)
+    original_order_quantity: NonnegativeQuantity
+    current_order_quantity: NonnegativeQuantity
+    allocated: NonnegativeQuantity
+    produced_good: NonnegativeQuantity
+    shipped: NonnegativeQuantity
+    signed: NonnegativeQuantity
+    accepted: NonnegativeQuantity
+    remaining_to_ship: NonnegativeQuantity
+    remaining_to_accept: NonnegativeQuantity
 
 
 class ObjectKind(str, Enum):
@@ -213,7 +233,7 @@ class ObjectSummary(StrictModel):
     project_id: UUID
     title: str
     state: str
-    quantity: Decimal | None = None
+    quantity: NonnegativeQuantity | None = None
     unit: str | None = None
     source: SourceRef | None = None
     version: int

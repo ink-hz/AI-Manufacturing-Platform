@@ -46,6 +46,7 @@ def project(row, tx):
         quantity=str(Decimal(row["q_atoms"]).scaleb(-row["unit_scale"])),
         contract=json.loads(row["contract_json"]),
         legacy_project_id=row["legacy_project_id"],
+        stages=[],
         summary=orders.project_summary(tx, row),
     )
 

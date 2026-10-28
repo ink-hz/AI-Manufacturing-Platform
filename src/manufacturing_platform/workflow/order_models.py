@@ -1,14 +1,19 @@
 """Strict wire contracts for demand review and order obligations."""
 
 from datetime import date
-from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
 from pydantic import Field
 
 from .commands import WorkflowCommand
-from .contracts import DomainValue, Quantity, SourceRef, StrictModel
+from .contracts import (
+    DomainValue,
+    NonnegativeQuantity,
+    Quantity,
+    SourceRef,
+    StrictModel,
+)
 
 
 class RecordDemand(WorkflowCommand):
@@ -86,25 +91,25 @@ class OrderLineValue(DomainValue):
     kind: Literal["order_line"] = "order_line"
     demand_id: UUID
     original_quantity: Quantity
-    current_quantity: Decimal = Field(ge=0)
+    current_quantity: NonnegativeQuantity
     unit: str
     original_due: date
     current_due: date
     source: SourceRef
     state: Literal["active", "cancelled"]
-    allocated: str
-    produced_good: str
-    shipped: str
-    signed: str
-    accepted: str
-    remaining_to_ship: str
-    remaining_to_accept: str
+    allocated: NonnegativeQuantity
+    produced_good: NonnegativeQuantity
+    shipped: NonnegativeQuantity
+    signed: NonnegativeQuantity
+    accepted: NonnegativeQuantity
+    remaining_to_ship: NonnegativeQuantity
+    remaining_to_accept: NonnegativeQuantity
 
 
 class ChangeImpact(StrictModel):
     object_type: Literal["work_order", "commitment", "unit", "shipment"]
     object_id: UUID
-    quantity: str
+    quantity: NonnegativeQuantity
     unit: str
     decision: str | None
     evidence: str | None
@@ -114,7 +119,7 @@ class CommitmentChangeValue(DomainValue):
     kind: Literal["commitment_change"] = "commitment_change"
     order_line_id: UUID
     old_quantity: Quantity
-    new_quantity: Decimal = Field(ge=0)
+    new_quantity: NonnegativeQuantity
     unit: str
     old_due: date
     new_due: date

@@ -3,6 +3,15 @@
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
+import pytest
+from pydantic import ValidationError
+
+from manufacturing_platform.workflow.contracts import (
+    ObjectSummary,
+    ProjectDetail,
+    ProjectStageView,
+)
+from manufacturing_platform.workflow.order_models import ChangeImpact, OrderLineValue
 from manufacturing_platform.workflow.store import WorkflowStore
 
 from .conftest import BASE
@@ -492,3 +501,167 @@ def test_two_concurrent_demand_writes_have_one_cas_winner(workflow):
         .json()["total"]
         == 1
     )
+
+
+def test_cancel_unallocated_order_preserves_original_and_zero_summary(workflow):
+    p = workflow.create_project()
+    assert p["stages"] == []
+    assert ProjectDetail.model_validate(p).stages == []
+    with pytest.raises(ValidationError):
+        ProjectStageView.model_validate({"stage": "S10", "status": "complete"})
+    demand = record(workflow, p["id"])
+    approve(workflow, p["id"], demand)
+    order = register(workflow, p["id"], demand)
+    change = workflow.command(
+        p["id"],
+        "order.change",
+        order_line_id=order,
+        new_quantity="100",
+        new_due_date="2026-12-01",
+        cancel=True,
+        reason="customer cancellation",
+        source=workflow.source("order-1", version=2, object_type="order_line"),
+    )
+    workflow.command(
+        p["id"], "order.resolve_change", change_id=change["object_id"], dispositions=[]
+    )
+    detail = (
+        workflow.client()
+        .get(f"{BASE}/projects/{p['id']}/objects/order_line/{order}")
+        .json()
+    )
+    value = detail["value"]
+    assert (value["original_quantity"], value["current_quantity"], value["state"]) == (
+        "100",
+        "0",
+        "cancelled",
+    )
+    assert (value["original_due"], value["current_due"]) == ("2026-12-01", "2026-12-01")
+    assert value["remaining_to_ship"] == value["remaining_to_accept"] == "0"
+    assert [event["action"] for event in detail["history"]] == [
+        "order.register",
+        "order.change",
+        "order.resolve_change",
+    ]
+    page = workflow.client().get(f"{BASE}/projects/{p['id']}/objects/order_line").json()
+    assert page["items"][0]["quantity"] == "0"
+    assert page["items"][0]["state"] == "cancelled"
+    board = (
+        workflow.client()
+        .get(f"{BASE}/dashboard", params={"project_id": p["id"]})
+        .json()
+    )
+    assert board["counts"]["order_line"] == 1
+    assert (
+        next(card for card in board["cards"] if card["id"] == order)["quantity"] == "0"
+    )
+    assert (
+        workflow.client()
+        .get(f"{BASE}/projects/{p['id']}")
+        .json()["summary"]["current_order_quantity"]
+        == "0"
+    )
+
+
+def test_cancel_with_allocation_remains_pending(workflow):
+    p = workflow.create_project()
+    demand = record(workflow, p["id"])
+    approve(workflow, p["id"], demand)
+    order = register(workflow, p["id"], demand)
+    wo = _isolated_work_order_row(workflow, p["id"], 20)
+    workflow.grant(p["id"], "planner", ["planner"])
+    workflow.command(
+        p["id"],
+        "order.allocate",
+        actor_name="planner",
+        order_line_id=order,
+        work_order_id=wo,
+        quantity="20",
+        unit="piece",
+    )
+    change = workflow.command(
+        p["id"],
+        "order.change",
+        order_line_id=order,
+        new_quantity="100",
+        new_due_date="2026-12-01",
+        cancel=True,
+        reason="customer cancellation",
+        source=workflow.source("order-1", version=2, object_type="order_line"),
+    )
+    disposition = [
+        {
+            "object_type": "work_order",
+            "object_id": wo,
+            "decision": "cancel",
+            "evidence": "requested",
+        }
+    ]
+    assert (
+        workflow.command(
+            p["id"],
+            "order.resolve_change",
+            change_id=change["object_id"],
+            dispositions=disposition,
+            expected_status=409,
+        )["code"]
+        == "PRECONDITION_FAILED"
+    )
+    assert (
+        workflow.client()
+        .get(
+            f"{BASE}/projects/{p['id']}/objects/commitment_change/{change['object_id']}"
+        )
+        .json()["value"]["state"]
+        == "pending"
+    )
+
+
+def test_read_quantity_models_reject_noncanonical_or_nonfinite_values(workflow):
+    p = workflow.create_project()
+    demand = record(workflow, p["id"])
+    approve(workflow, p["id"], demand)
+    order = register(workflow, p["id"], demand)
+    detail = (
+        workflow.client()
+        .get(f"{BASE}/projects/{p['id']}/objects/order_line/{order}")
+        .json()
+    )
+    value = detail["value"]
+    for field in (
+        "allocated",
+        "produced_good",
+        "shipped",
+        "signed",
+        "accepted",
+        "remaining_to_ship",
+        "remaining_to_accept",
+        "current_quantity",
+    ):
+        for bad in ("junk", "-1", "NaN", "Infinity", "1e2"):
+            with pytest.raises(ValidationError):
+                OrderLineValue.model_validate({**value, field: bad})
+    impact = {
+        "object_type": "work_order",
+        "object_id": str(uuid4()),
+        "quantity": "0",
+        "unit": "piece",
+        "decision": None,
+        "evidence": None,
+    }
+    assert (
+        ChangeImpact.model_validate(impact).model_dump(mode="json")["quantity"] == "0"
+    )
+    for bad in ("junk", "-1", "NaN", "Infinity", "1e2"):
+        with pytest.raises(ValidationError):
+            ChangeImpact.model_validate({**impact, "quantity": bad})
+    summary = detail["summary"]
+    assert (
+        ObjectSummary.model_validate({**summary, "quantity": "0"}).model_dump(
+            mode="json"
+        )["quantity"]
+        == "0"
+    )
+    for bad in ("junk", "-1", "NaN", "Infinity"):
+        with pytest.raises(ValidationError):
+            ObjectSummary.model_validate({**summary, "quantity": bad})
