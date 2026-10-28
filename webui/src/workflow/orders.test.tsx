@@ -485,13 +485,13 @@ it("advances the next grant draft immediately and rejects delayed older project 
       const body = JSON.parse(String(i?.body));
       writes.push(body);
       return response({
-        operation_id: body.operation_id,
-        project_id: project.id,
+        user_id: url.split("/").at(-1),
+        scope: body.scope,
+        roles: body.roles,
+        qualifications: body.qualifications,
+        active: body.active,
+        evidence: body.evidence,
         project_version: 3 + writes.length,
-        object_type: "project",
-        object_id: project.id,
-        exchange_id: null,
-        replayed: false,
       });
     }
     if (url.endsWith("/projects") && writes.length)
