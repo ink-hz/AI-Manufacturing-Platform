@@ -54,6 +54,8 @@ def install(stage,archive_sha256):
     for key in ['platform_commit','manufacturing_commit','expected_old_platform_commit','expected_old_manufacturing_commit']:
         require(isinstance(e.get(key),str) and re.fullmatch('[0-9a-f]{40}',e[key]),'invalid_release_commit')
     require(e['target_image']=='orbbec-agent-platform:manufacturing-v2-'+e['platform_commit'][:8]+'-'+e['manufacturing_commit'][:8],'unapproved_candidate_tag')
+    release.ops.configure(stage,e['platform_commit'],e['lock_tool'])
+    require(release.ops.digest(release.ops.LOCK_TOOL)==e['lock_tool_sha256'],'lock_tool_changed')
     old=run_json(['docker','inspect',release.ops.API])
     require(old['Image']==e['expected_old_image'] and old['State']['Health']['Status']=='healthy','baseline_image_or_health_drift')
     release.validate_baseline(e,old)
