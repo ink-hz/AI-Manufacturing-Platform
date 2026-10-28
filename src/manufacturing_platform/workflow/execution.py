@@ -965,6 +965,7 @@ def unit_summary(row):
         project_id=row["project_id"],
         kind="unit",
         title=row["sn"],
+        revision_id=row["revision_id"],
         state=visible_state,
         version=row["registered_seq"],
         next_actions=["execution.record"] if row["state"] == "running" else [],

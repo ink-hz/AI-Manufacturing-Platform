@@ -3,6 +3,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { QualityWorkspace } from './QualityWorkspace';
+import { QualityForms } from './forms/QualityForms';
+import { WorkflowError } from './api';
 import type { ProjectDetail } from './types';
 const id='00000000-0000-4000-8000-000000000001';
 const project={id,version:7,customer_id:'Customer 1',contract:{customer_revision:'C1'},allowed_actions:['test.record','nonconformance.open','nonconformance.disposition','rework.complete','release.decide'],release_kinds:['quality'],quality_summary:{first_tested:100,first_passed:96,final_good:99,scrapped:1,open_nonconformances:0}} as ProjectDetail;
@@ -49,4 +51,24 @@ it('shows historical PASS separately from current evidence qualification and aud
  const src={system:'Signed manual lab',object_type:'test',external_id:'TEST-HISTORY',version:1,mode:'manual',occurred_at:'2026-10-28T00:00:00Z',collected_at:'2026-10-28T00:00:00Z',cutoff:null,evidence:'Signed measurement'};
  const detail:any={summary:{...summary('test'),state:'pass'},value:{kind:'test',id,unit_id:id,revision_id:id,attempt:1,scope:{test_version:'T1',program_version:'P1',firmware_version:'F1',equipment_check_id:id},measurements:[{name:'voltage',unit:'V',lower:'4',upper:'6',value:'5'}],outcome:'pass',current_qualified:false,current_blocking_reasons:['Original execution evidence is no longer valid'],source:null,occurred_at:'2026-10-28T00:00:00Z'},relations:[],history:[{event_id:1,action:'test.record',occurred_at:src.occurred_at,recorded_at:src.collected_at,evidence:[{reference:'Historical lab record',source:src}]}],evidence:[]};
  await act(async()=>root.render(<DetailContent data={detail} onOpen={()=>{}}/>));expect(host.textContent).toContain('当前资格：不满足');expect(host.textContent).toContain('Original execution evidence is no longer valid');expect(host.textContent).toContain('Signed manual lab');expect(host.textContent).toContain('人工登记');
+});
+
+it('blocks mixed or missing customer revisions and preserves the same receipt payload on retry',async()=>{
+ const second='00000000-0000-4000-8000-000000000002', otherRevision='00000000-0000-4000-8000-000000000003';
+ const command=vi.fn(async()=>{throw new WorkflowError(500);});
+ const units=[{...summary('unit'),revision_id:id},{...summary('unit'),id:second,title:'SN-002',revision_id:otherRevision},{...summary('unit'),id:'00000000-0000-4000-8000-000000000004',title:'SN-UNKNOWN'}];
+ await act(async()=>root.render(<QualityForms api={{...api,command}} project={{...project,release_kinds:['customer']}} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} action="release.decide" releaseKind="customer" units={units as any} tests={[]} nonconformances={[]} reworks={[]} unit={null}/>));
+ const boxes=[...host.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[];
+ await act(async()=>boxes[0].click());
+ await field('独立签署依据','Customer evidence');await field('实际客户签署人','External customer QE');await field('来源业务编号','CUSTOMER-RETRY');await field('来源凭据','Signed customer receipt');
+ await act(async()=>boxes[1].click());
+ const save=[...host.querySelectorAll('button')].find(b=>b.textContent==='保存独立放行')!;
+ expect(save.disabled).toBe(true);expect(host.textContent).toContain('不同固定修订');
+ await act(async()=>boxes[1].click());await act(async()=>boxes[2].click());
+ expect(save.disabled).toBe(true);expect(host.textContent).toContain('固定修订资料缺失');
+ await act(async()=>boxes[2].click());expect(save.disabled).toBe(false);
+ await click('保存独立放行');expect(command).toHaveBeenCalledTimes(1);
+ const sent=(command.mock.calls as any)[0][1];expect(sent).toMatchObject({revision_id:id,unit_ids:[id],external_signatory:'External customer QE',customer_revision:'C1',source:{object_type:'customer_release',external_id:'CUSTOMER-RETRY'}});
+ await click('保存独立放行');expect(command).toHaveBeenCalledTimes(2);expect((command.mock.calls as any)[1][1]).toEqual(sent);
+ expect((host.querySelector('[aria-label="实际客户签署人"]') as HTMLInputElement).value).toBe('External customer QE');
 });

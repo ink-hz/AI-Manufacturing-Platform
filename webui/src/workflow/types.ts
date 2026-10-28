@@ -304,6 +304,7 @@ export type WorkflowCommand = CommandFields & {
 export interface ObjectSummary {
   action_capabilities?:{action:string;variants:Record<string,{ready:boolean|null;blocking_reasons:string[]}>}[];
   revision_family_id?:string|null;
+  revision_id?:string|null;
   id: string;
   kind: ObjectKind;
   project_id: string;

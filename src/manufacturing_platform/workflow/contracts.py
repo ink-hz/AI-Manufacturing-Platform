@@ -308,6 +308,7 @@ class ActionCapability(StrictModel):
 class ObjectSummary(StrictModel):
     action_capabilities: list[ActionCapability] = Field(default_factory=list)
     revision_family_id: str | None = None
+    revision_id: UUID | None = None
     id: UUID
     kind: ObjectKind
     project_id: UUID

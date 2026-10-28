@@ -6,6 +6,7 @@ import { EngineeringForms } from './forms/EngineeringForms';
 import { SupplyForms } from './forms/SupplyForms';
 import { ExecutionForms } from './forms/ExecutionForms';
 import { QualityForms } from './forms/QualityForms';
+import { QualityWorkspace } from './QualityWorkspace';
 import { DeliveryForms } from './forms/DeliveryForms';
 import { FeedbackForms } from './forms/FeedbackForms';
 import { OrdersForms } from './forms/OrdersForms';
@@ -19,8 +20,9 @@ async function button(text: string) { const b = [...host.querySelectorAll('butto
 async function check(text: string) { const l = [...host.querySelectorAll('label')].find(l => l.textContent?.includes(text) && l.querySelector('input[type="checkbox"]')); expect(l, text).toBeTruthy(); await act(async () => (l!.querySelector('input') as HTMLInputElement).click()); }
 async function settle() { await act(async () => { await new Promise(r => setTimeout(r, 40)); }); }
 async function submit() { await act(async () => { host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await new Promise(r => setTimeout(r, 40)); }); }
-it('submits actual named demand/review/order forms through WorkflowAPI to real HTTP SQLite facts', async () => {
-    const p = await session.api.createProject(projectInput());
+it('submits actual named OEM forms including customer release without a viewed unit through real HTTP SQLite facts', async () => {
+    const input = projectInput();
+    const p = await session.api.createProject({ ...input, mode: 'oem', contract: { ...input.contract, customer_release_required: true } });
     let result: CommandResult | undefined;
     const props = async (): Promise<WorkspaceProps> => ({ api: session.api, project: await session.api.project(p.id), onChanged: r => result = r, onDirty: () => { }, onOpen: () => { }, readOnly: false });
     await act(async () => root.render(<OrdersForms {...await props()} action="demand.record" demands={[]} orders={[]} workOrders={[]}/>));
@@ -121,6 +123,7 @@ it('submits actual named demand/review/order forms through WorkflowAPI to real H
     }
     await cmd({ action: 'unit.register', work_order_id: wo, sns: ['CAM-001', 'CAM-002'] });
     const units = await items('unit');
+    expect(units.every(u => u.revision_id === rev)).toBe(true);
     await form(ExecutionForms, { action: 'production.start', mode: 'trial', workOrderId: wo });
     await field('开工工单', wo);
     await check('CAM-001');
@@ -166,6 +169,25 @@ it('submits actual named demand/review/order forms through WorkflowAPI to real H
         await field('独立签署依据', 'Independent ' + releaseKind);
         await saved();
     }
+    await expect(cmd({ action: 'shipment.request', order_line_id: order.id, unit_ids: units.map(u => u.id), quantity: '2', unit: 'piece', boxes: [] })).rejects.toMatchObject({ status: 409, reasons: expect.arrayContaining([expect.stringContaining('customer approval missing for latest test')]) });
+    expect((await items('shipment')).length).toBe(0);
+    result = undefined;
+    await act(async () => root.render(<QualityWorkspace key="oem-customer-release" {...await props()} requestLeave={f => f()}/>));
+    await settle();
+    await field('查看序列号', '');
+    await settle();
+    expect((host.querySelector('[aria-label="查看序列号"]') as HTMLSelectElement).value).toBe('');
+    await button('客户放行');
+    await check('CAM-001');
+    await check('CAM-002');
+    await fill({ '独立签署依据': 'Customer signed acceptance of measured serials', '实际客户签署人': 'Customer external QE' });
+    await sourceFields('CUSTOMER-RELEASE-HTTP');
+    expect(host.textContent).toContain('合同修订 C1');
+    const customerRelease = await saved();
+    const customerReceipt = await value('release', customerRelease.object_id);
+    expect(customerReceipt).toMatchObject({ release_kind: 'customer', revision_id: rev, customer_revision: 'C1', customer_id: 'Customer 1', external_signatory: 'Customer external QE', actor_id: session.identity.user_id, method: 'manual', decision: 'approved', source: { object_type: 'customer_release', external_id: 'CUSTOMER-RELEASE-HTTP', mode: 'manual' } });
+    expect(new Set(customerReceipt.unit_ids)).toEqual(new Set(units.map(u => u.id)));
+    expect(customerReceipt.actor_id).not.toBe(customerReceipt.external_signatory);
     await form(DeliveryForms, { action: 'shipment.request' });
     await check('CAM-001');
     await check('CAM-002');
