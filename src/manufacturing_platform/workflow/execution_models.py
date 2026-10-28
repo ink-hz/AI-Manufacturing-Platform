@@ -121,7 +121,20 @@ class RecordFirstArticle(WorkflowCommand):
     inspection_id: str = Field(min_length=1, max_length=200)
 
 
+class UnitTestView(StrictModel):
+    id: UUID
+    attempt: int
+    outcome: Literal["pass", "fail"]
+    rework_order_id: UUID | None
+    occurred_at: datetime
+
+
 class UnitValue(DomainValue):
+    tests: list[UnitTestView] = Field(default_factory=list)
+    test_total: int = 0
+    first_pass: bool | None = None
+    scrapped: bool = False
+    final_good: bool = False
     kind: Literal["unit"] = "unit"
     id: UUID
     project_id: UUID
@@ -164,6 +177,7 @@ class ExecutionEventView(StrictModel):
     program_version: str
     firmware_version: str
     result: Literal["pass", "fail"]
+    rework_order_id: UUID | None = None
     route_kind: Literal["initial", "rework"]
     supersedes_event_id: UUID | None
     occurred_at: datetime

@@ -62,7 +62,7 @@ it("loads a second bounded page for plans, material lots and test selectors",asy
     return {items,total:title?51:items.length,limit,offset};
   });
   await act(async()=>root.render(<ExecutionWorkspace api={api} project={project} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} requestLeave={f=>f()}/>));await flush();
-  expect(api.objects).toHaveBeenCalledTimes(6);
+  expect(api.objects).toHaveBeenCalledTimes(7);
   for(const kind of Object.keys(titles)){
     const button=[...host.querySelectorAll("button")].find(b=>b.textContent?.startsWith("读取更多")&&b.textContent.includes(kind==="plan"?"计划":kind==="material_lot"?"物料":"测试"));
     expect(button,kind).toBeTruthy();
@@ -75,7 +75,7 @@ it("loads a second bounded page for plans, material lots and test selectors",asy
   expect(host.querySelector('[aria-label="实际物料批次 1"]')?.textContent).toContain(titles.material_lot);
   await click("放弃草稿并重新读取");await click("记录首件检验");
   expect(host.querySelector('[aria-label="完整通过的测试 1"]')?.textContent).toContain(titles.test);
-  expect(api.objects).toHaveBeenCalledTimes(9);
+  expect(api.objects).toHaveBeenCalledTimes(10);
 });
 
 it("offers explicit trial requalification while bulk stays stopped",async()=>{

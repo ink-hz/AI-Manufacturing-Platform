@@ -26,6 +26,8 @@ from .supply_models import InspectSupply, ReceiveSupply
 
 SOURCE_POLICIES = {
     "execution": "execution.record",
+    "test": "test.record",
+    "customer_release": "release.decide",
     "receipt": "supply.receive",
     "iqc": "supply.inspect",
     "customer_approval": "engineering.customer_approval",
@@ -157,6 +159,21 @@ def record_scope(
             own(tx, "material_lots", project_id, ident)
         if tx.execute(
             "SELECT 1 FROM execution_events e LEFT JOIN execution_admissions a ON a.event_id=e.id AND a.project_id=e.project_id WHERE e.source_system=? AND e.source_type=? AND e.source_external_id=? AND e.project_id<>? AND COALESCE(a.admitted,e.status='accepted')=1 LIMIT 1",
+            (*key, str(project_id)),
+        ).fetchone():
+            raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+    elif record.object_type in {"test", "customer_release"}:
+        for ident in record.unit_ids:
+            own(tx, "units", project_id, ident)
+        if record.revision_id:
+            own(tx, "engineering_revisions", project_id, record.revision_id)
+        if tx.execute(
+            "SELECT 1 FROM quality_tests WHERE source_system=? AND source_type=? AND source_external_id=? AND project_id<>?",
+            (*key, str(project_id)),
+        ).fetchone():
+            raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+        if tx.execute(
+            "SELECT 1 FROM quality_releases WHERE source_system=? AND source_type=? AND source_external_id=? AND project_id<>?",
             (*key, str(project_id)),
         ).fetchone():
             raise DomainError("NOT_FOUND", 404, "Workflow resource not found")

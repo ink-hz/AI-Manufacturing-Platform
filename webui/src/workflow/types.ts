@@ -23,6 +23,7 @@ export type WorkflowTarget = {
   id: string;
 };
 export type ObjectKind =
+  | "nonconformance" | "rework" | "release"
   | "eco"
   | "demand"
   | "order_line"
@@ -71,7 +72,13 @@ export type QuantitySummary = {
   remaining_to_ship: string;
   remaining_to_accept: string;
 };
+export type ReleaseKind="manufacturing"|"quality"|"customer";
+export type Measurement={name:string;unit:string;lower:string;upper:string;value:string};
+export type TestScope={route_fingerprint:string;test_version:string;program_version:string;firmware_version:string;equipment_check_id:string};
+export type UnitTest={id:string;attempt:number;outcome:"pass"|"fail";rework_order_id:string|null;occurred_at:string};
 export interface ProjectDetail extends Omit<ProjectCreate, "operation_id"> {
+  release_kinds?:ReleaseKind[];
+  quality_summary?:{first_tested:number;first_passed:number;final_good:number;scrapped:number;open_nonconformances:number}|null;
   id: string;
   version: number;
   allowed_actions: WorkflowCommand["action"][];
@@ -143,6 +150,11 @@ export interface EcoImpact {stock_basis?:Record<string,string>|null;opening_cons
 export interface EcoValue {retentions?:{work_order_id:string;quantity:string;unit_ids:string[];evidence:string}[];implementation_outcome?:"pending"|"retained"|"cancelled"|"switched"|"mixed";unresolved_stock_basis_ids?:string[];kind:"eco";id:string;old_revision_id:string;new_revision_id:string|null;old_revision:string;new_revision:string|null;effective_work_order_ids:string[];effective_sn_ids:string[];reason:string;state:"open"|"closed";impacts:EcoImpact[];switches:{id:string;work_order_id:string;new_work_order_id:string|null;boundary:"split_remaining"|"cancel_remaining";quantity:string;retained_quantity:string;exchange_id:string;phase:string}[]}
 export interface EcoReceiptDetail {key:string;effect:"cancel_remaining"|"create_replacement";work_order_id:string;revision_id:string;quantity:string;retained_quantity:string}
 export type CommandFields =
+  | {action:"test.record";source:SourceRef;unit_id:string;attempt:number;program_version:string;limit_version:string;firmware_version:string;measurements:Measurement[];rework_order_id?:string|null}
+  | {action:"nonconformance.open";test_id:string;defect:string;evidence:string}
+  | {action:"nonconformance.disposition";nonconformance_id:string;decision:"rework"|"scrap"|"concession";route_id?:string|null;route_steps:{station:string;instruction_version:string}[];evidence:string}
+  | {action:"rework.complete";rework_order_id:string;execution_event_ids:string[];test_ids:string[]}
+  | {action:"release.decide";kind:ReleaseKind;unit_ids:string[];decision:"approved"|"rejected"|"conditional";evidence:string;customer_id?:string|null;revision_id?:string|null;customer_revision?:string|null;external_signatory?:string|null;method?:"manual"|null;source?:SourceRef|null}
   | {action:"eco.open";old_revision_id:string;new_revision_id:string|null;effective_work_order_ids:string[];effective_sn_ids:string[];reason:string}
   | {action:"eco.disposition";eco_id:string;impact_id:string;decision:"use_old"|"rework"|"return"|"scrap";quantity:string;evidence:string}
   | {action:"eco.switch";eco_id:string;target_work_order_id:string;new_revision_id:string|null;boundary:"split_remaining"|"cancel_remaining"|"retain_existing";retained_quantity?:string;evidence:string}
@@ -312,9 +324,13 @@ export interface WorkOrderImpactPreview {
   }[];
 }
 export type DomainValue =
+  | {kind:"test";id:string;unit_id:string;revision_id:string;attempt:number;scope:TestScope;measurements:Measurement[];outcome:"pass"|"fail";rework_order_id:string|null;execution_event_ids:string[];source:SourceRef;actor_id:string;occurred_at:string;recorded_at:string}
+  | {kind:"nonconformance";id:string;unit_id:string;test_id:string;defect:string;evidence:string;state:"open"|"rework"|"resolved"|"scrapped";rework_order_id:string|null;disposition:"rework"|"scrap"|null;disposition_evidence:string|null}
+  | {kind:"rework";candidate_execution_events?:{id:string;station:string;route_version:string;occurred_at:string;result:"pass"|"fail";rework_order_id?:string|null}[];id:string;unit_id:string;nonconformance_id:string;revision_id:string;route_id:string;route_steps:{station:string;instruction_version:string}[];state:"open"|"complete";execution_event_ids:string[];test_ids:string[]}
+  | {kind:"release";id:string;release_kind:ReleaseKind;unit_ids:string[];decision:"approved"|"rejected";evidence:string;test_ids:string[];actor_id:string;customer_id:string|null;revision_id:string|null;customer_revision:string|null;external_signatory:string|null;method:"manual"|null;source:SourceRef|null;recorded_at:string}
   | EcoValue
   | ExchangeValue
-  | {kind:"unit";id:string;project_id:string;work_order_id:string;revision_id:string;sn:string;state:"registered"|"start_pending"|"running"|"stopped";mode:"trial"|"bulk"|null;accepted_start_id:string|null;authority_start_accepted:boolean;execution_event_ids:string[];execution_event_total:number;execution_events:{id:string;source:SourceRef|null;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[]}
+  | {kind:"unit";tests?:UnitTest[];test_total?:number;first_pass?:boolean|null;scrapped?:boolean;final_good?:boolean;id:string;project_id:string;work_order_id:string;revision_id:string;sn:string;state:"registered"|"start_pending"|"running"|"stopped";mode:"trial"|"bulk"|null;accepted_start_id:string|null;authority_start_accepted:boolean;execution_event_ids:string[];execution_event_total:number;execution_events:{id:string;source:SourceRef|null;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";rework_order_id?:string|null;supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[]}
   | {kind:"interruption";id:string;work_order_id:string;reason:string;exception_id:string|null;exception_kind:"S3"|"S4"|"other";requested_at:string;authority_stopped_at:string|null;resolved_at:string|null;trial_resumed_at?:string|null;superseded_by?:string|null;plan_id:string|null;stop_exchange_id:string;recovery_start_id:string|null;resume_exchange_id:string|null;stop_exchange_ids:string[];resume_exchange_ids:string[]}
   | {kind:"reservation";requirement_id:string;work_order_id:string;material_lot_id:string;requested:string;confirmed:string;remaining:string;unit:string;source_version:number;authority_receipt_id:string|null;exchange_id:string}
   | {
@@ -402,7 +418,7 @@ export type DomainValue =
       trial_readiness: Readiness;
       bulk_readiness: Readiness;
       execution_event_total:number;
-      execution_events:{id:string;claimed_sn:string;source:SourceRef|null;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[];
+      execution_events:{id:string;claimed_sn:string;source:SourceRef|null;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";rework_order_id?:string|null;supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[];
       remaining_obligation?:string;
       held_start_scopes?:{id:string;mode:"trial"|"bulk";sns:string[];exchange_id:string;receipt_id:string}[];
     }

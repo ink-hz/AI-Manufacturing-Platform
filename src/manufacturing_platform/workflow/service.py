@@ -10,6 +10,7 @@ from . import (  # noqa: F401 - trusted domain registration
     exchanges,
     execution,
     orders,
+    quality,
     supply,
 )
 from .authorization import require_project
@@ -27,6 +28,7 @@ from .contracts import (
     ObjectPage,
     ProjectCreate,
     ProjectDetail,
+    ProjectQualitySummary,
     ScopeGrantView,
 )
 from .queries import OBJECT_REGISTRY
@@ -70,7 +72,8 @@ class WorkflowService:
     ):
         self.store, self.resolve_subject = store, resolve_subject
         self.exchange_service = exchanges.ExchangeService(self)
-        self.test_evidence_reader = test_evidence_reader or execution.NoTestEvidence()
+        self.test_evidence_reader = test_evidence_reader or quality
+        self.store.bind_test_evidence_reader(self.test_evidence_reader)
         self.command_registry = (
             COMMAND_REGISTRY if command_registry is None else command_registry
         )
@@ -265,6 +268,19 @@ class WorkflowService:
                     json.loads(grant["qualifications_json"]),
                 )
             )
+            value.release_kinds = (
+                []
+                if actor.read_only
+                else quality.release_kinds(
+                    json.loads(grant["roles_json"]),
+                    json.loads(grant["qualifications_json"]),
+                )
+            )
+            if not value.release_kinds and "release.decide" in value.allowed_actions:
+                value.allowed_actions.remove("release.decide")
+            value.quality_summary = ProjectQualitySummary.model_validate(
+                quality.quality_summary(tx, project_id).model_dump(mode="json")
+            )
             return value
 
     def members(self, actor, project_id):
@@ -374,6 +390,8 @@ class WorkflowService:
                 json.loads(grant["qualifications_json"]),
             ):
                 raise DomainError("FORBIDDEN", 403, "Action permission denied")
+            if command.action == "release.decide":
+                quality.authorize_release(tx, actor, project_id, command)
             self.exchange_service.authorize(tx, actor, project_id, command)
             replay = self._replay(tx, actor, command.operation_id, payload)
             if replay is not None:

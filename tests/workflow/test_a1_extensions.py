@@ -42,6 +42,7 @@ def test_extension_contracts_exist_and_production_registry_contains_only_real_ac
         "unit.register", "production.start", "production.interrupt", "production.resume",
         "execution.record", "first_article.record",
         "eco.open", "eco.disposition", "eco.switch", "eco.close",
+        "test.record", "nonconformance.open", "nonconformance.disposition", "rework.complete", "release.decide",
     }
 
 

@@ -1,7 +1,10 @@
 """Serial scopes, source genealogy and authority-backed production transitions."""
 
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
+from sqlite3 import Connection
 from types import SimpleNamespace
 from typing import Protocol
 from uuid import UUID, uuid4
@@ -54,6 +57,29 @@ class TestEvidenceReader(Protocol):
 class NoTestEvidence:
     def complete_pass(self, tx, project_id, test_id, unit_id, revision_id, *, scope):
         return False
+
+
+_TEST_READER: ContextVar[tuple[Connection, TestEvidenceReader] | None] = ContextVar(
+    "workflow_test_reader", default=None
+)
+
+
+@contextmanager
+def bind_test_reader(tx: Connection, reader: TestEvidenceReader):
+    token = _TEST_READER.set((tx, reader))
+    try:
+        yield
+    finally:
+        _TEST_READER.reset(token)
+
+
+def test_reader(tx: Connection) -> TestEvidenceReader:
+    binding = _TEST_READER.get()
+    if binding is not None and binding[0] is tx:
+        return binding[1]
+    from . import quality
+
+    return quality
 
 
 def fail(reason):
@@ -619,6 +645,7 @@ def record_execution(tx, context, command: RecordExecution):
         occurred_at=command.occurred_at,
     )
     reason = ""
+    qualified_rework_id = None
     admitted = True
     try:
         admit_records(tx, context, [record], object_type="execution", mode="manual")
@@ -650,12 +677,27 @@ def record_execution(tx, context, command: RecordExecution):
         tx, context.project_id, wo["id"], unit["mode"], command.occurred_at
     ).ready:
         reason = "execution readiness at occurrence requires reassessment"
-    elif command.rework_order_id:
-        reason = "rework route requires C1 qualified rework order"
     else:
         revision = fixed_revision(tx, context.project_id, wo["revision_id"])
         route = {s.station: s.instruction_version for s in revision.route_steps}
-        if (
+        from .quality import rework_route, scrapped
+
+        if scrapped(tx, context.project_id, unit["id"]):
+            reason = "scrap is an irreversible quality exclusion"
+        if command.rework_order_id:
+            try:
+                rework, steps = rework_route(
+                    tx, context.project_id, unit, command.rework_order_id
+                )
+                qualified_rework_id = rework["id"]
+                if command.occurred_at < datetime.fromisoformat(rework["created_at"]):
+                    reason = "rework execution predates the qualified route"
+                route = {s.station: s.instruction_version for s in steps}
+            except DomainError as exc:
+                reason = exc.message
+        if reason:
+            pass
+        elif (
             route.get(command.station) != command.route_version
             or command.program_version != revision.test_spec.program_version
             or command.firmware_version != revision.firmware_version
@@ -764,7 +806,7 @@ def record_execution(tx, context, command: RecordExecution):
             "rejected" if reason else "accepted",
             reason,
             "rework" if command.rework_order_id else "initial",
-            str(command.rework_order_id) if command.rework_order_id else None,
+            qualified_rework_id,
             correction_id,
             command.occurred_at.isoformat(),
             context.now.isoformat(),
@@ -811,7 +853,7 @@ def record_first_article(tx, context, command: RecordFirstArticle):
         set(command.unit_ids)
     ) != len(command.unit_ids):
         fail("first article requires one unique complete test per trial serial")
-    reader = context.exchange_service.workflow.test_evidence_reader
+    reader = test_reader(tx)
     revision = fixed_revision(tx, context.project_id, wo["revision_id"])
     equipment = tx.execute(
         "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' ORDER BY rowid DESC LIMIT 1",
@@ -946,6 +988,7 @@ def event_view(tx, pid, e):
         "firmware_version": e["firmware_version"],
         "result": e["result"],
         "route_kind": e["route_kind"],
+        "rework_order_id": e["rework_order_id"],
         "supersedes_event_id": e["supersedes_event_id"],
         "occurred_at": e["occurred_at"],
         "recorded_at": e["recorded_at"],
@@ -980,6 +1023,8 @@ def unit_detail(tx, pid, ident):
         (str(pid), str(ident)),
     ).fetchall()
     event_views = [event_view(tx, pid, e) for e in reversed(events)]
+    from .quality import unit_tests
+
     return ObjectDetail[UnitValue](
         summary=unit_summary(row),
         value=UnitValue(
@@ -995,6 +1040,7 @@ def unit_detail(tx, pid, ident):
             execution_event_ids=[e["id"] for e in reversed(events)],
             execution_event_total=event_total,
             execution_events=event_views,
+            **unit_tests(tx, pid, ident),
         ),
         relations=[
             ObjectRelation(

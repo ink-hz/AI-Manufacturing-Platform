@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -126,3 +126,16 @@ CREATE TABLE IF NOT EXISTS eco_stock_openings(eco_id TEXT NOT NULL REFERENCES ec
 CREATE TABLE IF NOT EXISTS eco_retentions(eco_id TEXT NOT NULL REFERENCES eco_changes(id),project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),q_atoms INTEGER NOT NULL CHECK(q_atoms>0),unit_ids_json TEXT NOT NULL,evidence TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(eco_id,work_order_id));
 """
 SCHEMA += ECO_REVIEW_SCHEMA
+
+QUALITY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS quality_tests(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),unit_id TEXT NOT NULL REFERENCES units(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),attempt INTEGER NOT NULL,scope_json TEXT NOT NULL,measurements_json TEXT NOT NULL,outcome TEXT NOT NULL,rework_order_id TEXT,execution_ids_json TEXT NOT NULL,source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_json TEXT NOT NULL,actor_id TEXT NOT NULL,occurred_at TEXT NOT NULL,recorded_at TEXT NOT NULL,UNIQUE(unit_id,attempt),UNIQUE(source_system,source_type,source_external_id));
+CREATE INDEX IF NOT EXISTS quality_tests_page ON quality_tests(project_id,seq);
+CREATE TABLE IF NOT EXISTS nonconformances(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),unit_id TEXT NOT NULL REFERENCES units(id),test_id TEXT NOT NULL UNIQUE REFERENCES quality_tests(id),defect TEXT NOT NULL,evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS quality_dispositions(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),nonconformance_id TEXT NOT NULL REFERENCES nonconformances(id),unit_id TEXT NOT NULL REFERENCES units(id),decision TEXT NOT NULL,evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS rework_orders(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),nonconformance_id TEXT NOT NULL UNIQUE REFERENCES nonconformances(id),unit_id TEXT NOT NULL REFERENCES units(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),route_id TEXT NOT NULL,route_json TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS rework_completions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),rework_order_id TEXT NOT NULL UNIQUE REFERENCES rework_orders(id),execution_ids_json TEXT NOT NULL,test_ids_json TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS quality_releases(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),kind TEXT NOT NULL,decision TEXT NOT NULL,payload_json TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,source_system TEXT,source_type TEXT,source_external_id TEXT,UNIQUE(source_system,source_type,source_external_id));
+CREATE TABLE IF NOT EXISTS quality_release_units(release_id TEXT NOT NULL REFERENCES quality_releases(id),project_id TEXT NOT NULL REFERENCES projects(id),unit_id TEXT NOT NULL REFERENCES units(id),test_id TEXT REFERENCES quality_tests(id),PRIMARY KEY(release_id,unit_id));
+CREATE INDEX IF NOT EXISTS quality_release_units_scope ON quality_release_units(project_id,unit_id);
+"""
+SCHEMA += QUALITY_SCHEMA

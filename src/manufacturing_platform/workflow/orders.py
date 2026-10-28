@@ -646,6 +646,8 @@ def work_order_impact(tx, project_id, order_id, project_row):
 
 
 def order_detail(tx, project_id, object_id):
+    from .quality import final_good_count
+
     row = tx.execute(
         "SELECT * FROM order_lines WHERE id=? AND project_id=?",
         (str(object_id), str(project_id)),
@@ -691,7 +693,9 @@ def order_detail(tx, project_id, object_id):
             source=source,
             state=row["state"],
             allocated=amount(allocation, p),
-            produced_good="0",
+            produced_good=amount(
+                final_good_count(tx, project_id, object_id) * (10 ** p["unit_scale"]), p
+            ),
             shipped=amount(shipped, p),
             signed="0",
             accepted="0",
@@ -757,6 +761,7 @@ def change_detail(tx, project_id, object_id):
 
 def project_summary(tx, project_row):
     from .contracts import ProjectQuantitySummary
+    from .quality import final_good_count
 
     pid = project_row["id"]
     totals = tx.execute(
@@ -770,7 +775,9 @@ def project_summary(tx, project_row):
         original_order_quantity=amount(original, project_row),
         current_order_quantity=amount(current, project_row),
         allocated=amount(allocation, project_row),
-        produced_good="0",
+        produced_good=amount(
+            final_good_count(tx, pid) * (10 ** project_row["unit_scale"]), project_row
+        ),
         shipped=amount(shipped, project_row),
         signed="0",
         accepted="0",

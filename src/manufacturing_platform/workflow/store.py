@@ -4,6 +4,10 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .execution import TestEvidenceReader
 
 from .orders import source_key
 from .schema import (
@@ -14,6 +18,7 @@ from .schema import (
     EXECUTION_REVIEW_SCHEMA,
     EXECUTION_SCHEMA,
     ORDER_SCHEMA,
+    QUALITY_SCHEMA,
     SCHEMA,
     SCHEMA_VERSION,
     SUPPLY_SCHEMA,
@@ -25,6 +30,15 @@ class WorkflowStore:
         self.database_path = database_path
         self.authority_database_path = authority_database_path
         self.dataset = dataset
+        self._test_evidence_reader: TestEvidenceReader | None = None
+
+    def bind_test_evidence_reader(self, reader: "TestEvidenceReader") -> None:
+        if (
+            self._test_evidence_reader is not None
+            and self._test_evidence_reader is not reader
+        ):
+            raise ValueError("workflow store evidence reader is already bound")
+        self._test_evidence_reader = reader
 
     def _validate(self):
         paths = [Path(self.database_path), Path(self.authority_database_path)]
@@ -199,6 +213,12 @@ class WorkflowStore:
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=10")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 10:
+                for statement in QUALITY_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=11")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1
                 or version[0][0] != SCHEMA_VERSION
@@ -207,7 +227,11 @@ class WorkflowStore:
                 != (self.dataset["id"], self.dataset["mode"], self.dataset["label"])
             ):
                 raise ValueError("workflow dataset mismatch")
-            yield conn
+            from . import quality
+            from .execution import bind_test_reader
+
+            with bind_test_reader(conn, self._test_evidence_reader or quality):
+                yield conn
             conn.commit()
         except BaseException:
             conn.rollback()

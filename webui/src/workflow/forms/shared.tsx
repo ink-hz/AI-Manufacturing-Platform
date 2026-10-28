@@ -202,7 +202,7 @@ export function CommandForm<T extends CommandFields>({
         try {
           if (!pending.current) {
             const fields = structuredClone(value);
-            if ("source" in fields) {
+            if ("source" in fields && fields.source) {
               const now = new Date().toISOString();
               fields.source = {
                 ...fields.source,

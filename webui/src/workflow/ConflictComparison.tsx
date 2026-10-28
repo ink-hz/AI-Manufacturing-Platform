@@ -13,6 +13,11 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
   const target = (kind: WorkflowTarget["kind"], id: string) =>
     id ? [{ projectId, kind, id }] : [];
   switch (draft.action) {
+    case "test.record":return target("unit",draft.unit_id);
+    case "nonconformance.open":return target("test",draft.test_id);
+    case "nonconformance.disposition":return target("nonconformance",draft.nonconformance_id);
+    case "rework.complete":return target("rework",draft.rework_order_id);
+    case "release.decide":return draft.unit_ids.slice(0,50).flatMap(id=>target("unit",id));
     case "demand.record":
       return target("demand", draft.supersedes_demand_id || "");
     case "demand.review":
@@ -68,6 +73,10 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
 }
 function facts(v: DomainValue): [string, string][] {
   switch (v.kind) {
+    case "test":return [["次数",String(v.attempt)],["测量判定",v.outcome],["规范",v.scope.test_version]];
+    case "nonconformance":return [["缺陷",v.defect],["状态",v.state]];
+    case "rework":return [["路线",v.route_id],["状态",v.state]];
+    case "release":return [["独立类型",v.release_kind],["决定",v.decision],["签署依据",v.evidence]];
     case "eco":return [["旧固定版本",v.old_revision],["新固定版本",v.new_revision||"仅取消剩余范围"],["状态",label(v.state)]];
     case "exchange":return [["阶段",label(v.phase)],["请求数量",v.requested],["已接受",v.accepted],["原因",v.reason]];
     case "reservation":return [["请求数量",v.requested],["确认预留",v.confirmed],["待确认余量",v.remaining]];

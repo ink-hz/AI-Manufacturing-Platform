@@ -192,6 +192,36 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         and current_equipment
         and article["equipment_check_id"] == current_equipment["id"]
     )
+    if article_ok:
+        from .execution import test_reader
+        from .execution_models import TestEvidenceScope
+
+        scope = TestEvidenceScope(
+            route_fingerprint=article["route_fingerprint"],
+            test_version=article["test_version"],
+            program_version=article["program_version"],
+            firmware_version=article["firmware_version"],
+            equipment_check_id=article["equipment_check_id"],
+        )
+        units, tests = (
+            json.loads(article["unit_ids_json"]),
+            json.loads(article["test_ids_json"]),
+        )
+        article_ok = bool(
+            units
+            and len(units) == len(tests)
+            and all(
+                test_reader(tx).complete_pass(
+                    tx,
+                    project_id,
+                    UUID(tid),
+                    UUID(uid),
+                    UUID(row["revision_id"]),
+                    scope=scope,
+                )
+                for uid, tid in zip(units, tests, strict=True)
+            )
+        )
     add(
         "first_article",
         mode == "bulk",

@@ -155,7 +155,19 @@ class ProjectStageView(StrictModel):
     reason: str | None = Field(default=None, max_length=2000)
 
 
+class ProjectQualitySummary(StrictModel):
+    first_tested: int
+    first_passed: int
+    final_good: int
+    scrapped: int
+    open_nonconformances: int
+
+
 class ProjectDetail(StrictModel):
+    release_kinds: list[Literal["manufacturing", "quality", "customer"]] = Field(
+        default_factory=list
+    )
+    quality_summary: ProjectQualitySummary | None = None
     allowed_actions: list[str] = Field(default_factory=list)
     id: UUID
     version: int

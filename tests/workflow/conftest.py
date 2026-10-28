@@ -399,3 +399,103 @@ WorkflowHarness.material_requirement = _material_requirement
 WorkflowHarness.receive = _receive
 WorkflowHarness.inspect = _inspect
 WorkflowHarness.balance = _balance
+
+
+def _executed_unit(self):
+    """A real accepted unit for C1; business facts always use public actions."""
+    from uuid import uuid4
+    from .test_execution import running_execution
+
+    p, _, units, _, event = running_execution(self)
+    self.command(
+        p["id"],
+        "execution.record",
+        actor_name="production",
+        source=self.source(str(uuid4()), object_type="execution"),
+        **event,
+    )
+    self.grant(
+        p["id"],
+        "quality",
+        ["quality"],
+        ["inspection", "disposition", "quality_release"],
+    )
+    return p, self.object(p["id"], "unit", units[0])
+
+
+def _test(
+    self, project_id, unit_id, *, measured, lower="4", upper="6", rework_order_id=None
+):
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    unit = self.object(project_id, "unit", unit_id)
+    source = self.source(str(uuid4()), object_type="test")
+    now = datetime.now(UTC).isoformat()
+    source.update(occurred_at=now, collected_at=now)
+    result = self.command(
+        project_id,
+        "test.record",
+        actor_name="quality",
+        unit_id=unit_id,
+        attempt=unit["test_total"] + 1,
+        program_version="P1",
+        limit_version="T1",
+        firmware_version="F1",
+        source=source,
+        measurements=[
+            dict(name="voltage", value=measured, unit="V", lower=lower, upper=upper)
+        ],
+        rework_order_id=rework_order_id,
+    )
+    return self.object(project_id, "test", result["object_id"])
+
+
+def _rework(self, project_id, test_id):
+    """Qualified repair and actual B3 execution; retest remains a separate action."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    test = self.object(project_id, "test", test_id)
+    unit = self.object(project_id, "unit", test["unit_id"])
+    nc = self.command(
+        project_id,
+        "nonconformance.open",
+        actor_name="quality",
+        test_id=test_id,
+        defect="measured failure",
+        evidence="failed measurement",
+    )
+    rw = self.command(
+        project_id,
+        "nonconformance.disposition",
+        actor_name="quality",
+        nonconformance_id=nc["object_id"],
+        decision="rework",
+        route_id="RW-1",
+        route_steps=[dict(station="repair", instruction_version="RW-S1")],
+        evidence="qualified repair route",
+    )
+    lot = unit["execution_events"][0]["material_uses"][0]["lot_id"]
+    self.command(
+        project_id,
+        "execution.record",
+        actor_name="production",
+        work_order_id=unit["work_order_id"],
+        sn=unit["sn"],
+        station="repair",
+        route_version="RW-S1",
+        program_version="P1",
+        firmware_version="F1",
+        material_uses=[dict(lot_id=lot, quantity="0.001", unit="kg")],
+        result="pass",
+        rework_order_id=rw["object_id"],
+        occurred_at=datetime.now(UTC).isoformat(),
+        source=self.source(str(uuid4()), object_type="execution"),
+    )
+    return self.object(project_id, "rework", rw["object_id"])
+
+
+WorkflowHarness.executed_unit = _executed_unit
+WorkflowHarness.test = _test
+WorkflowHarness.rework = _rework
