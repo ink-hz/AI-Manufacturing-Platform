@@ -3,6 +3,7 @@ import type { WorkbenchUser } from "../types";
 import "./console.css";
 
 export type ConsoleView =
+  | "orders" | "supply" | "execution" | "quality"
   | "home"
   | "projects"
   | "tasks"
@@ -17,6 +18,10 @@ const modules = [
   ["handbook", "制造手册"],
 ] as const;
 const paths = {
+  orders: "M3 4h18v16H3zM7 8h10M7 12h10M7 16h6",
+  supply: "M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10",
+  execution: "M3 21V8l6 4V6l6 4V3h6v18z",
+  quality: "M12 3l8 4v6c0 4-4 7-8 9-4-2-8-5-8-9V7zM8 12l3 3 5-6",
   home: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",
   projects: "M3 7h7l2-3h9v16H3zM3 10h18",
   tasks: "m3 6 2 2 3-4M11 6h10M3 13l2 2 3-4M11 13h10M11 20h10",

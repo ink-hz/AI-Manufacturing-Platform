@@ -78,7 +78,12 @@ export type ReleaseKind="manufacturing"|"quality"|"customer";
 export type Measurement={name:string;unit:string;lower:string;upper:string;value:string};
 export type TestScope={route_fingerprint:string;test_version:string;program_version:string;firmware_version:string;equipment_check_id:string};
 export type UnitTest={id:string;attempt:number;outcome:"pass"|"fail";rework_order_id:string|null;occurred_at:string};
+export type ClosureProgress={status:"blocked"|"ready"|"closed";recorded_count:number;blocking_reasons:string[]};
+export type ProgressSummary={stages:ProjectDetail["stages"];blocking_objects:ObjectSummary[];blockers_truncated:boolean;fulfillment:ClosureProgress;quality:ClosureProgress;cost:ClosureProgress};
 export interface ProjectDetail extends Omit<ProjectCreate, "operation_id"> {
+  tasks?:{category:"readiness"|"source"|"acceptance"|"business";title:string;target:ObjectSummary;owner_id:string|null;owner_name:string}[];
+  tasks_truncated?:boolean;
+  progress?:ProgressSummary;
   release_kinds?:ReleaseKind[];
   quality_summary?:{first_tested:number;first_passed:number;final_good:number;scrapped:number;open_nonconformances:number}|null;
   id: string;
@@ -170,6 +175,7 @@ export type DeliveryCommand =
  | {action:"stock_basis.reconcile";eco_id:string;reservation_id:string};
 export interface ShipmentReceiptDetail {key:string;unit_id:string;sn:string;work_order_id:string;order_line_id:string;box_id:string|null}
 export type CommandFields =
+  | {action:"project.stage";stage:"S1"|"S2"|"S3"|"S4"|"S5"|"S6"|"S7"|"S8"|"S9";status:"pending"|"active"|"blocked"|"complete";reason:string}
   | FeedbackCommand
   | DeliveryCommand
   | {action:"test.record";source:SourceRef;unit_id:string;attempt:number;program_version:string;limit_version:string;firmware_version:string;measurements:Measurement[];rework_order_id?:string|null}
@@ -296,6 +302,8 @@ export type WorkflowCommand = CommandFields & {
   expected_version: number;
 };
 export interface ObjectSummary {
+  action_capabilities?:{action:string;variants:Record<string,{ready:boolean|null;blocking_reasons:string[]}>}[];
+  revision_family_id?:string|null;
   id: string;
   kind: ObjectKind;
   project_id: string;
@@ -350,7 +358,7 @@ export type DomainValue =
   | RmaValue | CapaValue
   | ShipmentValue
   | {kind:"closure";id:string;closure_kind:"fulfillment"|"quality"|"cost";status:"closed"|"blocked";source:SourceRef|null;evidence:string;blocking_reasons:string[]}
-  | {kind:"test";id:string;unit_id:string;revision_id:string;attempt:number;scope:TestScope;measurements:Measurement[];outcome:"pass"|"fail";rework_order_id:string|null;execution_event_ids:string[];source:SourceRef|null;actor_id:string;occurred_at:string;recorded_at:string}
+  | {kind:"test";current_qualified?:boolean|null;current_blocking_reasons?:string[];id:string;unit_id:string;revision_id:string;attempt:number;scope:TestScope;measurements:Measurement[];outcome:"pass"|"fail";rework_order_id:string|null;execution_event_ids:string[];source:SourceRef|null;actor_id:string;occurred_at:string;recorded_at:string}
   | {kind:"nonconformance";id:string;unit_id:string;test_id:string;defect:string;evidence:string;state:"open"|"rework"|"resolved"|"scrapped";rework_order_id:string|null;disposition:"rework"|"scrap"|null;disposition_evidence:string|null}
   | {kind:"rework";candidate_execution_events?:{id:string;station:string;route_version:string;occurred_at:string;result:"pass"|"fail";rework_order_id?:string|null}[];id:string;unit_id:string;nonconformance_id:string;revision_id:string;route_id:string;route_steps:{station:string;instruction_version:string}[];state:"open"|"complete";execution_event_ids:string[];test_ids:string[]}
   | {kind:"release";id:string;release_kind:ReleaseKind;unit_ids:string[];decision:"approved"|"rejected";evidence:string;test_ids:string[];actor_id:string;customer_id:string|null;revision_id:string|null;customer_revision:string|null;external_signatory:string|null;method:"manual"|null;source:SourceRef|null;recorded_at:string}

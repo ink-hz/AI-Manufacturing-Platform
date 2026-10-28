@@ -311,6 +311,7 @@ def _history(tx, project_id, object_id):
 
 def revision_summary(row):
     return ObjectSummary(
+        revision_family_id=row["package_id"],
         id=row["id"],
         kind=ObjectKind.revision,
         project_id=row["project_id"],

@@ -138,7 +138,7 @@ def build_workflow_router(
         a = actor(request)
         return {
             "items": [
-                service.detail(a, p).model_dump(mode="json")
+                service.detail(a, p, include_progress=False).model_dump(mode="json")
                 for p in service.project_ids(a)
             ]
         }
@@ -203,7 +203,7 @@ def build_workflow_router(
 
     @router.post("/projects/{project_id}/commands")
     async def command(project_id: UUID, request: Request):
-        service.detail(actor(request), project_id)
+        service.detail(actor(request), project_id, include_progress=False)
         try:
             payload = await request.json()
         except ValueError:

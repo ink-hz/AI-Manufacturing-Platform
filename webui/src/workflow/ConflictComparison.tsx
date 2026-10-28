@@ -177,6 +177,7 @@ export function ConflictComparison({
   error,
   draft,
   memberId,
+  onRebase,
 }: {
   api: WorkflowApi;
   projectId: string;
@@ -184,6 +185,7 @@ export function ConflictComparison({
   error: WorkflowError;
   draft?: CommandFields;
   memberId?: string;
+  onRebase?(version:number):void;
 }) {
   const [data, setData] = useState<{
       project: ProjectDetail;
@@ -247,6 +249,7 @@ export function ConflictComparison({
       {data && (
         <>
           <h4>服务端当前项目版本：{data.project.version}</h4>
+          {onRebase && <><p>确认对照后，以当前版本继续保留的输入和来源快照；这将建立新的操作编号。</p><button type="button" disabled={data.project.version < Math.max(version, Number(error.fields.current_version) || version)} onClick={()=>onRebase(data.project.version)}>使用当前版本继续此草稿</button></>}
           <p>
             当前资料仅供对照；继续编辑与原样重试均保留草稿。放弃草稿并重新读取是独立操作。
           </p>

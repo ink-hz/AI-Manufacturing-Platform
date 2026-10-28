@@ -63,6 +63,7 @@ function summary(
     title,
     project_id: project.id,
     state: kind === "revision" ? "fixed" : "active",
+    revision_family_id:kind === "revision" ? "camera-family" : null,
     quantity: null,
     unit: null,
     version: 1,

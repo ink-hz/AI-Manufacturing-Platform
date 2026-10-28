@@ -96,7 +96,7 @@ export function DetailContent({
         状态：{label(data.summary.state)} · 记录版本 {data.summary.version}
       </p>
       {(v.kind === "unit" || v.kind === "material_lot") && <Facts items={[["申请冻结状态",v.freeze_requested||"无申请"],["权威确认状态",v.freeze_confirmed||"尚未确认"],["回执状态",v.freeze_pending?"等待权威确认":"无待确认申请"]]}/>}
-      {v.kind === "rma" && <><Facts items={[["原始客户",v.customer_id],["客户问题事实",v.reason],["状态",v.state]]}/>{v.source&&<Source value={v.source}/>}<p>原始检验记录{v.tests_truncated?"（已截断）":""}</p>{v.test_ids.map(id=><button key={id} onClick={()=>onOpen({projectId:data.summary.project_id,kind:"test",id})}>查看检验 {id.slice(0,8)}</button>)}<p>RMA 登记不代表实物已经退回。</p></>}
+      {v.kind === "rma" && <><Facts items={[["原始客户",v.customer_id],["客户问题事实",v.reason],["状态",v.state]]}/>{v.source&&<Source value={v.source}/>}<p>原始检验记录{v.tests_truncated?"（已截断）":""}</p>{v.test_ids.map((id,i)=><button key={id} onClick={()=>onOpen({projectId:data.summary.project_id,kind:"test",id})}>查看原始检验 {i+1}</button>)}<p>RMA 登记不代表实物已经退回。</p></>}
       {v.kind === "capa" && <><p>人工调查与实施证据 · {v.state}</p>{v.steps_truncated&&<p>仅显示最近 100 条证据。</p>}{v.steps.map(s=><section key={s.sequence}><h4>{({containment:"遏制",root_cause:"根因分析",correction:"纠正措施",verification:"有效性验证"})[s.step]}</h4><p>{s.description}</p><p>{s.evidence}</p>{s.implementation_evidence&&<p>实际实施：{s.implementation_evidence}</p>}{s.effective!==null&&<p>{s.effective?"验证通过":"验证失败，保持开放"}</p>}{s.eco_id&&<button onClick={()=>onOpen({projectId:data.summary.project_id,kind:"eco",id:s.eco_id!})}>查看实际工程实施</button>}</section>)}{v.blocking_reasons.map(r=><p key={r}>{r}</p>)}</>}
       {v.kind === "eco" && <>
         <Facts items={[["旧固定版本",v.old_revision],["新固定版本",v.new_revision||"仅取消剩余范围"],["变更原因",v.reason]]}/>
@@ -304,7 +304,7 @@ export function DetailContent({
       {v.kind === "reservation" && <Facts items={[["请求预留",v.requested+" "+v.unit],["确认预留",v.confirmed],["尚未接受",v.remaining],["权威对象版本",v.source_version]]}/>}
       {v.kind === "unit" && <Facts items={[["序列号",v.sn],["状态",v.state==="start_pending"&&v.authority_start_accepted?"MES 已接受，本地安全暂缓":label(v.state)],["执行范围",v.mode?label(v.mode):"未开工"],["MES 开工确认",v.authority_start_accepted?"已确认":"尚未确认"],["来源事件数",v.execution_event_ids.length]]}/>}
       {v.kind === "unit" && <><h4>工位来源事件（最近 100 条，共 {v.execution_event_total} 条）</h4><ol>{v.execution_events.map(e=><li key={e.id}>{e.occurred_at} · {e.station} / {e.route_version} · {label(e.status)} · {e.reason||e.result} · {e.source?`${e.source.system} / ${e.source.external_id}`:"来源未通过准入，已保留拒绝记录"}{e.supersedes_event_id&&" · 新事件纠正旧记录"}{e.material_uses.map((u,i)=><p key={i}>用料：{u.material_id} · 所有者 {u.owner_id} · {u.quantity} {u.unit}</p>)}</li>)}</ol></>}
-      {v.kind === "test" && <><Facts items={[["次数",v.attempt],["判定",label(v.outcome)],["规范",v.scope.test_version],["程序",v.scope.program_version],["固件",v.scope.firmware_version],["校准依据",v.scope.equipment_check_id],["发生时间",v.occurred_at]]}/><table><thead><tr><th>测量</th><th>单位</th><th>下限</th><th>上限</th><th>实测</th></tr></thead><tbody>{v.measurements.map(m=><tr key={m.name}><td>{m.name}</td><td>{m.unit}</td><td>{m.lower}</td><td>{m.upper}</td><td>{m.value}</td></tr>)}</tbody></table>{v.source?<Source value={v.source}/>:<p>来源未通过准入，测量历史保留</p>}</>}
+      {v.kind === "test" && <><p>历史测量判定：{v.outcome} · 当前资格：{v.current_qualified===true?"满足":v.current_qualified===false?"不满足":"尚未核验"}</p>{v.current_blocking_reasons?.map(reason=><p key={reason}>{reason}</p>)}<Facts items={[["次数",v.attempt],["判定",label(v.outcome)],["规范",v.scope.test_version],["程序",v.scope.program_version],["固件",v.scope.firmware_version],["校准依据",v.scope.equipment_check_id],["发生时间",v.occurred_at]]}/><table><thead><tr><th>测量</th><th>单位</th><th>下限</th><th>上限</th><th>实测</th></tr></thead><tbody>{v.measurements.map(m=><tr key={m.name}><td>{m.name}</td><td>{m.unit}</td><td>{m.lower}</td><td>{m.upper}</td><td>{m.value}</td></tr>)}</tbody></table>{v.source?<Source value={v.source}/>:<p>来源未通过准入，测量历史保留</p>}</>}
       {v.kind === "nonconformance" && <Facts items={[["缺陷",v.defect],["依据",v.evidence],["状态",label(v.state)],["处置",v.disposition||"待处置"],["处置依据",v.disposition_evidence||"无"]]}/>}
       {v.kind === "rework" && <><Facts items={[["返工路线",v.route_id],["状态",v.state],["执行凭据",v.execution_event_ids.length],["复测凭据",v.test_ids.length]]}/><ol>{v.route_steps.map(s=><li key={s.station}>{s.station} · {s.instruction_version}</li>)}</ol></>}
       {v.kind === "release" && <><Facts items={[["独立放行类型",v.release_kind],["决定",v.decision],["明确序列号数",v.unit_ids.length],["签署依据",v.evidence],["本地记录人",v.actor_id],["客户签署人",v.external_signatory||"不适用"],["客户",v.customer_id||"不适用"],["合同修订",v.customer_revision||"不适用"],["登记方式",v.method||"本地独立签批"]]}/>{v.source&&<Source value={v.source}/>}</>}
@@ -338,13 +338,13 @@ export function DetailContent({
       ))}
       <h4>凭据与历史</h4>
       {data.evidence.map((e, i) => (
-        <p key={i}>{e.reference}</p>
+        <section key={i}><p>{e.reference}</p>{e.source&&<Source value={e.source}/>}</section>
       ))}
       <ol>
         {data.history.map((h) => (
           <li key={h.event_id}>
             {h.occurred_at} · {label(h.action)} · 录入 {h.recorded_at}
-            {h.evidence.map((e,i)=><p key={i}>{e.reference}</p>)}
+            {h.evidence.map((e,i)=><section key={i}><p>{e.reference}</p>{e.source&&<Source value={e.source}/>}</section>)}
           </li>
         ))}
       </ol>

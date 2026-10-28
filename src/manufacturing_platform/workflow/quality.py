@@ -820,7 +820,21 @@ def unit_tests(tx, pid, uid):
 
 def value_for(tx, pid, kind, row, *, candidates=True):
     if kind == "test":
+        scope = TestEvidenceScope.model_validate_json(row["scope_json"])
+        qualified = (
+            complete_pass(
+                tx, pid, row["id"], row["unit_id"], row["revision_id"], scope=scope
+            )
+            if candidates
+            else None
+        )
         return TestValue(
+            current_qualified=qualified,
+            current_blocking_reasons=[
+                "Historical measurement is not current complete-pass evidence; check latest test, execution proof, nonconformance and scrap"
+            ]
+            if qualified is False
+            else [],
             id=row["id"],
             unit_id=row["unit_id"],
             revision_id=row["revision_id"],

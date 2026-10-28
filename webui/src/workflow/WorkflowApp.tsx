@@ -1,3 +1,5 @@
+import {label} from "./labels";
+import { ActionForms } from "./ActionForms";
 import { TraceWorkspace } from "./TraceWorkspace";
 import { DeliveryWorkspace } from "./DeliveryWorkspace";
 import { QualityWorkspace } from "./QualityWorkspace";
@@ -43,6 +45,7 @@ export function WorkflowApp({
     [target, setTarget] = useState<WorkflowTarget | null>(null),
     [detail, setDetail] = useState<ObjectDetail | null>(null),
     [resolve, setResolve] = useState(false),
+    [currentTask,setCurrentTask]=useState<ObjectDetail|null>(null),
     [error, setError] = useState(""),
     [refresh, setRefresh] = useState(0),
     [epoch, setEpoch] = useState(0),
@@ -59,9 +62,18 @@ export function WorkflowApp({
     scroll = useRef<{ element: HTMLElement; top: number; left: number }[]>([]);
   const projectVersions = useRef(new Map<string, number>());
   callbacks.current = options;
+  const apiRef = useRef<ReturnType<typeof createWorkflowApi> | null>(null);
   const deny = useCallback(() => {
+    if (!alive.current) return;
     alive.current = false;
+    apiRef.current?.dispose();
     setDenied(true);
+    setDashboard(null);
+    setDetail(null);
+    setCurrentTask(null);
+    projectVersions.current.clear();
+    scroll.current=[];
+    setError("");
     setProject(null);
     setProjects([]);
     setTarget(null);
@@ -75,6 +87,7 @@ export function WorkflowApp({
     () => createWorkflowApi(options, deny),
     [options.apiBase, options.csrfToken, deny],
   );
+  apiRef.current = api;
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -108,7 +121,12 @@ export function WorkflowApp({
     setAccountAction(null);
     void (async () => {
       try {
-        if (accountAction === "logout") await callbacks.current.onLogout?.();
+        if (accountAction === "logout") {
+          api.dispose();
+          alive.current = false;
+          setDenied(true); setProject(null); setProjects([]); setDashboard(null); setDetail(null); setTarget(null); setCurrentTask(null); projectVersions.current.clear(); scroll.current=[];
+          await callbacks.current.onLogout?.();
+        }
         else callbacks.current.onNavigatePlatform?.();
       } catch {
         if (alive.current) setError("账户操作失败，请重试。");
@@ -158,15 +176,26 @@ export function WorkflowApp({
       active = false;
     };
   }, [api, refresh]);
+  useEffect(() => {
+    if (!project) return;
+    let active = true;
+    api.project(project.id).then(value => {
+      if(active && alive.current && value.version >= (projectVersions.current.get(value.id) || 0)) {
+        projectVersions.current.set(value.id,value.version);
+        setProject(value);
+      }
+    }).catch(e => { if(active && alive.current) setError(String(e)); });
+    return () => {active=false;};
+  }, [api, project?.id, refresh]);
   const requestLeave = useCallback(
     (action: () => void) => {
-      if (Object.values(dirtyKeys).some(Boolean)) setPending(() => action);
+      if (Object.values(dirtyKeys).some(Boolean)) setPending((existing) => existing || action);
       else action();
     },
     [dirtyKeys],
   );
   function account(action: "navigate" | "logout") {
-    if (accountLock.current || !alive.current) return;
+    if (accountLock.current || !alive.current || pending) return;
     accountLock.current = true;
     setBusy(true);
     requestLeave(() => setAccountAction(action));
@@ -257,8 +286,11 @@ export function WorkflowApp({
       setView(next);
       setCreating(false);
       setTarget(null);
+      setCurrentTask(null);
       setResolve(false);
-      setProject(null);
+      if (next === "home" || next === "projects" || next === "tasks") setProject(null);
+      const nextWorkspace = ({orders:"orders", supply:"supply", execution:"execution", quality:"quality", collaboration:"exchange"} as Record<string,string>)[next];
+      if (nextWorkspace) setWorkspace(nextWorkspace as typeof workspace);
     });
   }
   function back() {
@@ -279,6 +311,12 @@ export function WorkflowApp({
         navigation={[
           ["home", "工作台"],
           ["projects", "制造项目"],
+          ["orders", "订单与交付"],
+          ["supply", "计划与物料"],
+          ["execution", "工单与执行"],
+          ["quality", "质量与追溯"],
+          ["tasks", "事项"],
+          ["collaboration", "系统协同"],
           ["handbook", "制造手册"],
         ]}
         creating={creating}
@@ -302,7 +340,7 @@ export function WorkflowApp({
           })
         }
         modeAction={
-          onLegacy
+          onLegacy && b.legacy_access
             ? { label: "打开旧项目协同", run: () => requestLeave(onLegacy) }
             : undefined
         }
@@ -331,7 +369,8 @@ export function WorkflowApp({
           {(view === "handbook" ? workView : view) === "home" && dashboard && (
             <WorkflowHome data={dashboard} onOpen={open} />
           )}{" "}
-          {(view === "handbook" ? workView : view) === "projects" &&
+          {(view === "handbook" ? workView : view) === "tasks" && <section><h2>我的待处理事项</h2>{project ? <><button onClick={()=>requestLeave(()=>setProject(null))}>返回项目列表</button><h3>{project.name}</h3><p>按当前职责与实际责任人列出的待办，点击查看原始对象。</p>{project.tasks_truncated && <p>仅显示前 50 个阻断对象，请进入业务工作区继续查看。</p>}<ul>{project.tasks?.map((task,i)=><li key={task.target.kind+task.target.id+i}><button onClick={()=>open({projectId:project.id,kind:task.target.kind,id:task.target.id})}>{task.target.title}</button> · {task.owner_id?"责任人 "+task.owner_name:"当前职责可处理"} · {task.title}<p>{task.target.blocking_reasons.join("；")}</p></li>)}</ul>{!project.progress?<p>正在读取当前责任事项…</p>:!project.tasks?.length&&<p>当前读取范围内没有分配给你的待处理事项。</p>}</> : <WorkflowProjects items={projects} onOpen={p=>setProject(p)}/>}</section>}
+          {!["home", "handbook", "tasks"].includes(view === "handbook" ? workView : view) &&
             (creating ? (
               <ProjectForm
                 readOnly={readOnly}
@@ -383,6 +422,10 @@ export function WorkflowApp({
                   已分配 {project.summary.allocated} · 已发运{" "}
                   {project.summary.shipped} · 已验收 {project.summary.accepted}
                 </p>
+                <p>待发 {project.summary.remaining_to_ship} · 待验收 {project.summary.remaining_to_accept} · 已签收 {project.summary.signed}</p>
+                {!project.progress&&<p>正在核验当前项目业务条件…</p>}{project.progress && <section aria-label="实际业务进展"><h3>实际业务进展</h3>{project.progress.blockers_truncated&&<p>阻断对象展示有界；未展示的工单条件未逐一核验，请进入工单详情检查。</p>}<details><summary>当前 S1—S9 业务进展</summary><table><thead><tr><th>阶段</th><th>实际状态</th><th>依据</th></tr></thead><tbody>{project.progress.stages.map(s=><tr key={s.stage}><td>{s.stage}</td><td>{label(s.status)}</td><td>{s.reason}</td></tr>)}</tbody></table></details>{(["fulfillment","quality","cost"] as const).map(k=><details key={k}><summary>{({fulfillment:"履约",quality:"质量",cost:"成本"})[k]} · {label(project.progress![k].status)} · 历史关闭 {project.progress![k].recorded_count} 次</summary>{project.progress![k].blocking_reasons.map(r=><p key={r}>{r}</p>)}</details>)}</section>}
+                <ActionForms {...props}/>
+                {currentTask&&!target&&<p>当前事项：{currentTask.summary.title} · <button onClick={()=>open({projectId:project.id,kind:currentTask.summary.kind,id:currentTask.summary.id})}>查看事项依据</button></p>}
                 <div className="mf-tabs">
                   {(
                     [
@@ -398,7 +441,11 @@ export function WorkflowApp({
                         ? [["members", "成员授权"]]
                         : []),
                     ] as const
-                  ).map(([key, title]) => (
+                  ).filter(([key]) => {
+                    const active = view === "handbook" ? workView : view;
+                    if(active === "projects") return true;
+                    return ({orders:["orders","delivery"],supply:["supply"],execution:["engineering","execution"],quality:["quality","trace"],collaboration:["exchange"]} as Record<string,string[]>)[active]?.includes(key);
+                  }).map(([key, title]) => (
                     <button
                       key={key}
                       onClick={() =>
@@ -433,6 +480,11 @@ export function WorkflowApp({
                       onOpen={open}
                       onLoaded={setDetail}
                     />
+                    {detail&&<ActionForms {...props} detail={detail} onChoose={action=>requestLeave(()=>{
+                      setCurrentTask(detail);setTarget(null);setResolve(false);setEpoch(e=>e+1);
+                      const prefix=action.split(".")[0];
+                      setWorkspace(["shipment","delivery","ownership","stock_basis","closure"].includes(prefix)?"delivery":["supply","material","reservation","plan"].includes(prefix)?"supply":["production","execution","unit","first_article"].includes(prefix)?"execution":["test","nonconformance","rework","release"].includes(prefix)?"quality":["freeze","rma","capa"].includes(prefix)?"trace":["engineering","work_order","readiness","eco"].includes(prefix)?"engineering":["exchange","source"].includes(prefix)?"exchange":"orders");
+                    })}/>}
                     {!readOnly &&
                       detail?.value.kind === "commitment_change" &&
                       detail.summary.next_actions.includes(
@@ -492,6 +544,7 @@ export function WorkflowApp({
                 onOpen={(p) =>
                   requestLeave(() => {
                     setProject(p);
+                    setCurrentTask(null);
                     setTarget(null);
                   })
                 }
@@ -531,6 +584,7 @@ export function WorkflowApp({
                 const action = pending;
                 setPending(null);
                 setDirtyKeys({});
+                callbacks.current.onDirtyChange?.(false);
                 setEpoch((e) => e + 1);
                 action();
               }}

@@ -159,7 +159,8 @@ it("member mounts only workflow endpoints and implemented navigation", async () 
   await mount();
   expect(host.textContent).toContain("隔离演示");
   expect(requests.every((r) => r.url.includes("/workflow/"))).toBe(true);
-  expect(host.textContent).not.toContain("系统协同");
+  expect(host.textContent).toContain("系统协同");
+  expect(host.textContent).not.toContain("打开旧项目协同");
   await click("制造项目");
   await click("相机项目");
   expect(host.textContent).toContain("原始承诺");
@@ -997,7 +998,7 @@ it("compares a conflicted member grant without rebasing selected roles or operat
       );
     }
     if (url.endsWith("/projects/" + project.id) && conflict)
-      return response({ ...project, version: 9 });
+      return response({ ...project, allowed_actions:["order.change"], version: requests.some(r=>r.body?.action==="order.change")?9:3 });
     return prior(u, i);
   });
   await mount({
@@ -1042,7 +1043,7 @@ it("compares newer order facts beside an unchanged proposed commitment and retri
       );
     }
     if (url.endsWith("/projects/" + project.id))
-      return response({ ...project, version: 9 });
+      return response({ ...project, allowed_actions:["order.change"], version: requests.some(r=>r.body?.action==="order.change")?9:3 });
     return prior(u, i);
   });
   await mount();

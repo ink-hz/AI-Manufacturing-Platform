@@ -56,6 +56,7 @@ export function App({ options }: { options: MountOptions }) {
     );
   return (
     <WorkflowApp
+      key={[options.bootstrap.user.id,options.bootstrap.dataset?.id,options.apiBase].join(":")}
       options={options}
       onLegacy={
         options.bootstrap.legacy_access ? () => setLegacy(true) : undefined

@@ -21,6 +21,7 @@ def test_extension_contracts_exist_and_production_registry_contains_only_real_ac
     assert hasattr(queries, "ObjectRegistry")
     assert hasattr(contracts, "DomainValue")
     assert set(commands.COMMAND_REGISTRY._entries) == {
+        "project.stage",
         "freeze.request", "rma.open", "capa.update", "capa.close",
         "shipment.request", "delivery.sign", "delivery.accept", "delivery.resolve_issue",
         "closure.record", "ownership.reconcile", "ownership.movement", "stock_basis.reconcile",

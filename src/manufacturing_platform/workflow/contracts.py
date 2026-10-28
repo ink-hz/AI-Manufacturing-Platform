@@ -164,10 +164,37 @@ class ProjectQualitySummary(StrictModel):
     open_nonconformances: int
 
 
+class ClosureProgress(StrictModel):
+    status: Literal["blocked", "ready", "closed"]
+    recorded_count: int
+    blocking_reasons: list[str]
+
+
+class ProgressSummary(StrictModel):
+    stages: list[ProjectStageView]
+    blocking_objects: list["ObjectSummary"]
+    blockers_truncated: bool
+    fulfillment: ClosureProgress
+    quality: ClosureProgress
+    cost: ClosureProgress
+
+
+class OwnedTask(StrictModel):
+    category: Literal["readiness", "source", "acceptance", "business"]
+    title: str
+    target: "ObjectSummary"
+    owner_id: UUID | None = None
+    owner_name: str
+
+
 class ProjectDetail(StrictModel):
+    tasks: list[OwnedTask] = Field(default_factory=list)
+    tasks_truncated: bool = False
+
     release_kinds: list[Literal["manufacturing", "quality", "customer"]] = Field(
         default_factory=list
     )
+    progress: ProgressSummary | None = None
     quality_summary: ProjectQualitySummary | None = None
     allowed_actions: list[str] = Field(default_factory=list)
     id: UUID
@@ -268,7 +295,19 @@ class MaterialBalance(StrictModel):
     source_version: int
 
 
+class ActionVariant(StrictModel):
+    ready: bool | None = None
+    blocking_reasons: list[str] = Field(default_factory=list)
+
+
+class ActionCapability(StrictModel):
+    action: str
+    variants: dict[str, ActionVariant] = Field(default_factory=dict)
+
+
 class ObjectSummary(StrictModel):
+    action_capabilities: list[ActionCapability] = Field(default_factory=list)
+    revision_family_id: str | None = None
     id: UUID
     kind: ObjectKind
     project_id: UUID

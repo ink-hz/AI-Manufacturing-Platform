@@ -165,7 +165,7 @@ export function CommandForm<T extends CommandFields>({
   children: (v: T, set: (v: T | ((current: T) => T)) => void) => ReactNode;
 }) {
   const [value, setValue] = useState(initial),
-    [version] = useState(props.project.version),
+    [version, setVersion] = useState(props.project.version),
     [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -271,6 +271,12 @@ export function CommandForm<T extends CommandFields>({
           version={version}
           error={conflict}
           draft={value}
+          onRebase={(nextVersion)=>{
+            if(!alive.current || nextVersion < version) return;
+            setVersion(nextVersion);
+            if(pending.current) pending.current={...pending.current,expected_version:nextVersion,operation_id:crypto.randomUUID()};
+            setConflict(null);setError("");
+          }}
         />
       )}
       <button

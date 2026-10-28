@@ -103,6 +103,8 @@ class TestView(StrictModel):
 
 
 class TestValue(DomainValue):
+    current_qualified: bool | None = None
+    current_blocking_reasons: list[str] = Field(default_factory=list)
     kind: Literal["test"] = "test"
     id: UUID
     unit_id: UUID

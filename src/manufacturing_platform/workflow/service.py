@@ -6,21 +6,24 @@ from uuid import UUID, uuid4
 
 from . import (  # noqa: F401 - trusted domain registration
     delivery,
-    freeze,
-    feedback,
     eco,
     engineering,
     exchanges,
     execution,
+    feedback,
+    freeze,
     orders,
     ownership,
+    progress,
     quality,
-    supply,
     stock_proofs,
+    supply,
 )
 from .authorization import require_project
 from .commands import COMMAND_REGISTRY, CommandContext, WorkflowCommand
 from .contracts import (
+    ActionCapability,
+    ActionVariant,
     Actor,
     CommandResult,
     Dashboard,
@@ -31,6 +34,8 @@ from .contracts import (
     ObjectDetail,
     ObjectKind,
     ObjectPage,
+    ObjectSummary,
+    OwnedTask,
     ProjectCreate,
     ProjectDetail,
     ProjectQualitySummary,
@@ -60,7 +65,7 @@ def project(row, tx):
         quantity=str(Decimal(row["q_atoms"]).scaleb(-row["unit_scale"])),
         contract=json.loads(row["contract_json"]),
         legacy_project_id=row["legacy_project_id"],
-        stages=[],
+        stages=progress.hints(tx, row["id"]),
         summary=orders.project_summary(tx, row),
     )
 
@@ -260,7 +265,9 @@ class WorkflowService:
                 )
             ]
 
-    def detail(self, actor: Actor, project_id: UUID) -> ProjectDetail:
+    def detail(
+        self, actor: Actor, project_id: UUID, *, include_progress=True
+    ) -> ProjectDetail:
         with self.store.transaction() as tx:
             value = project(require_project(tx, actor, project_id), tx)
             grant = tx.execute(
@@ -290,10 +297,175 @@ class WorkflowService:
                 and not delivery.can_resolve_issue(tx, actor, project_id)
             ):
                 value.allowed_actions.remove("delivery.resolve_issue")
+            if include_progress:
+                value.progress = progress.aggregate(tx, project_id)
+                value.progress.blocking_objects = [
+                    self._actions(tx, actor, item)
+                    for item in value.progress.blocking_objects
+                ]
+                value.tasks, value.tasks_truncated = self._tasks(tx, actor, value)
             value.quality_summary = ProjectQualitySummary.model_validate(
                 quality.quality_summary(tx, project_id).model_dump(mode="json")
             )
             return value
+
+    def _actions(self, tx, actor, item, detail=None):
+        """Read capabilities use the same live registry and variant authorization."""
+        grant = tx.execute(
+            "SELECT roles_json,qualifications_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
+            (str(item.project_id), str(actor.user_id)),
+        ).fetchone()
+        allowed = (
+            set()
+            if actor.read_only or not grant
+            else set(
+                self.command_registry.allowed_actions(
+                    json.loads(grant["roles_json"]),
+                    json.loads(grant["qualifications_json"]),
+                )
+            )
+        )
+        candidates = list(item.next_actions)
+        # Context associations are not a permission matrix. Every candidate is
+        # intersected with the live command policy below, just like execute().
+        related = {
+            "unit": ["test.record", "release.decide", "freeze.request"],
+            "demand": ["demand.review", "order.register"],
+            "order_line": ["order.change", "order.allocate", "shipment.request"],
+            "revision": [
+                "engineering.handoff",
+                "engineering.customer_approval",
+                "work_order.register",
+            ],
+            "work_order": ["readiness.record", "production.start", "unit.register"],
+            "requirement": ["supply.commit", "reservation.request"],
+            "commitment": ["supply.receive"],
+            "receipt": ["supply.inspect"],
+            "material_lot": [
+                "ownership.movement",
+                "ownership.reconcile",
+                "freeze.request",
+            ],
+            "test": ["nonconformance.open"],
+            "nonconformance": ["nonconformance.disposition"],
+            "rework": ["execution.record", "test.record", "rework.complete"],
+            "shipment": [
+                "delivery.sign",
+                "delivery.accept",
+                "delivery.resolve_issue",
+                "rma.open",
+            ],
+            "rma": ["capa.update"],
+            "capa": ["capa.update", "capa.close"],
+        }
+        candidates.extend(related.get(item.kind.value, []))
+        if item.kind == ObjectKind.exchange:
+            row = tx.execute(
+                "SELECT policy_action FROM exchanges WHERE project_id=? AND id=?",
+                (str(item.project_id), str(item.id)),
+            ).fetchone()
+            if not row or row["policy_action"] not in allowed:
+                candidates = []
+            else:
+                candidates.append("exchange.reconcile")
+        if "delivery.resolve_issue" in candidates and not delivery.can_resolve_issue(
+            tx, actor, item.project_id
+        ):
+            candidates.remove("delivery.resolve_issue")
+        item.next_actions = list(dict.fromkeys(a for a in candidates if a in allowed))
+        item.action_capabilities = [
+            ActionCapability(action=a) for a in item.next_actions
+        ]
+        for capability in item.action_capabilities:
+            if (
+                detail is not None
+                and item.kind == ObjectKind.work_order
+                and capability.action == "production.start"
+            ):
+                capability.variants = {
+                    mode: ActionVariant(
+                        ready=getattr(detail, mode + "_readiness").ready,
+                        blocking_reasons=[
+                            c.reason
+                            for c in getattr(detail, mode + "_readiness").checks
+                            if c.required and c.status == "blocked"
+                        ],
+                    )
+                    for mode in ("trial", "bulk")
+                }
+            if capability.action == "release.decide":
+                capability.variants = {
+                    kind: ActionVariant()
+                    for kind in quality.release_kinds(
+                        json.loads(grant["roles_json"]),
+                        json.loads(grant["qualifications_json"]),
+                    )
+                }
+            if (
+                detail is not None
+                and item.kind == ObjectKind.capa
+                and capability.action == "capa.close"
+            ):
+                capability.variants = {
+                    "verification": ActionVariant(
+                        ready=not detail.blocking_reasons and detail.state == "open",
+                        blocking_reasons=detail.blocking_reasons
+                        or (["Already closed"] if detail.state == "closed" else []),
+                    )
+                }
+        return item
+
+    def _tasks(self, tx, actor, value):
+        if actor.read_only:
+            return [], False
+        pid = str(value.id)
+        tasks = []
+        # Explicit responsibility rows are selected in SQL before materialization.
+        for r in tx.execute(
+            """SELECT i.title,i.owner_id,i.owner_name,i.shipment_id id,'shipment' kind,'acceptance' category FROM acceptance_issues i
+            WHERE i.project_id=? AND i.owner_id=? AND i.required=1 AND NOT EXISTS(SELECT 1 FROM acceptance_resolutions r WHERE r.issue_id=i.id)
+            UNION ALL SELECT d.reason,d.owner_id,d.owner_name,d.exchange_id,'exchange','source' FROM exchange_discrepancies d JOIN exchanges e ON e.id=d.exchange_id
+            WHERE d.project_id=? AND d.owner_id=? AND d.resolves_seq IS NULL AND e.phase NOT IN ('accepted','posted') AND d.reason<>'Authority rejected request' AND NOT EXISTS(SELECT 1 FROM exchange_discrepancies r WHERE r.resolves_seq=d.seq)
+            ORDER BY category,id LIMIT 51""",
+            (pid, str(actor.user_id), pid, str(actor.user_id)),
+        ):
+            target = self._actions(
+                tx,
+                actor,
+                ObjectSummary(
+                    id=r["id"],
+                    kind=r["kind"],
+                    project_id=pid,
+                    title=r["title"],
+                    state="blocked",
+                    version=value.version,
+                    blocking_reasons=[r["title"]],
+                ),
+            )
+            tasks.append(
+                OwnedTask(
+                    category=r["category"],
+                    title=r["title"],
+                    target=target,
+                    owner_id=r["owner_id"],
+                    owner_name=r["owner_name"],
+                )
+            )
+        existing = {(t.target.kind, t.target.id) for t in tasks}
+        for item in value.progress.blocking_objects:
+            if item.next_actions and (item.kind, item.id) not in existing:
+                tasks.append(
+                    OwnedTask(
+                        category="readiness"
+                        if item.kind == ObjectKind.work_order
+                        else "business",
+                        title=item.blocking_reasons[0],
+                        target=item,
+                        owner_id=None,
+                        owner_name="Current authorized responsibility",
+                    )
+                )
+        return tasks[:50], len(tasks) > 50 or value.progress.blockers_truncated
 
     def member_profiles(self, actor, project_id, ids):
         if len(ids) > 50:
@@ -389,7 +561,7 @@ class WorkflowService:
                 tx, project_id, kind, limit=limit, offset=offset
             )
             return ObjectPage(
-                items=values,
+                items=[self._actions(tx, actor, item) for item in values],
                 total=total,
                 limit=limit,
                 offset=offset,
@@ -404,13 +576,17 @@ class WorkflowService:
             result = self.object_registry.detail(tx, project_id, kind, object_id)
             if result is None:
                 raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+            result.summary = self._actions(tx, actor, result.summary, result.value)
             return result
 
     def trace(self, actor, project_id, *, sn=None, material_lot_id=None, limit=500):
         from .trace import query
+
         with self.store.transaction() as tx:
             require_project(tx, actor, project_id)
-            return query(tx, project_id, sn=sn, material_lot_id=material_lot_id, limit=limit)
+            return query(
+                tx, project_id, sn=sn, material_lot_id=material_lot_id, limit=limit
+            )
 
     def dashboard(self, actor: Actor, project_id: UUID | None = None) -> Dashboard:
         with self.store.transaction() as tx:
@@ -438,7 +614,10 @@ class WorkflowService:
                             )
                         )
             return Dashboard(
-                cards=cards, project_ids=ids, project_count=len(ids), counts=counts
+                cards=[self._actions(tx, actor, item) for item in cards],
+                project_ids=ids,
+                project_count=len(ids),
+                counts=counts,
             )
 
     def execute(
@@ -448,7 +627,7 @@ class WorkflowService:
             raise DomainError("FORBIDDEN", 403, "Workflow is read-only")
         project_id = UUID(str(project_id))
         # Visibility precedes schema errors; permissions are checked again in the write transaction.
-        self.detail(actor, project_id)
+        self.detail(actor, project_id, include_progress=False)
         command = self.command_registry.parse(command)
         entry = self.command_registry.registration(command.action)
         payload = {"project_id": str(project_id), **command.model_dump(mode="json")}

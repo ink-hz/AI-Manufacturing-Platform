@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CommandFields, ObjectSummary, WorkspaceProps } from "../types";
 import { Choice, CommandForm, Field, ObjectChoice, SourceFields, source } from "./shared";
 
@@ -12,6 +12,11 @@ type Receive=Extract<CommandFields,{action:"supply.receive"}>;
 type Inspect=Extract<CommandFields,{action:"supply.inspect"}>;
 
 export function SupplyForms(p:Props){
+  const [error,setError]=useState('');const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
+  return <section>{error&&<p role="alert">{error} · 请重新选择对象后重试。</p>}<SupplyFormContent {...p} onLookupError={e=>{if(alive.current)setError(String(e));}}/></section>;
+}
+function SupplyFormContent(p:Props&{onLookupError(error:unknown):void}){
   const [selectedLots,setSelectedLots]=useState<Record<number,string>>({});
   const selectedLotIds=useRef<Record<number,string>>({});
   const fill=<T,>(current:T,atLookup:T,fetched:T)=>current===atLookup?fetched:current;
@@ -25,7 +30,7 @@ export function SupplyForms(p:Props){
           set(old=>({...old,requirement_id:x,work_order_id:"",unit:""}));
           if(x)void p.api.object(p.project.id,"requirement",x).then(d=>{const detail=d.value;
             if(detail.kind==="requirement")set(old=>old.requirement_id===x?{...old,work_order_id:detail.work_order_id,unit:detail.unit}:old);
-          });
+          }).catch(p.onLookupError);
         }}/>
         <ObjectChoice name="预留物料批次" items={p.lots} value={v.lot_id} onChange={x=>set({...v,lot_id:x})}/>
         <Field name="请求预留数量" value={v.quantity} onChange={x=>set({...v,quantity:x})}/>
@@ -65,8 +70,8 @@ export function SupplyForms(p:Props){
                     {order_line_id:wo.order_line_id,version}],
                 }));
                 if(order)apply(order.version);
-                else void p.api.object(p.project.id,"order_line",wo.order_line_id).then(o=>apply(o.summary.version));
-              });
+                else void p.api.object(p.project.id,"order_line",wo.order_line_id).then(o=>apply(o.summary.version)).catch(p.onLookupError);
+              }).catch(p.onLookupError);
             }}/>
           <ObjectChoice name={`计划物料批次 ${i+1}`} items={p.lots}
             value={selectedLots[i]||""}
@@ -74,7 +79,7 @@ export function SupplyForms(p:Props){
               const lot=d.value;
               if(lot.kind==="material_lot" && selectedLotIds.current[i]===x)set(old=>({...old,requirements:old.requirements.map((e,n)=>n===i?{
                 ...e,material_id:lot.material_id,owner_id:lot.owner_id,unit:lot.unit}:e)}));
-            });}}/>
+            }).catch(p.onLookupError);}}/>
           <Choice name={`执行范围 ${i+1}`} value={r.execution_scope}
             choices={{trial:"首件试做",bulk:"批量执行",common:"试做与批量通用"}}
             onChange={x=>set(old=>({...old,requirements:old.requirements.map((e,n)=>n===i?{
@@ -106,7 +111,7 @@ export function SupplyForms(p:Props){
             const detail=d.value;
             if(detail.kind==="requirement")set(old=>old.requirement_id!==x?old:{...old,
               owner_id:fill(old.owner_id,v.owner_id,detail.owner_id),unit:fill(old.unit,v.unit,detail.unit)});
-          });}}/>
+          }).catch(p.onLookupError);}}/>
         <ObjectChoice name="修订既有承诺" items={p.commitments} value={v.commitment_id||""} required={false}
           onChange={x=>{set(old=>({...old,commitment_id:x||null}));if(x)void p.api.object(p.project.id,"commitment",x).then(d=>{
             const detail=d.value;
@@ -120,7 +125,7 @@ export function SupplyForms(p:Props){
               source:{...old.source,system:fill(old.source.system,v.source.system,detail.source.system),
                 external_id:fill(old.source.external_id,v.source.external_id,detail.source.external_id),
                 version:fill(old.source.version,v.source.version,detail.source.version+1)}});
-          });}}/>
+          }).catch(p.onLookupError);}}/>
         <Choice name="供应类型" value={v.type} choices={{purchase:"采购",customer:"客户供料"}}
           onChange={x=>set({...v,type:x as "purchase"|"customer"})}/>
         <Field name="供应所有者" value={v.owner_id} onChange={x=>set({...v,owner_id:x})}/>
@@ -141,7 +146,7 @@ export function SupplyForms(p:Props){
             const detail=d.value;
             if(detail.kind==="material_lot")set(old=>old.material_lot_id!==x?old:{...old,
               unit:fill(old.unit,v.unit,detail.unit)});
-          });}}/>
+          }).catch(p.onLookupError);}}/>
         <Field name="本次到货数量" value={v.quantity} onChange={x=>set({...v,quantity:x})}/>
         <p>计量单位：{v.unit}</p>
         <SourceFields value={v.source} onChange={x=>set({...v,source:x})}/>

@@ -14,13 +14,14 @@ export function ExchangeWorkspace(p:Props){
   const alive=useRef(true);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;activeSelection.current="";fileGeneration.current++;};},[]);
   const [selected,setSelected]=useState<ExchangeValue|null>(null);
+  const [selectedActions,setSelectedActions]=useState<string[]>([]);
   useEffect(()=>{let active=true;p.api.objects(p.project.id,"exchange",50,0).then(page=>{if(active){setItems(page.items);setTotal(page.total);}}).catch(e=>{if(active)setError(String(e));});return()=>{active=false;};},[p.api,p.project.id,p.project.version]);
   const kinds=(Object.keys(policies) as InboundKind[]).filter(k=>p.project.allowed_actions.includes(policies[k]));
   const edit=!p.readOnly;
-  const switchForm=(value:typeof form)=>p.requestLeave(()=>{setForm(value);setSelected(null);activeSelection.current="";fileGeneration.current++;setEpoch(x=>x+1);});
+  const switchForm=(value:typeof form)=>p.requestLeave(()=>{setForm(value);setSelected(null);setSelectedActions([]);activeSelection.current="";fileGeneration.current++;setEpoch(x=>x+1);});
   const changed:WorkspaceProps["onChanged"]=r=>{setForm(null);setSelected(null);p.onChanged(r);};
   const shared={...p,onChanged:changed};
-  const canExchange=selected && p.project.allowed_actions.includes(selected.policy_action);
+  const canExchange=selected && selectedActions.includes(form==="dispatch"?"exchange.dispatch":form==="query"?"exchange.query":"exchange.reconcile");
   return <section>
     <h3>同步与回执</h3>
     <p role="status">{p.mode==="production"?"权威系统未接入 · 当前来源不可用":"模拟权威系统 · 独立库存与回执数据库"}</p>
@@ -52,21 +53,21 @@ export function ExchangeWorkspace(p:Props){
     </CommandForm>}
     {(form==="dispatch"||form==="query")&&<CommandForm<Extract<CommandFields,{action:"exchange.dispatch"|"exchange.query"}>> key={epoch} {...shared}
       title={form==="dispatch"?"发送权威请求":"查询已有回执"} save={form==="dispatch"?"查询后发送原请求":"查询权威结果"}
-      initial={()=>({action:form==="dispatch"?"exchange.dispatch":"exchange.query",exchange_id:""})} canSubmit={v=>!!v.exchange_id && !!canExchange && ["freeze.request","shipment.request","stock_basis.reconcile","eco.switch","reservation.request","source.pull","production.start","production.interrupt","production.resume"].includes(selected?.action||"")}>
+      initial={()=>({action:form==="dispatch"?"exchange.dispatch":"exchange.query",exchange_id:""})} canSubmit={v=>!!v.exchange_id && !!canExchange}>
       {(v,set)=><><ObjectChoice name="待处理交换" items={items} value={v.exchange_id} onChange={x=>{
-        set({...v,exchange_id:x});setSelected(null);activeSelection.current=x;if(x)void p.api.object(p.project.id,"exchange",x).then(d=>{if(activeSelection.current===x&&d.value.kind==="exchange")setSelected(d.value);});
+        set({...v,exchange_id:x});setSelected(null);setSelectedActions([]);activeSelection.current=x;if(x)void p.api.object(p.project.id,"exchange",x).then(d=>{if(alive.current&&activeSelection.current===x&&d.value.kind==="exchange"){setSelected(d.value);setSelectedActions(d.summary.next_actions);}}).catch(e=>{if(alive.current&&activeSelection.current===x)setError(String(e));});
       }}/>{selected&&<p>{label(selected.phase)} · 请求 {selected.requested} {selected.unit} · 已接受 {selected.accepted} · {selected.reason}</p>}
-      {selected&&!canExchange&&<p role="alert">当前账号没有原业务动作权限。</p>}</>}
+      {selected&&!canExchange&&<p role="alert">当前状态或账号不能执行该动作，请查看业务阻断与来源回执。</p>}</>}
     </CommandForm>}
     {form==="reconcile"&&<CommandForm<Extract<CommandFields,{action:"exchange.reconcile"}>> key={epoch} {...shared} title="对账与纠正" save="追加对账事实"
       initial={()=>({action:"exchange.reconcile",exchange_id:"",object_type:"reservation",source_version:1,source:{system:"erp",object_type:"reservation",external_id:"",version:1,mode:"manual",occurred_at:"",collected_at:"",cutoff:null,evidence:"对账"},details:[],resolution:"compare",evidence:""})}
       canSubmit={v=>!!v.exchange_id&&!!canExchange}>
       {(v,set)=><><ObjectChoice name="对账交换记录" items={items} value={v.exchange_id} onChange={x=>{
-        set({...v,exchange_id:x});setSelected(null);activeSelection.current=x;if(x)void p.api.object(p.project.id,"exchange",x).then(d=>{if(activeSelection.current!==x||d.value.kind!=="exchange")return;const value=d.value;setSelected(value);
+        set({...v,exchange_id:x});setSelected(null);setSelectedActions([]);activeSelection.current=x;if(x)void p.api.object(p.project.id,"exchange",x).then(d=>{if(!alive.current||activeSelection.current!==x||d.value.kind!=="exchange")return;const value=d.value;setSelected(value);setSelectedActions(d.summary.next_actions);
           set(old=>old.exchange_id!==x?old:{...old,details:(value.receipt?.details||[]).filter((d):d is import("./types").ReceiptDetail=>"lot_id" in d),source_version:value.source?.version||value.receipt?.source_version||1,
             object_type:value.source_object_type||"reservation",resolution:value.source?"accept_authority":"compare",
             source:value.source?{...value.source,mode:"manual"}:{...old.source,external_id:value.business_key}});
-        });
+        }).catch(e=>{if(alive.current&&activeSelection.current===x)setError(String(e));});
       }}/>{selected?.source&&<p>确认已保留的权威事实，追加数量纠正事件；原人工登记与来源保持可查。</p>}
       {v.details.map((d,i)=><fieldset key={d.key}><legend>权威明细 {i+1} · {d.owner_id}</legend>
         <Field name={`核对数量 ${i+1}`} value={d.quantity} onChange={x=>set({...v,details:v.details.map((item,n)=>n===i?{...item,quantity:x}:item)})}/><p>{d.unit}</p></fieldset>)}

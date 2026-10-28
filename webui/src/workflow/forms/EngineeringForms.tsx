@@ -31,39 +31,7 @@ type Props = WorkspaceProps & {
   units?: ObjectSummary[];
 };
 export function EngineeringForms(p: Props) {
-  const [families, setFamilies] = useState<Record<string, string>>({});
-  const [familyError, setFamilyError] = useState("");
-  useEffect(() => {
-    let active = true;
-    if (p.action !== "engineering.revision") return;
-    setFamilyError("");
-    Promise.all(
-      p.revisions.map((r) => p.api.object(p.project.id, "revision", r.id)),
-    )
-      .then((details) => {
-        if (active)
-          setFamilies(
-            Object.fromEntries(
-              details.flatMap((d) =>
-                d.value.kind === "revision"
-                  ? [
-                      [
-                        d.value.package_id,
-                        `${d.value.items[0]?.title || "工程资料"} · ${d.value.revision}`,
-                      ],
-                    ]
-                  : [],
-              ),
-            ),
-          );
-      })
-      .catch(() => {
-        if (active) setFamilyError("资料系列读取失败，请重新读取项目后重试。");
-      });
-    return () => {
-      active = false;
-    };
-  }, [p.api, p.project.id, p.action, p.revisions]);
+  const families = Object.fromEntries(p.revisions.flatMap(r => r.revision_family_id ? [[r.revision_family_id,r.title.replace(/^[0-9a-f]{8}-[0-9a-f-]{27} /i,"工程修订 ")]] : []));
   if (p.action.startsWith("eco.")) return <EcoForms {...p}/>;
   switch (p.action) {
     case "engineering.revision":
@@ -94,7 +62,7 @@ export function EngineeringForms(p: Props) {
               <p>
                 固定后内容不可修改。新资料系列自动编号；选择既有系列可追加修订。
               </p>
-              {familyError && <p role="alert">{familyError}</p>}
+
               <Choice
                 name="资料系列"
                 value={families[v.package_id] ? v.package_id : "new"}

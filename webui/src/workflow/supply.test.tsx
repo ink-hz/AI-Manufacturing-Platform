@@ -260,3 +260,7 @@ it("uses completed apply version for the next draft while project refresh remain
   await click("返回业务列表");await click("获取来源事实");await field("外部业务编号","DELIVERY-2");await click("读取权威来源");
   expect(writes.map(w=>w.expected_version)).toEqual([7,9,11]);
 });
+it('shows a failed selected-object lookup without treating missing scope as a successful lookup',async()=>{
+ const api={object:vi.fn(async()=>{throw Error('Selected requirement unavailable');}),command:vi.fn()} as any;
+ await act(async()=>root.render(<SupplyForms api={api} project={{...project,allowed_actions:['reservation.request']}} action="reservation.request" onDirty={()=>{}} onChanged={()=>{}} onOpen={()=>{}} readOnly={false} workOrders={[]} orders={[]} revisions={[]} lots={[]} requirements={[{id,project_id:id,kind:'requirement',title:'Steel requirement',state:'active',version:1,next_actions:[],blocking_reasons:[],quantity:'1',unit:'kg'}]} commitments={[]} receipts={[]}/>));await select('预留对应需求',id);await flush();expect(host.querySelector('[role="alert"]')?.textContent).toContain('Selected requirement unavailable');expect(api.command).not.toHaveBeenCalled();
+});

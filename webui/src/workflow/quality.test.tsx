@@ -45,3 +45,8 @@ it('retains measurements while suppressing an unbound historical source',async()
  expect(host.textContent).toContain('voltage');
  expect(host.textContent).not.toContain('来源系统');
 });
+it('shows historical PASS separately from current evidence qualification and audit source badges',async()=>{
+ const src={system:'Signed manual lab',object_type:'test',external_id:'TEST-HISTORY',version:1,mode:'manual',occurred_at:'2026-10-28T00:00:00Z',collected_at:'2026-10-28T00:00:00Z',cutoff:null,evidence:'Signed measurement'};
+ const detail:any={summary:{...summary('test'),state:'pass'},value:{kind:'test',id,unit_id:id,revision_id:id,attempt:1,scope:{test_version:'T1',program_version:'P1',firmware_version:'F1',equipment_check_id:id},measurements:[{name:'voltage',unit:'V',lower:'4',upper:'6',value:'5'}],outcome:'pass',current_qualified:false,current_blocking_reasons:['Original execution evidence is no longer valid'],source:null,occurred_at:'2026-10-28T00:00:00Z'},relations:[],history:[{event_id:1,action:'test.record',occurred_at:src.occurred_at,recorded_at:src.collected_at,evidence:[{reference:'Historical lab record',source:src}]}],evidence:[]};
+ await act(async()=>root.render(<DetailContent data={detail} onOpen={()=>{}}/>));expect(host.textContent).toContain('当前资格：不满足');expect(host.textContent).toContain('Original execution evidence is no longer valid');expect(host.textContent).toContain('Signed manual lab');expect(host.textContent).toContain('人工登记');
+});
