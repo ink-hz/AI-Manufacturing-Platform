@@ -158,6 +158,10 @@ def _active_interruption(tx, project_id, work_order_id):
 def outbound_execution_ready(tx, project_id, payload, now):
     """Fresh local gate after authority query and before a new external effect."""
     if isinstance(payload, StartPayload):
+        from .freeze import unit_reasons
+
+        if any(unit_reasons(tx, project_id, uid) for uid, _ in payload.units):
+            return False
         from .eco import scope_locked
 
         if scope_locked(tx, project_id, payload.work_order_id):
@@ -177,6 +181,10 @@ def outbound_execution_ready(tx, project_id, payload, now):
             bool(request)
             and evaluate(tx, project_id, payload.work_order_id, payload.mode, now).ready
         )
+    from .freeze import resume_held
+
+    if resume_held(tx, project_id, payload.work_order_id, payload.scope):
+        return False
     interruption = current_resume_interruption(tx, project_id, payload)
     if (
         not interruption
@@ -249,6 +257,10 @@ def start_production(tx, context, command: StartProduction):
             ).fetchone()
         ):
             fail("serial is outside work order or already scoped")
+    from .freeze import unit_reasons, execution_lots
+
+    if any(unit_reasons(tx, context.project_id, u["id"]) for u in rows):
+        fail("Serial containment blocks new production start")
     start_id, eid = uuid4(), uuid4()
     request = ExternalRequest(
         id=eid,
@@ -258,6 +270,9 @@ def start_production(tx, context, command: StartProduction):
         source_version=1,
         project_id=context.project_id,
         typed_payload=StartPayload(
+            material_lot_ids=execution_lots(
+                tx, context.project_id, wo["id"], [command.mode]
+            ),
             start_id=start_id,
             work_order_id=command.work_order_id,
             revision_id=UUID(wo["revision_id"]),
@@ -471,6 +486,12 @@ def resume_production(tx, context, command: ResumeProduction):
         ).fetchone()
     ):
         fail("trial recovery requires an existing bulk scope to remain stopped")
+    from .freeze import resume_held, execution_lots
+
+    if resume_held(
+        tx, context.project_id, interruption["work_order_id"], command.scope
+    ):
+        fail("Serial containment blocks resume")
     modes = [m for m in modes if command.scope == "all" or m == "trial"]
     if not modes:
         fail("no accepted scope eligible for resume")
@@ -498,6 +519,9 @@ def resume_production(tx, context, command: ResumeProduction):
         source_version=1,
         project_id=context.project_id,
         typed_payload=ResumePayload(
+            material_lot_ids=execution_lots(
+                tx, context.project_id, interruption["work_order_id"], modes
+            ),
             interruption_id=command.interruption_id,
             work_order_id=UUID(interruption["work_order_id"]),
             plan_id=command.plan_id,
@@ -644,6 +668,8 @@ def record_execution(tx, context, command: RecordExecution):
         material_lot_ids=[u.lot_id for u in command.material_uses],
         occurred_at=command.occurred_at,
     )
+    from .freeze import unit_reasons
+
     reason = ""
     qualified_rework_id = None
     admitted = True
@@ -664,6 +690,8 @@ def record_execution(tx, context, command: RecordExecution):
         tx, context.project_id, wo["id"], unit
     ):
         reason = "serial is not authority-confirmed running"
+    elif unit_reasons(tx, context.project_id, unit["id"]):
+        reason = "Serial containment blocks new execution"
     elif historical_use_changed(tx, context.project_id, wo, command.occurred_at):
         reason = "historical execution requires explicit prerequisite reassessment; current evidence postdates occurrence"
     elif not evaluate(
@@ -1041,6 +1069,7 @@ def unit_detail(tx, pid, ident):
     ).fetchall()
     event_views = [event_view(tx, pid, e) for e in reversed(events)]
     from .quality import unit_tests
+    from .freeze import projection
 
     return ObjectDetail[UnitValue](
         summary=unit_summary(row),
@@ -1058,6 +1087,7 @@ def unit_detail(tx, pid, ident):
             execution_event_total=event_total,
             execution_events=event_views,
             **unit_tests(tx, pid, ident),
+            **projection(tx, pid, "unit", ident).model_dump(),
         ),
         relations=[
             ObjectRelation(

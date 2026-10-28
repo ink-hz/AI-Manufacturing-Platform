@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -176,3 +176,18 @@ CREATE TABLE IF NOT EXISTS acceptance_issues(id TEXT PRIMARY KEY,project_id TEXT
 CREATE TABLE IF NOT EXISTS acceptance_resolutions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),issue_id TEXT NOT NULL UNIQUE REFERENCES acceptance_issues(id),evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL);
 """
 SCHEMA += DELIVERY_SCHEMA
+
+FEEDBACK_SCHEMA = """
+CREATE TABLE IF NOT EXISTS freeze_requests(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),exchange_id TEXT NOT NULL UNIQUE REFERENCES exchanges(id),requested_state TEXT NOT NULL CHECK(requested_state IN ('frozen','unfrozen')),source_version INTEGER NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS freeze_members(request_id TEXT NOT NULL REFERENCES freeze_requests(id),project_id TEXT NOT NULL REFERENCES projects(id),unit_id TEXT REFERENCES units(id),lot_id TEXT REFERENCES material_lots(id),CHECK((unit_id IS NULL)<>(lot_id IS NULL)));
+CREATE INDEX IF NOT EXISTS freeze_unit ON freeze_members(project_id,unit_id,request_id);
+CREATE INDEX IF NOT EXISTS freeze_lot ON freeze_members(project_id,lot_id,request_id);
+CREATE TABLE IF NOT EXISTS freeze_confirmations(project_id TEXT NOT NULL REFERENCES projects(id),object_kind TEXT NOT NULL,object_id TEXT NOT NULL,request_id TEXT NOT NULL REFERENCES freeze_requests(id),state TEXT NOT NULL CHECK(state IN ('frozen','unfrozen')),source_version INTEGER NOT NULL,source_sequence INTEGER NOT NULL,PRIMARY KEY(project_id,object_kind,object_id));
+CREATE TABLE IF NOT EXISTS rmas(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),unit_id TEXT NOT NULL REFERENCES units(id),shipment_id TEXT NOT NULL REFERENCES shipments(id),order_line_id TEXT NOT NULL REFERENCES order_lines(id),customer_id TEXT NOT NULL,revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),test_cutoff INTEGER NOT NULL,reason TEXT NOT NULL,source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_json TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id));
+CREATE INDEX IF NOT EXISTS rmas_scope ON rmas(project_id,unit_id,seq);
+CREATE TABLE IF NOT EXISTS capas(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),rma_id TEXT NOT NULL UNIQUE REFERENCES rmas(id),state TEXT NOT NULL CHECK(state IN ('open','closed')),created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS capa_steps(seq INTEGER PRIMARY KEY AUTOINCREMENT,project_id TEXT NOT NULL REFERENCES projects(id),capa_id TEXT NOT NULL REFERENCES capas(id),step TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS capa_steps_scope ON capa_steps(project_id,capa_id,seq);
+CREATE INDEX IF NOT EXISTS consumption_lot_trace ON material_consumption(project_id,lot_id,unit_id);
+"""
+SCHEMA += FEEDBACK_SCHEMA

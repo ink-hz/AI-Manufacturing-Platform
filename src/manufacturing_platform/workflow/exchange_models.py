@@ -16,6 +16,7 @@ from .contracts import (
     require_timezone,
 )
 from .execution_models import sn_key
+from .feedback_models import FreezePayload, FreezeReceiptDetail
 
 Phase = Literal[
     "requested",
@@ -45,7 +46,18 @@ class ReservePayload(StrictModel):
     plan_version: int = Field(strict=True, ge=1)
 
 
-class StartPayload(StrictModel):
+class ContainmentLots(StrictModel):
+    material_lot_ids: list[UUID] | None = Field(default=None, max_length=500)
+
+    @model_serializer(mode="wrap")
+    def preserve_old_payload(self, handler):
+        data = handler(self)
+        if self.material_lot_ids is None:
+            data.pop("material_lot_ids", None)
+        return data
+
+
+class StartPayload(ContainmentLots):
     kind: Literal["start"] = "start"
     start_id: UUID
     work_order_id: UUID
@@ -78,7 +90,7 @@ class StopPayload(StrictModel):
     start_id: UUID | None = None
 
 
-class ResumePayload(StrictModel):
+class ResumePayload(ContainmentLots):
     kind: Literal["resume"] = "resume"
     interruption_id: UUID
     work_order_id: UUID
@@ -88,6 +100,8 @@ class ResumePayload(StrictModel):
     @model_serializer(mode="wrap")
     def preserve_existing_all_scope_hash(self, handler):
         data = handler(self)
+        if self.material_lot_ids is None:
+            data.pop("material_lot_ids", None)
         if self.scope == "all":
             data.pop("scope", None)
         return data
@@ -137,7 +151,7 @@ class EcoReceiptDetail(StrictModel):
     retained_quantity: NonnegativeQuantity
 
 
-class ShipPayload(StrictModel):
+class ShipPayload(ContainmentLots):
     kind: Literal["ship"] = "ship"
     shipment_id: UUID
     order_line_id: UUID
@@ -176,6 +190,7 @@ class ExternalRequest(StrictModel):
     id: UUID
     system: str = Field(min_length=1, max_length=200)
     action: Literal[
+        "freeze.request",
         "stock_basis.reconcile",
         "shipment.request",
         "eco.switch",
@@ -194,13 +209,15 @@ class ExternalRequest(StrictModel):
         | ResumePayload
         | EcoSwitchPayload
         | ShipPayload
-        | StockProofPayload,
+        | StockProofPayload
+        | FreezePayload,
         Field(discriminator="kind"),
     ]
 
     @model_validator(mode="after")
     def matching_action(self):
         expected = {
+            "freeze.request": "freeze",
             "stock_basis.reconcile": "stock_proof",
             "shipment.request": "ship",
             "eco.switch": "eco_switch",
@@ -274,6 +291,7 @@ class ExternalReceipt(StrictModel):
         | ControlReceiptDetail
         | EcoReceiptDetail
         | ShipmentReceiptDetail
+        | FreezeReceiptDetail
     ] = Field(max_length=500)
     occurred_at: datetime
     error: str | None = Field(default=None, max_length=2000)

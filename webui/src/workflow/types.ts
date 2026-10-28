@@ -23,6 +23,7 @@ export type WorkflowTarget = {
   id: string;
 };
 export type ObjectKind =
+  | "rma" | "capa"
   | "shipment" | "closure"
   | "nonconformance" | "rework" | "release"
   | "eco"
@@ -147,7 +148,7 @@ export interface ExchangeValue {
   events:{sequence:number;phase:string;reason:string}[];reservation_id:string|null;
   source:SourceRef|null;source_object_type:InboundKind|null;
   receipt:{receipt_id:string;business_key:string;request_hash:string;source_object_id:string;source_version:number;sequence:number;
-    phase:string;accepted_quantity:string;rejected_quantity:string;details:(ReceiptDetail|UnitReceiptDetail|ControlReceiptDetail|EcoReceiptDetail|ShipmentReceiptDetail)[];occurred_at:string;error:string|null}|null;
+    phase:string;accepted_quantity:string;rejected_quantity:string;details:(ReceiptDetail|UnitReceiptDetail|ControlReceiptDetail|EcoReceiptDetail|ShipmentReceiptDetail|FreezeReceiptDetail)[];occurred_at:string;error:string|null}|null;
 }
 export interface EcoImpact {stock_basis?:Record<string,string>|null;opening_consumption?:string;stock_basis_complete?:boolean;id:string;type:"purchase"|"stock"|"wip"|"work_order"|"unit";object_id:string;title:string;owner_id:string;quantity:string;unit:string;scale:number;state:string;resolved_quantity:string;dispositions:{id:string;decision:"use_old"|"rework"|"return"|"scrap";quantity:string;evidence:string}[]}
 export interface EcoValue {retentions?:{work_order_id:string;quantity:string;unit_ids:string[];evidence:string}[];implementation_outcome?:"pending"|"retained"|"cancelled"|"switched"|"mixed";unresolved_stock_basis_ids?:string[];kind:"eco";id:string;old_revision_id:string;new_revision_id:string|null;old_revision:string;new_revision:string|null;effective_work_order_ids:string[];effective_sn_ids:string[];reason:string;state:"open"|"closed";impacts:EcoImpact[];switches:{id:string;work_order_id:string;new_work_order_id:string|null;boundary:"split_remaining"|"cancel_remaining";quantity:string;retained_quantity:string;exchange_id:string;phase:string}[]}
@@ -169,6 +170,7 @@ export type DeliveryCommand =
  | {action:"stock_basis.reconcile";eco_id:string;reservation_id:string};
 export interface ShipmentReceiptDetail {key:string;unit_id:string;sn:string;work_order_id:string;order_line_id:string;box_id:string|null}
 export type CommandFields =
+  | FeedbackCommand
   | DeliveryCommand
   | {action:"test.record";source:SourceRef;unit_id:string;attempt:number;program_version:string;limit_version:string;firmware_version:string;measurements:Measurement[];rework_order_id?:string|null}
   | {action:"nonconformance.open";test_id:string;defect:string;evidence:string}
@@ -345,6 +347,7 @@ export interface WorkOrderImpactPreview {
   }[];
 }
 export type DomainValue =
+  | RmaValue | CapaValue
   | ShipmentValue
   | {kind:"closure";id:string;closure_kind:"fulfillment"|"quality"|"cost";status:"closed"|"blocked";source:SourceRef|null;evidence:string;blocking_reasons:string[]}
   | {kind:"test";id:string;unit_id:string;revision_id:string;attempt:number;scope:TestScope;measurements:Measurement[];outcome:"pass"|"fail";rework_order_id:string|null;execution_event_ids:string[];source:SourceRef|null;actor_id:string;occurred_at:string;recorded_at:string}
@@ -353,7 +356,7 @@ export type DomainValue =
   | {kind:"release";id:string;release_kind:ReleaseKind;unit_ids:string[];decision:"approved"|"rejected";evidence:string;test_ids:string[];actor_id:string;customer_id:string|null;revision_id:string|null;customer_revision:string|null;external_signatory:string|null;method:"manual"|null;source:SourceRef|null;recorded_at:string}
   | EcoValue
   | ExchangeValue
-  | {kind:"unit";tests?:UnitTest[];test_total?:number;first_pass?:boolean|null;scrapped?:boolean;final_good?:boolean;id:string;project_id:string;work_order_id:string;revision_id:string;sn:string;state:"registered"|"start_pending"|"running"|"stopped";mode:"trial"|"bulk"|null;accepted_start_id:string|null;authority_start_accepted:boolean;execution_event_ids:string[];execution_event_total:number;execution_events:{id:string;source:SourceRef|null;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";rework_order_id?:string|null;supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[]}
+  | {kind:"unit";freeze_requested?:"frozen"|"unfrozen"|null;freeze_confirmed?:"frozen"|"unfrozen"|null;freeze_pending?:boolean;tests?:UnitTest[];test_total?:number;first_pass?:boolean|null;scrapped?:boolean;final_good?:boolean;id:string;project_id:string;work_order_id:string;revision_id:string;sn:string;state:"registered"|"start_pending"|"running"|"stopped";mode:"trial"|"bulk"|null;accepted_start_id:string|null;authority_start_accepted:boolean;execution_event_ids:string[];execution_event_total:number;execution_events:{id:string;source:SourceRef|null;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";rework_order_id?:string|null;supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[]}
   | {kind:"interruption";id:string;work_order_id:string;reason:string;exception_id:string|null;exception_kind:"S3"|"S4"|"other";requested_at:string;authority_stopped_at:string|null;resolved_at:string|null;trial_resumed_at?:string|null;superseded_by?:string|null;plan_id:string|null;stop_exchange_id:string;recovery_start_id:string|null;resume_exchange_id:string|null;stop_exchange_ids:string[];resume_exchange_ids:string[]}
   | {kind:"reservation";requirement_id:string;work_order_id:string;material_lot_id:string;requested:string;confirmed:string;remaining:string;unit:string;source_version:number;authority_receipt_id:string|null;exchange_id:string}
   | {
@@ -448,7 +451,7 @@ export type DomainValue =
   | {kind:"plan";state:"confirmed"|"rejected";reason:string;source:SourceRef;input_revision_ids:string[];input_order_versions:{order_line_id:string;version:number}[];requirement_ids:string[];cutoff:string|null}
   | {kind:"requirement";plan_id:string;lineage_id:string;supersedes_requirement_id:string|null;work_order_id:string;execution_scope:"trial"|"bulk"|"common";material_id:string;owner_id:string;quantity:string;unit:string;balance:MaterialBalance;unqualified_quantity:string}
   | {kind:"commitment";requirement_id:string;type:"purchase"|"customer";owner_id:string;original_quantity:string;current_quantity:string;unit:string;original_due:string;current_due:string;source:SourceRef;promise_revisions:{source:SourceRef;quantity:string;current_due:string}[];material_lot_ids:string[];received:string;qualified:string;rejected:string}
-  | {kind:"material_lot";ownership_balance?:OwnershipBalance;material_movements?:{id:string;movement:"return"|"raw_loss";quantity:string;supersedes_id:string|null;current:boolean;source:SourceRef|null;external_signatory:string;evidence:string}[];ownership_reconciliations?:{id:string;current:boolean;source:SourceRef|null;balance:OwnershipBalance}[];material_id:string;lot_id:string;owner_id:string;unit:string;scale:number;expiry:string;state:"active"|"frozen";source:SourceRef;received:string;qualified:string;rejected:string}
+  | {kind:"material_lot";freeze_requested?:"frozen"|"unfrozen"|null;freeze_confirmed?:"frozen"|"unfrozen"|null;freeze_pending?:boolean;ownership_balance?:OwnershipBalance;material_movements?:{id:string;movement:"return"|"raw_loss";quantity:string;supersedes_id:string|null;current:boolean;source:SourceRef|null;external_signatory:string;evidence:string}[];ownership_reconciliations?:{id:string;current:boolean;source:SourceRef|null;balance:OwnershipBalance}[];material_id:string;lot_id:string;owner_id:string;unit:string;scale:number;expiry:string;state:"active"|"frozen";source:SourceRef;received:string;qualified:string;rejected:string}
   | {kind:"receipt";original_quantity?:string;corrections?:{sequence:number;received_delta:string;accepted_delta:string;rejected_delta:string;evidence:string}[];confirmations?:SourceConfirmation[];commitment_id:string;material_lot_id:string;quantity:string;unit:string;source:SourceRef;accepted:string;rejected:string;uninspected:string};
 export interface ObjectDetail {
   summary: ObjectSummary;
@@ -489,3 +492,16 @@ export interface WorkspaceProps {
   onDirty(key: string, dirty: boolean): void;
   readOnly: boolean;
 }
+
+export type FeedbackCommand =
+ | {action:"freeze.request";unit_ids:string[];lot_ids:string[];state:"frozen"|"unfrozen";reason:string}
+ | {action:"rma.open";unit_id:string;shipment_id:string;reason:string;source:SourceRef}
+ | {action:"capa.update";capa_id:string|null;rma_id:string;step:CapaStepName;description:string;evidence:string;effective?:boolean|null;action_kind?:"engineering"|"supplier"|"training"|"process"|null;implementation_evidence?:string|null;eco_id?:string|null}
+ | {action:"capa.close";capa_id:string};
+export type CapaStepName="containment"|"root_cause"|"correction"|"verification";
+export type CapaStep={sequence:number;step:CapaStepName;description:string;evidence:string;effective:boolean|null;action_kind:"engineering"|"supplier"|"training"|"process"|null;implementation_evidence:string|null;eco_id:string|null};
+export interface RmaValue {kind:"rma";id:string;unit_id:string;shipment_id:string;order_line_id:string;customer_id:string;revision_id:string;test_ids:string[];tests_truncated:boolean;reason:string;source:SourceRef|null;state:"open"|"closed"}
+export interface CapaValue {kind:"capa";id:string;rma_id:string;state:"open"|"closed";steps:CapaStep[];steps_truncated:boolean;blocking_reasons:string[]}
+export interface TraceResult {nodes:{id:string;kind:ObjectKind;project_id:string;title:string;customer_id:string|null}[];edges:{source_kind:ObjectKind;source_id:string;target_kind:ObjectKind;target_id:string;relation:"order"|"revision"|"work_order"|"consumed"|"test"|"prior_test"|"rework"|"release"|"shipment"|"rma"|"capa"}[];truncated:boolean}
+
+export interface FreezeReceiptDetail {key:string;object_kind:"unit"|"material_lot";object_id:string;state:"frozen"|"unfrozen"}

@@ -1,5 +1,7 @@
 import type { ObjectSummary } from "./types";
 export const labels: Record<string, string> = {
+  rma:"客户质量反馈",capa:"纠正预防措施",frozen:"冻结",unfrozen:"解冻",consumed:"实际物料消耗",prior_test:"前次检验依据",order:"原订单",
+  "freeze.request":"冻结或解冻申请","rma.open":"登记客户 RMA","capa.update":"记录 CAPA 证据","capa.close":"核验 CAPA 关闭",
   shipment:"发货",closure:"独立关闭",held:"实物已发出，质量暂缓",fulfillment:"履约",cost:"成本",
   "shipment.request":"发货申请","delivery.sign":"签收","delivery.accept":"验收","delivery.resolve_issue":"解决验收问题","closure.record":"独立关闭","ownership.movement":"实际物料移动","ownership.reconcile":"所有权对账","stock_basis.reconcile":"历史来源证明",
   eco:"工程变更", "eco.open":"建立工程变更", "eco.disposition":"处置旧版影响", "eco.switch":"切换未执行范围", "eco.close":"关闭工程变更", stock:"库存", wip:"在制", use_old:"继续使用旧版", scrap:"报废",

@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 
 from . import (  # noqa: F401 - trusted domain registration
     delivery,
+    freeze,
+    feedback,
     eco,
     engineering,
     exchanges,
@@ -403,6 +405,12 @@ class WorkflowService:
             if result is None:
                 raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
             return result
+
+    def trace(self, actor, project_id, *, sn=None, material_lot_id=None, limit=500):
+        from .trace import query
+        with self.store.transaction() as tx:
+            require_project(tx, actor, project_id)
+            return query(tx, project_id, sn=sn, material_lot_id=material_lot_id, limit=limit)
 
     def dashboard(self, actor: Actor, project_id: UUID | None = None) -> Dashboard:
         with self.store.transaction() as tx:

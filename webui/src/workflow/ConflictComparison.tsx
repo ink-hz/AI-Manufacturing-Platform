@@ -13,6 +13,10 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
   const target = (kind: WorkflowTarget["kind"], id: string) =>
     id ? [{ projectId, kind, id }] : [];
   switch (draft.action) {
+    case "freeze.request":return [...draft.unit_ids.slice(0,25).flatMap(id=>target("unit",id)),...draft.lot_ids.slice(0,25).flatMap(id=>target("material_lot",id))];
+    case "rma.open":return [...target("unit",draft.unit_id),...target("shipment",draft.shipment_id)];
+    case "capa.update":return [...target("rma",draft.rma_id),...target("capa",draft.capa_id||"")];
+    case "capa.close":return target("capa",draft.capa_id);
     case "test.record":return target("unit",draft.unit_id);
     case "nonconformance.open":return target("test",draft.test_id);
     case "nonconformance.disposition":return target("nonconformance",draft.nonconformance_id);
@@ -79,6 +83,8 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
 }
 function facts(v: DomainValue): [string, string][] {
   switch (v.kind) {
+    case "rma":return [["客户",v.customer_id],["问题事实",v.reason],["状态",label(v.state)]];
+    case "capa":return [["状态",label(v.state)],["证据步骤",String(v.steps.length)],["阻断原因",v.blocking_reasons.join("；")]];
     case "shipment":return [["实发",v.shipped],["签收",v.signed],["验收",v.accepted],["状态",label(v.state)]];
     case "closure":return [["类型",label(v.closure_kind)],["当前状态",label(v.status)],["证据",v.evidence]];
     case "test":return [["次数",String(v.attempt)],["测量判定",v.outcome],["规范",v.scope.test_version]];

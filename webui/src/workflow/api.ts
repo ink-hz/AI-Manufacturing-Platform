@@ -12,6 +12,7 @@ import type {
   ObjectPage,
   ObjectDetail,
   Dashboard,
+  TraceResult,
 } from "./types";
 export class WorkflowError extends Error {
   constructor(
@@ -123,7 +124,12 @@ export function createWorkflowApi(
       request<CommandResult>(p(id) + "/commands", "POST", v),
     dashboard: () => request<Dashboard>("/dashboard"),
     exchanges: (id: string, limit=50, offset=0) => request<ObjectPage>(p(id) + `/exchanges?limit=${limit}&offset=${offset}`),
-    trace: (id: string) => request<unknown>(p(id) + "/trace"),
+    trace: (id: string, query: {sn:string;material_lot_id?:never}|{material_lot_id:string;sn?:never}, limit=500) => {
+      const params=new URLSearchParams();
+      if(query.sn!==undefined)params.set("sn",query.sn);else params.set("material_lot_id",query.material_lot_id);
+      params.set("limit",String(limit));
+      return request<TraceResult>(p(id)+"/trace?"+params);
+    },
     handbook: () => request<Handbook>("/handbook"),
     dispose,
   };

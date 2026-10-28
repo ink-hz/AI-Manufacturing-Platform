@@ -622,6 +622,12 @@ def decide_release(tx, context, command):
     if len(set(command.unit_ids)) != len(command.unit_ids):
         fail("release requires unique explicit serials", 422)
     units = [own(tx, "units", pid, uid) for uid in command.unit_ids]
+    from .freeze import unit_reasons
+
+    if command.decision == "approved" and any(
+        unit_reasons(tx, pid, u["id"]) for u in units
+    ):
+        fail("Containment blocks new release")
     if command.decision == "conditional":
         fail("no explicit validated conditional release policy is configured")
     if command.kind == "customer":

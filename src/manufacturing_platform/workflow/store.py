@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 from .orders import source_key
 from .schema import (
     DELIVERY_SCHEMA,
+    FEEDBACK_SCHEMA,
     ECO_REVIEW_SCHEMA,
     ECO_SCHEMA,
     ENGINEERING_SCHEMA,
@@ -235,6 +236,12 @@ class WorkflowStore:
                     if statement.strip():
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=13")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 13:
+                for statement in FEEDBACK_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=14")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1

@@ -32,8 +32,11 @@ def fail(reason):
 
 
 def freeze_eligibility(tx, project_id, unit_ids) -> FreezeEligibility:
+    from .freeze import unit_reasons
+
     reasons = []
     for uid in unit_ids:
+        reasons.extend(unit_reasons(tx, project_id, uid))
         row = tx.execute(
             "SELECT state FROM shipment_freeze_events WHERE project_id=? AND unit_id=? ORDER BY seq DESC LIMIT 1",
             (str(project_id), str(uid)),
@@ -161,7 +164,10 @@ def request_shipment(tx, context, command):
     if reasons:
         fail("; ".join(reasons))
     sid, eid = uuid4(), uuid4()
+    from .freeze import consumed_lots
+
     payload = ShipPayload(
+        material_lot_ids=consumed_lots(tx, pid, ids),
         shipment_id=sid,
         order_line_id=command.order_line_id,
         quantity=str(command.quantity),
@@ -704,8 +710,17 @@ def mandatory_source_discrepancies(tx, pid):
 
 
 def feedback_close_predicates(tx, pid, kind):
-    """C3 extends this hook with mandatory current RMA/CAPA predicates."""
-    return []
+    if kind != "quality":
+        return []
+    from .feedback import quality_blockers
+
+    reasons = [b.reason + ": " + str(b.id) for b in quality_blockers(tx, pid)]
+    if tx.execute(
+        "SELECT 1 FROM freeze_requests r JOIN freeze_members m ON m.request_id=r.id LEFT JOIN freeze_confirmations f ON f.project_id=m.project_id AND f.object_kind=CASE WHEN m.unit_id IS NULL THEN 'material_lot' ELSE 'unit' END AND f.object_id=COALESCE(m.unit_id,m.lot_id) WHERE r.project_id=? AND r.seq=(SELECT MAX(x.seq) FROM freeze_requests x JOIN freeze_members y ON y.request_id=x.id WHERE y.project_id=m.project_id AND COALESCE(y.unit_id,y.lot_id)=COALESCE(m.unit_id,m.lot_id)) AND (f.request_id IS NULL OR f.source_version<r.source_version OR f.state='frozen') LIMIT 1",
+        (str(pid),),
+    ).fetchone():
+        reasons.append("Quality containment remains pending or frozen")
+    return reasons
 
 
 def close_predicates(tx, project_id, kind) -> list[str]:

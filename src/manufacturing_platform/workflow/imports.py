@@ -25,6 +25,7 @@ from .supply import (
 from .supply_models import InspectSupply, ReceiveSupply
 
 SOURCE_POLICIES = {
+    "rma": "rma.open",
     "material_movement": "ownership.movement",
     "ownership": "ownership.reconcile",
     "closure": "closure.record",
@@ -164,6 +165,21 @@ def record_scope(
             own(tx, "material_lots", project_id, ident)
         if tx.execute(
             "SELECT 1 FROM execution_events e LEFT JOIN execution_admissions a ON a.event_id=e.id AND a.project_id=e.project_id WHERE e.source_system=? AND e.source_type=? AND e.source_external_id=? AND e.project_id<>? AND COALESCE(a.admitted,e.status='accepted')=1 LIMIT 1",
+            (*key, str(project_id)),
+        ).fetchone():
+            raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+    elif record.object_type == "rma":
+        unit = own(tx, "units", project_id, record.unit_id)
+        own(tx, "shipments", project_id, record.shipment_id)
+        if not tx.execute(
+            "SELECT 1 FROM shipment_items WHERE project_id=? AND unit_id=? AND shipment_id=?",
+            (str(project_id), unit["id"], str(record.shipment_id)),
+        ).fetchone():
+            raise DomainError(
+                "SOURCE_DISCREPANCY", 409, "RMA shipped serial scope mismatch"
+            )
+        if tx.execute(
+            "SELECT 1 FROM rmas WHERE source_system=? AND source_type=? AND source_external_id=? AND project_id<>?",
             (*key, str(project_id)),
         ).fetchone():
             raise DomainError("NOT_FOUND", 404, "Workflow resource not found")

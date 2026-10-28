@@ -1,3 +1,4 @@
+import { TraceWorkspace } from "./TraceWorkspace";
 import { DeliveryWorkspace } from "./DeliveryWorkspace";
 import { QualityWorkspace } from "./QualityWorkspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -36,7 +37,7 @@ export function WorkflowApp({
     [project, setProject] = useState<ProjectDetail | null>(null),
     [view, setView] = useState<ConsoleView>("home"),
     [creating, setCreating] = useState(false),
-    [workspace, setWorkspace] = useState<"orders" | "engineering" | "supply" | "execution" | "quality" | "delivery" | "exchange" | "members">(
+    [workspace, setWorkspace] = useState<"orders" | "engineering" | "supply" | "execution" | "quality" | "delivery" | "trace" | "exchange" | "members">(
       "orders",
     ),
     [target, setTarget] = useState<WorkflowTarget | null>(null),
@@ -206,6 +207,7 @@ export function WorkflowApp({
       setResolve(false);
     } else if (
       [
+        "rma", "capa",
         "eco",
         "demand",
         "order_line",
@@ -390,6 +392,7 @@ export function WorkflowApp({
                       ["execution", "生产执行"],
                       ["quality", "质量与放行"],
                       ["delivery", "交付与关闭"],
+                      ["trace", "追溯与反馈"],
                       ["exchange", "同步与回执"],
                       ...(b.configuration_admin
                         ? [["members", "成员授权"]]
@@ -466,6 +469,8 @@ export function WorkflowApp({
                     requestLeave={requestLeave}
                     onReload={() => setRefresh((r) => r + 1)}
                   />
+                ) : workspace === "trace" ? (
+                  <TraceWorkspace key={props.project.id} {...props} requestLeave={requestLeave} />
                 ) : workspace === "delivery" ? (
                   <DeliveryWorkspace {...props} requestLeave={requestLeave} />
                 ) : workspace === "quality" ? (

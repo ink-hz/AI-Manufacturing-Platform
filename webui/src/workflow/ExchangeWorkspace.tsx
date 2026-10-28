@@ -52,7 +52,7 @@ export function ExchangeWorkspace(p:Props){
     </CommandForm>}
     {(form==="dispatch"||form==="query")&&<CommandForm<Extract<CommandFields,{action:"exchange.dispatch"|"exchange.query"}>> key={epoch} {...shared}
       title={form==="dispatch"?"发送权威请求":"查询已有回执"} save={form==="dispatch"?"查询后发送原请求":"查询权威结果"}
-      initial={()=>({action:form==="dispatch"?"exchange.dispatch":"exchange.query",exchange_id:""})} canSubmit={v=>!!v.exchange_id && !!canExchange && ["eco.switch","reservation.request","source.pull","production.start","production.interrupt","production.resume"].includes(selected?.action||"")}>
+      initial={()=>({action:form==="dispatch"?"exchange.dispatch":"exchange.query",exchange_id:""})} canSubmit={v=>!!v.exchange_id && !!canExchange && ["freeze.request","shipment.request","stock_basis.reconcile","eco.switch","reservation.request","source.pull","production.start","production.interrupt","production.resume"].includes(selected?.action||"")}>
       {(v,set)=><><ObjectChoice name="待处理交换" items={items} value={v.exchange_id} onChange={x=>{
         set({...v,exchange_id:x});setSelected(null);activeSelection.current=x;if(x)void p.api.object(p.project.id,"exchange",x).then(d=>{if(activeSelection.current===x&&d.value.kind==="exchange")setSelected(d.value);});
       }}/>{selected&&<p>{label(selected.phase)} · 请求 {selected.requested} {selected.unit} · 已接受 {selected.accepted} · {selected.reason}</p>}

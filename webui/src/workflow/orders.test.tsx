@@ -295,7 +295,7 @@ it("creates a project with explicit contract fields and exact decimal string DTO
 it("uses real named member choices and leaves readiness qualifications explicit", async () => {
   const prior = vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation(async (u, i) =>
-    String(u).endsWith("/members")
+    (String(u).endsWith("/members") || String(u) === `/preview/api/v1/manufacturing/workflow/projects/${project.id}/members?user_id=00000000-0000-4000-8000-000000000004`)
       ? response({ items: [] })
       : String(u).includes("/members/")
         ? (requests.push({ url: String(u), body: JSON.parse(String(i?.body)) }),
@@ -479,7 +479,7 @@ it("advances the next grant draft immediately and rejects delayed older project 
   const reads: ((r: Response) => void)[] = [];
   vi.mocked(fetch).mockImplementation(async (u, i) => {
     const url = String(u);
-    if (url.endsWith("/members")) return response({ items: [] });
+    if (url.endsWith("/members") || ["00000000-0000-4000-8000-000000000010", "00000000-0000-4000-8000-000000000011"].some(user => url === `/preview/api/v1/manufacturing/workflow/projects/${project.id}/members?user_id=${user}`)) return response({ items: [] });
     if (url.includes("/members/")) {
       const body = JSON.parse(String(i?.body));
       writes.push(body);
@@ -969,7 +969,7 @@ it("compares a conflicted member grant without rebasing selected roles or operat
   const writes: any[] = [];
   vi.mocked(fetch).mockImplementation(async (u, i) => {
     const url = String(u);
-    if (url.endsWith("/members"))
+    if (url.endsWith("/members") || url === `/preview/api/v1/manufacturing/workflow/projects/${project.id}/members?user_id=${member}`)
       return response({
         items: conflict
           ? [

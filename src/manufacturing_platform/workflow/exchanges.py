@@ -93,6 +93,10 @@ PUBLIC_REASONS = frozenset(
         "Accepted receipt contains no quantity",
         "Reservation already confirmed",
         "Identity, version, sequence and keyed quantities validated",
+        "Authority confirmed containment state",
+        "Awaiting authoritative containment",
+        "Stale freeze source version or sequence",
+        "Stale or invalid freeze receipt",
         "Authority approved reservation",
         "Authority approved production transition",
         "MES accepted transition; local safety hold requires scoped stop and replan",
@@ -134,7 +138,11 @@ def public_reason(reason):
 
 
 def receipt_scope(tx, row, receipt):
-    """Receipt evidence is visible only after binding all referenced identities to the request."""
+    """Receipt evidence is visible only after binding all identities to the request."""
+    if row["action"] == "freeze.request":
+        from .freeze import receipt_scope as freeze_scope
+
+        return freeze_scope(tx, row, receipt)
     if row["action"] == "shipment.request":
         from .delivery import receipt_scope as shipment_receipt_scope
 
@@ -524,6 +532,19 @@ class ExchangeService:
                                 request.typed_payload,
                                 datetime.now(UTC),
                             )
+                    elif request.action == "reservation.request":
+                        from .freeze import lot_hold
+
+                        with self.workflow.store.transaction() as live_tx:
+                            live_row = own(
+                                live_tx, "exchanges", project_id, result.exchange_id
+                            )
+                            authorize_policy(
+                                live_tx, actor, project_id, live_row["policy_action"]
+                            )
+                            ready = not lot_hold(
+                                live_tx, project_id, request.typed_payload.lot_id
+                            )
                     elif request.action == "shipment.request":
                         from .delivery import current_shipment_reasons
 
@@ -757,6 +778,10 @@ class ExchangeService:
         receipt = public_receipt(receipt)
         request = ExternalRequest.model_validate_json(row["request_json"])
         payload = request.typed_payload
+        if request.action == "freeze.request":
+            from .freeze import apply as apply_freeze
+
+            return apply_freeze(self, tx, context, row, request, receipt)
         if request.action == "shipment.request":
             from .delivery import apply_shipment
 
@@ -1147,6 +1172,10 @@ def request_reservation(tx, context, command):
         or lot["expiry"] < context.now.date().isoformat()
     ):
         fail("Reservation lot is ineligible")
+    from .freeze import lot_hold
+
+    if lot_hold(tx, context.project_id, lot["id"]):
+        fail("Reservation lot containment pending or frozen")
     q = atoms(command.quantity, command.unit, lot["unit"], lot["scale"])
     bal = available(tx, context.project_id, req["id"], context.now)
     pending = tx.execute(
@@ -1222,6 +1251,7 @@ def prepare_io(tx, context, command):
     else:
         row = own(tx, "exchanges", context.project_id, command.exchange_id)
     if row["action"] not in {
+        "freeze.request",
         "stock_basis.reconcile",
         "shipment.request",
         "eco.switch",
@@ -1422,6 +1452,7 @@ def summary(tx, pid, kind, row):
             if row["phase"] not in {"accepted", "posted"}
             and row["action"]
             in {
+                "freeze.request",
                 "stock_basis.reconcile",
                 "shipment.request",
                 "eco.switch",
@@ -1475,6 +1506,7 @@ def detail(tx, pid, kind, ident):
             ExternalRequest.model_validate_json(row["request_json"])
             if row["action"]
             in {
+                "freeze.request",
                 "stock_basis.reconcile",
                 "shipment.request",
                 "eco.switch",
@@ -1619,6 +1651,8 @@ def detail(tx, pid, kind, ident):
                 ("exchange", "exchange_id"),
             ]
         ]
+    from .freeze import audit_evidence as freeze_audit
+
     return ObjectDetail(
         summary=summary(tx, pid, kind, row),
         value=value,
@@ -1627,7 +1661,12 @@ def detail(tx, pid, kind, ident):
             tx.execute(
                 "SELECT * FROM audit_events WHERE project_id=? AND object_id=? ORDER BY id",
                 (str(pid), str(ident)),
-            ).fetchall()
+            ).fetchall(),
+            evidence_projector=(
+                lambda event, payload: freeze_audit(tx, pid, event, payload)
+            )
+            if kind == "exchange" and row["action"] == "freeze.request"
+            else None,
         ),
         evidence=[],
     )

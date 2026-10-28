@@ -89,6 +89,14 @@ class MockAuthorityAdapter:
                 result = self._reserve(
                     tx, request, h, sequence, fault_name, fault_value
                 )
+            elif request.action == "freeze.request":
+                from ..freeze import authority_apply
+
+                result = authority_apply(tx, request, h, sequence, fault_name)
+                tx.execute(
+                    "UPDATE authority_operations SET receipt_json=? WHERE seq=?",
+                    (result.model_dump_json(), sequence),
+                )
             elif request.action == "shipment.request":
                 result = self._ship(tx, request, h, sequence, fault_name)
                 tx.execute(
@@ -132,6 +140,13 @@ class MockAuthorityAdapter:
         }
         rejected = (
             fault_name == "reject"
+            or any(
+                tx.execute(
+                    "SELECT 1 FROM authority_freeze_versions WHERE project_id=? AND object_kind='material_lot' AND object_id=? AND state='frozen'",
+                    (str(request.project_id), str(lid)),
+                ).fetchone()
+                for lid in (payload.material_lot_ids or [])
+            )
             or len(set(ids)) != len(ids)
             or payload.quantity != len(ids)
         )
@@ -235,6 +250,10 @@ class MockAuthorityAdapter:
                 payload.unit,
                 payload.scale,
             )
+            and not tx.execute(
+                "SELECT 1 FROM authority_freeze_versions WHERE project_id=? AND object_kind='material_lot' AND object_id=? AND state='frozen'",
+                (str(request.project_id), str(payload.lot_id)),
+            ).fetchone()
             and lot["state"] == "active"
             and lot["expiry"] >= datetime.now(UTC).date().isoformat()
         )
@@ -360,6 +379,12 @@ class MockAuthorityAdapter:
 
     def _submit_execution(self, tx, request, h, sequence, fault_name):
         payload = request.typed_payload
+        from ..freeze import authority_execution_held
+
+        if isinstance(
+            payload, (StartPayload, ResumePayload)
+        ) and authority_execution_held(tx, request):
+            fault_name = "reject"
         accepted = False
         reason = "Authority production scope rejected"
         details = []

@@ -715,7 +715,10 @@ def _detail(tx, project_id, kind, object_id):
         movements, reconciliations = ownership_history(tx, project_id, row)
         ownership = balance(tx, project_id, row)
         ownership.hold_reason = material_hold(tx, project_id, row)
+        from .freeze import projection
+
         value = MaterialLotValue(
+            **projection(tx, project_id, "material_lot", row["id"]).model_dump(),
             ownership_balance=ownership,
             material_movements=movements,
             ownership_reconciliations=reconciliations,

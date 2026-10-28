@@ -214,6 +214,10 @@ for model, handler in [(MaterialMovement, move), (OwnershipReconcile, reconcile)
 
 def material_hold(tx, pid, lot):
     """Actual movements never silently release still-accepted authority claims."""
+    from .freeze import lot_hold
+    containment = lot_hold(tx, pid, lot["id"])
+    if containment:
+        return containment
     if not tx.execute(
         "SELECT 1 FROM material_movements WHERE project_id=? AND material_lot_id=? LIMIT 1",
         (str(pid), lot["id"]),

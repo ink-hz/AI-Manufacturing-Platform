@@ -130,6 +130,9 @@ class UnitTestView(StrictModel):
 
 
 class UnitValue(DomainValue):
+    freeze_requested: Literal["frozen", "unfrozen"] | None = None
+    freeze_confirmed: Literal["frozen", "unfrozen"] | None = None
+    freeze_pending: bool = False
     tests: list[UnitTestView] = Field(default_factory=list)
     test_total: int = 0
     first_pass: bool | None = None

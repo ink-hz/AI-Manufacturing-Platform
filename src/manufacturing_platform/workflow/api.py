@@ -219,9 +219,8 @@ def build_workflow_router(
         )
 
     @router.get("/projects/{project_id}/trace")
-    def unavailable_project(project_id: UUID, request: Request):
-        service.detail(actor(request), project_id)
-        raise HTTPException(503, "Workflow feature unavailable")
+    def trace(project_id: UUID, request: Request, sn: str | None = None, material_lot_id: UUID | None = None, limit: int = 500):
+        return service.trace(actor(request), project_id, sn=sn, material_lot_id=material_lot_id, limit=limit)
 
     @router.get("/assets/{asset_name}")
     def assets(asset_name: str, request: Request):
