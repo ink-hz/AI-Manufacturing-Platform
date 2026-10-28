@@ -1,6 +1,6 @@
 # Isolated manufacturing workflow acceptance
 
-This runbook describes the reproducible harness for the original [36 business cases](manufacturing-full-workflow-acceptance.md). It is not a full acceptance report. D2 authored the exact registry and verified a complete F01 smoke and E30 component/HTTP case; D4 must run a fresh `--cases all` with the D3 proof runner configured. Browser, employee-account, real external-system and production acceptance remain separate.
+This runbook describes the reproducible harness for the original [36 business cases](manufacturing-full-workflow-acceptance.md). D4 completed a fresh local all36 selection and eight committed affected reruns: [exact candidate evidence](manufacturing-full-workflow-results-D4-20261028.md). The composite is36 passed/0 failed/0 blocked/0 not_executed, with first failures retained; it is not one fresh all36 at the final commit or a deployment report. R1 must repeat all36 in the pinned actual isolated runtime. Browser, employee-account, real external-system and production acceptance remain separate.
 
 ## Run a selected scope
 
@@ -136,3 +136,19 @@ Inside the candidate, provenance is labelled `pinned_export` and retains the **o
 Every SN in F01–F04 now compares exact typed graph node IDs and edge tuples with independently read persisted identities, refusing truncation. The composite proof reconciles execution source/admission/start receipt and fixed route, actual consumed material ownership, first tests/retests/rework, independent releases, authoritative shipment receipts and signed/accepted quantities. Each main flow supplies one actual completed RMA/CAPA pair and proves its exact delivered-unit/test linkage;100 RMAs are not required. The graph is not expected to expose execution/acceptance facts that belong to typed APIs/SQL.
 
 E12 uses business-now < equipment-expiry < future-planned-start, while every other required check passes. It asserts equipment is the only blocker and production.start is refused, appends only renewed equipment evidence, re-evaluates, and successfully repeats the same action. Failure artifacts include file/line/function frame metadata without source lines or local variables; original first-error and teardown semantics are preserved.
+
+
+## D4 local commands and final regression selection
+
+Use the exact Python and proof command recorded in the [D4 result](manufacturing-full-workflow-results-D4-20261028.md) and its machine manifest. On macOS, choose a canonical absolute `/private/tmp/...` output: `/tmp` is a symlink and the mandatory D3 evidence verifier intentionally rejects symlink ancestors. Do not relax the verifier or overwrite an earlier run to obtain a pass.
+
+```sh
+export WORKFLOW_D3_PROOF_COMMAND='["/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python","/Users/neo/Developer/work/AI-Manufacturing-Platform/.worktrees/full-workflow/tests/workflow/d3/run_proof.py"]'
+PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python scripts/run_workflow_acceptance.py --cases all --seed 20261028 --business-clock 2026-10-28T00:00:00Z --output /private/tmp/manufacturing-workflow-new-owned-run
+```
+
+E07's recorded trusted business timeline admits stock atT−2d, then restarts at the requestedT with a fresh plan to test actual expiry. No global datetime/security-clock patch is used. A foreign customer's same-material lot in another project exercises project/owner isolation, not a standalone owner-only predicate. E15 selects current requirements by scope/WO/material, carrying envelope IDs instead of assuming UUID-array ordering. Indexed source references are canonical (`mes`); complete object source evidence retains the submitted spelling (`MES`) and immutable history.
+
+After actual CLI execution, MF final Python regression selected all `tests` and explicitly deselected exactly the36 `test_f01`–`test_f04`/`test_e01`–`test_e32` heavy wrappers in test_acceptance.py; all runner unit contracts remained selected. The exact argv is retained in `.superpowers/sdd/task-D4-mf-backend-command.json`. The full scan was636passed/1old fixture expectation failed; the test-only correction and related identity/history tests passed18. Do not relabel these exclusions as baseline skips or claim a second full green scan.
+
+MF full generic UI command is `npm --prefix webui test -- --exclude src/workflow/acceptanceNavigationHttp.test.tsx`; that private E30 test is only valid under its real CLI-owned host and was separately executed there. `npm --prefix webui run test:bundle` builds and checks the actual IIFE/CSS. PF backend regression must set `TEST_MANUFACTURING_RELEASE_ROOT` to the built MF worktree, and PF handbook component verification must set `TEST_MANUFACTURING_HANDBOOK` to the actual complete handbook. Package-enable/handbook skips do not count as acceptance. Exact test paths, first outputs, covering reruns and unchanged dependency warning attribution are in the D4 report.

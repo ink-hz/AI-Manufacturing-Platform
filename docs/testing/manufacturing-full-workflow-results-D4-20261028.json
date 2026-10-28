@@ -1,0 +1,736 @@
+{
+  "scope": "LOCAL composite exact36: original complete all selection plus eight committed affected reruns; not one current-commit all36 and not deployed",
+  "seed": 20261028,
+  "seed_version": "workflow-complete-v1",
+  "business_clock": "2026-10-28T00:00:00Z",
+  "status_counts": {
+    "passed": 36,
+    "failed": 0,
+    "blocked": 0,
+    "not_executed": 0
+  },
+  "base_manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+  "corrected_manufacturing_commit": "8e253f87a899454fc0211ce16bbce2ed89372668",
+  "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+  "first_run": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+  "committed_rerun": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561",
+  "build_files": {
+    "webui/dist/manufacturing.js": "acae04a49d6cc3e2ea26c553279438c898530d6eb7d05b7474e7f06cabf5bfb0",
+    "webui/dist/manufacturing.css": "45605e1e32940ce214d1db817ec883d9c4e404a977e26b83a6c8ec3fd03602b4"
+  },
+  "handbook_sha256": "8966c7d91be4387b67271449d1c25b3214a7587a149c26c40c3a39dd035e2dfd",
+  "cases": [
+    {
+      "id": "E01",
+      "status": "passed",
+      "duration_ms": 641,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E01",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "e8fe879a2f2e8de48f1d498df36fcc76e80db78af3ef5276f70aeca9aa23e2db",
+      "result_sha256": "84797000f12c6ff975559b67b60ca8edf222d07987ea6fb8ea46e3f85ba11ddf"
+    },
+    {
+      "id": "E02",
+      "status": "passed",
+      "duration_ms": 853,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E02",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "f9c7ee843687cc10873b9347c77d4203cd571b1643b710b299e05456aa8d9477",
+      "result_sha256": "511acbf02cb439a8654e4ae44a32eb1233303b7ffda3e0199d0d625409e2c255"
+    },
+    {
+      "id": "E03",
+      "status": "passed",
+      "duration_ms": 827,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E03",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "a7dbe1c5bcab40b4869a06db1df290421cf3391b82bc6ef072b7122e237539cd",
+      "result_sha256": "84d84fa43d1d249bf0f6f88092fc38e48c1cfc42377feaee4067bf6cdacf99d9"
+    },
+    {
+      "id": "E04",
+      "status": "passed",
+      "duration_ms": 1128,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E04",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "6fc6b7f17c62862d5fbd36a929e4c657585d1238d3d4d66766ec81d8059b821a",
+      "result_sha256": "b0b4871fb98b9fb158e0e89204437834bd82a08cb60ab42792583e0d3763255f"
+    },
+    {
+      "id": "E05",
+      "status": "passed",
+      "duration_ms": 715,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E05",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "65b2d538887424a6ee75a01515d6ad5e4e2bc91adfa2a1be2858db4c3a44977e",
+      "result_sha256": "da925d52289cbca9fb7d7af5fd872a668ae008fd362288b4fdda268c305531a3"
+    },
+    {
+      "id": "E06",
+      "status": "passed",
+      "duration_ms": 960,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E06",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "ed28c0feeaf63067c56cebd20991bca75a369c5b013441d4c3cf3cb2b4f9f43d",
+      "result_sha256": "73fd6770b22307abfb2182051f7a94ddebb41df12e96b87c65b5f09b7e3594e1"
+    },
+    {
+      "id": "E07",
+      "status": "passed",
+      "duration_ms": 1559,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E07",
+      "run_id": "run-20261028T195539-dcafaf8efc8e40899df1385379aad561",
+      "manufacturing_commit": "8e253f87a899454fc0211ce16bbce2ed89372668",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "28953f59c3ccc1898dffe8d9c0a5c6847cd6dbe1cffd02f7d9b77a08cd920167",
+      "input_file_map_sha256": "d992229011d15b0aaed6d2f3902c6e0abe352438533e1bf935196af28c48b71f",
+      "manifest_sha256": "cea850459e1e138a11e64f909717009fedc8d5dac1098607cb13afba440f450e",
+      "result_sha256": "4e87bc6f2f27d87e9ca597f6aa6041326ed0dde0e57b430315167fa4a4614e67"
+    },
+    {
+      "id": "E08",
+      "status": "passed",
+      "duration_ms": 1262,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E08",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "d5b2c48b82888dfbd0026a4d137d88c24891556e0e434d513e4336389d2630d7",
+      "result_sha256": "3514f3369ba100d3d3bac0242d79a7bf43dd0b0c9227350936749f097150241e"
+    },
+    {
+      "id": "E09",
+      "status": "passed",
+      "duration_ms": 1269,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E09",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "b9c73ee26ee428c52c98ff22477a4a0cb2c926bbc50e257f4bc190a8424e5cf4",
+      "result_sha256": "46b9bb750ced931758abebd4b1dd868cf8caeeeb890bba6de298c626c8fdc54c"
+    },
+    {
+      "id": "E10",
+      "status": "passed",
+      "duration_ms": 891,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E10",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "153f000329003f11d50b700e8b69cec52424ab16b4973ac0c94ee9f0a2dabcba",
+      "result_sha256": "080aad9dd71f008e48c53d14b35bd27fcf9e6da17aa510a2b3691d86b8a895e8"
+    },
+    {
+      "id": "E11",
+      "status": "passed",
+      "duration_ms": 1078,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E11",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "cfff00eff799d8e2f6919b86d831310a72813d38ca832dec6735b4ba1642cd9f",
+      "result_sha256": "b6efc7db9a0fc1975201de4ee4c4c313f43a9b031b27887c1a8607cfcf7736cd"
+    },
+    {
+      "id": "E12",
+      "status": "passed",
+      "duration_ms": 798,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E12",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "7275faea64745f31a30b98a15c9d9a3574450413d7d6864bf45baeb95db958ca",
+      "result_sha256": "a7760c99dc0484cfabd4831bac7e79b456aa5b3c6f77bc9faa86c9a2a88bfeee"
+    },
+    {
+      "id": "E13",
+      "status": "passed",
+      "duration_ms": 986,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E13",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "930dca3acc07e5438bfc7adca1f5c6a85a3ca9517e26795f413a1508c22e0057",
+      "result_sha256": "b747eadac2bfc03f9b6ead1b26b2ae7acc65727f999608fd4ecf7e354d98dbbe"
+    },
+    {
+      "id": "E14",
+      "status": "passed",
+      "duration_ms": 980,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E14",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "c0feda2d95f0ed6ad6da7b1f0d77734b4352316e628540892dea5eb1877530b2",
+      "result_sha256": "ad97b01704597d6a5b76756584af6a4b88cf4fdb5e37817cb3e68d15e90837ca"
+    },
+    {
+      "id": "E15",
+      "status": "passed",
+      "duration_ms": 889,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E15",
+      "run_id": "run-20261028T195539-dcafaf8efc8e40899df1385379aad561",
+      "manufacturing_commit": "8e253f87a899454fc0211ce16bbce2ed89372668",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "28953f59c3ccc1898dffe8d9c0a5c6847cd6dbe1cffd02f7d9b77a08cd920167",
+      "input_file_map_sha256": "d992229011d15b0aaed6d2f3902c6e0abe352438533e1bf935196af28c48b71f",
+      "manifest_sha256": "99d68803e035d44db0f264c52374c42c037ea789c1b6c58c453318e7393cc0e5",
+      "result_sha256": "9744e4c8271eff144ac93a36cdd926a4e5829e086d369d68728e209e4cf0fcde"
+    },
+    {
+      "id": "E16",
+      "status": "passed",
+      "duration_ms": 4261,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E16",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "3b466947ff895421c5314b44c287d175f456d60177a61146a494f26e6b681887",
+      "result_sha256": "2d08a142c81185301e399a97c70c2e9dffd0bb0d40a3e4ec430c8d0fd648ce20"
+    },
+    {
+      "id": "E17",
+      "status": "passed",
+      "duration_ms": 901,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E17",
+      "run_id": "run-20261028T195539-dcafaf8efc8e40899df1385379aad561",
+      "manufacturing_commit": "8e253f87a899454fc0211ce16bbce2ed89372668",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "28953f59c3ccc1898dffe8d9c0a5c6847cd6dbe1cffd02f7d9b77a08cd920167",
+      "input_file_map_sha256": "d992229011d15b0aaed6d2f3902c6e0abe352438533e1bf935196af28c48b71f",
+      "manifest_sha256": "15952747bccdcfd9dc6cfd9c40fba730dd005ee2ceacee190fbf0781fddd5413",
+      "result_sha256": "1f6ddd65a22332315700c7dd480511aa8ecdaa24f6ee39fd347d23396cad5400"
+    },
+    {
+      "id": "E18",
+      "status": "passed",
+      "duration_ms": 803,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E18",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "62b1e937abbe4515afebf33c6a762e64152c583d5af60e964c9ee1b1676a86b7",
+      "result_sha256": "9d4790cfd4510bffdcbfdf8824325b45436f25cdffe39f09495befc7c58da718"
+    },
+    {
+      "id": "E19",
+      "status": "passed",
+      "duration_ms": 889,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E19",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "87a6c51606639fb2cbdf92e0ab722a190d3a5bafb216046cf8d577b5c4a164fe",
+      "result_sha256": "7717a8eeabf8ec0dd19bcf88034ccf96821488c9221c5e2873889ceedb7d2ad6"
+    },
+    {
+      "id": "E20",
+      "status": "passed",
+      "duration_ms": 1014,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E20",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "3e4268e5bc7bf49e629bebbd648783651961dba990250df6324f32bbd9f7f6de",
+      "result_sha256": "c132487b9180078e9dd62c38c46a51f6205a0879af2e796565f4635b6858279c"
+    },
+    {
+      "id": "E21",
+      "status": "passed",
+      "duration_ms": 4423,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E21",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "c114a77ab3d4cec9b4aa22f20c879adc47192f75b673ea8ad62063b936371651",
+      "result_sha256": "193006621a9da0a2d43b311de21196000068e02cbbeff70bf29b1c23f016dc2a"
+    },
+    {
+      "id": "E22",
+      "status": "passed",
+      "duration_ms": 1012,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E22",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "d0e19783c70dc13b7d019aab9945fc19dbfc324684b9c708b446c33c096a44aa",
+      "result_sha256": "8ee36f4650aec7c612293c0294b5ff1bb7f229392c85e65548cb256104decfff"
+    },
+    {
+      "id": "E23",
+      "status": "passed",
+      "duration_ms": 904,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E23",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "e8237505ab354ab6146613025a595b4120dbb33957901d205c04eee411b0756f",
+      "result_sha256": "542f0b50e6f4ecf05d15af39e39476f8ad1fa293a0f52e2b9b8b164c33d1dee0"
+    },
+    {
+      "id": "E24",
+      "status": "passed",
+      "duration_ms": 1422,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E24",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "b970cba098b64b980277eff0e89986f4e4b1cd749b7d53489709105b5e9a2c6e",
+      "result_sha256": "fa83a0c1fe7c7857463f106f94e09c240413759fd6a4b8785988b78944d82384"
+    },
+    {
+      "id": "E25",
+      "status": "passed",
+      "duration_ms": 581,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E25",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "9b4aee27d284d0a697b4586e8b9120d10a789ddc865befb57c5e02b6153b45e7",
+      "result_sha256": "0b23ad91783094380093b0bd97dbe51fd906bd5a340e02a3c10cd72297e4e40d"
+    },
+    {
+      "id": "E26",
+      "status": "passed",
+      "duration_ms": 1237,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E26",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "cbcb54a50c833a474b68a5c0c69f54e6fde3a6dbe2f69fc951217229b675e339",
+      "result_sha256": "c950f769f1dfda99c218861c95abcffdb74ef1107981771edb888f37053060f5"
+    },
+    {
+      "id": "E27",
+      "status": "passed",
+      "duration_ms": 790,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E27",
+      "run_id": "run-20261028T195539-dcafaf8efc8e40899df1385379aad561",
+      "manufacturing_commit": "8e253f87a899454fc0211ce16bbce2ed89372668",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "28953f59c3ccc1898dffe8d9c0a5c6847cd6dbe1cffd02f7d9b77a08cd920167",
+      "input_file_map_sha256": "d992229011d15b0aaed6d2f3902c6e0abe352438533e1bf935196af28c48b71f",
+      "manifest_sha256": "0ebbef5346a5e89391da1d088ba36db6542a489cf0db86b30c8a5dabc7d84181",
+      "result_sha256": "31b7ce274e5246fee6e4925a5d1404f38e2102be94472030dcc3663b1e05495e"
+    },
+    {
+      "id": "E28",
+      "status": "passed",
+      "duration_ms": 703,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E28",
+      "run_id": "run-20261028T195539-dcafaf8efc8e40899df1385379aad561",
+      "manufacturing_commit": "8e253f87a899454fc0211ce16bbce2ed89372668",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "28953f59c3ccc1898dffe8d9c0a5c6847cd6dbe1cffd02f7d9b77a08cd920167",
+      "input_file_map_sha256": "d992229011d15b0aaed6d2f3902c6e0abe352438533e1bf935196af28c48b71f",
+      "manifest_sha256": "2820d2ef84f69212b636b04221d54fae794c9dde1e042449012d24b6a61e8f3b",
+      "result_sha256": "287247df9bf5ff3c0c5847f038ff27c229e248606cee8c1daf69af01b24c3a31"
+    },
+    {
+      "id": "E29",
+      "status": "passed",
+      "duration_ms": 7107,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E29",
+      "run_id": "run-20261028T195539-dcafaf8efc8e40899df1385379aad561",
+      "manufacturing_commit": "8e253f87a899454fc0211ce16bbce2ed89372668",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "28953f59c3ccc1898dffe8d9c0a5c6847cd6dbe1cffd02f7d9b77a08cd920167",
+      "input_file_map_sha256": "d992229011d15b0aaed6d2f3902c6e0abe352438533e1bf935196af28c48b71f",
+      "manifest_sha256": "6febfb601c93489ea695a1027790824e58df8e669c537aa456e5335ffd97369a",
+      "result_sha256": "25bf29c2ff014d6c02011279b3fd85390ad1b3ef074cbe0a2725863a0a6df829"
+    },
+    {
+      "id": "E30",
+      "status": "passed",
+      "duration_ms": 1600,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/E30",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "49e874d2e5735a03081104977105595b6d7f0c42ff3c6863b5c6f483dd8793c3",
+      "result_sha256": "204bbf149e4e1f426066178133d11e7dfb911ce9f0e7fad3686126655febd9da"
+    },
+    {
+      "id": "E31",
+      "status": "passed",
+      "duration_ms": 17337,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E31",
+      "run_id": "run-20261028T195539-dcafaf8efc8e40899df1385379aad561",
+      "manufacturing_commit": "8e253f87a899454fc0211ce16bbce2ed89372668",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "28953f59c3ccc1898dffe8d9c0a5c6847cd6dbe1cffd02f7d9b77a08cd920167",
+      "input_file_map_sha256": "d992229011d15b0aaed6d2f3902c6e0abe352438533e1bf935196af28c48b71f",
+      "manifest_sha256": "ab16b250599ddd74362680d08161c7af12996c1714ea8c040a2e640df86491dd",
+      "result_sha256": "f4c3bed87b877689d045f1c0c9e799234bde8c4b68e6b9df25ea913f3bb7b99e"
+    },
+    {
+      "id": "E32",
+      "status": "passed",
+      "duration_ms": 8486,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E32",
+      "run_id": "run-20261028T195539-dcafaf8efc8e40899df1385379aad561",
+      "manufacturing_commit": "8e253f87a899454fc0211ce16bbce2ed89372668",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "28953f59c3ccc1898dffe8d9c0a5c6847cd6dbe1cffd02f7d9b77a08cd920167",
+      "input_file_map_sha256": "d992229011d15b0aaed6d2f3902c6e0abe352438533e1bf935196af28c48b71f",
+      "manifest_sha256": "aceb8057e6520b9ba62bd4c3ea537060f6c097ce759c5afe0ec892ef0b1442ff",
+      "result_sha256": "4945e0819f3d4b0d145e245383350d74cf74c512485307e8b427316da770f499"
+    },
+    {
+      "id": "F01",
+      "status": "passed",
+      "duration_ms": 11861,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/F01",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "acc6c7cc78ec01437c7e89603c84e1805fefbc8de75cf235ea6018c5587d5a4e",
+      "result_sha256": "0fee99f5c6159b3890109745c84a1390e4b8286d1f5e4dc34b33775807f03eb4"
+    },
+    {
+      "id": "F02",
+      "status": "passed",
+      "duration_ms": 3496,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/F02",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "d4ae85c5fcd0c4a828eb1c4e81de9399a9b2128426804618c71f77ccde07bb52",
+      "result_sha256": "67911c28fa98e88e055e18ca83484c5fc0bf2160076b1baca2708a52221dca06"
+    },
+    {
+      "id": "F03",
+      "status": "passed",
+      "duration_ms": 1999,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/F03",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "b8078d4d9455fbe75ab82a79eb2761961230be8cff89d04af3824d0f0c4f8d28",
+      "result_sha256": "3cccd4c4a2d8d11ebe274eb316dde595890f0659cd02b3a3e95d59e048648149"
+    },
+    {
+      "id": "F04",
+      "status": "passed",
+      "duration_ms": 4365,
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first/run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a/F04",
+      "run_id": "run-20261028T194603-344de64f9fe64beb896b15a3cadbc12a",
+      "manufacturing_commit": "a7ddabdec2f03e9ca7cba3fc548bf1c4fc9ae023",
+      "platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+      "manufacturing_tree": "?? webui/node_modules",
+      "platform_tree": "",
+      "source_release_sha256": "1232cd2d079f6b8b8e88a768298976f12c2f9a7c2773496ef4e52ca0f3ab4a74",
+      "input_file_map_sha256": "1d6df2f1ba1a1c5332f08fb563d4a6ee26819d0cb44a698c0b3fe0394cb41a54",
+      "manifest_sha256": "9d758b0dd3adae530abc8935d2159301fc2c1dc6a5ca6c8a7fac21ed1a6f4e63",
+      "result_sha256": "f005cfb80f7bf569c5c64e7fc0819876afc2f4800f08343819e150c814f8e9a1"
+    }
+  ],
+  "accepted_case_evidence_capacity": {
+    "files": 23465,
+    "logical_bytes": 160231885,
+    "allocated_bytes": 231038976
+  },
+  "retained_run_capacities": [
+    {
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-committed",
+      "files": 5434,
+      "logical_bytes": 52041171,
+      "allocated_bytes": 69062656
+    },
+    {
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-e15-final",
+      "files": 235,
+      "logical_bytes": 2547564,
+      "allocated_bytes": 3186688
+    },
+    {
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-first",
+      "files": 23229,
+      "logical_bytes": 161168427,
+      "allocated_bytes": 232194048
+    },
+    {
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-rerun1",
+      "files": 5443,
+      "logical_bytes": 51387604,
+      "allocated_bytes": 68440064
+    },
+    {
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-rerun2",
+      "files": 1134,
+      "logical_bytes": 10440737,
+      "allocated_bytes": 13619200
+    },
+    {
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-rerun3",
+      "files": 230,
+      "logical_bytes": 2532555,
+      "allocated_bytes": 3162112
+    },
+    {
+      "directory": "/private/tmp/manufacturing-workflow-20261028-D4-rerun4",
+      "files": 237,
+      "logical_bytes": 2549498,
+      "allocated_bytes": 3194880
+    }
+  ],
+  "retained_runs_total": {
+    "files": 35942,
+    "logical_bytes": 282667556,
+    "allocated_bytes": 392859648
+  },
+  "synthetic_legacy": {
+    "project_count": 7,
+    "table_hashes_before_and_after": {
+      "manufacturing_authorities": {
+        "rows": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "manufacturing_control_events": {
+        "rows": 7,
+        "sha256": "92a5e2dc01c378e95a9452b3ed1707a86b02ce11b5802e28027b1f1eccfab2cb"
+      },
+      "manufacturing_control_operations": {
+        "rows": 7,
+        "sha256": "33e64f07081b692257c2318bcad9224807177dff2529adf46e8d005e8d94e9f7"
+      },
+      "manufacturing_handoffs": {
+        "rows": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "manufacturing_packages": {
+        "rows": 7,
+        "sha256": "4fcd01cfd31f78d2b4de83639556e09306ed985ab8f129602c0eff3a5a682b90"
+      },
+      "manufacturing_project_operations": {
+        "rows": 14,
+        "sha256": "f764654f093e192788381e23372030cb7758355b39827a1508b3d564751a2f35"
+      },
+      "manufacturing_projects": {
+        "rows": 7,
+        "sha256": "49e2f1c9cfc694668bc3fdae81a7e7a704ee45b18f983adc94543014f0a17207"
+      },
+      "manufacturing_readiness": {
+        "rows": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "manufacturing_systems": {
+        "rows": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "manufacturing_task_sources": {
+        "rows": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+    },
+    "before_artifact": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E32/000200-legacy-before.json",
+    "after_artifact": "/private/tmp/manufacturing-workflow-20261028-D4-committed/run-20261028T195539-dcafaf8efc8e40899df1385379aad561/E32/000435-legacy-after.json",
+    "before_sha256": "461452ea3d161a2e5ed1f0d6f56f499652695afa8910f723378037e826ef9d7b",
+    "after_sha256": "153a8b9ba4552ac069373336d31f283b76b9b298a9b1e19c965c2256e65822f2"
+  },
+  "actual_runtime_baseline": {
+    "artifact": "/Users/neo/Developer/work/AI-Manufacturing-Platform/.worktrees/full-workflow/.superpowers/sdd/runtime-baseline-D4-20261028T193732Z.json",
+    "sha256": "0bf858cea2b94dde1e08c29cba91c4f90e7cfe389ae84f9cc8543605bb6b4a3d",
+    "image": "sha256:3a1b7d5b6e56104240ede3bad045cc11194014726514103c80984e56ff23c42b",
+    "container": "4c27bc95174d20ee5d9b1f122589a6256b52ac2833e81788dd808daff9495ec3",
+    "manufacturing_commit": "19b58607dc75708999a4706d488eff7b9db96f44",
+    "platform_commit": "22f65f19b5c9ff740c05de5a30ae4f1c5c237ef6",
+    "health": "healthy",
+    "compose_inputs": 42,
+    "mounts": 15,
+    "other_containers": 29,
+    "database": {
+      "integrity": "ok",
+      "tables": {
+        "manufacturing_authorities": {
+          "rows": 7,
+          "sha256": "6ff46ddbf6aa8ee27765d1b1805d591220deb24865b121093ca77dc8951d1de1"
+        },
+        "manufacturing_control_events": {
+          "rows": 73,
+          "sha256": "de559dfec3799416dbde0447609a17be666e9b8e001865a4be1e30b46bb81c88"
+        },
+        "manufacturing_control_operations": {
+          "rows": 71,
+          "sha256": "cfb59f6362c0ad1f4653e1553c84110c90f4694a100fa2a5cd5e7623b73dbf6b"
+        },
+        "manufacturing_handoffs": {
+          "rows": 10,
+          "sha256": "e2c7b6a19dc7197a9456f5f9407b804d26b492ce2caaee1463ffd6eac861b5a8"
+        },
+        "manufacturing_packages": {
+          "rows": 7,
+          "sha256": "622257c5bf48a1724d584ffd9702938bb10b20c52430e6a77bba6b25b140e5aa"
+        },
+        "manufacturing_project_operations": {
+          "rows": 25,
+          "sha256": "3a6a0599e84c3d3adb04a5d27fac0b978779e78e50d7d10a2cacbcdbfa4f2cda"
+        },
+        "manufacturing_projects": {
+          "rows": 7,
+          "sha256": "ca71c555cdb43dc87069e031d5a55926dfda61afd321fcaf8528e0554defc2b0"
+        },
+        "manufacturing_readiness": {
+          "rows": 6,
+          "sha256": "c5491f8e00c0fc59911204af65c4387f3d39a3f2dd9ddaa03ed3f97527add469"
+        },
+        "manufacturing_systems": {
+          "rows": 7,
+          "sha256": "cdccfa7d87ca9a2fe050e92ce2166a1d4229baeedd939a4d0a3d5019a6c8dd45"
+        },
+        "manufacturing_task_sources": {
+          "rows": 2,
+          "sha256": "3a02a7cbec315b74448b1a100cdc011cdf5f885a35c9311fb7cd5e849851d7b1"
+        },
+        "stage_records": {
+          "rows": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "task_operations": {
+          "rows": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "tasks": {
+          "rows": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      }
+    }
+  }
+}
