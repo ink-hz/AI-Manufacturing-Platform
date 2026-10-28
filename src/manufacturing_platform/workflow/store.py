@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .orders import source_key
 from .schema import (
+    ECO_SCHEMA,
     ENGINEERING_SCHEMA,
     EXCHANGE_SCHEMA,
     EXECUTION_REVIEW_SCHEMA,
@@ -185,6 +186,12 @@ class WorkflowStore:
             metadata = conn.execute(
                 "SELECT id,mode,label FROM dataset_metadata"
             ).fetchall()
+            if len(version) == 1 and version[0][0] == 8:
+                for statement in ECO_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=9")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1
                 or version[0][0] != SCHEMA_VERSION

@@ -26,7 +26,7 @@ def test_authority_start_payload_rejects_duplicate_normalized_serials():
         )
 
 
-def ready_for_trial(workflow):
+def ready_for_trial(workflow, *, quantity="5", trial_quantity="1"):
     contract = {
         "customer_approval_required": True,
         "customer_release_required": "unknown",
@@ -35,7 +35,7 @@ def ready_for_trial(workflow):
         "internal_revision": "M1",
         "material_ownership_rules": "Customer 1 owns steel-1",
     }
-    p, order, wo, rev = workflow.order_workorder(quantity="5", contract=contract)
+    p, order, wo, rev = workflow.order_workorder(quantity=quantity, trial_quantity=trial_quantity, contract=contract)
     workflow.command(
         p["id"],
         "engineering.customer_approval",
@@ -157,7 +157,7 @@ def ready_for_trial(workflow):
         "unit.register",
         actor_name="production",
         work_order_id=wo["id"],
-        sns=[f"B3-{uuid4()}" for _ in range(5)],
+        sns=[f"B3-{uuid4()}" for _ in range(int(quantity))],
     )
     units = (
         workflow.client()
@@ -2531,7 +2531,7 @@ def test_review_v7_resume_envelope_survives_additive_migration(
         )
         for key in ("request_json", "request_hash", "business_key"):
             assert after[key] == row[key]
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 8
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 9
     with authority.store.transaction() as tx:
         assert tx.execute(
             "SELECT 1 FROM sqlite_master WHERE type='index' AND name='authority_stop_lineage'"

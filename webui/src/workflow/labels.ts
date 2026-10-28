@@ -1,5 +1,6 @@
 import type { ObjectSummary } from "./types";
 export const labels: Record<string, string> = {
+  eco:"工程变更", "eco.open":"建立工程变更", "eco.disposition":"处置旧版影响", "eco.switch":"切换未执行范围", "eco.close":"关闭工程变更", stock:"库存", wip:"在制", use_old:"继续使用旧版", scrap:"报废",
   exchange:"同步交换", reservation:"库存预留", iqc:"来料检验", customer_approval:"客户批准", requested:"已请求", validated:"已校验", posted:"已过账", unavailable:"未接入",
   partially_resumed:"MES 已恢复试产，批量保持停机", partial:"试产运行，批量停机", stop_superseded:"已移交后续安全停机",
   unit:"序列号", interruption:"生产中断", test:"测试记录", registered:"已登记", start_pending:"开工待确认", mes_accepted_held:"MES 已接受，本地安全暂缓", running:"MES 已确认运行", stopped:"MES 已确认停机", stop_requested:"本地请求停机", resumed:"MES 已确认恢复",

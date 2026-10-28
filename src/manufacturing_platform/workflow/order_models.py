@@ -91,7 +91,7 @@ class WorkOrderImpactReference(StrictModel):
     id: UUID
     source_system: str
     external_id: str
-    quantity: Quantity
+    quantity: NonnegativeQuantity
     unit: str
 
 

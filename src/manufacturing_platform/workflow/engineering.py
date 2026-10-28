@@ -183,7 +183,7 @@ def register_work_order(tx, context, command: RegisterWorkOrder):
     q = atoms(command.quantity, command.unit, p)
     trial = atoms(command.trial_quantity, command.unit, p)
     used = tx.execute(
-        "SELECT COALESCE(SUM(q_atoms),0) FROM work_orders WHERE project_id=? AND order_line_id=?",
+        "SELECT COALESCE(SUM(obligation_atoms),0) FROM effective_work_orders WHERE project_id=? AND order_line_id=?",
         (str(context.project_id), order["id"]),
     ).fetchone()[0]
     if q + used > order["current_q_atoms"]:
@@ -432,6 +432,13 @@ def work_order_detail(tx, project_id, object_id):
         planned_end=row["planned_end"],
         trial_readiness=evaluate(tx, project_id, object_id, "trial", now),
         bulk_readiness=evaluate(tx, project_id, object_id, "bulk", now),
+        remaining_obligation=amount(
+            tx.execute(
+                "SELECT obligation_atoms FROM effective_work_orders WHERE id=?",
+                (row["id"],),
+            ).fetchone()[0],
+            p,
+        ),
         execution_event_total=event_total,
         execution_events=events,
         held_start_scopes=list(held.values()),

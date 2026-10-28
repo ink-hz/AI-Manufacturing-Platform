@@ -9,6 +9,7 @@ from uuid import uuid4
 from ..contracts import DomainError
 from ..exchange_models import (
     AuthoritySnapshot,
+    EcoSwitchPayload,
     ExternalReceipt,
     ExternalRequest,
     InboundApproval,
@@ -87,6 +88,12 @@ class MockAuthorityAdapter:
             if request.action == "reservation.request":
                 result = self._reserve(
                     tx, request, h, sequence, fault_name, fault_value
+                )
+            elif request.action == "eco.switch":
+                result = self._switch(tx, request, h, sequence, fault_name)
+                tx.execute(
+                    "UPDATE authority_operations SET receipt_json=? WHERE seq=?",
+                    (result.model_dump_json(), sequence),
                 )
             elif request.action in {
                 "production.start",
@@ -412,6 +419,115 @@ class MockAuthorityAdapter:
                 receipt.details[0].work_order_id = uuid4()
         if fault_name == "changed_detail_same_total" and receipt.details:
             receipt.details[0].key = str(uuid4())
+        return receipt
+
+    def _switch(self, tx, request, h, sequence, fault_name):
+        payload = request.typed_payload
+        assert isinstance(payload, EcoSwitchPayload)
+        pid, wid = str(request.project_id), str(payload.work_order_id)
+        wo = tx.execute(
+            "SELECT * FROM authority_work_orders WHERE project_id=? AND work_order_id=?",
+            (pid, wid),
+        ).fetchone()
+        started = {
+            r[0]
+            for r in tx.execute(
+                "SELECT unit_id FROM authority_start_units WHERE project_id=? AND work_order_id=?",
+                (pid, wid),
+            )
+        }
+        known = set(map(str, payload.retained_unit_ids))
+        accepted = fault_name != "reject" and started == known
+        if wo:
+            accepted = (
+                accepted
+                and wo["revision_id"] == str(payload.old_revision_id)
+                and wo["total_units"] == payload.original_quantity
+                and wo["trial_units"] == payload.original_trial_quantity
+                and wo["started_units"] == len(started)
+            )
+        else:
+            accepted = accepted and not started
+        if payload.new_work_order_id:
+            accepted = (
+                accepted
+                and not tx.execute(
+                    "SELECT 1 FROM authority_work_orders WHERE work_order_id=?",
+                    (str(payload.new_work_order_id),),
+                ).fetchone()
+            )
+        details = []
+        if accepted:
+            if not wo:
+                tx.execute(
+                    "INSERT INTO authority_work_orders VALUES (?,?,?,?,?,0,0,'running')",
+                    (
+                        pid,
+                        wid,
+                        str(payload.old_revision_id),
+                        payload.original_quantity,
+                        payload.original_trial_quantity,
+                    ),
+                )
+            # Cancellation never modifies physical membership, per-SN state or started totals.
+            tx.execute(
+                "UPDATE authority_work_orders SET total_units=? WHERE project_id=? AND work_order_id=?",
+                (len(started), pid, wid),
+            )
+            details.append(
+                {
+                    "key": str(payload.switch_id) + ":cancel",
+                    "effect": "cancel_remaining",
+                    "work_order_id": payload.work_order_id,
+                    "revision_id": payload.old_revision_id,
+                    "quantity": str(payload.remaining_quantity),
+                    "retained_quantity": str(len(started)),
+                }
+            )
+            if payload.new_work_order_id:
+                tx.execute(
+                    "INSERT INTO authority_work_orders VALUES (?,?,?,?,?,0,0,'running')",
+                    (
+                        pid,
+                        str(payload.new_work_order_id),
+                        str(payload.new_revision_id),
+                        payload.remaining_quantity,
+                        payload.new_trial_quantity,
+                    ),
+                )
+                details.append(
+                    {
+                        "key": str(payload.switch_id) + ":create",
+                        "effect": "create_replacement",
+                        "work_order_id": payload.new_work_order_id,
+                        "revision_id": payload.new_revision_id,
+                        "quantity": str(payload.remaining_quantity),
+                        "retained_quantity": "0",
+                    }
+                )
+        receipt = ExternalReceipt(
+            receipt_id=uuid4(),
+            business_key=request.business_key,
+            request_hash=h,
+            source_object_id=str(payload.switch_id),
+            source_version=request.source_version,
+            sequence=sequence,
+            phase="accepted" if accepted else "rejected",
+            accepted_quantity=str(payload.remaining_quantity) if accepted else "0",
+            rejected_quantity="0" if accepted else str(payload.remaining_quantity),
+            details=details,
+            occurred_at=datetime.now(UTC),
+            error=None
+            if accepted
+            else "Authority remaining scope changed or cancellation rejected",
+        )
+        if fault_name == "stale_sequence":
+            receipt.sequence = 0
+        if (
+            fault_name in {"wrong_unit", "changed_detail_same_total"}
+            and receipt.details
+        ):
+            receipt.details[0].work_order_id = uuid4()
         return receipt
 
     def query(self, system, business_key):

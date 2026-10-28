@@ -84,6 +84,10 @@ def eligible_units(tx, project_id, work_order_id):
 
 
 def register_units(tx, context, command: RegisterUnits):
+    from .eco import scope_locked
+
+    if scope_locked(tx, context.project_id, command.work_order_id):
+        fail("ECO boundary locks original unstarted serial scope")
     wo, total, _ = integer_units(tx, context.project_id, command.work_order_id)
     count = tx.execute(
         "SELECT COUNT(*) FROM units WHERE work_order_id=? AND project_id=?",
@@ -128,6 +132,10 @@ def _active_interruption(tx, project_id, work_order_id):
 def outbound_execution_ready(tx, project_id, payload, now):
     """Fresh local gate after authority query and before a new external effect."""
     if isinstance(payload, StartPayload):
+        from .eco import scope_locked
+
+        if scope_locked(tx, project_id, payload.work_order_id):
+            return False
         if _active_interruption(tx, project_id, payload.work_order_id):
             return False
         if tx.execute(
@@ -169,6 +177,10 @@ def outbound_execution_ready(tx, project_id, payload, now):
 
 
 def start_production(tx, context, command: StartProduction):
+    from .eco import scope_locked
+
+    if scope_locked(tx, context.project_id, command.work_order_id):
+        fail("ECO boundary locks original unstarted serial scope")
     wo, total, trial_limit = integer_units(
         tx, context.project_id, command.work_order_id
     )

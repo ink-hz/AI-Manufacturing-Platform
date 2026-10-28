@@ -117,6 +117,7 @@ async function mount(action: CommandFields["action"]) {
         onOpen={() => {}}
         onDirty={dirty}
         readOnly={false}
+        ecos={[{...summary(order,"eco","ECO M1 → M2"),state:"open"}]}
         orders={[summary(order, "order_line", "ERP-100")]}
         revisions={[summary(revision, "revision", "资料系列 R1")]}
         workOrders={[summary(workOrder, "work_order", "MES-200")]}
@@ -466,4 +467,81 @@ it("shows immutable history evidence using the actual ObjectEvidence wire shape"
   );
   await flush();
   expect(box.textContent).toContain("历史接收凭据");
+});
+
+it("submits an explicit cancellation ECO boundary without inventing a new revision", async () => {
+  await mount("eco.open" as CommandFields["action"]);
+  await field("旧固定版本", revision);
+  const checkbox = box.querySelector('input[type="checkbox"]') as HTMLInputElement;
+  expect(checkbox).toBeTruthy();
+  await act(async () => checkbox.click());
+  await field("变更原因", "订单取消剩余范围");
+  await click("建立 ECO");
+  expect(commands[0]).toMatchObject({action:"eco.open", old_revision_id:revision, new_revision_id:null, effective_work_order_ids:[workOrder], effective_sn_ids:[]});
+});
+
+it("shows ECO old/new versions, owned stock and waiting authority acceptance", async () => {
+  detail = {
+    summary:summary(order,"eco","ECO M1 → M2"),
+    value:{kind:"eco",id:order,old_revision_id:revision,new_revision_id:id,old_revision:"M1",new_revision:"M2",effective_work_order_ids:[workOrder],effective_sn_ids:[],reason:"替代版本",state:"open",impacts:[{id:revision,type:"stock",object_id:id,title:"LOT-OLD",owner_id:"客户甲",quantity:"15.000",unit:"kg",scale:3,state:"active",resolved_quantity:"0",dispositions:[]}],switches:[{id:revision,work_order_id:workOrder,new_work_order_id:id,boundary:"split_remaining",quantity:"15",retained_quantity:"5",exchange_id:revision,phase:"unknown"}]},
+    relations:[], evidence:[],history:[],
+  } as ObjectDetail;
+  await act(async () => root.render(<WorkflowDetail api={api} target={{projectId:id,kind:"eco",id:order}} onOpen={()=>{}}/>));
+  await flush();
+  expect(box.textContent).toContain("M1");
+  expect(box.textContent).toContain("M2");
+  expect(box.textContent).toContain("LOT-OLD");
+  expect(box.textContent).toContain("客户甲");
+  expect(box.textContent).toContain("等待权威接受");
+});
+
+
+function ecoDetail(): ObjectDetail {
+  return {summary:{...summary(order,"eco","ECO M1 → M2"),state:"open"},value:{kind:"eco",id:order,old_revision_id:revision,new_revision_id:id,old_revision:"M1",new_revision:"M2",effective_work_order_ids:[workOrder],effective_sn_ids:[],reason:"M2",state:"open",impacts:[{id:revision,type:"stock",object_id:id,title:"LOT-OLD",owner_id:"客户甲",quantity:"15.000",unit:"kg",scale:3,state:"active",resolved_quantity:"0",dispositions:[]}],switches:[]},relations:[],evidence:[],history:[]};
+}
+it("records a quantity and evidence against a named ECO impact", async()=>{
+  detail=ecoDetail(); await mount("eco.disposition");
+  await field("待处理 ECO",order); await flush();
+  await field("受影响对象",revision); await field("处置决定","return");
+  await field("处置数量","15.000"); await field("处置凭据","退料批准");
+  await click("追加 ECO 处置");
+  expect(commands[0]).toMatchObject({action:"eco.disposition",eco_id:order,impact_id:revision,quantity:"15.000",decision:"return",evidence:"退料批准"});
+});
+it("submits a typed split using the selected ECO target revision", async()=>{
+  detail=ecoDetail(); await mount("eco.switch");
+  await field("待处理 ECO",order); await flush();
+  await field("切换原工单",workOrder); await field("切换凭据","未执行十五件拆分");
+  await click("请求权威切换");
+  expect(commands[0]).toMatchObject({action:"eco.switch",eco_id:order,target_work_order_id:workOrder,new_revision_id:id,boundary:"split_remaining"});
+});
+it("submits close from a named ECO after showing the unresolved impacts", async()=>{
+  detail=ecoDetail(); await mount("eco.close");
+  await field("待关闭 ECO",order); await flush();
+  expect(box.textContent).toContain("LOT-OLD");
+  await click("关闭 ECO");
+  expect(commands[0]).toMatchObject({action:"eco.close",eco_id:order});
+});
+
+it("pages ECO and serial boundary selectors explicitly without object-detail scans", async()=>{
+  const {OrdersWorkspace}=await import("./OrdersWorkspace");
+  const calls:string[]=[];
+  vi.stubGlobal("fetch",vi.fn(async(url:string)=>{
+    calls.push(url);
+    const kind=url.split("/objects/")[1]?.split("?")[0];
+    if(kind==="eco"||kind==="unit") {
+      const offset=Number(new URL(url,"http://test").searchParams.get("offset"));
+      return response({items:[{...summary(kind+offset,kind,kind==="eco"?`ECO-${offset}`:`SN-${offset}`),state:kind==="eco"?"open":"registered"}],total:2,limit:50,offset});
+    }
+    return response({items:[],total:0,limit:50,offset:0});
+  }));
+  await act(async()=>root.render(<OrdersWorkspace api={api} project={{...project,allowed_actions:[...project.allowed_actions,"eco.open"]}} engineering readOnly={false} requestLeave={f=>f()} onChanged={changed} onOpen={()=>{}} onDirty={dirty}/>));
+  await flush();
+  const next=[...box.querySelectorAll("button")].filter(b=>b.textContent?.startsWith("读取更多"));
+  expect(next).toHaveLength(2);
+  for(const b of next) { await act(async()=>b.click()); await flush(); }
+  await click("建立 ECO");
+  expect(box.textContent).toContain("SN-1");
+  expect(calls.filter(c=>c.includes("/objects/unit?"))).toHaveLength(2);
+  expect(calls.filter(c=>c.includes("/objects/eco?"))).toHaveLength(2);
+  expect(calls.every(c=>c.includes("limit=50"))).toBe(true);
 });

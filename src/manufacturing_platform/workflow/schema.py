@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -106,3 +106,17 @@ CREATE TABLE IF NOT EXISTS production_controls(exchange_id TEXT PRIMARY KEY REFE
 CREATE INDEX IF NOT EXISTS production_control_scope ON production_controls(project_id,work_order_id,source_sequence);
 """
 SCHEMA += EXECUTION_REVIEW_SCHEMA
+
+ECO_SCHEMA = """
+CREATE TABLE IF NOT EXISTS eco_changes(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),old_revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),new_revision_id TEXT REFERENCES engineering_revisions(id),work_order_ids_json TEXT NOT NULL,sn_ids_json TEXT NOT NULL,reason TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('open','closed')),created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS eco_project ON eco_changes(project_id,created_at,id);
+CREATE TABLE IF NOT EXISTS eco_impacts(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),eco_id TEXT NOT NULL REFERENCES eco_changes(id),payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS eco_dispositions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),eco_id TEXT NOT NULL REFERENCES eco_changes(id),impact_id TEXT NOT NULL REFERENCES eco_impacts(id),q_atoms INTEGER NOT NULL CHECK(q_atoms>0),decision TEXT NOT NULL,evidence TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS eco_dispositions_scope ON eco_dispositions(project_id,eco_id,impact_id);
+CREATE TABLE IF NOT EXISTS eco_switches(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),eco_id TEXT NOT NULL REFERENCES eco_changes(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),new_work_order_id TEXT,new_revision_id TEXT REFERENCES engineering_revisions(id),boundary TEXT NOT NULL,q_atoms INTEGER NOT NULL CHECK(q_atoms>0),retained_atoms INTEGER NOT NULL CHECK(retained_atoms>=0),exchange_id TEXT NOT NULL UNIQUE REFERENCES exchanges(id),accepted_receipt_id TEXT UNIQUE,created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS eco_switches_scope ON eco_switches(project_id,work_order_id);
+CREATE TABLE IF NOT EXISTS allocation_adjustments(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),order_line_id TEXT NOT NULL REFERENCES order_lines(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),delta_atoms INTEGER NOT NULL,switch_id TEXT NOT NULL REFERENCES eco_switches(id));
+CREATE VIEW IF NOT EXISTS effective_work_orders AS SELECT w.*, w.q_atoms-COALESCE((SELECT SUM(s.q_atoms) FROM eco_switches s WHERE s.work_order_id=w.id AND s.project_id=w.project_id AND s.accepted_receipt_id IS NOT NULL),0) obligation_atoms FROM work_orders w;
+CREATE VIEW IF NOT EXISTS effective_allocations AS SELECT id,project_id,order_line_id,work_order_id,q_atoms,unit,created_at FROM allocations UNION ALL SELECT a.id,a.project_id,a.order_line_id,a.work_order_id,a.delta_atoms,w.unit,s.created_at FROM allocation_adjustments a JOIN work_orders w ON w.id=a.work_order_id JOIN eco_switches s ON s.id=a.switch_id;
+"""
+SCHEMA += ECO_SCHEMA

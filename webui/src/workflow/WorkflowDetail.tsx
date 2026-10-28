@@ -95,6 +95,11 @@ export function DetailContent({
       <p>
         状态：{label(data.summary.state)} · 记录版本 {data.summary.version}
       </p>
+      {v.kind === "eco" && <>
+        <Facts items={[["旧固定版本",v.old_revision],["新固定版本",v.new_revision||"仅取消剩余范围"],["变更原因",v.reason]]}/>
+        <h4>旧版本受影响记录与处置</h4><table><thead><tr><th>类别 / 对象</th><th>所有者</th><th>数量</th><th>已处置</th><th>凭据</th></tr></thead><tbody>{v.impacts.map(i=><tr key={i.id}><td>{label(i.type)} · {i.title} · {label(i.state)}</td><td>{i.owner_id}</td><td>{i.quantity} {i.unit}</td><td>{i.resolved_quantity}</td><td>{i.dispositions.map(d=>`${label(d.decision)} ${d.quantity} · ${d.evidence}`).join("；")||"待处置"}</td></tr>)}</tbody></table>
+        <h4>取消与创建边界</h4>{v.switches.map(s=><section key={s.id}><p>{s.boundary==="split_remaining"?"拆分新版工单":"仅取消剩余"} · 保留旧范围 {s.retained_quantity} · 未执行范围 {s.quantity} · {s.phase==="accepted"?"权威已接受":"等待权威接受"}（{label(s.phase)}）</p><button onClick={()=>onOpen({projectId:data.summary.project_id,kind:"exchange",id:s.exchange_id})}>查看取消与创建回执</button>{s.phase==="accepted"&&s.new_work_order_id&&<button onClick={()=>onOpen({projectId:data.summary.project_id,kind:"work_order",id:s.new_work_order_id!})}>核验新版工单准备</button>}</section>)}
+      </>}
       {v.kind === "demand" && (
         <>
           <Facts
@@ -251,7 +256,8 @@ export function DetailContent({
         <>
           <Facts
             items={[
-              ["数量", v.quantity + " " + v.unit],
+              ["原始登记数量", v.quantity + " " + v.unit],
+              ["当前剩余义务", (v.remaining_obligation ?? v.quantity) + " " + v.unit],
               ["用途", label(v.purpose)],
               ["试产数量", v.trial_quantity + " " + v.unit],
               ["计划开始", v.planned_start],
@@ -298,7 +304,7 @@ export function DetailContent({
         <Facts items={[["权威系统",v.system],["阶段",label(v.phase)],["请求数量",v.requested+" "+v.unit],["已接受",v.accepted],["未接受",v.rejected],["原因",v.reason]]}/>
         {!!v.discrepancies?.length&&<><h4>对账异常与处理</h4><ol>{v.discrepancies.map(d=><li key={d.sequence}>负责人 {d.owner_name} · {d.reason} · {d.evidence}{d.resolves_sequence&&" · 已追加处理记录"}</li>)}</ol></>}
         <h4>阶段记录（最近 100 条）</h4><ol>{v.events.map(e=><li key={e.sequence}>{label(e.phase)} · {e.reason}</li>)}</ol>
-        {v.receipt&&<><h4>权威明细</h4><table><thead><tr><th>对象</th><th>接受数量或状态</th><th>单位</th></tr></thead><tbody>{v.receipt.details.map(d=><tr key={d.key}><td>{"lot_id" in d?d.owner_id:"sn" in d?d.sn:d.scope==="trial"?"试产范围（批量保持停机）":"全部已开工范围"}</td><td>{"lot_id" in d?d.quantity:label(d.state)}</td><td>{"lot_id" in d?d.unit:"件"}</td></tr>)}</tbody></table></>}
+        {v.receipt&&<><h4>权威明细</h4><table><thead><tr><th>对象</th><th>接受数量或状态</th><th>单位</th></tr></thead><tbody>{v.receipt.details.map(d=><tr key={d.key}><td>{"effect" in d?(d.effect==="cancel_remaining"?"取消原工单未执行范围":"创建新版工单"):"lot_id" in d?d.owner_id:"sn" in d?d.sn:d.scope==="trial"?"试产范围（批量保持停机）":"全部已开工范围"}</td><td>{"effect" in d?`${d.quantity} · 保留 ${d.retained_quantity}`:"lot_id" in d?d.quantity:label(d.state)}</td><td>{"lot_id" in d?d.unit:"件"}</td></tr>)}</tbody></table></>}
       </>}
       {v.kind === "receipt" && v.corrections?.map(c=><p key={c.sequence}>追加纠正 · 到货 {c.received_delta} · 合格 {c.accepted_delta} · 拒收 {c.rejected_delta} · {c.evidence}</p>)}
       {v.kind === "receipt" && v.confirmations?.map(c=><section key={c.sequence}><h4>来源确认 · {label(c.source.mode)}</h4><p>外部签署人：{c.external_actor} · {c.signature}</p><Source value={c.source}/></section>)}

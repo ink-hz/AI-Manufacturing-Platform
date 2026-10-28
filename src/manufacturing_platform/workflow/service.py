@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from . import (  # noqa: F401 - trusted domain registration
+    eco,
     engineering,
     exchanges,
     execution,

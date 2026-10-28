@@ -8,7 +8,13 @@ from pydantic import BeforeValidator, ConfigDict, Field, model_validator
 
 from ..collaboration_models import EventTime, PackageItem
 from .commands import WorkflowCommand
-from .contracts import DomainValue, Quantity, SourceRef, StrictModel
+from .contracts import (
+    DomainValue,
+    NonnegativeQuantity,
+    Quantity,
+    SourceRef,
+    StrictModel,
+)
 from .execution_models import ExecutionEventView, HeldStartScope
 
 
@@ -199,6 +205,7 @@ class WorkOrder(DomainValue):
     state: Literal["planned"] = "planned"
     trial_readiness: ReadinessResult
     bulk_readiness: ReadinessResult
+    remaining_obligation: NonnegativeQuantity
     execution_event_total: int
     execution_events: list[ExecutionEventView]
     held_start_scopes: list[HeldStartScope] = Field(default_factory=list)

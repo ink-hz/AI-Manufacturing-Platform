@@ -255,7 +255,7 @@ def _revision(self, project_id, *, internal_revision="M1", customer_revision="C1
     return {"id": result["object_id"]}
 
 
-def _order_workorder(self, *, quantity="5", contract=None):
+def _order_workorder(self, *, quantity="5", trial_quantity="1", contract=None):
     p = self.create_project(**({"contract": contract} if contract else {}))
     demand = self.command(
         p["id"],
@@ -309,7 +309,7 @@ def _order_workorder(self, *, quantity="5", contract=None):
         quantity=quantity,
         unit="piece",
         purpose="trial",
-        trial_quantity="1",
+        trial_quantity=trial_quantity,
         planned_start="2026-12-01T00:00:00+00:00",
         planned_end="2026-12-02T00:00:00+00:00",
     )

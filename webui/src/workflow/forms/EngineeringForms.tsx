@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { WorkspaceProps, ObjectSummary, CommandFields } from "../types";
+import type { WorkspaceProps, ObjectSummary, CommandFields, EcoValue } from "../types";
 import type { PackageItem } from "../../collaboration/types";
 import {
   CommandForm,
@@ -27,6 +27,8 @@ type Props = WorkspaceProps & {
   orders: ObjectSummary[];
   revisions: ObjectSummary[];
   workOrders: ObjectSummary[];
+  ecos?: ObjectSummary[];
+  units?: ObjectSummary[];
 };
 export function EngineeringForms(p: Props) {
   const [families, setFamilies] = useState<Record<string, string>>({});
@@ -62,6 +64,7 @@ export function EngineeringForms(p: Props) {
       active = false;
     };
   }, [p.api, p.project.id, p.action, p.revisions]);
+  if (p.action.startsWith("eco.")) return <EcoForms {...p}/>;
   switch (p.action) {
     case "engineering.revision":
       return (
@@ -562,4 +565,33 @@ export function EngineeringForms(p: Props) {
     default:
       return null;
   }
+}
+
+
+function EcoForms(p: Props) {
+  const [selected, setSelected] = useState<EcoValue | null>(null);
+  const [selectedId, setSelectedId] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    setSelected(null); setError("");
+    if (selectedId) p.api.object(p.project.id,"eco",selectedId).then(d => {
+      if (active && d.value.kind === "eco") setSelected(d.value);
+    }).catch(e => { if (active) setError(String(e)); });
+    return () => { active=false; };
+  }, [p.api,p.project.id,selectedId,p.project.version]);
+  const ecos = (p.ecos || []).filter(e => e.state === "open");
+  const chosen = <>{error && <p role="alert">{error}</p>}{selected && <><p>旧版本 {selected.old_revision} → {selected.new_revision || "仅取消剩余范围"}</p><p>受影响记录 {selected.impacts.length} 项；原库存、在制与序列号历史需分别处置。</p><ul>{selected.impacts.map(i=><li key={i.id}>{i.title} · {i.owner_id} · {i.quantity} {i.unit} · 已处置 {i.resolved_quantity}</li>)}</ul>{selected.switches.map(s=><p key={s.id}>{s.phase === "accepted" ? "权威已接受" : "等待权威接受"} · 保留 {s.retained_quantity} · 剩余 {s.quantity}<button type="button" onClick={()=>p.onOpen({projectId:p.project.id,kind:"exchange",id:s.exchange_id})}>查看取消与创建回执</button></p>)}</>}</>;
+  if(p.action === "eco.open") return <CommandForm<Extract<CommandFields,{action:"eco.open"}>> {...p} title="工程变更边界" save="建立 ECO" initial={()=>({action:"eco.open",old_revision_id:p.revisions[0]?.id||"",new_revision_id:null,effective_work_order_ids:[],effective_sn_ids:[],reason:""})} canSubmit={v=>!!v.old_revision_id&&!!v.reason&&(v.effective_work_order_ids.length>0||v.effective_sn_ids.length>0)&&v.new_revision_id!==v.old_revision_id}>
+    {(v,set)=><><ObjectChoice name="旧固定版本" items={p.revisions} value={v.old_revision_id} onChange={x=>set({...v,old_revision_id:x,effective_work_order_ids:[],effective_sn_ids:[]})}/><ObjectChoice name="新固定版本（仅取消时留空）" required={false} items={p.revisions.filter(r=>r.id!==v.old_revision_id)} value={v.new_revision_id||""} onChange={x=>set({...v,new_revision_id:x||null})}/><fieldset><legend>生效工单边界</legend>{p.workOrders.map(w=><label key={w.id}><input type="checkbox" checked={v.effective_work_order_ids.includes(w.id)} onChange={e=>set({...v,effective_work_order_ids:e.target.checked?[...v.effective_work_order_ids,w.id]:v.effective_work_order_ids.filter(x=>x!==w.id)})}/>{w.title}</label>)}</fieldset><fieldset><legend>显式序列号边界（可选）</legend>{(p.units||[]).map(u=><label key={u.id}><input type="checkbox" checked={v.effective_sn_ids.includes(u.id)} onChange={e=>set({...v,effective_sn_ids:e.target.checked?[...v.effective_sn_ids,u.id]:v.effective_sn_ids.filter(x=>x!==u.id)})}/>{u.title}</label>)}</fieldset><Field name="变更原因" value={v.reason} onChange={x=>set({...v,reason:x})}/><p>已执行、已接受但暂缓及未知开工范围不得改绑版本。实际影响由服务器枚举；仅取消不需要虚构新版本。</p></>}
+  </CommandForm>;
+  if(p.action === "eco.disposition") return <CommandForm<Extract<CommandFields,{action:"eco.disposition"}>> {...p} title="逐项处置旧版本影响" save="追加 ECO 处置" initial={()=>({action:"eco.disposition",eco_id:"",impact_id:"",decision:"use_old",quantity:"",evidence:""})} canSubmit={v=>!!selected&&v.eco_id===selected.id&&!!v.impact_id&&!!v.quantity&&!!v.evidence}>
+    {(v,set)=><><ObjectChoice name="待处理 ECO" items={ecos} value={v.eco_id} onChange={x=>{setSelectedId(x);set({...v,eco_id:x,impact_id:""});}}/>{chosen}<Choice name="受影响对象" value={v.impact_id} choices={{"":"请选择",...Object.fromEntries((selected?.impacts||[]).map(i=>[i.id,`${i.title} · ${i.owner_id} · ${i.quantity} ${i.unit}`]))}} onChange={x=>set({...v,impact_id:x})}/><Choice name="处置决定" value={v.decision} choices={{use_old:"继续使用旧版",rework:"返工",return:"退回",scrap:"报废"}} onChange={x=>set({...v,decision:x as typeof v.decision})}/><Field name="处置数量" value={v.quantity} onChange={x=>set({...v,quantity:x})}/><Field name="处置凭据" value={v.evidence} onChange={x=>set({...v,evidence:x})}/><p>处置按对象单位记录，不删除库存，也不代替权威库存过账。</p></>}
+  </CommandForm>;
+  if(p.action === "eco.switch") return <CommandForm<Extract<CommandFields,{action:"eco.switch"}>> {...p} title="取消或拆分未执行范围" save="请求权威切换" initial={()=>({action:"eco.switch",eco_id:"",target_work_order_id:"",new_revision_id:null,boundary:"split_remaining",evidence:""})} canSubmit={v=>!!selected&&v.eco_id===selected.id&&!!v.target_work_order_id&&!!v.evidence&&(v.boundary==="cancel_remaining"||!!v.new_revision_id)}>
+    {(v,set)=><><ObjectChoice name="待处理 ECO" items={ecos} value={v.eco_id} onChange={x=>{setSelectedId(x);set({...v,eco_id:x,target_work_order_id:"",new_revision_id:null});}}/>{chosen}<ObjectChoice name="切换原工单" items={p.workOrders.filter(w=>selected?.effective_work_order_ids.includes(w.id))} value={v.target_work_order_id} onChange={x=>set({...v,target_work_order_id:x,new_revision_id:v.boundary==="split_remaining"?selected?.new_revision_id||null:null})}/><Choice name="切换边界" value={v.boundary} choices={{split_remaining:"取消旧剩余并创建新版工单",cancel_remaining:"仅取消未执行剩余范围"}} onChange={x=>set({...v,boundary:x as typeof v.boundary,new_revision_id:x==="split_remaining"?selected?.new_revision_id||null:null})}/><Field name="切换凭据" value={v.evidence} onChange={x=>set({...v,evidence:x})}/><p>权威取消和创建明细全部接受后才原子转移分配。新版需重新计划、物料、人员设备与首件核验。</p></>}
+  </CommandForm>;
+  return <CommandForm<Extract<CommandFields,{action:"eco.close"}>> {...p} title="关闭工程变更" save="关闭 ECO" initial={()=>({action:"eco.close",eco_id:""})} canSubmit={v=>!!selected&&v.eco_id===selected.id}>
+    {(v,set)=><><ObjectChoice name="待关闭 ECO" items={ecos} value={v.eco_id} onChange={x=>{setSelectedId(x);set({...v,eco_id:x});}}/>{chosen}<p>全部库存、在制与来源义务已处置，并取得实际边界回执后才可关闭。</p></>}
+  </CommandForm>;
 }

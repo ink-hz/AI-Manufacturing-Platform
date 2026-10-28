@@ -70,6 +70,7 @@ export function OrderChangePreview({
           <p>
             已分配合计：{data.allocated} {data.unit}（订单级事实）
           </p>
+          <p>已登记工单总量按已接受的剩余义务显示；原始登记数量保留在工单历史。</p>
           <p>
             已登记工单总量：{data.work_order_impact.registered_quantity}{" "}
             {data.unit}

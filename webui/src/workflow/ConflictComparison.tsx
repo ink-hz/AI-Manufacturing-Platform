@@ -50,6 +50,10 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
       return [...target("requirement",draft.requirement_id),...target("commitment",draft.commitment_id||"")];
     case "supply.receive":
       return [...target("commitment",draft.commitment_id),...target("material_lot",draft.material_lot_id)];
+    case "eco.open":return [...target("revision",draft.old_revision_id),...target("revision",draft.new_revision_id||"")];
+    case "eco.disposition":
+    case "eco.switch":
+    case "eco.close":return target("eco",draft.eco_id);
     case "exchange.dispatch":
     case "exchange.query":
     case "exchange.reconcile":
@@ -64,6 +68,7 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
 }
 function facts(v: DomainValue): [string, string][] {
   switch (v.kind) {
+    case "eco":return [["旧固定版本",v.old_revision],["新固定版本",v.new_revision||"仅取消剩余范围"],["状态",label(v.state)]];
     case "exchange":return [["阶段",label(v.phase)],["请求数量",v.requested],["已接受",v.accepted],["原因",v.reason]];
     case "reservation":return [["请求数量",v.requested],["确认预留",v.confirmed],["待确认余量",v.remaining]];
     case "unit":return [["序列号",v.sn],["状态",label(v.state)],["执行范围",v.mode?label(v.mode):"未开工"]];

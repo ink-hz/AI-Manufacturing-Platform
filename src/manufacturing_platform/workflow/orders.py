@@ -80,6 +80,7 @@ def source_ok(source, object_type):
 
 def source_key(source):
     """Normalize persisted source identity while retaining the raw SourceRef snapshot."""
+
     def part(name):
         return source[name] if isinstance(source, dict) else getattr(source, name)
 
@@ -226,7 +227,7 @@ def allocated(tx, project_id, order_id=None, work_order_id=None):
         clauses.append("work_order_id=?")
         args.append(str(work_order_id))
     return tx.execute(
-        "SELECT COALESCE(SUM(q_atoms),0) FROM allocations WHERE "
+        "SELECT COALESCE(SUM(q_atoms),0) FROM effective_allocations WHERE "
         + " AND ".join(clauses),
         args,
     ).fetchone()[0]
@@ -307,12 +308,12 @@ def dispatch_change_order(tx, context, command: ChangeOrder):
     registered = {
         r["id"]: r["q_atoms"]
         for r in tx.execute(
-            "SELECT id,q_atoms FROM work_orders WHERE project_id=? AND order_line_id=?",
+            "SELECT id,obligation_atoms AS q_atoms FROM effective_work_orders WHERE project_id=? AND order_line_id=?",
             (str(context.project_id), str(command.order_line_id)),
         )
     }
     rows = tx.execute(
-        "SELECT work_order_id,SUM(q_atoms) AS quantity FROM allocations WHERE project_id=? AND order_line_id=? GROUP BY work_order_id",
+        "SELECT work_order_id,SUM(q_atoms) AS quantity FROM effective_allocations WHERE project_id=? AND order_line_id=? GROUP BY work_order_id",
         (str(context.project_id), str(command.order_line_id)),
     ).fetchall()
     for r in rows:
@@ -357,7 +358,7 @@ def dispatch_resolve_change(tx, context, command: ResolveOrderChange):
     if len(supplied) != len(command.dispositions) or supplied != expected:
         fail("Every affected obligation requires one disposition")
     registered_total = tx.execute(
-        "SELECT COALESCE(SUM(q_atoms),0) FROM work_orders WHERE project_id=? AND order_line_id=?",
+        "SELECT COALESCE(SUM(obligation_atoms),0) FROM effective_work_orders WHERE project_id=? AND order_line_id=?",
         (str(context.project_id), order["id"]),
     ).fetchone()[0]
     if change["new_q_atoms"] < registered_total:
@@ -366,7 +367,12 @@ def dispatch_resolve_change(tx, context, command: ResolveOrderChange):
             reasons=["registered work orders"],
         )
     if any(
-        d.object_type == "work_order" and d.decision != "retain"
+        d.object_type == "work_order"
+        and d.decision != "retain"
+        and not tx.execute(
+            "SELECT 1 FROM eco_switches WHERE project_id=? AND work_order_id=? AND accepted_receipt_id IS NOT NULL",
+            (str(context.project_id), str(d.object_id)),
+        ).fetchone()
         for d in command.dispositions
     ):
         fail(
@@ -419,6 +425,10 @@ def dispatch_resolve_change(tx, context, command: ResolveOrderChange):
 
 
 def dispatch_allocate_order(tx, context, command: AllocateOrder):
+    from .eco import scope_locked
+
+    if scope_locked(tx, context.project_id, command.work_order_id):
+        fail("ECO boundary prevents new allocation to original scope")
     p = project(tx, context.project_id)
     order = own(tx, "order_lines", context.project_id, command.order_line_id)
     if order["state"] != "active":
@@ -436,7 +446,7 @@ def dispatch_allocate_order(tx, context, command: AllocateOrder):
     ).fetchone():
         fail("Work order registration is unavailable")
     work_order = tx.execute(
-        "SELECT project_id,order_line_id,q_atoms,unit FROM work_orders WHERE id=?",
+        "SELECT project_id,order_line_id,obligation_atoms AS q_atoms,unit FROM effective_work_orders WHERE id=?",
         (str(command.work_order_id),),
     ).fetchone()
     if work_order is None or work_order["project_id"] != str(context.project_id):
@@ -607,12 +617,12 @@ def demand_detail(tx, project_id, object_id):
 def work_order_impact(tx, project_id, order_id, project_row):
     # Aggregate before limiting references; never infer totals from a choice page.
     totals = tx.execute(
-        "SELECT COUNT(*) AS total, COALESCE(SUM(q_atoms),0) AS quantity FROM work_orders "
+        "SELECT COUNT(*) AS total, COALESCE(SUM(obligation_atoms),0) AS quantity FROM effective_work_orders "
         "WHERE project_id=? AND order_line_id=?",
         (str(project_id), str(order_id)),
     ).fetchone()
     rows = tx.execute(
-        "SELECT id,source_system,source_external_id,q_atoms,unit FROM work_orders "
+        "SELECT id,source_system,source_external_id,obligation_atoms AS q_atoms,unit FROM effective_work_orders "
         "WHERE project_id=? AND order_line_id=? "
         "ORDER BY source_system,source_external_id,id LIMIT 50",
         (str(project_id), str(order_id)),
@@ -648,7 +658,7 @@ def order_detail(tx, project_id, object_id):
     quantity = row["current_q_atoms"]
     shipped = shipped_atoms(tx, project_id, object_id, p)
     links = tx.execute(
-        "SELECT DISTINCT work_order_id FROM allocations WHERE project_id=? AND order_line_id=? ORDER BY work_order_id",
+        "SELECT DISTINCT work_order_id FROM effective_allocations WHERE project_id=? AND order_line_id=? ORDER BY work_order_id",
         (str(project_id), str(object_id)),
     ).fetchall()
     relations = [

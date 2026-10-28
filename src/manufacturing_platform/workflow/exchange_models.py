@@ -93,10 +93,55 @@ class ResumePayload(StrictModel):
         return data
 
 
+class EcoSwitchPayload(StrictModel):
+    kind: Literal["eco_switch"] = "eco_switch"
+    switch_id: UUID
+    eco_id: UUID
+    work_order_id: UUID
+    old_revision_id: UUID
+    new_revision_id: UUID | None
+    new_work_order_id: UUID | None
+    boundary: Literal["split_remaining", "cancel_remaining"]
+    original_quantity: int = Field(strict=True, ge=1)
+    original_trial_quantity: int = Field(strict=True, ge=1)
+    remaining_quantity: int = Field(strict=True, ge=1)
+    retained_unit_ids: list[UUID] = Field(max_length=500)
+    new_trial_quantity: int = Field(strict=True, ge=0)
+
+    @model_validator(mode="after")
+    def scope_conservation(self):
+        split = self.boundary == "split_remaining"
+        if len(set(self.retained_unit_ids)) != len(
+            self.retained_unit_ids
+        ) or self.original_quantity != self.remaining_quantity + len(
+            self.retained_unit_ids
+        ):
+            raise ValueError("remaining scope must conserve original quantity")
+        if split != (
+            self.new_revision_id is not None and self.new_work_order_id is not None
+        ) or (not split and (self.new_revision_id or self.new_work_order_id)):
+            raise ValueError(
+                "split requires creation identity; cancellation creates nothing"
+            )
+        if split and not 1 <= self.new_trial_quantity <= self.remaining_quantity:
+            raise ValueError("new trial quantity must be within replacement scope")
+        return self
+
+
+class EcoReceiptDetail(StrictModel):
+    key: str = Field(min_length=1, max_length=200)
+    effect: Literal["cancel_remaining", "create_replacement"]
+    work_order_id: UUID
+    revision_id: UUID
+    quantity: Quantity
+    retained_quantity: NonnegativeQuantity
+
+
 class ExternalRequest(StrictModel):
     id: UUID
     system: str = Field(min_length=1, max_length=200)
     action: Literal[
+        "eco.switch",
         "reservation.request",
         "production.start",
         "production.interrupt",
@@ -106,13 +151,14 @@ class ExternalRequest(StrictModel):
     source_version: int = Field(strict=True, ge=1)
     project_id: UUID
     typed_payload: Annotated[
-        ReservePayload | StartPayload | StopPayload | ResumePayload,
+        ReservePayload | StartPayload | StopPayload | ResumePayload | EcoSwitchPayload,
         Field(discriminator="kind"),
     ]
 
     @model_validator(mode="after")
     def matching_action(self):
         expected = {
+            "eco.switch": "eco_switch",
             "reservation.request": "reserve",
             "production.start": "start",
             "production.interrupt": "stop",
@@ -157,9 +203,9 @@ class ExternalReceipt(StrictModel):
     ]
     accepted_quantity: NonnegativeQuantity
     rejected_quantity: NonnegativeQuantity
-    details: list[ReceiptDetail | UnitReceiptDetail | ControlReceiptDetail] = Field(
-        max_length=500
-    )
+    details: list[
+        ReceiptDetail | UnitReceiptDetail | ControlReceiptDetail | EcoReceiptDetail
+    ] = Field(max_length=500)
     occurred_at: datetime
     error: str | None = Field(default=None, max_length=2000)
     _timezone = field_validator("occurred_at")(require_timezone)

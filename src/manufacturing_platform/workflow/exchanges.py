@@ -23,6 +23,7 @@ from .contracts import (
 from .exchange_models import (
     AuthoritySnapshot,
     DispatchExchange,
+    EcoSwitchPayload,
     ExchangeValue,
     ExternalReceipt,
     ExternalRequest,
@@ -132,6 +133,10 @@ def public_reason(reason):
 
 def receipt_scope(tx, row, receipt):
     """Receipt evidence is visible only after binding all referenced identities to the request."""
+    if row["action"] == "eco.switch":
+        from .eco import receipt_scope as eco_receipt_scope
+
+        return eco_receipt_scope(tx, row, receipt)
     if row["action"] in {
         "production.start",
         "production.interrupt",
@@ -432,6 +437,26 @@ class ExchangeService:
                                 request.typed_payload,
                                 datetime.now(UTC),
                             )
+                    elif request.action == "eco.switch":
+                        from .eco import revision_ready
+
+                        with self.workflow.store.transaction() as live_tx:
+                            live_row = own(
+                                live_tx, "exchanges", project_id, result.exchange_id
+                            )
+                            authorize_policy(
+                                live_tx, actor, project_id, live_row["policy_action"]
+                            )
+                            ready = True
+                            if request.typed_payload.new_revision_id:
+                                try:
+                                    revision_ready(
+                                        live_tx,
+                                        project_id,
+                                        request.typed_payload.new_revision_id,
+                                    )
+                                except DomainError:
+                                    ready = False
                     else:
                         ready = True
                     if ready:
@@ -625,6 +650,10 @@ class ExchangeService:
         receipt = public_receipt(receipt)
         request = ExternalRequest.model_validate_json(row["request_json"])
         payload = request.typed_payload
+        if request.action == "eco.switch":
+            from .eco import apply_switch
+
+            return apply_switch(self, tx, context, row, request, receipt)
         if request.action in {
             "production.start",
             "production.interrupt",
@@ -1082,6 +1111,7 @@ def prepare_io(tx, context, command):
     else:
         row = own(tx, "exchanges", context.project_id, command.exchange_id)
     if row["action"] not in {
+        "eco.switch",
         "reservation.request",
         "source.pull",
         "production.start",
@@ -1279,6 +1309,7 @@ def summary(tx, pid, kind, row):
             if row["phase"] not in {"accepted", "posted"}
             and row["action"]
             in {
+                "eco.switch",
                 "reservation.request",
                 "source.pull",
                 "production.start",
@@ -1329,6 +1360,7 @@ def detail(tx, pid, kind, ident):
             ExternalRequest.model_validate_json(row["request_json"])
             if row["action"]
             in {
+                "eco.switch",
                 "reservation.request",
                 "production.start",
                 "production.interrupt",
@@ -1378,7 +1410,9 @@ def detail(tx, pid, kind, ident):
             mode=row["mode"],
             phase=row["phase"],
             requested=(
-                str(req.typed_payload.quantity)
+                str(req.typed_payload.remaining_quantity)
+                if isinstance(req.typed_payload, EcoSwitchPayload)
+                else str(req.typed_payload.quantity)
                 if isinstance(req.typed_payload, ReservePayload)
                 else str(len(req.typed_payload.units))
                 if isinstance(req.typed_payload, StartPayload)

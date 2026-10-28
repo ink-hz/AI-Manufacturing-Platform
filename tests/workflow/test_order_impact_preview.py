@@ -79,16 +79,16 @@ def test_order_impact_totals_scope_and_bounded_reference_query(workflow):
         tx.set_trace_callback(statements.append)
         orders.order_detail(tx, UUID(p["id"]), UUID(order))
     aggregates = [
-        sql for sql in statements if "COUNT(*)" in sql and "FROM work_orders" in sql
+        sql for sql in statements if "COUNT(*)" in sql and "FROM effective_work_orders" in sql
     ]
     references = [
         sql
         for sql in statements
-        if "FROM work_orders" in sql and "ORDER BY source_system" in sql
+        if "FROM effective_work_orders" in sql and "ORDER BY source_system" in sql
     ]
     assert len(aggregates) == len(references) == 1
     assert (
-        "SUM(q_atoms)" in aggregates[0]
+        "SUM(obligation_atoms)" in aggregates[0]
         and order in aggregates[0]
         and p["id"] in aggregates[0]
     )

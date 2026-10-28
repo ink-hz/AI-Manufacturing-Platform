@@ -19,8 +19,9 @@ const actions: Record<string, string> = {
   "engineering.customer_approval": "登记客户批准",
   "work_order.register": "登记固定版本工单",
   "readiness.record": "登记准备核验",
+  "eco.open":"建立 ECO", "eco.disposition":"处置 ECO 影响", "eco.switch":"切换 ECO 边界", "eco.close":"关闭 ECO",
 };
-type OrdersKind = "demand" | "order_line" | "commitment_change" | "revision" | "work_order";
+type OrdersKind = "demand" | "order_line" | "commitment_change" | "revision" | "work_order" | "eco" | "unit";
 export function ObjectTable({
   items,
   onOpen,
@@ -80,6 +81,8 @@ export function OrdersWorkspace(
       commitment_change: [],
       revision: [],
       work_order: [],
+      eco: [],
+      unit: [],
     }),
     [error, setError] = useState(""),
     [action, setAction] = useState<CommandFields["action"] | null>(null),
@@ -143,7 +146,7 @@ export function OrdersWorkspace(
       (p.engineering
         ? a.startsWith("engineering.") ||
           a.startsWith("work_order.") ||
-          a.startsWith("readiness.")
+          a.startsWith("readiness.") || a.startsWith("eco.")
         : a.startsWith("order.") || a.startsWith("demand.")) &&
       p.project.allowed_actions.includes(a as CommandFields["action"]),
   );
@@ -153,6 +156,7 @@ export function OrdersWorkspace(
     demands: items.demand,
     revisions: items.revision,
     workOrders: items.work_order,
+    ecos: items.eco, units: items.unit,
     onChanged: (result: Parameters<WorkspaceProps["onChanged"]>[0]) => {
       setAction(null);
       p.onChanged(result);
@@ -213,7 +217,7 @@ export function OrdersWorkspace(
         </>
       )}
       {(p.engineering
-        ? ["revision", "work_order"]
+        ? ["revision", "work_order", "eco"]
         : ["demand", "order_line", "commitment_change"]
       ).map((k) => (
         <section key={k}>
