@@ -18,6 +18,7 @@ from .schema import (
     EXECUTION_REVIEW_SCHEMA,
     EXECUTION_SCHEMA,
     ORDER_SCHEMA,
+    QUALITY_REVIEW_SCHEMA,
     QUALITY_SCHEMA,
     SCHEMA,
     SCHEMA_VERSION,
@@ -218,6 +219,15 @@ class WorkflowStore:
                     if statement.strip():
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=11")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 11:
+                for statement in QUALITY_REVIEW_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                from .quality import rebuild_test_bases
+
+                rebuild_test_bases(conn)
+                conn.execute("UPDATE schema_version SET version=12")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1

@@ -113,7 +113,7 @@ class TestValue(DomainValue):
     outcome: Literal["pass", "fail"]
     rework_order_id: UUID | None
     execution_event_ids: list[UUID]
-    source: SourceRef
+    source: SourceRef | None
     actor_id: UUID
     occurred_at: datetime
     recorded_at: datetime

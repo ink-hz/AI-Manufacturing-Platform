@@ -324,7 +324,7 @@ export interface WorkOrderImpactPreview {
   }[];
 }
 export type DomainValue =
-  | {kind:"test";id:string;unit_id:string;revision_id:string;attempt:number;scope:TestScope;measurements:Measurement[];outcome:"pass"|"fail";rework_order_id:string|null;execution_event_ids:string[];source:SourceRef;actor_id:string;occurred_at:string;recorded_at:string}
+  | {kind:"test";id:string;unit_id:string;revision_id:string;attempt:number;scope:TestScope;measurements:Measurement[];outcome:"pass"|"fail";rework_order_id:string|null;execution_event_ids:string[];source:SourceRef|null;actor_id:string;occurred_at:string;recorded_at:string}
   | {kind:"nonconformance";id:string;unit_id:string;test_id:string;defect:string;evidence:string;state:"open"|"rework"|"resolved"|"scrapped";rework_order_id:string|null;disposition:"rework"|"scrap"|null;disposition_evidence:string|null}
   | {kind:"rework";candidate_execution_events?:{id:string;station:string;route_version:string;occurred_at:string;result:"pass"|"fail";rework_order_id?:string|null}[];id:string;unit_id:string;nonconformance_id:string;revision_id:string;route_id:string;route_steps:{station:string;instruction_version:string}[];state:"open"|"complete";execution_event_ids:string[];test_ids:string[]}
   | {kind:"release";id:string;release_kind:ReleaseKind;unit_ids:string[];decision:"approved"|"rejected";evidence:string;test_ids:string[];actor_id:string;customer_id:string|null;revision_id:string|null;customer_revision:string|null;external_signatory:string|null;method:"manual"|null;source:SourceRef|null;recorded_at:string}

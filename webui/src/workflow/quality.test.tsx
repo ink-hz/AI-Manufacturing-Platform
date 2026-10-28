@@ -1,3 +1,4 @@
+import { DetailContent } from "./WorkflowDetail";
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -35,4 +36,12 @@ it('completes a 101-step route from named rework evidence beyond the unit histor
  await click('确认返工完成');
  expect(api.command.mock.calls[0][1]).toMatchObject({action:'rework.complete',rework_order_id:id,test_ids:[id]});
  expect(api.command.mock.calls[0][1].execution_event_ids).toHaveLength(101);
+});
+
+it('retains measurements while suppressing an unbound historical source',async()=>{
+ const detail:any={summary:{...summary('test'),state:'pass'},value:{kind:'test',id,unit_id:id,revision_id:id,attempt:1,scope:{test_version:'T1',program_version:'P1',firmware_version:'F1',equipment_check_id:id},measurements:[{name:'voltage',unit:'V',lower:'4',upper:'6',value:'5'}],outcome:'pass',source:null,occurred_at:'2026-10-28T00:00:00Z'},relations:[],history:[],evidence:[]};
+ await act(async()=>root.render(<DetailContent data={detail} onOpen={()=>{}}/>));
+ expect(host.textContent).toContain('来源未通过准入');
+ expect(host.textContent).toContain('voltage');
+ expect(host.textContent).not.toContain('来源系统');
 });

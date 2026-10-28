@@ -2484,6 +2484,7 @@ def test_review_v7_resume_envelope_survives_additive_migration(
     # Migration fixture changes schema only. Every domain fact was created above by API.
     workflow._client.close()
     with sqlite3.connect(workflow.paths.domain) as tx:
+        tx.execute("DROP VIEW IF EXISTS valid_quality_tests")
         tx.execute("DROP TABLE execution_admissions")
         tx.execute("DROP TABLE production_controls")
         tx.execute("ALTER TABLE interruptions DROP COLUMN trial_resumed_at")
@@ -2531,7 +2532,7 @@ def test_review_v7_resume_envelope_survives_additive_migration(
         )
         for key in ("request_json", "request_hash", "business_key"):
             assert after[key] == row[key]
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 11
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 12
     with authority.store.transaction() as tx:
         assert tx.execute(
             "SELECT 1 FROM sqlite_master WHERE type='index' AND name='authority_stop_lineage'"

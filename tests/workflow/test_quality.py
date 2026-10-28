@@ -999,3 +999,423 @@ def test_shipment_eligible_quantity_preserves_project_scale(workflow, monkeypatc
             ]
             == "1.000"
         )
+
+
+@pytest.mark.parametrize("route_count", [2, 3])
+def test_review_rework_causality_survives_interleaving_and_equal_clocks(
+    workflow, monkeypatch, route_count
+):
+    from manufacturing_platform.workflow import service
+
+    p, _, uid, event = executed(workflow)
+    last = measure(workflow, p, uid, value="12")
+    fixed = datetime.now(UTC)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(service, "datetime", Clock)
+
+    def test_source():
+        source = workflow.source(str(uuid4()), object_type="test")
+        source.update(occurred_at=fixed.isoformat(), collected_at=fixed.isoformat())
+        return source
+
+    def repair(rw, stations):
+        for station in stations:
+            source = workflow.source(str(uuid4()), object_type="execution")
+            source.update(occurred_at=fixed.isoformat(), collected_at=fixed.isoformat())
+            workflow.command(
+                p["id"],
+                "execution.record",
+                actor_name="production",
+                source=source,
+                **{
+                    **event,
+                    "station": station,
+                    "route_version": "RW-S1",
+                    "rework_order_id": rw,
+                    "occurred_at": fixed.isoformat(),
+                    "material_uses": [
+                        {**event["material_uses"][0], "quantity": "0.001"}
+                    ],
+                },
+            )
+
+    routes = []
+    attempt = 2
+    for n in range(route_count):
+        nc = workflow.command(
+            p["id"],
+            "nonconformance.open",
+            actor_name="quality",
+            test_id=last["object_id"],
+            defect="failed repair",
+            evidence="actual measurements",
+        )
+        rw = workflow.command(
+            p["id"],
+            "nonconformance.disposition",
+            actor_name="quality",
+            nonconformance_id=nc["object_id"],
+            decision="rework",
+            route_id=f"RW-{n}",
+            route_steps=[
+                dict(station=s, instruction_version="RW-S1")
+                for s in ["repair-a", "repair-b"]
+            ],
+            evidence="qualified independent route",
+        )["object_id"]
+        routes.append(rw)
+        repair(rw, ["repair-a", "repair-b"])
+        last = measure(
+            workflow,
+            p,
+            uid,
+            value="12",
+            attempt=attempt,
+            rework_order_id=rw,
+            source=test_source(),
+        )
+        attempt += 1
+    for rw in routes:
+        rejected = measure(
+            workflow,
+            p,
+            uid,
+            attempt=attempt,
+            rework_order_id=rw,
+            source=test_source(),
+            expected_status=409,
+        )
+        assert rejected["code"] == "PRECONDITION_FAILED"
+        repair(rw, ["repair-a"])
+        measure(
+            workflow,
+            p,
+            uid,
+            attempt=attempt,
+            rework_order_id=rw,
+            source=test_source(),
+            expected_status=409,
+        )
+        repair(rw, ["repair-a", "repair-b"])
+        passed = measure(
+            workflow, p, uid, attempt=attempt, rework_order_id=rw, source=test_source()
+        )
+        evidence = workflow.object(p["id"], "test", passed["object_id"])
+        workflow.command(
+            p["id"],
+            "rework.complete",
+            actor_name="quality",
+            rework_order_id=rw,
+            execution_event_ids=evidence["execution_event_ids"],
+            test_ids=[passed["object_id"]],
+        )
+        attempt += 1
+    assert workflow.object(p["id"], "unit", uid)["final_good"]
+
+
+def test_review_quality_preconditions_use_shared_error_contract(workflow):
+    p, _, units, _, _ = running_execution(workflow)
+    workflow.grant(p["id"], "quality", ["quality"], ["inspection"])
+    missing = measure(workflow, p, units[0], expected_status=409)
+    assert missing["code"] == "PRECONDITION_FAILED"
+    assert missing["blocking_reasons"] and "execution_event_ids" in missing["fields"]
+    p2, _, uid, _ = executed(workflow)
+    measure(workflow, p2, uid, value="12")
+    failed = measure(workflow, p2, uid, attempt=2, expected_status=409)
+    assert failed["code"] == "PRECONDITION_FAILED"
+    assert "rework_order_id" in failed["fields"]
+    invalid = measure(
+        workflow, p2, uid, attempt=2, program_version="wrong", expected_status=422
+    )
+    assert invalid["code"] == "INVALID_COMMAND" and "measurements" in invalid["fields"]
+
+
+@pytest.mark.parametrize("unsafe", ["foreign_identity", "future_at_admission"])
+def test_review_quality_source_projection_rechecks_historical_admission(
+    workflow, unsafe
+):
+    import json
+    import sqlite3
+
+    p, _, uid, _ = executed(workflow)
+    tested = measure(workflow, p, uid)
+    own_view = workflow.object(p["id"], "test", tested["object_id"])
+    p2, _, uid2, _ = executed(workflow)
+    other = measure(workflow, p2, uid2)
+    other_source = workflow.object(p2["id"], "test", other["object_id"])["source"]
+    source = (
+        other_source
+        if unsafe == "foreign_identity"
+        else {
+            **own_view["source"],
+            "occurred_at": "2099-01-01T00:00:00+00:00",
+            "collected_at": "2099-01-01T00:00:00+00:00",
+        }
+    )
+    # Owned storage-corruption fixture only: no claim of a public ingress bypass.
+    with sqlite3.connect(workflow.paths.domain) as tx:
+        tx.execute(
+            "UPDATE quality_tests SET source_json=? WHERE id=?",
+            (json.dumps(source), tested["object_id"]),
+        )
+    view = workflow.object(p["id"], "test", tested["object_id"])
+    assert view["source"] is None
+    assert (
+        view["outcome"] == "pass" and view["measurements"] == own_view["measurements"]
+    )
+
+
+def test_review_customer_source_projection_and_historical_read_survive_grant_change(
+    workflow,
+):
+    import json
+    import sqlite3
+
+    p, _, uid, _ = executed(workflow)
+    measured = measure(workflow, p, uid)
+    revision = workflow.object(p["id"], "test", measured["object_id"])["revision_id"]
+    release = workflow.command(
+        p["id"],
+        "release.decide",
+        kind="customer",
+        unit_ids=[uid],
+        decision="approved",
+        evidence="named customer receipt",
+        customer_id="Customer 1",
+        revision_id=revision,
+        customer_revision="C1",
+        external_signatory="Customer QA",
+        method="manual",
+        source=workflow.source("read-customer", object_type="customer_release"),
+    )
+    workflow.grant(p["id"], "quality", ["quality"], [])
+    assert workflow.object(p["id"], "test", measured["object_id"])["source"] is not None
+    with sqlite3.connect(workflow.paths.domain) as tx:
+        raw = json.loads(
+            tx.execute(
+                "SELECT payload_json FROM quality_releases WHERE id=?",
+                (release["object_id"],),
+            ).fetchone()[0]
+        )
+        raw["source"]["object_type"] = "receipt"
+        tx.execute(
+            "UPDATE quality_releases SET payload_json=? WHERE id=?",
+            (json.dumps(raw), release["object_id"]),
+        )
+    view = workflow.object(p["id"], "release", release["object_id"])
+    assert view["source"] is None and view["external_signatory"] == "Customer QA"
+
+
+def test_review_reader_concurrent_stores_keep_exact_transaction_capability(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from manufacturing_platform.workflow import quality
+    from manufacturing_platform.workflow.execution import test_reader
+    from manufacturing_platform.workflow.store import WorkflowStore
+    from manufacturing_platform.workflow.service import WorkflowService
+
+    class FixtureReader:
+        def complete_pass(self, *args, **kwargs):
+            return True
+
+    fixture = FixtureReader()
+    stores = [
+        WorkflowStore(
+            str(tmp_path / f"{name}.db"),
+            str(tmp_path / f"{name}-authority.db"),
+            dict(id=name, mode="test", label=name),
+        )
+        for name in ["fixture", "real"]
+    ]
+    WorkflowService(stores[0], lambda uid: True, test_evidence_reader=fixture)
+    WorkflowService(stores[1], lambda uid: True)
+    barrier = Barrier(2)
+
+    def read(index):
+        with stores[index].transaction() as tx:
+            barrier.wait(timeout=5)
+            selected = test_reader(tx)
+            from manufacturing_platform.workflow.execution_models import (
+                TestEvidenceScope,
+            )
+
+            scope = TestEvidenceScope(
+                route_fingerprint="fixture",
+                test_version="T",
+                program_version="P",
+                firmware_version="F",
+                equipment_check_id=uuid4(),
+            )
+            passed = selected.complete_pass(
+                tx, uuid4(), uuid4(), uuid4(), uuid4(), scope=scope
+            )
+            barrier.wait(timeout=5)
+            assert selected is (fixture if index == 0 else quality)
+            assert passed is (index == 0)
+        assert test_reader(tx) is quality
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [pool.submit(read, i) for i in range(2)]
+        for result in results:
+            result.result(timeout=10)
+
+
+@pytest.mark.parametrize(
+    "audit_fault", [None, "missing_execution", "duplicate_test", "mismatched_execution"]
+)
+def test_review_schema11_basis_rebuild_preserves_fresh_proof_and_fails_closed(
+    workflow, monkeypatch, audit_fault
+):
+    import sqlite3
+    from manufacturing_platform.workflow.quality import shipment_eligibility
+
+    create = workflow.create_project
+
+    def explicit_contract(**fields):
+        fields["contract"] = {**fields["contract"], "customer_release_required": False}
+        return create(**fields)
+
+    monkeypatch.setattr(workflow, "create_project", explicit_contract)
+    p, unit = workflow.executed_unit()
+    first = workflow.test(p["id"], unit["id"], measured="12")
+    rw = workflow.rework(p["id"], first["id"])
+    workflow.test(p["id"], unit["id"], measured="12", rework_order_id=rw["id"])
+    lot = unit["execution_events"][0]["material_uses"][0]["lot_id"]
+    workflow.command(
+        p["id"],
+        "execution.record",
+        actor_name="production",
+        work_order_id=unit["work_order_id"],
+        sn=unit["sn"],
+        station="repair",
+        route_version="RW-S1",
+        program_version="P1",
+        firmware_version="F1",
+        material_uses=[dict(lot_id=lot, quantity="0.001", unit="kg")],
+        result="pass",
+        rework_order_id=rw["id"],
+        occurred_at=datetime.now(UTC).isoformat(),
+        source=workflow.source(str(uuid4()), object_type="execution"),
+    )
+    passed = workflow.test(p["id"], unit["id"], measured="5", rework_order_id=rw["id"])
+    workflow.command(
+        p["id"],
+        "rework.complete",
+        actor_name="quality",
+        rework_order_id=rw["id"],
+        execution_event_ids=passed["execution_event_ids"],
+        test_ids=[passed["id"]],
+    )
+    workflow.command(
+        p["id"],
+        "first_article.record",
+        actor_name="quality",
+        work_order_id=unit["work_order_id"],
+        unit_ids=[unit["id"]],
+        test_ids=[passed["id"]],
+        inspection_id="valid fresh repair article",
+    )
+    for actor, kind in [("production", "manufacturing"), ("quality", "quality")]:
+        workflow.command(
+            p["id"],
+            "release.decide",
+            actor_name=actor,
+            kind=kind,
+            unit_ids=[unit["id"]],
+            decision="approved",
+            evidence=kind,
+        )
+    workflow._client.close()
+    with sqlite3.connect(workflow.paths.domain) as tx:
+        tx.execute("DROP VIEW valid_quality_tests")
+        tx.execute("DROP TABLE quality_test_bases")
+        tx.execute("UPDATE schema_version SET version=11")
+        # Explicit owned historical-audit corruption fixtures; never add a successful business fact.
+        if audit_fault == "missing_execution":
+            tx.execute(
+                "DELETE FROM audit_events WHERE id=(SELECT MIN(id) FROM audit_events WHERE action='execution.record')"
+            )
+        elif audit_fault == "mismatched_execution":
+            tx.execute(
+                "UPDATE audit_events SET typed_payload=json_set(typed_payload,'$.station','unrelated') WHERE id=(SELECT MIN(id) FROM audit_events WHERE action='execution.record')"
+            )
+        elif audit_fault == "duplicate_test":
+            tx.execute(
+                "INSERT INTO audit_events(project_id,actor_id,action,object_id,occurred_at,recorded_at,typed_payload) SELECT project_id,actor_id,action,object_id,occurred_at,recorded_at,typed_payload FROM audit_events WHERE action='test.record' AND object_id=?",
+                (passed["id"],),
+            )
+    tables = [
+        "quality_tests",
+        "execution_events",
+        "audit_events",
+        "operations",
+        "exchanges",
+        "rework_completions",
+        "quality_releases",
+        "quality_release_units",
+        "first_articles",
+    ]
+    with workflow.db() as tx:
+        before = {
+            table: [
+                tuple(row)
+                for row in tx.execute(f"SELECT * FROM {table} ORDER BY rowid")
+            ]
+            for table in tables
+        }
+    workflow.reopen()
+    detail = workflow.object(p["id"], "unit", unit["id"])
+    assert detail["final_good"] is (audit_fault is None)
+    assert workflow.object(p["id"], "work_order", unit["work_order_id"])[
+        "bulk_readiness"
+    ]["ready"] is (audit_fault is None)
+    with workflow.db() as tx:
+        assert shipment_eligibility(tx, p["id"], [unit["id"]]).allowed is (
+            audit_fault is None
+        )
+        assert {
+            table: [
+                tuple(row)
+                for row in tx.execute(f"SELECT * FROM {table} ORDER BY rowid")
+            ]
+            for table in tables
+        } == before
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 12
+    if audit_fault is not None:
+        refused = measure(workflow, p, unit["id"], attempt=4, expected_status=409)
+        assert refused["code"] == "PRECONDITION_FAILED"
+
+
+def test_review_quality_history_suppresses_unbound_audit_source(workflow):
+    import json
+    import sqlite3
+
+    p, _, uid, _ = executed(workflow)
+    tested = measure(workflow, p, uid)
+    p2, _, uid2, _ = executed(workflow)
+    foreign = measure(workflow, p2, uid2)
+    source = workflow.object(p2["id"], "test", foreign["object_id"])["source"]
+    # Owned unsafe historical-audit fixture; original measurement stays untouched.
+    with sqlite3.connect(workflow.paths.domain) as tx:
+        row = tx.execute(
+            "SELECT id,typed_payload FROM audit_events WHERE object_id=? AND action='test.record'",
+            (tested["object_id"],),
+        ).fetchone()
+        payload = json.loads(row[1])
+        payload["source"] = source
+        tx.execute(
+            "UPDATE audit_events SET typed_payload=? WHERE id=?",
+            (json.dumps(payload), row[0]),
+        )
+    response = workflow.client().get(
+        f"{BASE}/projects/{p['id']}/objects/test/{tested['object_id']}"
+    )
+    assert response.status_code == 200
+    assert response.json()["value"]["source"] is not None
+    assert source["external_id"] not in response.text
+    assert response.json()["history"][0]["evidence"] == []

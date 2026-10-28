@@ -34,8 +34,14 @@ from .quality_models import (
 from .queries import OBJECT_REGISTRY
 
 
-def fail(reason, status=409):
-    raise DomainError("QUALITY_BLOCKED", status, reason, blocking_reasons=[reason])
+def fail(reason, status=409, *, field=None):
+    raise DomainError(
+        "PRECONDITION_FAILED" if status == 409 else "INVALID_COMMAND",
+        status,
+        reason,
+        fields={field: reason} if field else {},
+        blocking_reasons=[reason],
+    )
 
 
 def release_kinds(roles, qualifications):
@@ -93,6 +99,7 @@ def final_good(tx, pid, uid):
     test = latest_test(tx, pid, uid)
     return bool(
         test
+        and valid_test(tx, pid, test["id"])
         and test["outcome"] == "pass"
         and not scrapped(tx, pid, uid)
         and not unresolved(tx, pid, uid)
@@ -115,7 +122,10 @@ def route_events(tx, pid, unit, steps, rework_id=None, before=None):
             ),
         ).fetchone()
         if not row or row["result"] != "pass":
-            fail("complete matching route execution is required before measurement")
+            fail(
+                "complete matching route execution is required before measurement",
+                field="execution_event_ids",
+            )
         events.append(row["id"])
     return events
 
@@ -135,6 +145,217 @@ def rework_route(tx, pid, unit, ident):
     from .engineering_models import RouteStep
 
     return row, [RouteStep.model_validate(s) for s in json.loads(row["route_json"])]
+
+
+def rework_parent_test(tx, pid, rework_id, *, before_seq=None):
+    previous = tx.execute(
+        "SELECT id FROM quality_tests WHERE project_id=? AND rework_order_id=? AND (? IS NULL OR seq<?) ORDER BY seq DESC LIMIT 1",
+        (str(pid), str(rework_id), before_seq, before_seq),
+    ).fetchone()
+    if previous:
+        return previous["id"]
+    row = tx.execute(
+        "SELECT n.test_id FROM rework_orders r JOIN nonconformances n ON n.id=r.nonconformance_id AND n.project_id=r.project_id WHERE r.id=? AND r.project_id=?",
+        (str(rework_id), str(pid)),
+    ).fetchone()
+    if not row:
+        fail("rework has no owned original failed-test basis", field="rework_order_id")
+    return row["test_id"]
+
+
+def require_fresh_route(tx, pid, prior_test_id, events):
+    basis = tx.execute(
+        "SELECT execution_cutoff FROM quality_test_bases WHERE test_id=? AND project_id=?",
+        (str(prior_test_id), str(pid)),
+    ).fetchone()
+    if not basis or basis["execution_cutoff"] is None:
+        fail(
+            "repair failure has no unambiguous recorded-order basis",
+            field="rework_order_id",
+        )
+    for ident in events:
+        row = own(tx, "execution_events", pid, ident)
+        if row["accepted_seq"] <= basis["execution_cutoff"]:
+            fail(
+                "every repair step requires fresh accepted execution after its own prior test",
+                field="execution_event_ids",
+            )
+
+
+def valid_test(tx, pid, test_id):
+    return (
+        tx.execute(
+            "SELECT 1 FROM valid_quality_tests WHERE project_id=? AND id=?",
+            (str(pid), str(test_id)),
+        ).fetchone()
+        is not None
+    )
+
+
+def rebuild_test_bases(tx):
+    """Derive v11 cutoffs from exact accepted-fact/audit bindings; never rewrite facts."""
+    seen_events, seen_tests, ambiguous_tests, unsafe_projects = (
+        set(),
+        set(),
+        set(),
+        set(),
+    )
+    maxima, inserted = {}, {}
+    for audit in tx.execute(
+        "SELECT * FROM audit_events WHERE action IN ('execution.record','test.record') ORDER BY id"
+    ):
+        pid = audit["project_id"]
+        try:
+            payload = json.loads(audit["typed_payload"])
+            key = source_key(payload["source"])
+            if payload.get("project_id") != pid:
+                unsafe_projects.add(pid)
+                continue
+            if audit["action"] == "execution.record":
+                events = tx.execute(
+                    "SELECT * FROM execution_events WHERE project_id=? AND source_system=? AND source_type=? AND source_external_id=? AND source_version=? AND status='accepted' LIMIT 2",
+                    (pid, *key, payload["source"]["version"]),
+                ).fetchall()
+                if len(events) > 1:
+                    unsafe_projects.add(pid)
+                if len(events) != 1:
+                    continue
+                event = events[0]
+                if event["id"] in seen_events:
+                    continue  # rejected duplicate submissions do not move the original accepted fact
+                if (
+                    audit["object_id"] != event["unit_id"]
+                    or payload.get("work_order_id") != event["work_order_id"]
+                    or payload["source"] != json.loads(event["source_json"])
+                    or payload.get("rework_order_id") != event["rework_order_id"]
+                    or any(
+                        payload.get(field) != event[field]
+                        for field in (
+                            "station",
+                            "route_version",
+                            "program_version",
+                            "firmware_version",
+                            "result",
+                        )
+                    )
+                    or payload.get("sn") != event["claimed_sn"]
+                    or datetime.fromisoformat(payload["occurred_at"])
+                    != datetime.fromisoformat(event["occurred_at"])
+                ):
+                    unsafe_projects.add(pid)
+                    continue
+                seen_events.add(event["id"])
+                maxima[pid] = max(maxima.get(pid, 0), event["accepted_seq"])
+            else:
+                test = tx.execute(
+                    "SELECT * FROM quality_tests WHERE id=? AND project_id=?",
+                    (audit["object_id"], pid),
+                ).fetchone()
+                if not test:
+                    continue
+                if test["id"] in seen_tests:
+                    ambiguous_tests.add(test["id"])
+                    continue
+                seen_tests.add(test["id"])
+                valid = (
+                    key
+                    == (
+                        test["source_system"],
+                        test["source_type"],
+                        test["source_external_id"],
+                    )
+                    and payload.get("unit_id") == test["unit_id"]
+                    and payload.get("rework_order_id") == test["rework_order_id"]
+                    and payload["source"] == json.loads(test["source_json"])
+                    and payload.get("attempt") == test["attempt"]
+                    and payload.get("measurements")
+                    == json.loads(test["measurements_json"])
+                )
+                prior = (
+                    rework_parent_test(
+                        tx, pid, test["rework_order_id"], before_seq=test["seq"]
+                    )
+                    if test["rework_order_id"]
+                    else None
+                )
+                cursor = tx.execute(
+                    "INSERT OR IGNORE INTO quality_test_bases VALUES (?,?,?,?)",
+                    (test["id"], pid, maxima.get(pid, 0) if valid else None, prior),
+                )
+                if cursor.rowcount:
+                    inserted[test["id"]] = pid
+        except (ValueError, KeyError, TypeError, DomainError):
+            unsafe_projects.add(pid)
+    for event in tx.execute(
+        "SELECT id,project_id FROM execution_events WHERE status='accepted'"
+    ):
+        if event["id"] not in seen_events:
+            unsafe_projects.add(event["project_id"])
+    for test in tx.execute("SELECT * FROM quality_tests ORDER BY seq"):
+        prior = (
+            rework_parent_test(
+                tx, test["project_id"], test["rework_order_id"], before_seq=test["seq"]
+            )
+            if test["rework_order_id"]
+            else None
+        )
+        tx.execute(
+            "INSERT OR IGNORE INTO quality_test_bases VALUES (?,?,NULL,?)",
+            (test["id"], test["project_id"], prior),
+        )
+    for ident, pid in inserted.items():
+        if pid in unsafe_projects or ident in ambiguous_tests:
+            tx.execute(
+                "UPDATE quality_test_bases SET execution_cutoff=NULL WHERE test_id=?",
+                (ident,),
+            )
+
+
+def admitted_quality_source(tx, pid, row, kind, payload=None):
+    """Repeat historical admission binding, without requiring current write permission."""
+    from types import SimpleNamespace
+
+    from pydantic import ValidationError
+
+    from .imports import record_scope, validate_record
+
+    try:
+        record = QualitySourceRecord(
+            object_type=kind,
+            project_id=row["project_id"],
+            source=json.loads(row["source_json"])
+            if kind == "test"
+            else payload["source"],
+            unit_ids=[row["unit_id"]] if kind == "test" else payload["unit_ids"],
+            revision_id=row["revision_id"]
+            if kind == "test"
+            else payload["revision_id"],
+            customer_id=None if kind == "test" else payload["customer_id"],
+        )
+        record_scope(
+            tx,
+            pid,
+            record,
+            object_type=kind,
+            system=row["source_system"],
+            external_id=row["source_external_id"],
+            mode="manual",
+        )
+        if row["source_type"] != kind:
+            return None
+        validate_record(
+            record,
+            SimpleNamespace(
+                project_id=UUID(str(pid)),
+                now=datetime.fromisoformat(
+                    row["recorded_at"] if kind == "test" else row["created_at"]
+                ),
+            ),
+            trusted=False,
+        )
+        return record.source
+    except (DomainError, ValidationError, ValueError, KeyError, TypeError):
+        return None
 
 
 def record_test(tx, context, command):
@@ -173,12 +394,15 @@ def record_test(tx, context, command):
         fail(
             "measurements and versions must match the complete frozen specification",
             422,
+            field="measurements",
         )
     for name, limit in expected.items():
         m = actual[name]
         if (m.unit, m.lower, m.upper) != (limit.unit, limit.lower, limit.upper):
             fail(
-                "measurement units and limits differ from the frozen specification", 422
+                "measurement units and limits differ from the frozen specification",
+                422,
+                field="measurements",
             )
     previous = latest_test(tx, pid, unit["id"])
     if previous and command.source.occurred_at < datetime.fromisoformat(
@@ -187,8 +411,15 @@ def record_test(tx, context, command):
         fail("later attempts cannot predate the recorded first-test history")
     if command.attempt != (previous["attempt"] + 1 if previous else 1):
         fail("test attempt must be the next immutable attempt")
-    if previous and previous["outcome"] == "fail" and not command.rework_order_id:
-        fail("failed test requires qualified independent rework before retest")
+    if (
+        previous
+        and (previous["outcome"] == "fail" or not valid_test(tx, pid, previous["id"]))
+        and not command.rework_order_id
+    ):
+        fail(
+            "failed or invalid test proof requires qualified independent rework before retest",
+            field="rework_order_id",
+        )
     if command.rework_order_id:
         _, steps = rework_route(tx, pid, unit, command.rework_order_id)
     else:
@@ -201,14 +432,10 @@ def record_test(tx, context, command):
         command.rework_order_id,
         command.source.occurred_at.isoformat(),
     )
-    if (
-        previous
-        and previous["outcome"] == "fail"
-        and previous["rework_order_id"]
-        == (str(command.rework_order_id) if command.rework_order_id else None)
-        and set(events) == set(json.loads(previous["execution_ids_json"]))
-    ):
-        fail("failed rework retest requires new accepted repair execution")
+    prior_test_id = None
+    if command.rework_order_id:
+        prior_test_id = rework_parent_test(tx, pid, command.rework_order_id)
+        require_fresh_route(tx, pid, prior_test_id, events)
     equipment = tx.execute(
         "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? AND kind='equipment' AND julianday(created_at)<=julianday(?) ORDER BY rowid DESC LIMIT 1",
         (str(pid), unit["work_order_id"], command.source.occurred_at.isoformat()),
@@ -252,6 +479,14 @@ def record_test(tx, context, command):
             context.now.isoformat(),
         ),
     )
+    cutoff = tx.execute(
+        "SELECT COALESCE(MAX(accepted_seq),0) FROM execution_events WHERE project_id=? AND status='accepted'",
+        (str(pid),),
+    ).fetchone()[0]
+    tx.execute(
+        "INSERT INTO quality_test_bases VALUES (?,?,?,?)",
+        (ident, str(pid), cutoff, prior_test_id),
+    )
     return MutationResult(object_type="test", object_id=ident)
 
 
@@ -264,6 +499,7 @@ def complete_pass(
     ).fetchone()
     return bool(
         row
+        and valid_test(tx, project_id, row["id"])
         and row["outcome"] == "pass"
         and TestEvidenceScope.model_validate_json(row["scope_json"]) == scope
         and latest_test(tx, project_id, unit_id)["id"] == row["id"]
@@ -360,6 +596,7 @@ def complete_rework(tx, context, command):
         or not latest
         or str(command.test_ids[0]) != latest["id"]
         or latest["outcome"] != "pass"
+        or not valid_test(tx, pid, latest["id"])
         or latest["rework_order_id"] != row["id"]
         or set(json.loads(latest["execution_ids_json"])) != set(expected)
     ):
@@ -521,7 +758,7 @@ def shipment_eligibility(tx, project_id, unit_ids) -> Eligibility:
 
 def final_good_count(tx, pid, order_id=None):
     return tx.execute(
-        """SELECT COUNT(*) FROM quality_tests t JOIN units unit ON unit.id=t.unit_id AND unit.project_id=t.project_id JOIN effective_work_orders wo ON wo.id=unit.work_order_id AND wo.project_id=unit.project_id WHERE t.project_id=? AND (? IS NULL OR wo.order_line_id=?) AND t.outcome='pass' AND NOT EXISTS(SELECT 1 FROM quality_tests newer WHERE newer.unit_id=t.unit_id AND newer.attempt>t.attempt) AND NOT EXISTS(SELECT 1 FROM quality_dispositions d WHERE d.unit_id=t.unit_id AND d.decision='scrap') AND NOT EXISTS(SELECT 1 FROM nonconformances n LEFT JOIN quality_dispositions d ON d.nonconformance_id=n.id LEFT JOIN rework_orders r ON r.nonconformance_id=n.id LEFT JOIN rework_completions c ON c.rework_order_id=r.id WHERE n.unit_id=t.unit_id AND (d.id IS NULL OR (d.decision='rework' AND c.id IS NULL)))""",
+        """SELECT COUNT(*) FROM valid_quality_tests t JOIN units unit ON unit.id=t.unit_id AND unit.project_id=t.project_id JOIN effective_work_orders wo ON wo.id=unit.work_order_id AND wo.project_id=unit.project_id WHERE t.project_id=? AND (? IS NULL OR wo.order_line_id=?) AND t.outcome='pass' AND NOT EXISTS(SELECT 1 FROM quality_tests newer WHERE newer.unit_id=t.unit_id AND newer.attempt>t.attempt) AND NOT EXISTS(SELECT 1 FROM quality_dispositions d WHERE d.unit_id=t.unit_id AND d.decision='scrap') AND NOT EXISTS(SELECT 1 FROM nonconformances n LEFT JOIN quality_dispositions d ON d.nonconformance_id=n.id LEFT JOIN rework_orders r ON r.nonconformance_id=n.id LEFT JOIN rework_completions c ON c.rework_order_id=r.id WHERE n.unit_id=t.unit_id AND (d.id IS NULL OR (d.decision='rework' AND c.id IS NULL)))""",
         (
             str(pid),
             str(order_id) if order_id else None,
@@ -587,7 +824,7 @@ def value_for(tx, pid, kind, row, *, candidates=True):
             outcome=row["outcome"],
             rework_order_id=row["rework_order_id"],
             execution_event_ids=json.loads(row["execution_ids_json"]),
-            source=json.loads(row["source_json"]),
+            source=admitted_quality_source(tx, pid, row, "test"),
             actor_id=row["actor_id"],
             occurred_at=row["occurred_at"],
             recorded_at=row["recorded_at"],
@@ -672,7 +909,9 @@ def value_for(tx, pid, kind, row, *, candidates=True):
         customer_revision=payload["customer_revision"],
         external_signatory=payload["external_signatory"],
         method=payload["method"],
-        source=payload["source"],
+        source=admitted_quality_source(tx, pid, row, "customer_release", payload)
+        if payload["source"] is not None
+        else None,
         recorded_at=row["created_at"],
     )
 
@@ -702,6 +941,53 @@ def summary(tx, pid, kind, row):
     return ObjectSummary(
         id=row["id"], project_id=pid, kind=kind, title=title, state=state, version=1
     )
+
+
+def quality_history(tx, pid, kind, row):
+    history = []
+    for audit in tx.execute(
+        "SELECT * FROM audit_events WHERE project_id=? AND object_id=? ORDER BY id LIMIT 500",
+        (str(pid), row["id"]),
+    ):
+        item = dict(audit)
+        try:
+            payload = json.loads(audit["typed_payload"])
+        except (ValueError, TypeError):
+            payload = {}
+        if (
+            payload.get("source") is not None
+            or kind == "test"
+            or (kind == "release" and row["kind"] == "customer")
+        ):
+            source = None
+            if payload.get("project_id") == str(pid):
+                if kind == "test":
+                    source = admitted_quality_source(
+                        tx,
+                        pid,
+                        {
+                            **dict(row),
+                            "source_json": json.dumps(payload.get("source")),
+                            "recorded_at": audit["recorded_at"],
+                        },
+                        "test",
+                    )
+                elif kind == "release" and row["kind"] == "customer":
+                    source = admitted_quality_source(
+                        tx,
+                        pid,
+                        {**dict(row), "created_at": audit["recorded_at"]},
+                        "customer_release",
+                        payload,
+                    )
+            if source is None:
+                payload.pop("source", None)
+                payload.pop("evidence", None)
+            else:
+                payload["source"] = source.model_dump(mode="json")
+        item["typed_payload"] = json.dumps(payload)
+        history.append(item)
+    return _history_rows(history)
 
 
 def register_objects(kind, table, model):
@@ -740,12 +1026,7 @@ def register_objects(kind, table, model):
             value=value,
             relations=relations,
             evidence=[],
-            history=_history_rows(
-                tx.execute(
-                    "SELECT * FROM audit_events WHERE project_id=? AND object_id=? ORDER BY id LIMIT 500",
-                    (str(pid), str(ident)),
-                ).fetchall()
-            ),
+            history=quality_history(tx, pid, kind, row),
         )
 
     OBJECT_REGISTRY.register(kind, model, count=count, summaries=page, detail=detail)

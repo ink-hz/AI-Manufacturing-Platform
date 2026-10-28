@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -139,3 +139,21 @@ CREATE TABLE IF NOT EXISTS quality_release_units(release_id TEXT NOT NULL REFERE
 CREATE INDEX IF NOT EXISTS quality_release_units_scope ON quality_release_units(project_id,unit_id);
 """
 SCHEMA += QUALITY_SCHEMA
+
+QUALITY_REVIEW_SCHEMA = """
+CREATE TABLE IF NOT EXISTS quality_test_bases(test_id TEXT PRIMARY KEY REFERENCES quality_tests(id),project_id TEXT NOT NULL REFERENCES projects(id),execution_cutoff INTEGER,prior_test_id TEXT REFERENCES quality_tests(id));
+CREATE VIEW IF NOT EXISTS valid_quality_tests AS
+SELECT t.* FROM quality_tests t WHERE t.rework_order_id IS NULL OR EXISTS (
+ SELECT 1 FROM quality_test_bases b JOIN quality_test_bases prior ON prior.test_id=b.prior_test_id AND prior.project_id=b.project_id
+ JOIN rework_orders rw ON rw.id=t.rework_order_id AND rw.project_id=t.project_id AND rw.unit_id=t.unit_id
+ JOIN nonconformances nc ON nc.id=rw.nonconformance_id AND nc.project_id=rw.project_id
+ WHERE b.test_id=t.id AND b.project_id=t.project_id AND b.execution_cutoff IS NOT NULL AND prior.execution_cutoff IS NOT NULL
+ AND b.prior_test_id=COALESCE((SELECT earlier.id FROM quality_tests earlier WHERE earlier.project_id=t.project_id AND earlier.rework_order_id=t.rework_order_id AND earlier.seq<t.seq ORDER BY earlier.seq DESC LIMIT 1),nc.test_id)
+ AND json_array_length(t.execution_ids_json)>0
+ AND NOT EXISTS (SELECT 1 FROM json_each(t.execution_ids_json) proof LEFT JOIN execution_events e ON e.id=proof.value AND e.project_id=t.project_id
+ WHERE e.id IS NULL OR e.unit_id<>t.unit_id OR e.rework_order_id IS NOT t.rework_order_id OR e.status<>'accepted' OR e.result<>'pass'
+ OR e.accepted_seq<=prior.execution_cutoff OR e.accepted_seq>b.execution_cutoff
+ OR NOT EXISTS(SELECT 1 FROM execution_admissions a WHERE a.event_id=e.id AND a.project_id=e.project_id AND a.admitted=1))
+);
+"""
+SCHEMA += QUALITY_REVIEW_SCHEMA

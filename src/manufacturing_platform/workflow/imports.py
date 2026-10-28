@@ -164,9 +164,21 @@ def record_scope(
             raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
     elif record.object_type in {"test", "customer_release"}:
         for ident in record.unit_ids:
-            own(tx, "units", project_id, ident)
+            unit = own(tx, "units", project_id, ident)
+            if record.revision_id and unit["revision_id"] != str(record.revision_id):
+                raise DomainError(
+                    "SOURCE_DISCREPANCY", 409, "Quality revision/serial scope mismatch"
+                )
         if record.revision_id:
             own(tx, "engineering_revisions", project_id, record.revision_id)
+        if record.customer_id is not None:
+            customer = tx.execute(
+                "SELECT customer_id FROM projects WHERE id=?", (str(project_id),)
+            ).fetchone()
+            if not customer or customer["customer_id"] != record.customer_id:
+                raise DomainError(
+                    "SOURCE_DISCREPANCY", 409, "Quality customer scope mismatch"
+                )
         if tx.execute(
             "SELECT 1 FROM quality_tests WHERE source_system=? AND source_type=? AND source_external_id=? AND project_id<>?",
             (*key, str(project_id)),
