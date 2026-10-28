@@ -269,10 +269,13 @@ class WorkflowService:
         project_id = UUID(str(project_id))
         with self.store.transaction() as tx:
             require_project(tx, actor, project_id)
-            values = self.object_registry.summaries(tx, project_id, kind)
+            total = self.object_registry.count(tx, project_id, kind)
+            values = self.object_registry.summaries(
+                tx, project_id, kind, limit=limit, offset=offset
+            )
             return ObjectPage(
-                items=values[offset : offset + limit],
-                total=len(values),
+                items=values,
+                total=total,
                 limit=limit,
                 offset=offset,
             )
@@ -305,9 +308,14 @@ class WorkflowService:
             cards = []
             for pid in ids:
                 for kind in self.object_registry.kinds:
-                    values = self.object_registry.summaries(tx, pid, kind)
-                    counts[kind] += len(values)
-                    cards.extend(values[: max(0, 100 - len(cards))])
+                    counts[kind] += self.object_registry.count(tx, pid, kind)
+                    remaining = 100 - len(cards)
+                    if remaining:
+                        cards.extend(
+                            self.object_registry.summaries(
+                                tx, pid, kind, limit=remaining, offset=0
+                            )
+                        )
             return Dashboard(
                 cards=cards, project_ids=ids, project_count=len(ids), counts=counts
             )

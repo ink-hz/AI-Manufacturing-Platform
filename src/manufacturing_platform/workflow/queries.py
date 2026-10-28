@@ -17,7 +17,8 @@ V = TypeVar("V", bound=DomainValue)
 @dataclass(frozen=True)
 class ObjectRegistration(Generic[V]):
     model: type[V]
-    summaries: Callable[[Connection, UUID], list[ObjectSummary]]
+    count: Callable[[Connection, UUID], int]
+    summaries: Callable[[Connection, UUID, int, int], list[ObjectSummary]]
     detail: Callable[[Connection, UUID, UUID], ObjectDetail[V] | None]
 
 
@@ -31,7 +32,8 @@ class ObjectRegistry:
         kind: ObjectKind,
         model: type[V],
         *,
-        summaries: Callable[[Connection, UUID], list[ObjectSummary]],
+        count: Callable[[Connection, UUID], int],
+        summaries: Callable[[Connection, UUID, int, int], list[ObjectSummary]],
         detail: Callable[[Connection, UUID, UUID], ObjectDetail[V] | None],
     ):
         kind = ObjectKind(kind)
@@ -42,7 +44,7 @@ class ObjectRegistry:
             raise ValueError("domain value must declare the registered kind")
         if kind in self._entries:
             raise ValueError("duplicate object kind")
-        self._entries[kind] = ObjectRegistration(model, summaries, detail)
+        self._entries[kind] = ObjectRegistration(model, count, summaries, detail)
         models = tuple(entry.model for entry in self._entries.values())
         self._value_adapter = TypeAdapter(
             Annotated[Union[models], Field(discriminator="kind")]  # noqa: UP007 - runtime union
@@ -52,15 +54,32 @@ class ObjectRegistry:
     def kinds(self) -> tuple[ObjectKind, ...]:
         return tuple(self._entries)
 
+    def count(self, tx: Connection, project_id: UUID, kind: ObjectKind) -> int:
+        entry = self._entries.get(kind)
+        if entry is None:
+            return 0
+        total = entry.count(tx, project_id)
+        if type(total) is not int or total < 0:
+            raise ValueError("object reader count must be a nonnegative integer")
+        return total
+
     def summaries(
-        self, tx: Connection, project_id: UUID, kind: ObjectKind
+        self,
+        tx: Connection,
+        project_id: UUID,
+        kind: ObjectKind,
+        *,
+        limit: int,
+        offset: int,
     ) -> list[ObjectSummary]:
+        """Readers must apply deterministic ORDER BY and LIMIT/OFFSET in SQL."""
         entry = self._entries.get(kind)
         if entry is None:
             return []
-        values = [
-            ObjectSummary.model_validate(v) for v in entry.summaries(tx, project_id)
-        ]
+        page = entry.summaries(tx, project_id, limit, offset)
+        if not isinstance(page, list) or len(page) > limit:
+            raise ValueError("object reader exceeded page limit")
+        values = [ObjectSummary.model_validate(v) for v in page]
         if any(v.project_id != project_id or v.kind != kind for v in values):
             raise ValueError("object reader scope mismatch")
         return values

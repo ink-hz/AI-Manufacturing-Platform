@@ -182,10 +182,16 @@ def test_registered_typed_detail_and_dashboard_use_same_queries(workflow, monkey
 
     registry = queries.ObjectRegistry()
 
-    def summaries(tx, project_id):
-        row = tx.execute(
-            "SELECT * FROM projects WHERE id=?", (str(project_id),)
-        ).fetchone()
+    def count(tx, project_id):
+        return tx.execute(
+            "SELECT COUNT(*) FROM projects WHERE id=?", (str(project_id),)
+        ).fetchone()[0]
+
+    def summaries(tx, project_id, limit, offset):
+        rows = tx.execute(
+            "SELECT * FROM projects WHERE id=? ORDER BY id LIMIT ? OFFSET ?",
+            (str(project_id), limit, offset),
+        ).fetchall()
         return [
             contracts.ObjectSummary(
                 id=row["id"],
@@ -195,13 +201,14 @@ def test_registered_typed_detail_and_dashboard_use_same_queries(workflow, monkey
                 state="recorded",
                 version=row["version"],
             )
+            for row in rows
         ]
 
     def detail(tx, project_id, object_id):
         if project_id != object_id:
             return None
         return contracts.ObjectDetail[Value](
-            summary=summaries(tx, project_id)[0],
+            summary=summaries(tx, project_id, 1, 0)[0],
             value=Value(kind="demand", title="typed"),
             relations=[],
             evidence=[],
@@ -209,7 +216,11 @@ def test_registered_typed_detail_and_dashboard_use_same_queries(workflow, monkey
         )
 
     registry.register(
-        contracts.ObjectKind.demand, Value, summaries=summaries, detail=detail
+        contracts.ObjectKind.demand,
+        Value,
+        count=count,
+        summaries=summaries,
+        detail=detail,
     )
     _, service, actor = extension(workflow)
     service.object_registry = registry
@@ -236,7 +247,11 @@ def test_registered_typed_detail_and_dashboard_use_same_queries(workflow, monkey
     assert board.project_count == 1
     with pytest.raises(ValueError):
         registry.register(
-            contracts.ObjectKind.order_line, Value, summaries=summaries, detail=detail
+            contracts.ObjectKind.order_line,
+            Value,
+            count=count,
+            summaries=summaries,
+            detail=detail,
         )
     assert service.dashboard(
         contracts.Actor(

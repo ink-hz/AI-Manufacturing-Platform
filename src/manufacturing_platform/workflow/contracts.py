@@ -171,6 +171,12 @@ class ObjectKind(str, Enum):
     exception = "exception"
 
 
+def require_timezone(value: datetime | None) -> datetime | None:
+    if value is not None and value.utcoffset() is None:
+        raise ValueError("timezone required")
+    return value
+
+
 class SourceRef(StrictModel):
     system: str = Field(min_length=1, max_length=200)
     object_type: str = Field(min_length=1, max_length=200)
@@ -185,9 +191,7 @@ class SourceRef(StrictModel):
     @field_validator("occurred_at", "collected_at", "cutoff")
     @classmethod
     def timezone_required(cls, value):
-        if value is not None and value.utcoffset() is None:
-            raise ValueError("timezone required")
-        return value
+        return require_timezone(value)
 
 
 class ObjectSummary(StrictModel):
@@ -239,6 +243,11 @@ class ObjectHistory(StrictModel):
     occurred_at: datetime
     recorded_at: datetime
     evidence: list[ObjectEvidence] = Field(default_factory=list)
+
+    @field_validator("occurred_at", "recorded_at")
+    @classmethod
+    def timezone_required(cls, value):
+        return require_timezone(value)
 
 
 class ObjectDetail(StrictModel, Generic[DomainT]):
