@@ -51,6 +51,7 @@ export function WorkflowApp({
     accountLock = useRef(false),
     frame = useRef<HTMLDivElement>(null),
     scroll = useRef<{ element: HTMLElement; top: number; left: number }[]>([]);
+  const projectVersions = useRef(new Map<string, number>());
   callbacks.current = options;
   const deny = useCallback(() => {
     alive.current = false;
@@ -119,10 +120,28 @@ export function WorkflowApp({
     Promise.all([api.projects(), api.dashboard()])
       .then(([p, d]) => {
         if (active && alive.current) {
-          setProjects(p.items);
+          // A response older than an acknowledged mutation cannot lower freshness.
+          const isCurrent = (value: ProjectDetail) =>
+            value.version >= (projectVersions.current.get(value.id) || 0);
+          setProjects((old) =>
+            p.items.flatMap((value) =>
+              isCurrent(value) ? [value] : old.filter((x) => x.id === value.id),
+            ),
+          );
           setDashboard(d);
-          setProject((old) =>
-            old ? p.items.find((x) => x.id === old.id) || null : old,
+          setProject((old) => {
+            if (!old) return old;
+            const incoming = p.items.find((x) => x.id === old.id);
+            return incoming && !isCurrent(incoming) ? old : incoming || null;
+          });
+          p.items.forEach((value) =>
+            projectVersions.current.set(
+              value.id,
+              Math.max(
+                value.version,
+                projectVersions.current.get(value.id) || 0,
+              ),
+            ),
           );
         }
       })
@@ -160,6 +179,17 @@ export function WorkflowApp({
     });
   }
   function changed(result: CommandResult) {
+    const version = Math.max(
+      result.project_version,
+      projectVersions.current.get(result.project_id) || 0,
+    );
+    projectVersions.current.set(result.project_id, version);
+    const advance = (value: ProjectDetail) =>
+      value.id === result.project_id
+        ? { ...value, version: Math.max(value.version, version) }
+        : value;
+    setProject((old) => (old ? advance(old) : old));
+    setProjects((old) => old.map(advance));
     setRefresh((r) => r + 1);
     setDirtyKeys({});
     setEpoch((e) => e + 1);
@@ -294,6 +324,11 @@ export function WorkflowApp({
                 onDirty={onDirty}
                 onSaved={(p) => {
                   setCreating(false);
+                  projectVersions.current.set(p.id, p.version);
+                  setProjects((old) => [
+                    ...old.filter((value) => value.id !== p.id),
+                    p,
+                  ]);
                   setProject(p);
                   setRefresh((r) => r + 1);
                 }}
@@ -379,7 +414,9 @@ export function WorkflowApp({
                     />
                     {!readOnly &&
                       detail?.value.kind === "commitment_change" &&
-                      detail.value.state === "pending" &&
+                      detail.summary.next_actions.includes(
+                        "order.resolve_change",
+                      ) &&
                       project.allowed_actions.includes(
                         "order.resolve_change",
                       ) && (

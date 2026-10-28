@@ -18,6 +18,7 @@ export class WorkflowError extends Error {
     public status: number,
     public code = "",
     public reasons: string[] = [],
+    public fields: Record<string, unknown> = {},
   ) {
     super(
       status === 409
@@ -84,7 +85,12 @@ export function createWorkflowApi(
       const v = await r.json();
       assert();
       if (!r.ok)
-        throw new WorkflowError(r.status, v.code, v.blocking_reasons || []);
+        throw new WorkflowError(
+          r.status,
+          v.code,
+          v.blocking_reasons || [],
+          v.fields || {},
+        );
       return v as T;
     } finally {
       controllers.delete(c);

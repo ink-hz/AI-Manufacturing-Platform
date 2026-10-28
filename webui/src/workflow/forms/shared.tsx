@@ -1,3 +1,4 @@
+import { ConflictComparison } from "../ConflictComparison";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type {
   CommandFields,
@@ -7,88 +8,8 @@ import type {
   ObjectSummary,
 } from "../types";
 import { WorkflowError } from "../api";
-export const labels: Record<string, string> = {
-  "MES receipt matches fixed revision": "MES 接收版本与固定修订一致",
-  "fixed revision lacks matching accepted MES receipt":
-    "固定修订缺少匹配的 MES 接收回执",
-  "equipment evidence valid at planned use": "设备依据在计划使用时有效",
-  "equipment evidence missing, rejected, or expired at planned use":
-    "设备依据缺失、被拒绝或在计划使用时过期",
-  "people evidence valid at planned use": "人员依据在计划使用时有效",
-  "people evidence missing, rejected, or expired at planned use":
-    "人员依据缺失、被拒绝或在计划使用时过期",
-  "matching customer approval recorded": "已登记匹配的客户批准",
-  "customer approval or contractual revision is unknown or missing":
-    "客户批准或合同版本尚未确认或缺失",
-  "no authoritative material plan cutoff": "缺少权威物料计划截止事实",
-  "no accepted scoped material reservation": "缺少已确认的范围内物料预留",
-  "matching tested first article absent": "缺少匹配版本的首件检验证据",
-  "trial does not require first article": "试产无需首件前置检验",
-  "change disposition pending": "承诺变更影响尚待处理",
-  authorized_by: "正式订单依据",
-  fixed_revision: "固定工程修订",
-  supersedes: "替代原需求",
-  formal_demand: "正式需求依据",
-  allocated_work_order: "已分配工单",
-  changes_order: "变更订单",
-  "demand.record": "登记需求",
-  "demand.review": "需求评审",
-  "order.register": "登记订单",
-  "order.change": "承诺变更",
-  "order.allocate": "分配工单",
-  "order.resolve_change": "处理承诺影响",
-  "engineering.revision": "固定修订",
-  "engineering.handoff": "版本交接",
-  "engineering.customer_approval": "人工客户批准",
-  "work_order.register": "登记工单",
-  "readiness.record": "准备核验",
-  na: "不适用",
-  firm: "正式需求",
-  forecast: "预测",
-  inquiry: "询价",
-  approved: "通过",
-  rejected: "拒绝",
-  unknown: "待确认",
-  accepted: "接收",
-  verified: "已核验",
-  active: "有效",
-  cancelled: "已取消",
-  pending: "待处理",
-  applied: "已生效",
-  planned: "已登记",
-  fixed: "已固定",
-  ready: "就绪",
-  blocked: "阻断",
-  not_required: "不适用",
-  technical: "技术",
-  material: "物料",
-  capacity: "产能",
-  commercial: "商务",
-  quality: "质量",
-  version: "版本",
-  equipment: "设备",
-  people: "人员",
-  customer: "客户批准",
-  plan: "计划",
-  first_article: "首件",
-  demand: "需求",
-  order_line: "订单",
-  commitment_change: "承诺变更",
-  revision: "工程修订",
-  work_order: "工单",
-  trial: "试产",
-  production: "生产",
-  retain: "保留",
-  cancel: "取消",
-  transfer: "转移",
-  rework: "返工",
-  return: "退回",
-};
-export const label = (v: string) => labels[v] || v;
-export const objectTitle = (v: ObjectSummary) =>
-  v.kind === "revision"
-    ? v.title.replace(/^[0-9a-f]{8}-[0-9a-f-]{27} /i, "工程修订 ")
-    : v.title;
+import { label, objectTitle } from "../labels";
+export { label, objectTitle } from "../labels";
 export function Field({
   name,
   value,
@@ -234,9 +155,11 @@ export function CommandForm<T extends CommandFields>({
   title,
   save,
   children,
+  canSubmit = () => true,
   ...props
 }: WorkspaceProps & {
   initial: () => T;
+  canSubmit?: (value: T) => boolean;
   title: string;
   save: string;
   children: (v: T, set: (v: T) => void) => ReactNode;
@@ -245,7 +168,8 @@ export function CommandForm<T extends CommandFields>({
     [version] = useState(props.project.version),
     [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [conflict, setConflict] = useState<WorkflowError | null>(null);
   const pending = useRef<WorkflowCommand | null>(null),
     alive = useRef(true);
   useEffect(() => {
@@ -258,6 +182,7 @@ export function CommandForm<T extends CommandFields>({
   function set(v: T) {
     if (!alive.current) return;
     pending.current = null;
+    setConflict(null);
     setValue(v);
     setDirty(true);
     props.onDirty(title, true);
@@ -268,7 +193,7 @@ export function CommandForm<T extends CommandFields>({
       className="wf-form"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (busy || props.readOnly) return;
+        if (busy || props.readOnly || !canSubmit(value)) return;
         setBusy(true);
         setError("");
         try {
@@ -308,13 +233,17 @@ export function CommandForm<T extends CommandFields>({
             props.onChanged(result);
           }
         } catch (e) {
-          if (alive.current)
+          if (alive.current) {
+            setConflict(
+              e instanceof WorkflowError && e.status === 409 ? e : null,
+            );
             setError(
               e instanceof WorkflowError
                 ? e.message +
                     (e.reasons.length ? " " + e.reasons.join("；") : "")
                 : String(e),
             );
+          }
         } finally {
           if (alive.current) setBusy(false);
         }
@@ -329,7 +258,19 @@ export function CommandForm<T extends CommandFields>({
         {children(value, set)}
       </fieldset>
       {error && <p role="alert">{error}</p>}
-      <button disabled={busy || props.readOnly} type="submit">
+      {conflict && (
+        <ConflictComparison
+          api={props.api}
+          projectId={props.project.id}
+          version={version}
+          error={conflict}
+          draft={value}
+        />
+      )}
+      <button
+        disabled={busy || props.readOnly || !canSubmit(value)}
+        type="submit"
+      >
         {save}
       </button>
     </form>

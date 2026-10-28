@@ -119,6 +119,11 @@ A4 增加 `ProjectDetail.allowed_actions: list[str]`：详情和项目列表按�
 
 前端 `WorkspaceProps={api,project,onChanged(result),onOpen({projectId,kind,id}),onDirty(key,dirty),readOnly}` 不接受角色或 actor 切换。`CommandFields` / `WorkflowCommand` 和 `DomainValue` 为当前 A 的严格联合；B/C 通过增加真实 DTO 与工作区扩展。`MountOptions.findSubjects?(query,signal)` 仅配置管理员获得，PF 复用 `listManagedUsers(signal)` 过滤 active 账号，真实显示名选择；取消/换账号即退役，无额外身份服务。
 
+A4 UI 将成功返回的 `project_version` 立即作为新草稿版本下界，后到的较旧项目读取不得降低它；既有草稿不随父级刷新重定基线。409 保留 `code/fields/blocking_reasons`，可在保留草稿及操作编号的同时读取当前项目、关联对象或所选成员授权进行对照；放弃重读是单独操作。订单变更提交前展示当前承诺、订单级分配合计、全部绑定工单（含未分配工单）的完整数量，并展示有界业务编号列表，不用浮点重算十进制字符串。当前 `order.resolve_change` 上下文入口同时检查服务端 `next_actions` 与项目 `allowed_actions`；完整跨域下一步动作推导仍由 D1 实现。PF 目录的 401/403 与业务 API 共用退役/拒绝入口，取消同实例请求并清除工作区，瞬态目录错误仍可重试。
+
+
+A4 订单影响预览由选定订单读取端负责，禁止浏览器全项目工单翻页扫描和逐工单 N+1。`OrderLineValue.work_order_impact={registered_quantity:NonnegativeQuantity,total:int,shown:int,has_more:bool,items:WorkOrderImpactReference[]}`，引用为 `{id,source_system,external_id,quantity:Quantity,unit}`。同一读取事务内，按 `project_id + order_line_id` 在 SQL 做 `COUNT(*)/SUM(q_atoms)` 得完整已登记工单总数/总量（含未分配工单）；另按 `source_system,source_external_id,id` 排序、SQL `LIMIT 50` 取最多50个可识别引用。现有 `allocated` 仍是独立的订单级准确分配总量，不推导单工单分配。前端只读该订单详情一次，标明 `shown/total/has_more` 和部分编号列表，完整总量不从展示子集求和。普通选择器继续有界分页并由用户显式继续读取。业务变更影响校验仍在写事务中进行，历史事实不截断。
+
 `ProjectDetail.stages` 始终是严格类型的列表，元素为 `{stage:S1..S9,status:pending|active|blocked|complete,reason?:string}`。D1 建立真实阶段事实之前返回空列表，不能预填完成状态。订单和项目的已知零数量以规范字符串 `"0"` 返回；数量字段拒绝非数字、负数、NaN、Infinity 和非规范指数表示。
 
 权限最小矩阵：project_owner 需求/评审/承诺/履约关闭；engineering 资料/校准依据/ECO，readiness.record 另需项目范围内有效的 readiness_verification 资格（核验设备/人员依据，不声称核验者执行校准）；planner 计划/工单/分配/准备/开工请求；supply 供应与到货协同；production 执行登记、异常、制造放行；quality 严格资格 inspection+disposition+quality_release；warehouse 发运及签收登记；customer_confirmation、external_receipt 只允许经配置的来源适配器或明确人工证据登记动作，不能用 production/IT 身份冒充外部主体。所有角色可读其项目，外部客户维度按 project.customer_id 与关联 customer_id 同时检查。GrantScope = {kind:'project',project_id:UUID}，必须匹配 URL project_id，禁止 wildcard/global。GrantChange = operation_id,expected_version,scope:GrantScope,roles[],qualifications[],active,evidence；GrantView/ScopeGrantView 包含 scope,user_id,roles[],qualifications[],active；配置 revocation 递增 project.version 并审计；每次 read/write重新检查。

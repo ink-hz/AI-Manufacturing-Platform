@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { App } from "../App";
-import type { ProjectDetail } from "./types";
+import type { ProjectDetail, ObjectDetail, ObjectKind } from "./types";
 const project: ProjectDetail = {
   id: "00000000-0000-4000-8000-000000000001",
   version: 3,
@@ -459,4 +459,636 @@ it("keeps initial object reads bounded even when more choices exist", async () =
   expect(reads[0]).toContain("limit=50");
   expect(host.textContent).toContain("读取更多需求");
 });
-it('disables an open project form immediately when the host becomes read-only',async()=>{const admin={...bootstrap,configuration_admin:true};await mount({bootstrap:admin});await click('新建项目');await field('项目名称','未提交');await mount({bootstrap:admin,readOnly:true});const save=[...host.querySelectorAll('button')].find(b=>b.textContent==='创建制造项目');expect(save?.disabled).toBe(true);expect(host.querySelector('[aria-label="项目名称"]')?.matches(':disabled')).toBe(true);});
+it("disables an open project form immediately when the host becomes read-only", async () => {
+  const admin = { ...bootstrap, configuration_admin: true };
+  await mount({ bootstrap: admin });
+  await click("新建项目");
+  await field("项目名称", "未提交");
+  await mount({ bootstrap: admin, readOnly: true });
+  const save = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "创建制造项目",
+  );
+  expect(save?.disabled).toBe(true);
+  expect(
+    host.querySelector('[aria-label="项目名称"]')?.matches(":disabled"),
+  ).toBe(true);
+});
+it("advances the next grant draft immediately and rejects delayed older project snapshots", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  const writes: any[] = [];
+  const reads: ((r: Response) => void)[] = [];
+  vi.mocked(fetch).mockImplementation(async (u, i) => {
+    const url = String(u);
+    if (url.endsWith("/members")) return response({ items: [] });
+    if (url.includes("/members/")) {
+      const body = JSON.parse(String(i?.body));
+      writes.push(body);
+      return response({
+        operation_id: body.operation_id,
+        project_id: project.id,
+        project_version: 3 + writes.length,
+        object_type: "project",
+        object_id: project.id,
+        exchange_id: null,
+        replayed: false,
+      });
+    }
+    if (url.endsWith("/projects") && writes.length)
+      return new Promise<Response>((r) => reads.push(r));
+    return original(u, i);
+  });
+  await mount({
+    bootstrap: { ...bootstrap, configuration_admin: true },
+    findSubjects: async () => [
+      { id: "00000000-0000-4000-8000-000000000010", displayName: "成员甲" },
+      { id: "00000000-0000-4000-8000-000000000011", displayName: "成员乙" },
+    ],
+  });
+  await click("制造项目");
+  await click("相机项目");
+  await click("成员授权");
+  for (const n of [10, 11]) {
+    await field(
+      "授权成员",
+      `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+    );
+    await act(async () =>
+      (host.querySelector('[aria-label="工程"]') as HTMLInputElement).click(),
+    );
+    await field("授权凭据", `授权单${n}`);
+    await click("保存成员授权");
+  }
+  expect(writes.map((w) => w.expected_version)).toEqual([3, 4]);
+  await act(async () =>
+    reads.forEach((r) => r(response({ items: [project] }))),
+  );
+  await flush();
+  await click("订单与需求");
+  await click("登记需求");
+  expect(host.textContent).toContain("草稿依据：项目版本 5");
+});
+it("compares current server facts after a conflict without changing draft CAS or retry identity", async () => {
+  const prior = vi.mocked(fetch).getMockImplementation()!;
+  let newer = false;
+  vi.mocked(fetch).mockImplementation(async (u, i) => {
+    if (String(u).endsWith("/commands")) {
+      requests.push({ url: String(u), body: JSON.parse(String(i?.body)) });
+      newer = true;
+      return response(
+        {
+          code: "VERSION_CONFLICT",
+          fields: { current_version: 9 },
+          blocking_reasons: [],
+        },
+        409,
+      );
+    }
+    if (String(u).endsWith("/projects/" + project.id) && newer)
+      return response({
+        ...project,
+        version: 9,
+        summary: { ...project.summary, current_order_quantity: "75.250" },
+      });
+    return prior(u, i);
+  });
+  await mount();
+  await click("制造项目");
+  await click("相机项目");
+  await click("登记需求");
+  await field("需求数量", "20");
+  await field("需求交期", "2026-12-01");
+  await field("来源业务编号", "ERP-CONFLICT");
+  await field("来源凭据", "客户邮件");
+  await click("保存需求");
+  expect(host.textContent).toContain("服务端冲突版本：9");
+  await click("保留草稿并对照当前资料");
+  expect(host.textContent).toContain("服务端当前项目版本：9");
+  expect(host.textContent).toContain("75.250");
+  expect(
+    (host.querySelector('[aria-label="需求数量"]') as HTMLInputElement).value,
+  ).toBe("20");
+  expect(host.textContent).toContain("草稿依据：项目版本 3");
+  await click("保存需求");
+  const writes = requests.filter((r) => r.body?.action === "demand.record");
+  expect(writes).toHaveLength(2);
+  expect(writes[0].body).toEqual(writes[1].body);
+});
+const demandId = "00000000-0000-4000-8000-000000000020",
+  orderId = "00000000-0000-4000-8000-000000000021",
+  workOrderId = "00000000-0000-4000-8000-000000000022",
+  unallocatedId = "00000000-0000-4000-8000-000000000023",
+  changeId = "00000000-0000-4000-8000-000000000024";
+function businessFixtures(): Record<string, ObjectDetail> {
+  const source = {
+    system: "ERP",
+    object_type: "order",
+    external_id: "ERP-ORDER-21",
+    version: 1,
+    mode: "manual" as const,
+    occurred_at: "2026-10-28T00:00:00Z",
+    collected_at: "2026-10-28T00:01:00Z",
+    cutoff: null,
+    evidence: "客户订单确认",
+  };
+  const summary = (id: string, kind: ObjectKind, title: string) => ({
+    id,
+    kind,
+    title,
+    project_id: project.id,
+    state: "active",
+    quantity: "9007199254.123456",
+    unit: "件",
+    source,
+    version: 1,
+    blocking_reasons: [],
+    next_actions: [],
+  });
+  const readiness = {
+    ready: false,
+    checks: [
+      {
+        kind: "material",
+        required: true,
+        status: "blocked" as const,
+        reason: "no accepted scoped material reservation",
+        evidence_ids: [],
+      },
+    ],
+    input_versions: { project: 3 },
+  };
+  const order: ObjectDetail = {
+    summary: summary(orderId, "order_line", "ERP-ORDER-21"),
+    value: {
+      kind: "order_line",
+      demand_id: demandId,
+      original_quantity: "9007199254.123456",
+      current_quantity: "9007199254.123456",
+      original_due: "2026-12-01",
+      current_due: "2026-12-01",
+      unit: "件",
+      source,
+      state: "active",
+      allocated: "0.100001",
+      work_order_impact: {
+        registered_quantity: "0.100003",
+        total: 2,
+        shown: 2,
+        has_more: false,
+        items: [
+          {
+            id: workOrderId,
+            source_system: "MES",
+            external_id: "MES-WO-22",
+            quantity: "0.100001",
+            unit: "件",
+          },
+          {
+            id: unallocatedId,
+            source_system: "MES",
+            external_id: "MES-WO-23",
+            quantity: "0.000002",
+            unit: "件",
+          },
+        ],
+      },
+      produced_good: "0",
+      shipped: "0",
+      signed: "0",
+      accepted: "0",
+      remaining_to_ship: "9007199254.123456",
+      remaining_to_accept: "9007199254.123456",
+    },
+    relations: [
+      {
+        relation: "allocated_work_order",
+        project_id: project.id,
+        kind: "work_order",
+        id: workOrderId,
+      },
+    ],
+    evidence: [],
+    history: [],
+  };
+  const work = (id: string, ref: string, qty: string): ObjectDetail => ({
+    summary: {
+      ...summary(id, "work_order", ref),
+      state: "planned",
+      quantity: qty,
+    },
+    value: {
+      kind: "work_order",
+      order_line_id: orderId,
+      revision_id: "00000000-0000-4000-8000-000000000025",
+      quantity: qty,
+      unit: "件",
+      purpose: "trial",
+      trial_quantity: "0.000001",
+      source: { ...source, object_type: "work_order", external_id: ref },
+      planned_start: "2026-11-01T00:00:00Z",
+      planned_end: "2026-11-02T00:00:00Z",
+      state: "planned",
+      trial_readiness: readiness,
+      bulk_readiness: readiness,
+    },
+    relations: [],
+    evidence: [],
+    history: [],
+  });
+  const demand: ObjectDetail = {
+    summary: { ...summary(demandId, "demand", "正式需求 D1"), state: "firm" },
+    value: {
+      kind: "demand",
+      demand_kind: "firm",
+      product: "D1",
+      quantity: "9007199254.123456",
+      unit: "件",
+      due_date: "2026-12-01",
+      source: { ...source, object_type: "demand", external_id: "DEMAND-20" },
+      supersedes_demand_id: null,
+      reviews: {
+        technical: "approved",
+        material: "approved",
+        capacity: "approved",
+        commercial: "approved",
+        quality: "approved",
+      },
+    },
+    relations: [],
+    evidence: [],
+    history: [],
+  };
+  const change: ObjectDetail = {
+    summary: {
+      ...summary(changeId, "commitment_change", "客户缩量变更"),
+      state: "pending",
+      next_actions: ["order.resolve_change"],
+      blocking_reasons: ["change disposition pending"],
+    },
+    value: {
+      kind: "commitment_change",
+      order_line_id: orderId,
+      old_quantity: "9007199254.123456",
+      new_quantity: "9007199254.123455",
+      unit: "件",
+      old_due: "2026-12-01",
+      new_due: "2026-12-02",
+      cancel: false,
+      reason: "客户缩量变更",
+      source,
+      state: "pending",
+      impacts: [
+        {
+          object_type: "work_order",
+          object_id: workOrderId,
+          quantity: "0.100001",
+          unit: "件",
+          decision: null,
+          evidence: null,
+        },
+      ],
+    },
+    relations: [],
+    evidence: [],
+    history: [],
+  };
+  return {
+    [orderId]: order,
+    [workOrderId]: work(workOrderId, "MES-WO-22", "0.100001"),
+    [unallocatedId]: work(unallocatedId, "MES-WO-23", "0.000002"),
+    [demandId]: demand,
+    [changeId]: change,
+  };
+}
+function installBusinessFacts(
+  actions: ProjectDetail["allowed_actions"],
+  facts = businessFixtures(),
+) {
+  const prior = vi.mocked(fetch).getMockImplementation()!;
+  const p = {
+    ...project,
+    unit: { code: "件", scale: 6 },
+    quantity: "9007199254.123456",
+    allowed_actions: actions,
+  };
+  vi.mocked(fetch).mockImplementation(async (u, i) => {
+    const url = new URL(String(u), location.origin);
+    if (url.pathname.endsWith("/projects")) return response({ items: [p] });
+    if (url.pathname.endsWith("/projects/" + project.id)) return response(p);
+    if (url.pathname.includes("/objects/")) {
+      const [kind, id] = url.pathname.split("/objects/")[1].split("/");
+      if (id) return response(facts[id]);
+      const items = Object.values(facts)
+        .filter((d) => d.summary.kind === kind)
+        .map((d) => d.summary);
+      return response({ items, total: items.length, limit: 50, offset: 0 });
+    }
+    if (url.pathname.endsWith("/commands")) {
+      const body = JSON.parse(String(i?.body));
+      requests.push({ url: String(u), body });
+      return response({
+        operation_id: body.operation_id,
+        project_id: project.id,
+        project_version: 4,
+        object_type:
+          body.action === "order.change" ? "commitment_change" : "order_line",
+        object_id: body.action === "order.change" ? changeId : orderId,
+        exchange_id: null,
+        replayed: false,
+      });
+    }
+    return prior(u, i);
+  });
+  return facts;
+}
+it("submits the actual named formal order form with API-selected demand and exact decimal DTO", async () => {
+  installBusinessFacts(["order.register"]);
+  await mount();
+  await click("制造项目");
+  await click("相机项目");
+  await click("登记正式订单");
+  await field("订单依据需求", demandId);
+  await field("订单数量", "9007199254.123456");
+  await field("订单交期", "2026-12-01");
+  await field("来源业务编号", "ERP-NEW-ORDER");
+  await field("来源凭据", "签署订单");
+  await click("保存订单");
+  expect(
+    requests.find((r) => r.body?.action === "order.register")?.body,
+  ).toMatchObject({
+    action: "order.register",
+    expected_version: 3,
+    demand_id: demandId,
+    quantity: "9007199254.123456",
+    unit: "件",
+    due_date: "2026-12-01",
+    source: {
+      object_type: "order",
+      external_id: "ERP-NEW-ORDER",
+      mode: "manual",
+      evidence: "签署订单",
+    },
+  });
+  expect(host.textContent).toContain("原始承诺数量");
+});
+it("previews exact current to proposed commitments and allocated/registered work orders before submitting", async () => {
+  installBusinessFacts(["order.change"]);
+  await mount();
+  await click("制造项目");
+  await click("相机项目");
+  await click("变更订单承诺");
+  await field("变更订单", orderId);
+  await field("变更后数量", "9007199254.123455");
+  await field("变更后交期", "2026-12-02");
+  await flush();
+  expect(host.textContent).toContain(
+    "9007199254.123456 → 9007199254.123455 件",
+  );
+  const preview = host.querySelector('[aria-label="承诺变更影响预览"]');
+  expect(preview?.textContent).toContain("已分配合计：0.100001 件");
+  expect(preview?.textContent).toContain("MES-WO-22");
+  expect(preview?.textContent).toContain("0.100001");
+  expect(preview?.textContent).toContain("MES-WO-23");
+  expect(preview?.textContent).toContain("0.000002");
+  await field("取消订单", "true");
+  expect(preview?.textContent).toContain("9007199254.123456 → 0 件");
+  await field("取消订单", "false");
+  await field("变更原因", "客户缩量");
+  await field("来源业务编号", "ERP-CHANGE");
+  await field("来源凭据", "客户变更邮件");
+  await click("保存承诺变更");
+  expect(
+    requests.find((r) => r.body?.action === "order.change")?.body,
+  ).toMatchObject({
+    order_line_id: orderId,
+    new_quantity: "9007199254.123455",
+    new_due_date: "2026-12-02",
+    cancel: false,
+    reason: "客户缩量",
+  });
+});
+it.each([
+  { hint: true, allowed: true, show: true },
+  { hint: false, allowed: true, show: false },
+  { hint: true, allowed: false, show: false },
+])(
+  "uses server contextual action metadata and live permission %j",
+  async ({ hint, allowed, show }) => {
+    const facts = businessFixtures();
+    facts[changeId].summary.next_actions = hint ? ["order.resolve_change"] : [];
+    const state = hint && allowed ? "applied" : "pending";
+    facts[changeId].summary.state = state;
+    if (facts[changeId].value.kind === "commitment_change")
+      facts[changeId].value.state = state;
+    installBusinessFacts(allowed ? ["order.resolve_change"] : [], facts);
+    await mount();
+    await click("制造项目");
+    await click("相机项目");
+    await click("客户缩量变更");
+    expect(
+      [...host.querySelectorAll("button")].some(
+        (b) => b.textContent === "处理承诺影响",
+      ),
+    ).toBe(show);
+    if (show) {
+      await click("处理承诺影响");
+      await flush();
+      expect(host.querySelector("form")?.textContent).toContain("MES-WO-22");
+      await field("影响处理凭据 1", "保留工单核对单");
+      await click("保存影响处理");
+      expect(
+        requests.find((r) => r.body?.action === "order.resolve_change")?.body,
+      ).toMatchObject({
+        change_id: changeId,
+        dispositions: [
+          {
+            object_type: "work_order",
+            object_id: workOrderId,
+            decision: "retain",
+            evidence: "保留工单核对单",
+          },
+        ],
+      });
+    }
+  },
+);
+it("submits order allocation using actual labeled order and work order selectors", async () => {
+  installBusinessFacts(["order.allocate"]);
+  await mount();
+  await click("制造项目");
+  await click("相机项目");
+  await click("分配订单工单");
+  await field("分配订单", orderId);
+  await field("分配工单", workOrderId);
+  await field("分配数量", "0.100001");
+  await click("保存分配");
+  expect(
+    requests.find((r) => r.body?.action === "order.allocate")?.body,
+  ).toMatchObject({
+    order_line_id: orderId,
+    work_order_id: workOrderId,
+    quantity: "0.100001",
+    unit: "件",
+    expected_version: 3,
+  });
+});
+it("compares a conflicted member grant without rebasing selected roles or operation", async () => {
+  const prior = vi.mocked(fetch).getMockImplementation()!;
+  const member = "00000000-0000-4000-8000-000000000010";
+  let conflict = false;
+  const writes: any[] = [];
+  vi.mocked(fetch).mockImplementation(async (u, i) => {
+    const url = String(u);
+    if (url.endsWith("/members"))
+      return response({
+        items: conflict
+          ? [
+              {
+                scope: { kind: "project", project_id: project.id },
+                user_id: member,
+                roles: ["planner"],
+                qualifications: [],
+                active: true,
+              },
+            ]
+          : [],
+      });
+    if (url.includes("/members/")) {
+      const v = JSON.parse(String(i?.body));
+      writes.push(v);
+      conflict = true;
+      return response(
+        {
+          code: "VERSION_CONFLICT",
+          fields: { current_version: 9 },
+          blocking_reasons: [],
+        },
+        409,
+      );
+    }
+    if (url.endsWith("/projects/" + project.id) && conflict)
+      return response({ ...project, version: 9 });
+    return prior(u, i);
+  });
+  await mount({
+    bootstrap: { ...bootstrap, configuration_admin: true },
+    findSubjects: async () => [{ id: member, displayName: "成员甲" }],
+  });
+  await click("制造项目");
+  await click("相机项目");
+  await click("成员授权");
+  await field("授权成员", member);
+  await act(async () =>
+    (host.querySelector('[aria-label="工程"]') as HTMLInputElement).click(),
+  );
+  await field("授权凭据", "授权依据");
+  await click("保存成员授权");
+  await click("保留草稿并对照当前资料");
+  expect(host.textContent).toContain("职责：计划");
+  expect(
+    (host.querySelector('[aria-label="工程"]') as HTMLInputElement).checked,
+  ).toBe(true);
+  await click("保存成员授权");
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual(writes[0]);
+  expect(writes[1].expected_version).toBe(3);
+});
+it("compares newer order facts beside an unchanged proposed commitment and retries the original payload", async () => {
+  const facts = installBusinessFacts(["order.change"]);
+  const prior = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (u, i) => {
+    const url = String(u);
+    if (url.endsWith("/commands")) {
+      requests.push({ url, body: JSON.parse(String(i?.body)) });
+      if (facts[orderId].value.kind === "order_line")
+        facts[orderId].value.current_quantity = "9007199254.123454";
+      return response(
+        {
+          code: "VERSION_CONFLICT",
+          fields: { current_version: 9 },
+          blocking_reasons: [],
+        },
+        409,
+      );
+    }
+    if (url.endsWith("/projects/" + project.id))
+      return response({ ...project, version: 9 });
+    return prior(u, i);
+  });
+  await mount();
+  await click("制造项目");
+  await click("相机项目");
+  await click("变更订单承诺");
+  await field("变更订单", orderId);
+  await field("变更后数量", "9007199254.123455");
+  await field("变更后交期", "2026-12-02");
+  await field("变更原因", "调整承诺");
+  await field("来源业务编号", "CHANGE-CAS");
+  await field("来源凭据", "客户变更记录");
+  await flush();
+  await click("保存承诺变更");
+  await click("保留草稿并对照当前资料");
+  expect(
+    host.querySelector('[aria-label="当前服务端资料对照"]')?.textContent,
+  ).toContain("9007199254.123454 件");
+  expect(
+    (host.querySelector('[aria-label="变更后数量"]') as HTMLInputElement).value,
+  ).toBe("9007199254.123455");
+  await click("保存承诺变更");
+  const writes = requests.filter((r) => r.body?.action === "order.change");
+  expect(writes).toHaveLength(2);
+  expect(writes[1].body).toEqual(writes[0].body);
+  expect(writes[1].body.expected_version).toBe(3);
+});
+it("reads exact scoped impact totals once and labels bounded references without scanning project work orders", async () => {
+  const facts = businessFixtures();
+  if (facts[orderId].value.kind === "order_line")
+    facts[orderId].value.work_order_impact = {
+      registered_quantity: "5.300053",
+      total: 53,
+      shown: 50,
+      has_more: true,
+      items: Array.from({ length: 50 }, (_, n) => ({
+        id: `00000000-0000-4000-8000-${String(100 + n).padStart(12, "0")}`,
+        source_system: "MES",
+        external_id: `TARGET-${n}`,
+        quantity: "0.100001",
+        unit: "件",
+      })),
+    };
+  installBusinessFacts(["order.change"], facts);
+  await mount();
+  await click("制造项目");
+  await click("相机项目");
+  const prior = vi.mocked(fetch).getMockImplementation()!;
+  const previewReads: string[] = [];
+  let finish!: (r: Response) => void;
+  vi.mocked(fetch).mockImplementation(async (u, i) => {
+    const url = String(u);
+    previewReads.push(url);
+    if (url.endsWith("/objects/order_line/" + orderId))
+      return new Promise<Response>((r) => (finish = r));
+    if (url.includes("/objects/work_order"))
+      throw new Error("Preview must not scan work order pages or details");
+    return prior(u, i);
+  });
+  await click("变更订单承诺");
+  await field("变更订单", orderId);
+  await flush();
+  const save = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "保存承诺变更",
+  )!;
+  expect(save.disabled).toBe(true);
+  await act(async () => finish(response(facts[orderId])));
+  await flush();
+  const preview = host.querySelector('[aria-label="承诺变更影响预览"]');
+  expect(preview?.textContent).toContain("已登记工单总量：5.300053 件");
+  expect(preview?.textContent).toContain("显示 50 / 53 个工单");
+  expect(preview?.textContent).toContain(
+    "仅展示部分业务编号；上述总量包含全部工单",
+  );
+  expect(preview?.querySelectorAll("tbody tr")).toHaveLength(50);
+  expect(save.disabled).toBe(false);
+  expect(previewReads).toEqual([
+    expect.stringContaining("/objects/order_line/" + orderId),
+  ]);
+});

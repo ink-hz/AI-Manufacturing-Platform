@@ -85,3 +85,18 @@
 .wf-root section {
   min-width: 0;
 }
+
+.wf-form .wf-comparison {
+  grid-column: 1/-1;
+  background: #f8fafc;
+  border: 1px solid #dce3eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+}
+.wf-comparison table {
+  background: #fff;
+}
+.wf-comparison p {
+  line-height: 1.6;
+}

@@ -1,3 +1,5 @@
+import { ConflictComparison } from "./ConflictComparison";
+import { WorkflowError } from "./api";
 import { useEffect, useRef, useState } from "react";
 import type { MountOptions } from "../types";
 import type { WorkflowApi } from "./api";
@@ -258,6 +260,7 @@ export function Members(
       evidence: "",
     })),
     [error, setError] = useState(""),
+    [conflict, setConflict] = useState<WorkflowError | null>(null),
     [busy, setBusy] = useState(false);
   const alive = useRef(true);
   useEffect(() => {
@@ -276,6 +279,7 @@ export function Members(
     };
   }, [p.project.id]);
   function set(value: GrantChange) {
+    setConflict(null);
     setV({ ...value, operation_id: crypto.randomUUID() });
     p.onDirty("members", true);
   }
@@ -316,7 +320,12 @@ export function Members(
                 p.onChanged(result);
               }
             } catch (e) {
-              if (alive.current) setError(String(e));
+              if (alive.current) {
+                setError(String(e));
+                setConflict(
+                  e instanceof WorkflowError && e.status === 409 ? e : null,
+                );
+              }
             } finally {
               if (alive.current) setBusy(false);
             }
@@ -374,6 +383,15 @@ export function Members(
               onChange={(x) => set({ ...v, evidence: x })}
             />
           </fieldset>
+          {conflict && (
+            <ConflictComparison
+              api={p.api}
+              projectId={p.project.id}
+              version={v.expected_version}
+              error={conflict}
+              memberId={user}
+            />
+          )}
           <button disabled={busy || p.readOnly}>保存成员授权</button>
         </form>
       )}

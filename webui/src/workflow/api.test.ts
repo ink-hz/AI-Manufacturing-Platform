@@ -69,3 +69,32 @@ it("sends exact command data and CSRF without actor fields", async () => {
   );
   api.dispose();
 });
+it("retains structured conflict fields and blocking reasons", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            code: "VERSION_CONFLICT",
+            message: "Project version changed",
+            fields: { current_version: 9, source_version: 2 },
+            blocking_reasons: ["change disposition pending"],
+          }),
+          { status: 409 },
+        ),
+    ),
+  );
+  const api = createWorkflowApi({
+    apiBase: "/api/v1/manufacturing",
+    csrfToken: "csrf",
+    readOnly: false,
+  });
+  await expect(api.project("p")).rejects.toMatchObject({
+    status: 409,
+    code: "VERSION_CONFLICT",
+    fields: { current_version: 9, source_version: 2 },
+    reasons: ["change disposition pending"],
+  });
+  api.dispose();
+});

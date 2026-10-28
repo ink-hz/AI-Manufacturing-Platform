@@ -87,8 +87,25 @@ class DemandValue(DomainValue):
     reviews: dict[str, str]
 
 
+class WorkOrderImpactReference(StrictModel):
+    id: UUID
+    source_system: str
+    external_id: str
+    quantity: Quantity
+    unit: str
+
+
+class WorkOrderImpactPreview(StrictModel):
+    registered_quantity: NonnegativeQuantity
+    total: int = Field(strict=True, ge=0)
+    shown: int = Field(strict=True, ge=0, le=50)
+    has_more: bool
+    items: list[WorkOrderImpactReference] = Field(max_length=50)
+
+
 class OrderLineValue(DomainValue):
     kind: Literal["order_line"] = "order_line"
+    work_order_impact: WorkOrderImpactPreview
     demand_id: UUID
     original_quantity: Quantity
     current_quantity: NonnegativeQuantity

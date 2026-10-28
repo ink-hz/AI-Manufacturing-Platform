@@ -1,3 +1,5 @@
+import { useCallback, useState } from "react";
+import { OrderChangePreview, ImpactReference } from "./OrderChangePreview";
 import type {
   WorkspaceProps,
   ObjectSummary,
@@ -21,6 +23,11 @@ type Props = WorkspaceProps & {
   changeId?: string;
 };
 export function OrdersForms(p: Props) {
+  const [previewOrder, setPreviewOrder] = useState<string | null>(null);
+  const previewReady = useCallback(
+    (id: string | null) => setPreviewOrder(id),
+    [],
+  );
   const common = { ...p };
   switch (p.action) {
     case "demand.record":
@@ -202,6 +209,7 @@ export function OrdersForms(p: Props) {
           key={p.action}
           {...common}
           title="变更订单承诺"
+          canSubmit={(value) => value.order_line_id === previewOrder}
           save="保存承诺变更"
           initial={() => ({
             action: "order.change" as const,
@@ -237,6 +245,15 @@ export function OrdersForms(p: Props) {
                 value={String(v.cancel)}
                 choices={{ false: "否", true: "是" }}
                 onChange={(x) => set({ ...v, cancel: x === "true" })}
+              />
+              <OrderChangePreview
+                api={p.api}
+                projectId={p.project.id}
+                orderId={v.order_line_id}
+                quantity={v.new_quantity}
+                dueDate={v.new_due_date}
+                cancel={v.cancel}
+                onReady={previewReady}
               />
               <Field
                 name="变更原因"
@@ -321,8 +338,16 @@ export function OrdersForms(p: Props) {
               {v.dispositions.map((d, i) => (
                 <fieldset key={d.object_id}>
                   <legend>
-                    受影响工单 {i + 1} · {p.change!.impacts[i].quantity}{" "}
-                    {p.change!.unit}
+                    {d.object_type === "work_order" ? (
+                      <ImpactReference
+                        api={p.api}
+                        projectId={p.project.id}
+                        id={d.object_id}
+                      />
+                    ) : (
+                      `受影响对象 ${i + 1}`
+                    )}{" "}
+                    · {p.change!.impacts[i].quantity} {p.change!.unit}
                   </legend>
                   <p>处置：保留</p>
                   <Field

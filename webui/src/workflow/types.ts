@@ -237,6 +237,19 @@ export interface Readiness {
   }[];
   input_versions: Record<string, string | number>;
 }
+export interface WorkOrderImpactPreview {
+  registered_quantity: string;
+  total: number;
+  shown: number;
+  has_more: boolean;
+  items: {
+    id: string;
+    source_system: string;
+    external_id: string;
+    quantity: string;
+    unit: string;
+  }[];
+}
 export type DomainValue =
   | {
       kind: "demand";
@@ -251,6 +264,7 @@ export type DomainValue =
     }
   | ({
       kind: "order_line";
+      work_order_impact: WorkOrderImpactPreview;
       demand_id: string;
       original_quantity: string;
       current_quantity: string;

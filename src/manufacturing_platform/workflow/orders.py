@@ -25,6 +25,7 @@ from .order_models import (
     RegisterOrder,
     ResolveOrderChange,
     ReviewDemand,
+    WorkOrderImpactPreview,
 )
 from .queries import OBJECT_REGISTRY
 
@@ -588,6 +589,37 @@ def demand_detail(tx, project_id, object_id):
     )
 
 
+def work_order_impact(tx, project_id, order_id, project_row):
+    # Aggregate before limiting references; never infer totals from a choice page.
+    totals = tx.execute(
+        "SELECT COUNT(*) AS total, COALESCE(SUM(q_atoms),0) AS quantity FROM work_orders "
+        "WHERE project_id=? AND order_line_id=?",
+        (str(project_id), str(order_id)),
+    ).fetchone()
+    rows = tx.execute(
+        "SELECT id,source_system,source_external_id,q_atoms,unit FROM work_orders "
+        "WHERE project_id=? AND order_line_id=? "
+        "ORDER BY source_system,source_external_id,id LIMIT 50",
+        (str(project_id), str(order_id)),
+    ).fetchall()
+    return WorkOrderImpactPreview(
+        registered_quantity=amount(totals["quantity"], project_row),
+        total=totals["total"],
+        shown=len(rows),
+        has_more=totals["total"] > len(rows),
+        items=[
+            {
+                "id": row["id"],
+                "source_system": row["source_system"],
+                "external_id": row["source_external_id"],
+                "quantity": amount(row["q_atoms"], project_row),
+                "unit": row["unit"],
+            }
+            for row in rows
+        ],
+    )
+
+
 def order_detail(tx, project_id, object_id):
     row = tx.execute(
         "SELECT * FROM order_lines WHERE id=? AND project_id=?",
@@ -624,6 +656,7 @@ def order_detail(tx, project_id, object_id):
     return ObjectDetail[OrderLineValue](
         summary=_summary(row, ObjectKind.order_line, p),
         value=OrderLineValue(
+            work_order_impact=work_order_impact(tx, project_id, object_id, p),
             demand_id=row["demand_id"],
             original_quantity=amount(row["original_q_atoms"], p),
             current_quantity=amount(quantity, p),
