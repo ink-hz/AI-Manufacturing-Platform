@@ -83,7 +83,7 @@ client.cookies.set(auth.cookie_name,'synthetic-candidate-session');client.cookie
 assert check(client.get(prefix+'/access'),200).json()['allowed']
 if expected.get('workflow'):
     import runpy
-    private_checks=runpy.run_path('/candidate-controller.py')
+    private_checks=runpy.run_path('/candidate-fixture/controller.py')
     private_checks['verify_workflow_bootstrap'](client,check)
 catalog=check(client.get(prefix+'/catalog'),200).json()
 assert {row['id'] for row in catalog['lines']}=={'cameras','3d-printers','oem'}

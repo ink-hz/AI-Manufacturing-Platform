@@ -77,7 +77,7 @@ def evidence_storage(stage, *, fresh=True):
     require(MIN_FREE_BYTES<=v.f_blocks*v.f_frsize<=MAX_BYTES and v.f_files>=MIN_INODES,'private_evidence_capacity')
     require(not fresh or (v.f_bavail*v.f_frsize>=MIN_FREE_BYTES and v.f_favail>=MIN_FREE_INODES),'private_evidence_headroom')
     require(not fresh or not any(root.iterdir()),'private_evidence_must_be_empty')
-    return {'capacity_bytes':v.f_blocks*v.f_frsize,'free_bytes':v.f_bavail*v.f_frsize,'total_inodes':v.f_files,'free_inodes':v.f_favail,'device':info.st_dev}
+    return {'capacity_bytes':v.f_blocks*v.f_frsize,'free_bytes':v.f_bavail*v.f_frsize,'total_inodes':v.f_files,'free_inodes':v.f_favail,'device':info.st_dev,'root_inode':info.st_ino}
 
 
 def archive_headroom(stage):
@@ -146,6 +146,9 @@ def export_fixture(repo, sha, platform_sha, business, preflight, runtime, runtim
         root=output/name;root.mkdir();export_paths(repo,commit,root,['src'])
         (output/(name+'-manifest.json')).write_text(json.dumps({'version':1,'commit':commit,'files':file_hashes(root)},sort_keys=True))
     shutil.copyfile(runtime_manifest,output/'runtime-manifest.json')
+    controller=output/'controller.py'
+    controller.write_bytes(git(repo,'show',sha+':deploy/candidate_fixture.py'))
+    controller.chmod(0o444)
     spec={'version':1,'manufacturing_commit':sha,'platform_commit':platform_sha,'baseline_image':preflight['old']['Image'],
           'source_manifest_sha256':digest(output/'source-manifest.json'),'runtime_manifest_sha256':runtime_pin,
           **{name+'_manifest_sha256':digest(output/(name+'-manifest.json')) for name in HISTORY},'files':file_hashes(output)}
@@ -160,6 +163,13 @@ def validate_input_metadata(tree):
         require(info.st_uid==0 and not info.st_mode&0o022 and info.st_mode&required==required,'private_input_trusted_readable_metadata')
 
 
+def validate_controller(stage,files):
+    stage=Path(stage);controller=safe(stage/'candidate-fixture/controller.py')
+    require(controller.is_file() and files.get('controller.py')==digest(controller)==digest(safe(stage/'candidate_fixture.py')),'private_controller_hash')
+    validate_input_metadata(controller)
+    return controller
+
+
 def validate_fixture(stage,e,pre):
     stage=Path(stage);root=safe(stage/'candidate-fixture')
     spec=pinned_json(root/'fixture.json',e['candidate_fixture_sha256'])
@@ -167,6 +177,7 @@ def validate_fixture(stage,e,pre):
     require(spec['manufacturing_commit']==e['manufacturing_commit'] and spec['platform_commit']==e['platform_commit'] and spec['baseline_image']==pre['old']['Image'],'private_fixture_release_binding')
     observed=file_hashes(root);observed.pop('fixture.json')
     require(observed==spec['files'],'private_fixture_inventory')
+    validate_controller(stage,spec['files'])
     envelope=pinned_json(root/'source-manifest.json',spec['source_manifest_sha256'])
     require(envelope['platform_runtime']['files']=={'backend/app/'+k:v for k,v in pre['expected_source'].items()} and PF_OVERLAY<=set(pre['expected_source']),'private_fixture_runtime_binding')
     require(envelope['source']['manufacturing_commit']==e['manufacturing_commit'] and envelope['source']['platform_commit']==e['platform_commit'],'private_fixture_source_binding')
@@ -244,7 +255,11 @@ def cleanup_evidence(stage, receipt_sha256):
     """Explicit operator action only; retain mount and ownership, remove verified contents."""
     stage=Path(stage);receipt=pinned_json(stage/'candidate-evidence-receipt.json',receipt_sha256)
     require(receipt['archive']=='candidate-evidence.tar.gz' and digest(safe(stage/receipt['archive']))==receipt['sha256'],'private_archive_changed')
-    evidence_storage(stage,fresh=False);root=stage/'candidate-evidence';verify_files(root,receipt['files'])
+    current=evidence_storage(stage,fresh=False);root=stage/'candidate-evidence'
+    require(all(current[key]==receipt['usage'].get(key) for key in ['device','root_inode']),'private_evidence_root_changed')
+    # An early candidate failure can legitimately leave no files. This exception
+    # applies only to pinned evidence cleanup, never source/runtime validation.
+    require(isinstance(receipt['files'],dict) and file_hashes(root)==receipt['files'],'private_evidence_inventory_changed')
     for path in sorted(root.rglob('*'),key=lambda p:len(p.parts),reverse=True):
         if path.is_dir():path.chmod(0o700);path.rmdir()
         else:path.unlink()

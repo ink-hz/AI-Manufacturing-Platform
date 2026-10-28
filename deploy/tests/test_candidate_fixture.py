@@ -36,7 +36,7 @@ def test_exact_file_inventory_refuses_injected_and_symlink_files(tmp_path):
 def test_evidence_requires_owned_separate_bounded_mount_and_inode_headroom(tmp_path,monkeypatch):
     m=module();root=tmp_path/'candidate-evidence';root.mkdir(mode=0o700)
     monkeypatch.setattr(m,'mountpoint',lambda p:True)
-    monkeypatch.setattr(m,'path_stat',lambda p: SimpleNamespace(st_uid=10001,st_gid=10001,st_mode=0o40700,st_dev=2) if p==root else SimpleNamespace(st_dev=1))
+    monkeypatch.setattr(m,'path_stat',lambda p: SimpleNamespace(st_uid=10001,st_gid=10001,st_mode=0o40700,st_dev=2,st_ino=3) if p==root else SimpleNamespace(st_dev=1))
     stat=SimpleNamespace(f_frsize=4096,f_blocks=125000,f_bavail=120000,f_files=65536,f_favail=60000)
     monkeypatch.setattr(m.os,'statvfs',lambda p:stat)
     assert m.evidence_storage(tmp_path)['free_inodes']==60000
@@ -76,7 +76,7 @@ def test_registry_result_must_be_exact_all36_no_skipped_or_forged_pass(tmp_path)
 
 def test_archive_preserves_failure_and_cleanup_requires_unchanged_receipt(tmp_path,monkeypatch):
     m=module();root=tmp_path/'candidate-evidence';root.mkdir();(root/'first-failure.json').write_text('{"failed":true}')
-    monkeypatch.setattr(m,'evidence_storage',lambda *a,**kw:{'free_bytes':123,'free_inodes':456})
+    monkeypatch.setattr(m,'evidence_storage',lambda *a,**kw:{'free_bytes':123,'free_inodes':456,'device':2,'root_inode':3})
     receipt=m.archive_evidence(tmp_path)
     assert (root/'first-failure.json').exists() and receipt['files']['first-failure.json']==m.digest(root/'first-failure.json')
     pin=m.digest(tmp_path/'candidate-evidence-receipt.json')
@@ -115,26 +115,45 @@ def test_workflow_candidate_requires_fixture_and_archives_failures(tmp_path,monk
     assert '/tmp:rw,noexec,nosuid,size=32m' in args
     assert 'PLATFORM_MANUFACTURING_DATASET_MODE=demo' not in args
     assert '--network' in args and args[args.index('--network')+1]=='none'
+    assert not any(f'source={tmp_path}/candidate_fixture.py,' in arg for arg in args)
 
 
 def test_export_is_exact_committed_private_source_separate_from_production(tmp_path,monkeypatch):
     import build_artifact
+    import install_payload
+    import tarfile
     from test_build_artifact import repo
     import subprocess
     m=module();repository,_,assets=repo(tmp_path)
     for name,value in {'webui/package-lock.json':'{}','webui/vite.config.ts':'export default {}','tests/workflow/private.py':'SYNTHETIC = True','scripts/run_workflow_acceptance.py':'pass','docs/testing/manufacturing-full-workflow-acceptance.md':'# Private'}.items():
         p=repository/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(value)
+    for name in build_artifact.TOOLS:
+        path=repository/'deploy'/name;path.parent.mkdir(exist_ok=True)
+        path.write_bytes(Path(m.__file__).read_bytes() if name=='candidate_fixture.py' else b'# fixture tool\n')
     for args in [['add','.'],['commit','-qm','private fixture']]:subprocess.run(['git','-C',str(repository),*args],check=True)
     sha=subprocess.check_output(['git','-C',str(repository),'rev-parse','HEAD'],text=True).strip()
     monkeypatch.setattr(m,'HISTORY',{'a1':sha,'legacy':sha})
-    business=tmp_path/'business';build_artifact.write_business_release(repository,sha,assets,business)
+    for branch in ['main','master']:
+        if subprocess.run(['git','-C',str(repository),'show-ref','--verify','--quiet','refs/heads/'+branch]).returncode:
+            subprocess.run(['git','-C',str(repository),'branch',branch,sha],check=True)
+    monkeypatch.setattr(build_artifact,'build_frontend',lambda *_:assets)
+    baseline={'old_image_tag':'orbbec:baseline','old_image_id':'sha256:'+'a'*64,'chain_length':38,'old_platform_commit':sha,'old_manufacturing_commit':sha,'previous_manifest':'/private/future-maintenance.json','lock_tool':'/private/lock.py','lock_tool_sha256':'b'*64,'approved_backend_files':[]}
+    artifact=tmp_path/'artifact';build_artifact.assemble(repository,repository,artifact,baseline,sha,sha,sha)
+    with tarfile.open(artifact/'payload.tar.gz') as archive:
+        assert archive.getmember('candidate_fixture.py').mode==0o600
+    stage=tmp_path/'stage';stage.mkdir(mode=0o700)
+    mask=os.umask(0o077)
+    try:install_payload.extract_payload(artifact/'payload.tar.gz',stage)
+    finally:os.umask(mask)
+    assert (stage/'candidate_fixture.py').stat().st_mode&0o777==0o600
+    business=stage/'business'
     runtime=tmp_path/'runtime';(runtime/'bin').mkdir(parents=True);(runtime/'node_modules/vitest').mkdir(parents=True)
     (runtime/'bin/node').write_bytes(b'fixture');(runtime/'node_modules/vitest/vitest.mjs').write_text('fixture')
     manifest=tmp_path/'runtime.json';manifest.write_text(json.dumps({'version':1,'platform':'linux-x64-glibc','node_version':'v26.5.0','lock_sha256':m.digest(repository/'webui/package-lock.json'),'files':m.file_hashes(runtime)}))
     pre={'expected_source':{k:'a'*64 for k in m.PF_OVERLAY},'old':{'Image':'sha256:'+'b'*64}}
     # An uncommitted test edit cannot enter either exported source or its hashes.
     (repository/'tests/workflow/private.py').write_text('UNREVIEWED')
-    output=tmp_path/'private';pin=m.export_fixture(repository,sha,'c'*40,business,pre,runtime,manifest,m.digest(manifest),output)
+    output=stage/'candidate-fixture';pin=m.export_fixture(repository,sha,'c'*40,business,pre,runtime,manifest,m.digest(manifest),output)
     assert (output/'source/tests/workflow/private.py').read_text()=='SYNTHETIC = True'
     assert not (business/'tests').exists() and not (business/'webui/node_modules').exists()
     spec=m.pinned_json(output/'fixture.json',pin['fixture_sha256'])
@@ -142,6 +161,19 @@ def test_export_is_exact_committed_private_source_separate_from_production(tmp_p
     assert set(envelope['platform_runtime']['files'])=={'backend/app/'+k for k in m.PF_OVERLAY}
     assert envelope['manufacturing_runtime']['files']['webui/dist/manufacturing.js']==m.digest(business/'webui/dist/manufacturing.js')
     assert not any('.git' in p.parts for p in output.rglob('*'))
+    controller=output/'controller.py'
+    assert controller.is_file() and controller.stat().st_mode&0o777==0o444
+    assert spec['files']['controller.py']==m.digest(stage/'candidate_fixture.py')==m.digest(controller)
+    # Production ownership is root; tests use real extraction/modes but simulate only UID metadata.
+    monkeypatch.setattr(m,'path_stat',lambda p:SimpleNamespace(st_uid=0,st_mode=p.lstat().st_mode))
+    assert m.validate_controller(stage,spec['files'])==controller
+    controller.chmod(0o600)
+    with pytest.raises(ValueError):m.validate_controller(stage,spec['files'])
+    controller.chmod(0o444)
+    (stage/'candidate_fixture.py').write_text('different tool')
+    with pytest.raises(ValueError):m.validate_controller(stage,spec['files'])
+    assert stage.stat().st_mode&0o777==0o700
+    assert (stage/'candidate_fixture.py').stat().st_mode&0o777==0o600
 
 
 def test_private_input_modes_must_allow_candidate_read_but_not_untrusted_writes(tmp_path,monkeypatch):
@@ -180,3 +212,28 @@ def test_archive_headroom_is_checked_before_candidate_writes(tmp_path,monkeypatc
     m.archive_headroom(tmp_path)
     stats.f_favail=1
     with pytest.raises(ValueError):m.archive_headroom(tmp_path)
+
+
+
+def test_empty_prewrite_failure_archive_can_be_cleaned_only_with_exact_inventory(tmp_path,monkeypatch):
+    m=module();root=tmp_path/'candidate-evidence';root.mkdir()
+    monkeypatch.setattr(m,'evidence_storage',lambda *a,**kw:{'free_bytes':123,'free_inodes':456,'device':2,'root_inode':3})
+    receipt=m.archive_evidence(tmp_path);assert receipt['files']=={}
+    pin=m.digest(tmp_path/'candidate-evidence-receipt.json')
+    m.cleanup_evidence(tmp_path,pin)
+    assert root.is_dir() and not list(root.iterdir())
+    with pytest.raises(ValueError):m.verify_files(root,{})
+    # Even an empty different mount cannot borrow a prior archive's cleanup pin.
+    monkeypatch.setattr(m,'evidence_storage',lambda *a,**kw:{'device':99,'root_inode':3})
+    with pytest.raises(ValueError,match='private_evidence_root_changed'):m.cleanup_evidence(tmp_path,pin)
+    monkeypatch.setattr(m,'evidence_storage',lambda *a,**kw:{'device':2,'root_inode':4})
+    with pytest.raises(ValueError,match='private_evidence_root_changed'):m.cleanup_evidence(tmp_path,pin)
+    monkeypatch.setattr(m,'evidence_storage',lambda *a,**kw:{'device':2,'root_inode':3})
+    (root/'foreign').write_text('keep')
+    with pytest.raises(ValueError):m.cleanup_evidence(tmp_path,pin)
+    assert (root/'foreign').read_text()=='keep'
+    (root/'foreign').unlink()
+    def wrong_root(*args,**kwargs):raise ValueError('private_evidence_dedicated_mount')
+    monkeypatch.setattr(m,'evidence_storage',wrong_root)
+    with pytest.raises(ValueError,match='private_evidence_dedicated_mount'):m.cleanup_evidence(tmp_path,pin)
+    assert root.exists()

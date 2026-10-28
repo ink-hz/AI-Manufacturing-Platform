@@ -406,7 +406,7 @@ def candidate(e):
             candidate_name='manufacturing-private-'+uuid.uuid4().hex
             args.remove('--rm');args+=['--name',candidate_name]
             extra,private_env=candidate_fixture.candidate_arguments(ops.STAGE,e,spec)
-            args+=extra+['--mount',f'type=bind,source={ops.STAGE}/candidate_fixture.py,target=/candidate-controller.py,readonly']
+            args+=extra
             private_env.update({'PLATFORM_MANUFACTURING_WORKFLOW_DATABASE_PATH':'/tmp/workflow-candidate.sqlite3',
                                 'PLATFORM_MANUFACTURING_AUTHORITY_DATABASE_PATH':'/tmp/authority-candidate.sqlite3',
                                 'PLATFORM_MANUFACTURING_DATASET_ID':'isolated-candidate-smoke',
