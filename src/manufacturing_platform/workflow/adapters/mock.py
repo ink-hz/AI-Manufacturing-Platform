@@ -130,6 +130,7 @@ class MockAuthorityAdapter:
 
     def _ship(self, tx, request, h, sequence, fault_name):
         from ..delivery import receipt_details
+        from ..freeze import authority_material_reason
 
         payload = request.typed_payload
         ids = [str(uid) for uid, _, _ in payload.units]
@@ -138,15 +139,10 @@ class MockAuthorityAdapter:
             for box in payload.boxes
             for uid in box.unit_ids
         }
+        material_reason = authority_material_reason(tx, request)
         rejected = (
             fault_name == "reject"
-            or any(
-                tx.execute(
-                    "SELECT 1 FROM authority_freeze_versions WHERE project_id=? AND object_kind='material_lot' AND object_id=? AND state='frozen'",
-                    (str(request.project_id), str(lid)),
-                ).fetchone()
-                for lid in (payload.material_lot_ids or [])
-            )
+            or material_reason is not None
             or len(set(ids)) != len(ids)
             or payload.quantity != len(ids)
         )
@@ -226,6 +222,7 @@ class MockAuthorityAdapter:
             rejected_quantity=str(payload.quantity) if rejected else "0",
             details=receipt_details(payload),
             occurred_at=datetime.now(UTC),
+            error=material_reason if rejected else None,
         )
 
     def _reserve(self, tx, request, h, sequence, fault_name, fault_value):
@@ -379,12 +376,13 @@ class MockAuthorityAdapter:
 
     def _submit_execution(self, tx, request, h, sequence, fault_name):
         payload = request.typed_payload
-        from ..freeze import authority_execution_held
+        from ..freeze import authority_execution_held, authority_material_reason
 
-        if isinstance(
-            payload, (StartPayload, ResumePayload)
-        ) and authority_execution_held(tx, request):
-            fault_name = "reject"
+        material_reason = None
+        if isinstance(payload, (StartPayload, ResumePayload)):
+            material_reason = authority_material_reason(tx, request)
+            if material_reason or authority_execution_held(tx, request):
+                fault_name = "reject"
         accepted = False
         reason = "Authority production scope rejected"
         details = []
@@ -591,7 +589,7 @@ class MockAuthorityAdapter:
             rejected_quantity="0" if accepted else quantity,
             details=details,
             occurred_at=datetime.now(UTC),
-            error=None if accepted else reason,
+            error=None if accepted else material_reason or reason,
         )
         if fault_name == "stale_sequence":
             receipt.sequence = 0

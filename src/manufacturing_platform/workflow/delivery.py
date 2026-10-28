@@ -358,7 +358,7 @@ def apply_shipment(service, tx, context, row, request, receipt):
         receipt.phase,
         "Authority accepted physical shipment"
         if accepted
-        else "Authority rejected request"
+        else receipt.error or "Authority rejected request"
         if rejected
         else "Awaiting authoritative acceptance",
     )

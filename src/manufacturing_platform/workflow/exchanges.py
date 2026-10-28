@@ -130,9 +130,11 @@ PUBLIC_REASONS = frozenset(
 
 
 def public_reason(reason):
+    from .freeze import AUTHORITY_CONTAINMENT_REASONS
+
     return (
         reason
-        if reason in PUBLIC_REASONS
+        if reason in PUBLIC_REASONS or reason in AUTHORITY_CONTAINMENT_REASONS
         else "Exchange evidence requires reconciliation"
     )
 
@@ -348,12 +350,15 @@ def receipt_scope(tx, row, receipt):
 
 
 def public_receipt(receipt):
+    from .freeze import AUTHORITY_CONTAINMENT_REASONS
+
+    error = (
+        receipt.error
+        if receipt.error in AUTHORITY_CONTAINMENT_REASONS
+        else "Authority rejected request"
+    )
     return receipt.model_copy(
-        update={
-            "error": "Authority rejected request"
-            if receipt.phase == "rejected"
-            else None
-        }
+        update={"error": error if receipt.phase == "rejected" else None}
     )
 
 
@@ -733,7 +738,12 @@ class ExchangeService:
 
     @staticmethod
     def _reject(tx, context, row, reason, *, receipt_hash=None):
+        from .freeze import AUTHORITY_CONTAINMENT_REASONS
+
         reason = public_reason(reason)
+        # Keep the existing no-effect closure classification. The owned reason
+        # remains visible in the event/current reason and discrepancy evidence.
+        no_effect = reason in AUTHORITY_CONTAINMENT_REASONS
         event(
             tx,
             row,
@@ -748,8 +758,8 @@ class ExchangeService:
                 str(context.project_id),
                 str(context.actor.user_id),
                 context.actor.display_name,
-                reason,
-                "Rejected outcome recorded for reconciliation",
+                "Authority rejected request" if no_effect else reason,
+                reason if no_effect else "Rejected outcome recorded for reconciliation",
             ),
         )
 
@@ -1007,7 +1017,9 @@ class ExchangeService:
         if reason:
             self._reject(tx, context, row, reason)
         elif receipt.phase == "rejected":
-            self._reject(tx, context, row, "Authority rejected request")
+            self._reject(
+                tx, context, row, receipt.error or "Authority rejected request"
+            )
             tx.execute(
                 "UPDATE exchanges SET receipt_json=?,source_sequence=? WHERE id=?",
                 (receipt.model_dump_json(), receipt.sequence, row["id"]),

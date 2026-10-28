@@ -371,18 +371,110 @@ def resume_held(tx, pid, wid, scope):
     )
 
 
+MATERIAL_SCOPE_UNPROVEN = "Material scope unproven; source owner must reconcile work-order reservation evidence"
+MATERIAL_FROZEN = (
+    "Applicable material is frozen; source owner must confirm containment release"
+)
+AUTHORITY_CONTAINMENT_REASONS = frozenset({MATERIAL_SCOPE_UNPROVEN, MATERIAL_FROZEN})
+
+
+def authority_material_reason(tx, request):
+    """Source-owned proof for NEW effects; absence/[] is never material-free proof.
+
+    Reserve envelopes predate execution-mode attribution. Conservatively retain
+    all independently reserved lots for each selected WO, without claiming SN
+    consumption. This reads only authority facts, never the caller's local DB.
+    """
+    from pydantic import ValidationError
+
+    from .adapters.mock import digest
+    from .exchange_models import (
+        ExternalReceipt,
+        ExternalRequest,
+        ReservePayload,
+        ShipPayload,
+    )
+    from .execution_models import sn_key
+    from .supply import atoms
+
+    payload, pid = request.typed_payload, str(request.project_id)
+    if isinstance(payload, ShipPayload):
+        work_orders = set()
+        for uid, sn, wid in payload.units:
+            member = tx.execute(
+                "SELECT sn_key FROM authority_start_units WHERE project_id=? AND work_order_id=? AND unit_id=?",
+                (pid, str(wid), str(uid)),
+            ).fetchone()
+            if not member or member[0] != sn_key(sn):
+                return MATERIAL_SCOPE_UNPROVEN
+            work_orders.add(str(wid))
+    else:
+        work_orders = {str(payload.work_order_id)}
+    # SQL bounds evidence before materialization, including repeated reservations.
+    rows = tx.execute(
+        """SELECT r.id,r.lot_id,r.q_atoms,o.request_json,o.request_hash,o.receipt_json,
+                  i.material_id,i.owner_id,i.unit,i.scale
+           FROM authority_reservations r
+           JOIN authority_operations o ON o.business_key=r.business_key AND o.system='erp'
+           JOIN inventory i ON i.lot_id=r.lot_id AND i.project_id=r.project_id
+           WHERE r.project_id=? AND r.q_atoms>0
+             AND json_extract(o.request_json,'$.typed_payload.work_order_id') IN (SELECT value FROM json_each(?))
+           ORDER BY r.id LIMIT 501""",
+        (pid, json.dumps(sorted(work_orders))),
+    ).fetchall()
+    if not rows or len(rows) > 500:
+        return MATERIAL_SCOPE_UNPROVEN
+    proven_orders, lots = set(), set()
+    for row in rows:
+        try:
+            reservation = ExternalRequest.model_validate_json(row["request_json"])
+            receipt = ExternalReceipt.model_validate_json(row["receipt_json"])
+            basis = reservation.typed_payload
+            if not (
+                isinstance(basis, ReservePayload)
+                and reservation.action == "reservation.request"
+                and reservation.project_id == request.project_id
+                and str(basis.work_order_id) in work_orders
+                and str(basis.reservation_id) == row["id"]
+                and str(basis.lot_id) == row["lot_id"]
+                and (basis.material_id, basis.owner_id, basis.unit, basis.scale)
+                == (row["material_id"], row["owner_id"], row["unit"], row["scale"])
+                and digest(reservation.model_dump(mode="json")) == row["request_hash"]
+                and receipt.request_hash == row["request_hash"]
+                and receipt.business_key == reservation.business_key
+                and receipt.source_object_id == row["id"]
+                and receipt.source_version == reservation.source_version
+                and receipt.phase in {"accepted", "posted"}
+                and atoms(
+                    receipt.accepted_quantity, basis.unit, basis.unit, basis.scale
+                )
+                == row["q_atoms"]
+            ):
+                return MATERIAL_SCOPE_UNPROVEN
+        except (ValidationError, ValueError, TypeError, DomainError):
+            return MATERIAL_SCOPE_UNPROVEN
+        proven_orders.add(str(basis.work_order_id))
+        lots.add(row["lot_id"])
+    if proven_orders != work_orders:
+        return MATERIAL_SCOPE_UNPROVEN
+    # A declaration may not suppress source facts, nor introduce unproven lots.
+    if (
+        payload.material_lot_ids is not None
+        and not set(map(str, payload.material_lot_ids)) <= lots
+    ):
+        return MATERIAL_SCOPE_UNPROVEN
+    if tx.execute(
+        "SELECT 1 FROM authority_freeze_versions WHERE project_id=? AND object_kind='material_lot' AND object_id IN (SELECT value FROM json_each(?)) AND state='frozen' LIMIT 1",
+        (pid, json.dumps(sorted(lots))),
+    ).fetchone():
+        return MATERIAL_FROZEN
+    return None
+
+
 def authority_execution_held(tx, request):
     from .exchange_models import StartPayload
 
     payload = request.typed_payload
-    if any(
-        tx.execute(
-            "SELECT 1 FROM authority_freeze_versions WHERE project_id=? AND object_kind='material_lot' AND object_id=? AND state='frozen'",
-            (str(request.project_id), str(lid)),
-        ).fetchone()
-        for lid in (payload.material_lot_ids or [])
-    ):
-        return True
     if isinstance(payload, StartPayload):
         return any(
             tx.execute(

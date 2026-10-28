@@ -2,6 +2,8 @@
 
 from uuid import uuid4
 
+import pytest
+
 from .conftest import BASE
 
 
@@ -405,3 +407,303 @@ def test_trace_exact_node_budget_retains_shared_edges_without_false_truncation(
     )
     assert exact["truncated"] is False
     assert exact["edges"] == full["edges"]
+
+
+def legacy_intent(workflow, monkeypatch, action, scope=None):
+    """Run public preparation with the pre-C3 optional-field serialization only."""
+    import json
+
+    from manufacturing_platform.workflow.adapters.mock import (
+        MockAuthorityAdapter,
+        digest,
+    )
+    from manufacturing_platform.workflow.exchange_models import ExternalRequest
+    from manufacturing_platform.workflow.exchanges import ExchangeService
+
+    from .test_execution import ready_for_trial, review_replan, running_execution
+
+    original = ExchangeService.prepare
+
+    def prepare(self, tx, context, request):
+        if request.action == action:
+            request = request.model_copy(
+                update={
+                    "typed_payload": request.typed_payload.model_copy(
+                        update={"material_lot_ids": scope}
+                    )
+                }
+            )
+        return original(self, tx, context, request)
+
+    if action == "shipment.request":
+        p, order, units = workflow.released_order(quantity="1")
+        uid = units[0]["id"]
+        authority = MockAuthorityAdapter(str(workflow.paths.authority), "workflow-test")
+    elif action == "production.resume":
+        p, wo, units, authority, _ = running_execution(workflow)
+        uid = units[0]
+        stop = workflow.command(
+            p["id"],
+            "production.interrupt",
+            actor_name="production",
+            work_order_id=wo["id"],
+            reason="legacy resume containment test",
+        )
+        workflow.command(
+            p["id"],
+            "exchange.dispatch",
+            actor_name="production",
+            exchange_id=stop["exchange_id"],
+        )
+        plan = review_replan(workflow, p, wo)
+    else:
+        p, wo, units, authority = ready_for_trial(
+            workflow, quantity="2", trial_quantity="2"
+        )
+        uid = units[0]
+    workflow.grant(p["id"], "quality", ["quality"])
+    with monkeypatch.context() as patch:
+        patch.setattr(ExchangeService, "prepare", prepare)
+        if action == "shipment.request":
+            intent = workflow.ship(p["id"], order["id"], [uid], dispatch=False)
+        elif action == "production.resume":
+            intent = workflow.command(
+                p["id"],
+                action,
+                actor_name="production",
+                interruption_id=stop["object_id"],
+                plan_id=plan,
+                evidence="resume with original legacy protocol",
+            )
+        else:
+            intent = workflow.command(
+                p["id"],
+                action,
+                actor_name="production",
+                work_order_id=wo["id"],
+                mode="trial",
+                unit_ids=[uid],
+                quantity="1",
+            )
+    with workflow.db() as tx:
+        row = dict(
+            tx.execute(
+                "SELECT * FROM exchanges WHERE id=?", (intent["exchange_id"],)
+            ).fetchone()
+        )
+        lot = tx.execute(
+            "SELECT material_lot_id FROM reservations WHERE project_id=? LIMIT 1",
+            (p["id"],),
+        ).fetchone()[0]
+    request = ExternalRequest.model_validate_json(row["request_json"])
+    assert ("material_lot_ids" in json.loads(row["request_json"])["typed_payload"]) == (
+        scope is not None
+    )
+    assert request.model_dump_json() == row["request_json"]
+    assert digest(request.model_dump(mode="json")) == row["request_hash"]
+    return p["id"], uid, lot, intent, authority, request, row
+
+
+@pytest.mark.parametrize(
+    "action", ["production.start", "production.resume", "shipment.request"]
+)
+@pytest.mark.parametrize("scope", [None, []], ids=["omitted", "explicit-empty"])
+def test_review_legacy_first_effect_after_lot_freeze_is_rejected(
+    workflow, monkeypatch, action, scope
+):
+    pid, uid, lot, intent, authority, request, row = legacy_intent(
+        workflow, monkeypatch, action, scope
+    )
+    assert (
+        dispatch(workflow, pid, freeze(workflow, pid, lots=[lot]))["phase"]
+        == "accepted"
+    )
+    # Actual source first submission, after containment: bypass local preflight deliberately.
+    receipt = authority.submit(request)
+    assert receipt.phase == "rejected"
+    assert str(receipt.accepted_quantity) == "0"
+    assert receipt.request_hash == row["request_hash"]
+    assert (
+        receipt.error
+        == "Applicable material is frozen; source owner must confirm containment release"
+    )
+    assert authority.operation_count(request.business_key) == 1
+    assert authority.query("erp", request.business_key) == receipt
+    workflow.command(
+        pid,
+        "exchange.query",
+        actor_name="warehouse" if action == "shipment.request" else "production",
+        exchange_id=intent["exchange_id"],
+    )
+    exchange = workflow.object(pid, "exchange", intent["exchange_id"])
+    assert exchange["phase"] == "rejected"
+    assert exchange["reason"] == receipt.error
+    if action == "production.start":
+        # Rejected starts release their pending local membership; the existing
+        # projection then suppresses the receipt, but retains the owned reason.
+        assert exchange["receipt"] is None
+        assert exchange["discrepancies"][0]["reason"] == "Authority rejected request"
+    else:
+        assert exchange["receipt"]["error"] == receipt.error
+    with workflow.db() as tx:
+        final = tx.execute(
+            "SELECT request_json,request_hash FROM exchanges WHERE id=?",
+            (intent["exchange_id"],),
+        ).fetchone()
+    assert tuple(final) == (row["request_json"], row["request_hash"])
+    unit = workflow.object(pid, "unit", uid)
+    if action == "production.start":
+        assert unit["authority_start_accepted"] is False
+    elif action == "production.resume":
+        assert unit["state"] == "stopped"
+    else:
+        assert workflow.object(pid, "shipment", intent["id"])["shipped"] == "0"
+
+
+@pytest.mark.parametrize(
+    "action", ["production.start", "production.resume", "shipment.request"]
+)
+def test_review_legacy_prior_commit_survives_lot_freeze_and_lost_reply(
+    workflow, monkeypatch, action
+):
+    pid, uid, lot, intent, authority, request, row = legacy_intent(
+        workflow, monkeypatch, action
+    )
+    authority.configure_fault("timeout_after_commit")
+    actor = "warehouse" if action == "shipment.request" else "production"
+    workflow.command(
+        pid, "exchange.dispatch", actor_name=actor, exchange_id=intent["exchange_id"]
+    )
+    assert workflow.object(pid, "exchange", intent["exchange_id"])["phase"] == "unknown"
+    authority.configure_fault("none")
+    original = authority.query("erp", request.business_key)
+    assert original.phase == "accepted" and str(original.accepted_quantity) == "1"
+    assert original.request_hash == row["request_hash"]
+    assert (
+        dispatch(workflow, pid, freeze(workflow, pid, lots=[lot]))["phase"]
+        == "accepted"
+    )
+    assert authority.submit(request) == original
+    workflow.command(
+        pid, "exchange.query", actor_name=actor, exchange_id=intent["exchange_id"]
+    )
+    assert (
+        workflow.object(pid, "exchange", intent["exchange_id"])["phase"] == "accepted"
+    )
+    assert authority.operation_count(request.business_key) == 1
+    with workflow.db() as tx:
+        final = tx.execute(
+            "SELECT request_json,request_hash FROM exchanges WHERE id=?",
+            (intent["exchange_id"],),
+        ).fetchone()
+    assert tuple(final) == (row["request_json"], row["request_hash"])
+    if action == "shipment.request":
+        assert workflow.object(pid, "shipment", intent["id"])["shipped"] == "1"
+        with authority.store.transaction() as tx:
+            assert (
+                tx.execute(
+                    "SELECT COUNT(*) FROM authority_shipments WHERE unit_id=?", (uid,)
+                ).fetchone()[0]
+                == 1
+            )
+    else:
+        unit = workflow.object(pid, "unit", uid)
+        assert unit["authority_start_accepted"] is True
+        assert unit["state"] == "start_pending"  # Existing B3 local safety recovery.
+        with authority.store.transaction() as tx:
+            assert (
+                tx.execute(
+                    "SELECT state FROM authority_start_units WHERE unit_id=?", (uid,)
+                ).fetchone()[0]
+                == "running"
+            )
+            assert (
+                tx.execute(
+                    "SELECT w.started_units FROM authority_work_orders w JOIN authority_start_units u ON u.project_id=w.project_id AND u.work_order_id=w.work_order_id WHERE u.unit_id=?",
+                    (uid,),
+                ).fetchone()[0]
+                == 1
+            )
+
+
+@pytest.mark.parametrize(
+    "action", ["production.start", "production.resume", "shipment.request"]
+)
+def test_review_legacy_unknown_material_scope_fails_closed(
+    workflow, monkeypatch, action
+):
+    pid, _, _, intent, authority, request, row = legacy_intent(
+        workflow, monkeypatch, action
+    )
+    # External source fault only: reservation physical quantities remain, but
+    # accepted receipt proof is unavailable. No local/business success is seeded.
+    with authority.store.transaction(write=True) as tx:
+        physical_before = [
+            tuple(r)
+            for r in tx.execute(
+                "SELECT id,lot_id,q_atoms FROM authority_reservations WHERE project_id=? ORDER BY id",
+                (pid,),
+            )
+        ]
+        tx.execute(
+            "UPDATE authority_operations SET receipt_json=NULL WHERE business_key IN (SELECT business_key FROM authority_reservations WHERE project_id=?)",
+            (pid,),
+        )
+    receipt = authority.submit(request)
+    assert receipt.phase == "rejected"
+    assert (
+        receipt.error
+        == "Material scope unproven; source owner must reconcile work-order reservation evidence"
+    )
+    assert authority.operation_count(request.business_key) == 1
+    workflow.command(
+        pid,
+        "exchange.query",
+        actor_name="warehouse" if action == "shipment.request" else "production",
+        exchange_id=intent["exchange_id"],
+    )
+    exchange = workflow.object(pid, "exchange", intent["exchange_id"])
+    assert exchange["phase"] == "rejected" and exchange["reason"] == receipt.error
+    with workflow.db() as tx:
+        final = tx.execute(
+            "SELECT request_json,request_hash FROM exchanges WHERE id=?",
+            (intent["exchange_id"],),
+        ).fetchone()
+    assert tuple(final) == (row["request_json"], row["request_hash"])
+    with authority.store.transaction() as tx:
+        assert [
+            tuple(r)
+            for r in tx.execute(
+                "SELECT id,lot_id,q_atoms FROM authority_reservations WHERE project_id=? ORDER BY id",
+                (pid,),
+            )
+        ] == physical_before
+
+
+@pytest.mark.parametrize(
+    "action", ["production.start", "production.resume", "shipment.request"]
+)
+def test_review_legacy_proven_scope_ignores_unrelated_frozen_lot(
+    workflow, monkeypatch, action
+):
+    pid, _, _, _, authority, request, _ = legacy_intent(workflow, monkeypatch, action)
+    from datetime import UTC, datetime, timedelta
+
+    unrelated = workflow.command(
+        pid,
+        "material.define",
+        actor_name="supply",
+        material_id="unrelated-material",
+        lot_id="unrelated-lot",
+        owner_id="Customer 1",
+        unit="kg",
+        scale=3,
+        expiry=(datetime.now(UTC) + timedelta(days=120)).date().isoformat(),
+        source=workflow.source(str(uuid4()), object_type="material_lot"),
+    )["object_id"]
+    assert (
+        dispatch(workflow, pid, freeze(workflow, pid, lots=[unrelated]))["phase"]
+        == "accepted"
+    )
+    assert authority.submit(request).phase == "accepted"
+    assert authority.operation_count(request.business_key) == 1
