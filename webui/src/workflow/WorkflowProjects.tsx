@@ -8,7 +8,6 @@ import type {
   ProjectDetail,
   WorkspaceProps,
   GrantChange,
-  Grant,
 } from "./types";
 import { Field, Choice } from "./forms/shared";
 export function WorkflowProjects({
@@ -248,7 +247,7 @@ export function MemberPicker({
 export function Members(
   p: WorkspaceProps & { findSubjects?: MountOptions["findSubjects"] },
 ) {
-  const [members, setMembers] = useState<Grant[]>([]),
+  const [loadedUser, setLoadedUser] = useState(""),
     [user, setUser] = useState(""),
     [v, setV] = useState<GrantChange>(() => ({
       operation_id: crypto.randomUUID(),
@@ -265,19 +264,24 @@ export function Members(
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
-    p.api
-      .members(p.project.id)
-      .then((r) => {
-        if (alive.current) setMembers(r.items);
-      })
-      .catch((e) => {
-        if (alive.current) setError(String(e));
-      });
     return () => {
       alive.current = false;
       p.onDirty("members", false);
     };
   }, [p.project.id]);
+  useEffect(() => {
+    let active = true;
+    setLoadedUser("");
+    setError("");
+    if (user) p.api.member(p.project.id, user).then(r => {
+      if (!active) return;
+      const old = r.items.find(m => m.user_id === user);
+      setV(v => ({...v, operation_id: crypto.randomUUID(), roles: old?.roles || [], qualifications: old?.qualifications || [], active: old?.active ?? true}));
+      setLoadedUser(user);
+    }).catch(e => { if (active) setError("无法读取所选成员授权，请重新选择后重试。" + String(e)); });
+    return () => { active = false; };
+  }, [p.api, p.project.id, user]);
+  const memberReady = !!user && loadedUser === user;
   function set(value: GrantChange) {
     setConflict(null);
     setV({ ...value, operation_id: crypto.randomUUID() });
@@ -311,7 +315,7 @@ export function Members(
           className="wf-form"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (busy || p.readOnly) return;
+            if (busy || p.readOnly || !memberReady) return;
             setBusy(true);
             try {
               const result = await p.api.grant(p.project.id, user, v);
@@ -337,15 +341,11 @@ export function Members(
               value={user}
               onChange={(id) => {
                 setUser(id);
-                const old = members.find((m) => m.user_id === id);
-                set({
-                  ...v,
-                  roles: old?.roles || [],
-                  qualifications: old?.qualifications || [],
-                  active: old?.active ?? true,
-                });
+                setLoadedUser("");
+                setConflict(null);
               }}
             />
+            <fieldset disabled={!memberReady}>
             {(["roles", "qualifications"] as const).map((k) => (
               <fieldset key={k}>
                 <legend>{k === "roles" ? "职责" : "资格"}</legend>
@@ -382,6 +382,7 @@ export function Members(
               value={v.evidence}
               onChange={(x) => set({ ...v, evidence: x })}
             />
+            </fieldset>
           </fieldset>
           {conflict && (
             <ConflictComparison
@@ -392,7 +393,7 @@ export function Members(
               memberId={user}
             />
           )}
-          <button disabled={busy || p.readOnly}>保存成员授权</button>
+          <button disabled={busy || p.readOnly || !memberReady}>保存成员授权</button>
         </form>
       )}
       {error && <p role="alert">{error}</p>}

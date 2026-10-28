@@ -217,7 +217,7 @@ export function ConflictComparison({
                   api.object(t.projectId, t.kind, t.id),
                 ),
               ),
-              memberId ? api.members(projectId) : Promise.resolve(null),
+              memberId ? api.member(projectId, memberId) : Promise.resolve(null),
             ]);
             if (current === generation.current)
               setData({

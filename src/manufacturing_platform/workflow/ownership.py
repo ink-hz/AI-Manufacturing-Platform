@@ -233,12 +233,17 @@ def material_hold(tx, pid, lot):
 
 
 def admitted_source(tx, pid, row, kind):
+    from datetime import datetime
+    from types import SimpleNamespace
+
     from pydantic import ValidationError
 
     from .contracts import DomainError, SourceRef
-    from .imports import record_scope
+    from .imports import record_scope, validate_record
 
     try:
+        if row["project_id"] != str(pid):
+            return None
         source = SourceRef.model_validate_json(row["source_json"])
         if source.mode != "manual" or source_key(source) != (
             row["source_system"],
@@ -246,20 +251,144 @@ def admitted_source(tx, pid, row, kind):
             row["source_external_id"],
         ):
             return None
-        record_scope(
-            tx,
-            pid,
-            OwnershipSourceRecord(
-                project_id=pid,
-                source=source,
-                material_lot_id=row["material_lot_id"],
-                object_type=kind,
-            ),
+        record = OwnershipSourceRecord(
+            project_id=row["project_id"],
+            source=source,
+            material_lot_id=row["material_lot_id"],
             object_type=kind,
         )
+        record_scope(tx, pid, record, object_type=kind)
+        validate_record(
+            record,
+            SimpleNamespace(
+                project_id=UUID(str(pid)), now=datetime.fromisoformat(row["created_at"])
+            ),
+            trusted=False,
+        )
         return source
-    except (DomainError, ValidationError, ValueError):
+    except (DomainError, ValidationError, ValueError, KeyError, TypeError):
         return None
+
+
+def audit_evidence(tx, pid, object_id, audit, payload):
+    """Project ownership audit evidence only from its original admitted fact."""
+    from datetime import datetime
+    from hashlib import sha256
+
+    from pydantic import ValidationError
+
+    from .contracts import DomainError, ObjectEvidence
+    from .orders import _audit_evidence
+
+    source_type = (
+        (payload.get("source") or {}).get("object_type")
+        if isinstance(payload.get("source"), dict)
+        else None
+    )
+    owned = (
+        str(audit["action"]).startswith("ownership.")
+        or str(payload.get("action", "")).startswith("ownership.")
+        or source_type in {"material_movement", "ownership"}
+    )
+    if not owned:
+        return _audit_evidence(payload)
+    models = {
+        "ownership.movement": MaterialMovement,
+        "ownership.reconcile": OwnershipReconcile,
+    }
+    if audit["action"] not in models:
+        return []
+    try:
+        if (
+            payload.get("project_id") != str(pid)
+            or audit["project_id"] != str(pid)
+            or audit["object_id"] != str(object_id)
+        ):
+            return []
+        command = models[audit["action"]].model_validate(
+            {k: v for k, v in payload.items() if k != "project_id"}
+        )
+        if str(command.material_lot_id) != str(object_id):
+            return []
+        lot = own(tx, "material_lots", pid, command.material_lot_id)
+        if (command.material_id, command.owner_id, command.unit) != (
+            lot["material_id"],
+            lot["owner_id"],
+            lot["unit"],
+        ):
+            return []
+        movement = isinstance(command, MaterialMovement)
+        table = "material_movements" if movement else "ownership_reconciliations"
+        fact = tx.execute(
+            f"SELECT * FROM {table} WHERE project_id=? AND material_lot_id=? AND source_system=? AND source_type=? AND source_external_id=?",
+            (str(pid), str(object_id), *source_key(command.source)),
+        ).fetchone()
+        if not fact or fact["actor_id"] != audit["actor_id"]:
+            return []
+        source = admitted_source(
+            tx, pid, fact, "material_movement" if movement else "ownership"
+        )
+        if source is None or source != command.source:
+            return []
+        if datetime.fromisoformat(fact["created_at"]) > datetime.fromisoformat(
+            audit["recorded_at"]
+        ):
+            return []
+        if movement:
+            if (
+                fact["movement"],
+                fact["q_atoms"],
+                fact["supersedes_id"],
+                fact["external_signatory"],
+                fact["evidence"],
+            ) != (
+                command.movement,
+                atoms(command.quantity, command.unit, lot["unit"], lot["scale"]),
+                str(command.supersedes_id) if command.supersedes_id else None,
+                command.external_signatory,
+                command.evidence,
+            ):
+                return []
+        else:
+            recorded = OwnershipBalance.model_validate_json(fact["balance_json"])
+            if (
+                any(
+                    getattr(recorded, k) != getattr(command, k)
+                    for k in (
+                        "received",
+                        "consumed",
+                        "scrapped",
+                        "returned",
+                        "balance",
+                        "unit",
+                        "owner_id",
+                        "material_id",
+                    )
+                )
+                or not recorded.complete
+            ):
+                return []
+        payload_hash = sha256(
+            json.dumps(
+                payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode()
+        ).hexdigest()
+        operation = tx.execute(
+            "SELECT result_json FROM operations WHERE actor_id=? AND operation_id=? AND payload_hash=?",
+            (audit["actor_id"], str(command.operation_id), payload_hash),
+        ).fetchone()
+        if not operation:
+            return []
+        result = json.loads(operation["result_json"])
+        if (
+            result.get("project_id") != str(pid)
+            or result.get("object_id") != str(object_id)
+            or result.get("object_type") != "material_lot"
+        ):
+            return []
+        return [ObjectEvidence(reference=source.evidence, source=source)]
+    except (DomainError, ValidationError, ValueError, KeyError, TypeError):
+        return []
 
 
 def history(tx, pid, lot):

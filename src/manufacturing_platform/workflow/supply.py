@@ -542,11 +542,16 @@ def _summary(
 
 
 def _history(tx, project_id, object_id):
+    from .ownership import audit_evidence
+
     return _history_rows(
         tx.execute(
             "SELECT * FROM audit_events WHERE project_id=? AND object_id=? ORDER BY id",
             (str(project_id), str(object_id)),
-        ).fetchall()
+        ).fetchall(),
+        evidence_projector=lambda row, payload: audit_evidence(
+            tx, project_id, object_id, row, payload
+        ),
     )
 
 

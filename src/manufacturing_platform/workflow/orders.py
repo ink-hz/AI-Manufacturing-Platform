@@ -491,17 +491,26 @@ def _history(tx, project_id, object_id):
     return _history_rows(rows)
 
 
-def _history_rows(rows):
+def _audit_evidence(payload):
+    source = payload.get("source")
+    return (
+        [ObjectEvidence(reference=source["evidence"], source=source)]
+        if isinstance(source, dict)
+        else [ObjectEvidence(reference=payload["evidence"])]
+        if isinstance(payload.get("evidence"), str)
+        else []
+    )
+
+
+def _history_rows(rows, *, evidence_projector=None):
+    """Domain-owned projectors return an explicit safe list, including empty denial."""
     events = []
     for row in rows:
         payload = json.loads(row["typed_payload"])
-        source = payload.get("source")
         evidence = (
-            [ObjectEvidence(reference=source["evidence"], source=source)]
-            if isinstance(source, dict)
-            else [ObjectEvidence(reference=payload["evidence"])]
-            if isinstance(payload.get("evidence"), str)
-            else []
+            evidence_projector(row, payload)
+            if evidence_projector is not None
+            else _audit_evidence(payload)
         )
         events.append(
             ObjectHistory(

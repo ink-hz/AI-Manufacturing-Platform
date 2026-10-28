@@ -9,9 +9,16 @@ from .conftest import BASE
 
 def test_partial_delivery_keeps_order_open(workflow):
     p, order, units = workflow.released_order(quantity="100")
-    shipment = workflow.ship(p["id"], order["id"], [u["id"] for u in units[:60]], boxes=[{"box_id":"BOX-60","unit_ids":[u["id"] for u in units[:60]]}])
-    receipt=workflow.object(p["id"],"exchange",shipment["exchange_id"])["receipt"]
-    assert len(receipt["details"])==60 and all(d["box_id"]=="BOX-60" for d in receipt["details"])
+    shipment = workflow.ship(
+        p["id"],
+        order["id"],
+        [u["id"] for u in units[:60]],
+        boxes=[{"box_id": "BOX-60", "unit_ids": [u["id"] for u in units[:60]]}],
+    )
+    receipt = workflow.object(p["id"], "exchange", shipment["exchange_id"])["receipt"]
+    assert len(receipt["details"]) == 60 and all(
+        d["box_id"] == "BOX-60" for d in receipt["details"]
+    )
     workflow.sign_and_accept(p["id"], shipment["id"], quantity="60")
     summary = workflow.object(p["id"], "order_line", order["id"])
     assert summary["remaining_to_ship"] == "40"
@@ -760,6 +767,7 @@ def test_original_stock_proof_rejects_foreign_stale_or_later_evidence(
     workflow, monkeypatch, fault
 ):
     from datetime import timedelta
+
     from manufacturing_platform.workflow.adapters.mock import MockAuthorityAdapter
 
     p, _, intent, eco = legacy_stock_opening(workflow, monkeypatch)
@@ -809,3 +817,348 @@ def test_quality_closure_cannot_ignore_failed_measured_output_without_nc(workflo
         evidence="Measured failure needs qualified disposition",
         expected_status=409,
     )
+
+
+def test_acceptance_replay_survives_target_retirement_but_requires_live_actor(workflow):
+    from .conftest import USERS
+
+    p, order, units = workflow.released_order(quantity="1")
+    shipment = workflow.ship(p["id"], order["id"], [units[0]["id"]])
+    workflow.command(
+        p["id"],
+        "delivery.sign",
+        actor_name="warehouse",
+        shipment_id=shipment["id"],
+        quantity="1",
+        source=source_now(workflow, "delivery_sign"),
+        external_signatory="Receiver",
+    )
+    body = dict(
+        action="delivery.accept",
+        operation_id=str(uuid4()),
+        expected_version=workflow.client()
+        .get(f"{BASE}/projects/{p['id']}")
+        .json()["version"],
+        shipment_id=shipment["id"],
+        quantity="1",
+        source=source_now(workflow, "delivery_accept"),
+        external_signatory="Customer",
+        issues=[
+            dict(
+                title="Packing evidence", owner_id=str(USERS["quality"]), required=True
+            )
+        ],
+    )
+    url = f"{BASE}/projects/{p['id']}/commands"
+    first = workflow.client("warehouse").post(url, json=body)
+    assert first.status_code == 200, first.text
+    with workflow.db() as db:
+        original = dict(
+            db.execute(
+                "SELECT * FROM operations WHERE operation_id=?", (body["operation_id"],)
+            ).fetchone()
+        )
+    workflow.grant(p["id"], "quality", ["quality"], active=False)
+    replay = workflow.client("warehouse").post(url, json=body)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["replayed"]
+    assert all(
+        replay.json()[key] == value
+        for key, value in first.json().items()
+        if key not in {"replayed", "current_project_version"}
+    )
+    assert (
+        workflow.client("warehouse")
+        .post(url, json={**body, "external_signatory": "Changed"})
+        .status_code
+        == 409
+    )
+    current = workflow.client().get(f"{BASE}/projects/{p['id']}").json()["version"]
+    assert (
+        workflow.client("warehouse")
+        .post(
+            url,
+            json={**body, "operation_id": str(uuid4()), "expected_version": current},
+        )
+        .status_code
+        == 422
+    )
+    with workflow.db() as db:
+        assert (
+            dict(
+                db.execute(
+                    "SELECT * FROM operations WHERE operation_id=?",
+                    (body["operation_id"],),
+                ).fetchone()
+            )
+            == original
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM delivery_facts WHERE project_id=? AND action='accept'",
+                (p["id"],),
+            ).fetchone()[0]
+            == 1
+        )
+    assert workflow.object(p["id"], "shipment", shipment["id"])["accepted"] == "1"
+    workflow.grant(p["id"], "warehouse", ["warehouse"], active=False)
+    assert workflow.client("warehouse").post(url, json=body).status_code in {403, 404}
+
+
+def test_selected_member_lookup_includes_grants_beyond_first_page(
+    workflow, monkeypatch
+):
+    from uuid import UUID
+
+    from .conftest import USERS
+
+    p = workflow.create_project()
+    for n in range(51):
+        name = f"member-{n}"
+        monkeypatch.setitem(USERS, name, UUID(f"10000000-0000-4000-8000-{n:012d}"))
+        workflow.grant(p["id"], name, ["quality"], ["inspection"], active=n != 50)
+    url = f"{BASE}/projects/{p['id']}/members"
+    assert len(workflow.client().get(url).json()["items"]) == 50
+    selected = (
+        workflow.client()
+        .get(url, params={"user_id": str(USERS["member-50"])})
+        .json()["items"]
+    )
+    assert len(selected) == 1
+    assert selected[0]["user_id"] == str(USERS["member-50"])
+    assert selected[0]["roles"] == ["quality"]
+    assert selected[0]["qualifications"] == ["inspection"]
+    assert selected[0]["active"] is False
+    assert (
+        workflow.client().get(url, params={"user_id": str(uuid4())}).json()["items"]
+        == []
+    )
+    assert (
+        workflow.client("outsider")
+        .get(url, params={"user_id": str(USERS["member-50"])})
+        .status_code
+        == 404
+    )
+
+
+@pytest.mark.parametrize("action", ["ownership.movement", "ownership.reconcile"])
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "foreign_source",
+        "wrong_lot",
+        "wrong_type",
+        "future_source",
+        "fact_mismatch",
+        "unsafe_evidence",
+        "unknown_action",
+        "admission_clock",
+    ],
+)
+def test_ownership_audit_history_admits_exact_historical_fact(
+    workflow, action, corruption
+):
+    """Explicit retained-storage corruption fixture, never a public success bypass."""
+    import json
+    import sqlite3
+
+    from .conftest import USERS
+
+    p, _, _ = workflow.released_order(quantity="1", mode="oem")
+    lot = (
+        workflow.client()
+        .get(f"{BASE}/projects/{p['id']}/objects/material_lot?limit=1")
+        .json()["items"][0]["id"]
+    )
+    fields = dict(
+        material_lot_id=lot,
+        material_id="steel-1",
+        owner_id="Customer 1",
+        unit="kg",
+        source=source_now(
+            workflow,
+            "material_movement" if action.endswith("movement") else "ownership",
+        ),
+    )
+    if action.endswith("movement"):
+        fields.update(
+            movement="return",
+            quantity="0.500",
+            external_signatory="Custodian",
+            evidence="Actual weighing record",
+        )
+    else:
+        fields.update(
+            received="2.000",
+            consumed="0.001",
+            returned="0.000",
+            scrapped="0.000",
+            balance="1.999",
+        )
+    workflow.command(p["id"], action, actor_name="supply", **fields)
+    url = f"{BASE}/projects/{p['id']}/objects/material_lot/{lot}"
+    original = [
+        r for r in workflow.client().get(url).json()["history"] if r["action"] == action
+    ][0]
+    from manufacturing_platform.workflow.contracts import SourceRef
+
+    assert original["evidence"][0]["source"] == SourceRef.model_validate(
+        fields["source"]
+    ).model_dump(mode="json")
+    workflow.grant(p["id"], "supply", ["supply"], active=False)
+    assert [
+        r for r in workflow.client().get(url).json()["history"] if r["action"] == action
+    ][0] == original
+    with sqlite3.connect(workflow.paths.domain) as db:
+        payload = json.loads(
+            db.execute(
+                "SELECT typed_payload FROM audit_events WHERE id=?",
+                (original["event_id"],),
+            ).fetchone()[0]
+        )
+        if corruption == "foreign_source":
+            # Foreign association is corrupted retained metadata, not successful domain work.
+            other = workflow.create_project()
+            db.execute(
+                "INSERT INTO source_confirmations(project_id,system,object_type,external_id,version,object_id,payload_hash,source_json,mode,fact_id,external_actor,signature,recorded_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    other["id"],
+                    payload["source"]["system"],
+                    payload["source"]["object_type"],
+                    payload["source"]["external_id"],
+                    1,
+                    str(uuid4()),
+                    "corrupt-fixture",
+                    json.dumps(payload["source"]),
+                    "manual",
+                    str(uuid4()),
+                    "corrupt-fixture",
+                    "corrupt-fixture",
+                    str(USERS["supply"]),
+                ),
+            )
+        elif corruption == "wrong_lot":
+            payload["material_lot_id"] = str(uuid4())
+        elif corruption == "wrong_type":
+            payload["source"]["object_type"] = "receipt"
+        elif corruption == "future_source":
+            payload["source"].update(
+                occurred_at="2099-01-01T00:00:00+00:00",
+                collected_at="2099-01-01T00:00:00+00:00",
+            )
+        elif corruption == "unsafe_evidence":
+            payload["evidence"] = "unsafe retained audit evidence"
+        elif corruption == "admission_clock":
+            table = (
+                "material_movements"
+                if action.endswith("movement")
+                else "ownership_reconciliations"
+            )
+            db.execute(
+                f"UPDATE {table} SET created_at='2000-01-01T00:00:00+00:00' WHERE project_id=?",
+                (p["id"],),
+            )
+        elif corruption == "fact_mismatch":
+            if action.endswith("movement"):
+                db.execute(
+                    "UPDATE material_movements SET q_atoms=q_atoms+1 WHERE project_id=?",
+                    (p["id"],),
+                )
+            else:
+                db.execute(
+                    "UPDATE ownership_reconciliations SET actor_id=? WHERE project_id=?",
+                    (str(USERS["quality"]), p["id"]),
+                )
+        elif corruption == "unknown_action":
+            payload["action"] = "ownership.unsupported"
+            db.execute(
+                "UPDATE audit_events SET action=? WHERE id=?",
+                (payload["action"], original["event_id"]),
+            )
+        db.execute(
+            "UPDATE audit_events SET typed_payload=? WHERE id=?",
+            (json.dumps(payload), original["event_id"]),
+        )
+    response = workflow.client().get(url)
+    assert response.status_code == 200, response.text
+    retained = [
+        r for r in response.json()["history"] if r["event_id"] == original["event_id"]
+    ][0]
+    assert retained["evidence"] == []
+    for field in ("event_id", "actor_id", "occurred_at", "recorded_at"):
+        assert retained[field] == original[field]
+
+
+@pytest.mark.parametrize("retire", ["quality", "warehouse"])
+def test_acceptance_concurrent_replay_precedes_profile_lookup_failure(
+    workflow, monkeypatch, retire
+):
+    from manufacturing_platform.workflow.service import WorkflowService
+
+    from .conftest import USERS
+
+    p, order, units = workflow.released_order(quantity="1")
+    shipment = workflow.ship(p["id"], order["id"], [units[0]["id"]])
+    workflow.command(
+        p["id"],
+        "delivery.sign",
+        actor_name="warehouse",
+        shipment_id=shipment["id"],
+        quantity="1",
+        source=source_now(workflow, "delivery_sign"),
+        external_signatory="Receiver",
+    )
+    body = dict(
+        action="delivery.accept",
+        operation_id=str(uuid4()),
+        expected_version=workflow.client()
+        .get(f"{BASE}/projects/{p['id']}")
+        .json()["version"],
+        shipment_id=shipment["id"],
+        quantity="1",
+        source=source_now(workflow, "delivery_accept"),
+        external_signatory="Customer",
+        issues=[
+            dict(
+                title="Packing evidence", owner_id=str(USERS["quality"]), required=True
+            )
+        ],
+    )
+    url = f"{BASE}/projects/{p['id']}/commands"
+    original = WorkflowService.member_profiles
+    committed = []
+    entered = False
+
+    def concurrent_lookup(service, actor, pid, ids):
+        nonlocal entered
+        if entered:
+            return original(service, actor, pid, ids)
+        entered = True
+        # The host lookup is outside a transaction: a real competing HTTP command commits.
+        other = workflow.client("warehouse").post(url, json=body)
+        assert other.status_code == 200, other.text
+        committed.append(other.json())
+        workflow.grant(p["id"], retire, [retire], active=False)
+        from manufacturing_platform.workflow.contracts import DomainError
+
+        raise DomainError(
+            "INVALID_SUBJECT", 422, "Profile service unavailable after competing commit"
+        )
+
+    monkeypatch.setattr(WorkflowService, "member_profiles", concurrent_lookup)
+    result = workflow.client("warehouse").post(url, json=body)
+    assert result.status_code == (200 if retire == "quality" else 404), result.text
+    if retire == "quality":
+        assert (
+            result.json()["replayed"]
+            and result.json()["object_id"] == committed[0]["object_id"]
+        )
+    assert workflow.object(p["id"], "shipment", shipment["id"])["accepted"] == "1"
+    with workflow.db() as db:
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM delivery_facts WHERE project_id=? AND action='accept'",
+                (p["id"],),
+            ).fetchone()[0]
+            == 1
+        )

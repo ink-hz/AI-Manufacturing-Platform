@@ -155,10 +155,16 @@ def build_workflow_router(
         return service.detail(actor(request), project_id)
 
     @router.get("/projects/{project_id}/members")
-    def members(project_id: UUID, request: Request, limit: int = 50, offset: int = 0):
+    def members(
+        project_id: UUID,
+        request: Request,
+        limit: int = 50,
+        offset: int = 0,
+        user_id: UUID | None = None,
+    ):
         return {
             "items": service.members(
-                actor(request), project_id, limit=limit, offset=offset
+                actor(request), project_id, limit=limit, offset=offset, user_id=user_id
             )
         }
 

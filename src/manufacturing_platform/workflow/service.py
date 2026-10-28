@@ -331,7 +331,7 @@ class WorkflowService:
             result[str(profile.user_id)] = profile.display_name
         return result
 
-    def members(self, actor, project_id, *, limit=50, offset=0):
+    def members(self, actor, project_id, *, limit=50, offset=0, user_id=None):
         if not 1 <= limit <= 50 or offset < 0:
             raise DomainError("INVALID_PAGINATION", 422, "Invalid pagination")
         with self.store.transaction() as tx:
@@ -339,8 +339,15 @@ class WorkflowService:
             rows = [
                 dict(r)
                 for r in tx.execute(
-                    "SELECT * FROM project_grants WHERE project_id=? ORDER BY user_id LIMIT ? OFFSET ?",
-                    (str(project_id), limit, offset),
+                    "SELECT * FROM project_grants WHERE project_id=? "
+                    + ("AND user_id=? " if user_id is not None else "")
+                    + "ORDER BY user_id LIMIT ? OFFSET ?",
+                    (
+                        str(project_id),
+                        *((str(user_id),) if user_id is not None else ()),
+                        limit,
+                        0 if user_id is not None else offset,
+                    ),
                 )
             ]
         ids = [
@@ -436,19 +443,42 @@ class WorkflowService:
         self.detail(actor, project_id)
         command = self.command_registry.parse(command)
         entry = self.command_registry.registration(command.action)
+        payload = {"project_id": str(project_id), **command.model_dump(mode="json")}
         profiles = None
+        profile_error = None
         if command.action == "delivery.accept" and command.issues:
             # Policy before exposing even a scoped identity lookup.
             with self.store.transaction() as tx:
                 from .authorization import require_action
 
                 require_action(tx, actor, project_id, command.action)
-            profiles = self.member_profiles(
-                actor,
-                project_id,
-                list(dict.fromkeys(i.owner_id for i in command.issues)),
-            )
-        payload = {"project_id": str(project_id), **command.model_dump(mode="json")}
+                row = require_project(tx, actor, project_id)
+                replay = self._replay(tx, actor, command.operation_id, payload)
+                if replay is not None:
+                    return CommandResult.model_validate(
+                        {
+                            **replay,
+                            "replayed": True,
+                            "current_project_version": row["version"],
+                        }
+                    )
+                if row["version"] != command.expected_version:
+                    raise DomainError(
+                        "VERSION_CONFLICT",
+                        409,
+                        "Project version changed",
+                        {"current_version": row["version"]},
+                    )
+            try:
+                profiles = self.member_profiles(
+                    actor,
+                    project_id,
+                    list(dict.fromkeys(i.owner_id for i in command.issues)),
+                )
+            except Exception as exc:
+                # A competing identical request may have committed during host I/O.
+                # Live actor policy and canonical replay still precede lookup failure.
+                profile_error = exc
         with self.store.transaction(write=True) as tx:
             row = require_project(tx, actor, project_id)
             grant = tx.execute(
@@ -481,6 +511,8 @@ class WorkflowService:
                     "Project version changed",
                     {"current_version": row["version"]},
                 )
+            if profile_error is not None:
+                raise profile_error
             context = CommandContext(
                 actor,
                 project_id,
