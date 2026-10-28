@@ -156,7 +156,11 @@ export function WorkflowApp({
           setProject((old) => {
             if (!old) return old;
             const incoming = p.items.find((x) => x.id === old.id);
-            return incoming && !isCurrent(incoming) ? old : incoming || null;
+            // Equal-version list summaries omit progress/tasks by contract.
+            // A genuinely newer summary invalidates old detail and triggers its read.
+            return incoming && isCurrent(incoming) && incoming.version > old.version
+              ? incoming
+              : old;
           });
           p.items.forEach((value) =>
             projectVersions.current.set(
@@ -183,10 +187,14 @@ export function WorkflowApp({
       if(active && alive.current && value.version >= (projectVersions.current.get(value.id) || 0)) {
         projectVersions.current.set(value.id,value.version);
         setProject(value);
+        // Keep the list's version/metadata coherent without treating it as detail.
+        setProjects(old => old.map(item => item.id === value.id && item.version <= value.version
+          ? {...value, progress:null, tasks:[], tasks_truncated:false}
+          : item));
       }
     }).catch(e => { if(active && alive.current) setError(String(e)); });
     return () => {active=false;};
-  }, [api, project?.id, refresh]);
+  }, [api, project?.id, project?.version, refresh]);
   const requestLeave = useCallback(
     (action: () => void) => {
       if (Object.values(dirtyKeys).some(Boolean)) setPending((existing) => existing || action);
@@ -204,7 +212,7 @@ export function WorkflowApp({
     requestLeave(() => {
       const p = projects.find((p) => p.id === t.projectId);
       if (p) {
-        setProject(p);
+        setProject(old => old?.id === p.id && old.version >= p.version ? old : p);
         setCreating(false);
         setView("projects");
         setTarget(t);
@@ -222,7 +230,7 @@ export function WorkflowApp({
     projectVersions.current.set(result.project_id, version);
     const advance = (value: ProjectDetail) =>
       value.id === result.project_id
-        ? { ...value, version: Math.max(value.version, version) }
+        ? { ...value, version: Math.max(value.version, version), ...(version > value.version ? {progress:null, tasks:[], tasks_truncated:false} : {}) }
         : value;
     setProject((old) => (old ? advance(old) : old));
     setProjects((old) => old.map(advance));

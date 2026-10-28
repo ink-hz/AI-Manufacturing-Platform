@@ -83,7 +83,7 @@ export type ProgressSummary={stages:ProjectDetail["stages"];blocking_objects:Obj
 export interface ProjectDetail extends Omit<ProjectCreate, "operation_id"> {
   tasks?:{category:"readiness"|"source"|"acceptance"|"business";title:string;target:ObjectSummary;owner_id:string|null;owner_name:string}[];
   tasks_truncated?:boolean;
-  progress?:ProgressSummary;
+  progress?:ProgressSummary|null;
   release_kinds?:ReleaseKind[];
   quality_summary?:{first_tested:number;first_passed:number;final_good:number;scrapped:number;open_nonconformances:number}|null;
   id: string;

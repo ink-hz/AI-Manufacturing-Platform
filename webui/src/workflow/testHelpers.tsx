@@ -14,6 +14,8 @@ export async function workflowView(config: {
     conflictOnSubmit?: boolean;
     options?: Partial<MountOptions>;
     detail?: ObjectDetail;
+    readProjects?: () => Promise<ProjectDetail[]>;
+    readProject?: () => Promise<ProjectDetail>;
 } = {}) {
     const host = document.createElement('div');
     document.body.append(host);
@@ -29,9 +31,9 @@ export async function workflowView(config: {
         let value: unknown = { items: [], total: 0, limit: 50, offset: 0 };
         let status = 200;
         if (url.endsWith('/projects'))
-            value = { items: [project] };
+            value = { items: config.readProjects ? await config.readProjects() : [project] };
         else if (url.endsWith('/projects/' + project.id))
-            value = project;
+            value = config.readProject ? await config.readProject() : project;
         else if (url.endsWith('/dashboard'))
             value = { cards: [order], counts: { order_line: 1 }, project_ids: [project.id], project_count: 1 };
         else if (url.endsWith('/handbook'))

@@ -325,6 +325,16 @@ class WorkflowService:
                 )
             )
         )
+        release_variants = (
+            quality.release_kinds(
+                json.loads(grant["roles_json"]),
+                json.loads(grant["qualifications_json"]),
+            )
+            if "release.decide" in allowed
+            else []
+        )
+        if not release_variants:
+            allowed.discard("release.decide")
         candidates = list(item.next_actions)
         # Context associations are not a permission matrix. Every candidate is
         # intersected with the live command policy below, just like execute().
@@ -396,10 +406,7 @@ class WorkflowService:
             if capability.action == "release.decide":
                 capability.variants = {
                     kind: ActionVariant()
-                    for kind in quality.release_kinds(
-                        json.loads(grant["roles_json"]),
-                        json.loads(grant["qualifications_json"]),
-                    )
+                    for kind in release_variants
                 }
             if (
                 detail is not None

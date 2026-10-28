@@ -4,7 +4,8 @@ import { createRoot } from 'react-dom/client';
 import { EngineeringForms } from './forms/EngineeringForms';
 import { project, order } from './testHelpers';
 import { it, expect, vi } from 'vitest';
-import { workflowView } from './testHelpers';
+import { workflowView, flush } from './testHelpers';
+import type { ProjectDetail } from './types';
 it('offers nine operational workspaces with real project context and one current action', async () => {
     const v = await workflowView();
     try {
@@ -75,5 +76,71 @@ it('preserves a stage hint draft when its disclosure is collapsed', async () => 
     finally {
         await act(async () => root.unmount());
         host.remove();
+    }
+});
+const selectedProject = (version = 3): ProjectDetail => ({ ...project, version, progress: { stages: [], blocking_objects: [order], blockers_truncated: false, fulfillment: { status: 'blocked', recorded_count: 0, blocking_reasons: [`Current fulfillment ${version}`] }, quality: { status: 'ready', recorded_count: 0, blocking_reasons: [] }, cost: { status: 'ready', recorded_count: 0, blocking_reasons: [] } }, tasks: [{ category: 'acceptance', title: `Owned issue ${version}`, owner_id: 'owner-id', owner_name: 'Responsible engineer', target: order }], tasks_truncated: false });
+const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(r => resolve = r); return { promise, resolve }; };
+it('preserves selected progress when opening an owned object in the same project', async () => {
+    const readProject = vi.fn(async () => selectedProject());
+    const v = await workflowView({ initial: '事项', readProject });
+    try {
+        expect(v.host.textContent).toContain('Owned issue 3');
+        await v.click('ORDER-001');
+        expect(v.host.querySelector('[aria-label="实际业务进展"]')).not.toBeNull();
+        expect(v.host.textContent).toContain('Current fulfillment 3');
+        expect(readProject).toHaveBeenCalledTimes(1);
+    }
+    finally {
+        await v.dispose();
+    }
+});
+it('preserves current progress and owned tasks when an equal-version list finishes after detail', async () => {
+    const list = deferred<ProjectDetail[]>();
+    let lists = 0;
+    const v = await workflowView({ initial: '制造项目', readProjects: async () => ++lists === 1 ? [project] : list.promise, readProject: async () => selectedProject() });
+    try {
+        await v.click('重新读取项目');
+        expect(v.host.textContent).toContain('Current fulfillment 3');
+        await v.click('事项');
+        await v.click('相机项目');
+        expect(v.host.textContent).toContain('Owned issue 3');
+        await act(async () => list.resolve([{ ...project, progress: null, tasks: [] }]));
+        await flush();
+        expect(v.host.textContent).toContain('Owned issue 3');
+        expect(v.host.textContent).not.toContain('正在读取当前责任事项');
+        await v.click('ORDER-001');
+        expect(v.host.textContent).toContain('Current fulfillment 3');
+    }
+    finally {
+        await v.dispose();
+    }
+});
+it('invalidates old progress on a genuinely newer list and fetches its selected detail', async () => {
+    const list = deferred<ProjectDetail[]>(), detail = deferred<ProjectDetail>();
+    let lists = 0, newer = false;
+    const readProject = vi.fn(async () => newer ? detail.promise : selectedProject());
+    const v = await workflowView({ initial: '制造项目', readProjects: async () => ++lists === 1 ? [project] : list.promise, readProject });
+    try {
+        await v.click('重新读取项目');
+        expect(v.host.textContent).toContain('Current fulfillment 3');
+        await v.click('事项');
+        await v.click('相机项目');
+        expect(v.host.textContent).toContain('Owned issue 3');
+        newer = true;
+        await act(async () => list.resolve([{ ...project, version: 4, progress: null, tasks: [] }]));
+        await flush();
+        expect(v.host.textContent).not.toContain('Owned issue 3');
+        expect(v.host.textContent).toContain('正在读取当前责任事项');
+        await act(async () => detail.resolve(selectedProject(4)));
+        await flush();
+        expect(v.host.textContent).toContain('Owned issue 4');
+        await v.click('ORDER-001');
+        expect(v.host.textContent).toContain('Current fulfillment 4');
+        await v.click('返回业务列表');
+        await v.click('登记需求');
+        expect(v.host.textContent).toContain('草稿依据：项目版本 4');
+    }
+    finally {
+        await v.dispose();
     }
 });
