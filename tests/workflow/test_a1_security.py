@@ -56,17 +56,17 @@ def test_read_only_and_hard_stale_block_mutations(workflow):
     workflow.read_only.add("planner")
     assert (
         workflow.command(
-            project["id"], "demand.record", actor_name="planner"
-        ).status_code
-        == 403
+            project["id"], "demand.record", actor_name="planner", expected_status=403
+        )["detail"]
+        == "Workflow is read-only"
     )
     workflow.read_only.clear()
     workflow.hard_stale.add("planner")
     assert (
         workflow.command(
-            project["id"], "demand.record", actor_name="planner"
-        ).status_code
-        == 503
+            project["id"], "demand.record", actor_name="planner", expected_status=503
+        )["detail"]
+        == "hard_stale_read_only"
     )
     assert (
         workflow.client("planner").get(f"{BASE}/projects/{project['id']}").status_code

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from . import orders
 from .authorization import require_project
 from .commands import COMMAND_REGISTRY, CommandContext, WorkflowCommand
 from .contracts import (
@@ -32,7 +33,7 @@ def digest(value):
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 
-def project(row):
+def project(row, tx):
     return ProjectDetail(
         id=row["id"],
         version=row["version"],
@@ -45,6 +46,7 @@ def project(row):
         quantity=str(Decimal(row["q_atoms"]).scaleb(-row["unit_scale"])),
         contract=json.loads(row["contract_json"]),
         legacy_project_id=row["legacy_project_id"],
+        summary=orders.project_summary(tx, row),
     )
 
 
@@ -141,7 +143,7 @@ class WorkflowService:
                 ),
             )
             result = project(
-                tx.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+                tx.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone(), tx
             ).model_dump(mode="json")
             self._save(
                 tx,
@@ -234,7 +236,7 @@ class WorkflowService:
 
     def detail(self, actor: Actor, project_id: UUID) -> ProjectDetail:
         with self.store.transaction() as tx:
-            return project(require_project(tx, actor, project_id))
+            return project(require_project(tx, actor, project_id), tx)
 
     def members(self, actor, project_id):
         with self.store.transaction() as tx:

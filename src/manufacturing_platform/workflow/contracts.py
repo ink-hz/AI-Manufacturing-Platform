@@ -144,6 +144,19 @@ class ProjectDetail(StrictModel):
     quantity: Decimal
     contract: ContractPolicy
     legacy_project_id: UUID | None = None
+    summary: "ProjectQuantitySummary"
+
+
+class ProjectQuantitySummary(StrictModel):
+    original_order_quantity: Decimal = Field(ge=0)
+    current_order_quantity: Decimal = Field(ge=0)
+    allocated: Decimal = Field(ge=0)
+    produced_good: Decimal = Field(ge=0)
+    shipped: Decimal = Field(ge=0)
+    signed: Decimal = Field(ge=0)
+    accepted: Decimal = Field(ge=0)
+    remaining_to_ship: Decimal = Field(ge=0)
+    remaining_to_accept: Decimal = Field(ge=0)
 
 
 class ObjectKind(str, Enum):

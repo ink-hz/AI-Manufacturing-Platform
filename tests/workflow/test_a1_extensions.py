@@ -14,13 +14,20 @@ from manufacturing_platform.workflow.store import WorkflowStore
 from .conftest import BASE, USERS
 
 
-def test_extension_contracts_exist_and_production_registry_starts_empty():
+def test_extension_contracts_exist_and_production_registry_contains_only_real_actions():
     assert hasattr(commands, "CommandRegistry")
     assert hasattr(commands, "CommandContext")
     assert hasattr(contracts, "MutationResult")
     assert hasattr(queries, "ObjectRegistry")
     assert hasattr(contracts, "DomainValue")
-    assert len(commands.COMMAND_REGISTRY) == 0
+    assert set(commands.COMMAND_REGISTRY._entries) == {
+        "demand.record",
+        "demand.review",
+        "order.register",
+        "order.change",
+        "order.resolve_change",
+        "order.allocate",
+    }
 
 
 def test_explicit_scope_required_and_must_match_path(workflow):
@@ -276,17 +283,21 @@ def test_http_uses_trusted_registry_and_unregistered_actions_remain_unsupported(
     response = workflow.command(
         p["id"], "demand.record", actor_name="planner", title="HTTP rename"
     )
-    assert response.status_code == 200, response.text
-    assert response.json()["project_version"] == 3
+    assert response["project_version"] == 3
     assert (
-        workflow.command(p["id"], "order.allocate", actor_name="planner").status_code
-        == 422
+        workflow.command(
+            p["id"], "order.allocate", actor_name="planner", expected_status=422
+        )["code"]
+        == "UNSUPPORTED_ACTION"
     )
     assert (
         workflow.command(
-            p["id"], "demand.record", title="Admin cannot bypass planner policy"
-        ).status_code
-        == 403
+            p["id"],
+            "demand.record",
+            title="Admin cannot bypass planner policy",
+            expected_status=403,
+        )["code"]
+        == "FORBIDDEN"
     )
     response = workflow.client("outsider").post(
         f"{BASE}/projects/{p['id']}/commands", content="broken json"

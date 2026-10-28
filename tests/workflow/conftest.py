@@ -165,13 +165,36 @@ class WorkflowHarness:
         assert response.status_code == 200, response.text
         return response.json()
 
-    def command(self, project_id, action, *, actor_name="owner", **fields):
+    def source(
+        self,
+        external_id,
+        system="erp",
+        version=1,
+        *,
+        object_type="demand",
+        mode="manual",
+    ):
+        return {
+            "system": system,
+            "object_type": object_type,
+            "external_id": external_id,
+            "version": version,
+            "mode": mode,
+            "occurred_at": "2026-10-28T08:00:00+00:00",
+            "collected_at": "2026-10-28T08:01:00+00:00",
+            "cutoff": "2026-10-28T08:00:00+00:00",
+            "evidence": f"manual entry: {external_id}",
+        }
+
+    def command(
+        self, project_id, action, *, actor_name="owner", expected_status=200, **fields
+    ):
         version = (
             self.client(actor_name)
             .get(f"{BASE}/projects/{project_id}")
             .json()["version"]
         )
-        return self.client(actor_name).post(
+        response = self.client(actor_name).post(
             f"{BASE}/projects/{project_id}/commands",
             json={
                 "operation_id": str(uuid4()),
@@ -180,6 +203,8 @@ class WorkflowHarness:
                 **fields,
             },
         )
+        assert response.status_code == expected_status, response.text
+        return response.json()
 
     def db(self):
         connection = sqlite3.connect(f"file:{self.paths.domain}?mode=ro", uri=True)
