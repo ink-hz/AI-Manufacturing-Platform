@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from pydantic import ValidationError
 
 from .adapters.mock import MockAuthorityAdapter, canonical, digest
-from .authorization import require_project
+from .authorization import require_action, require_project
 from .commands import COMMAND_REGISTRY, CommandContext
 from .contracts import (
     Dataset,
@@ -35,16 +35,11 @@ from .exchange_models import (
     ReservationValue,
     ReservePayload,
 )
-from .imports import ingest, parse_import, validate_record
+from .imports import SOURCE_POLICIES, admit_records, ingest, parse_import, record_scope
 from .orders import _history_rows, own
 from .queries import OBJECT_REGISTRY
 from .supply import amount, atoms, available, current_plan_id, fail
 
-SOURCE_POLICIES = {
-    "receipt": "supply.receive",
-    "iqc": "supply.inspect",
-    "customer_approval": "engineering.customer_approval",
-}
 ALL_ROLES = {
     "project_owner",
     "engineering",
@@ -56,7 +51,133 @@ ALL_ROLES = {
 }
 
 
+# Only server-authored diagnostic text is public. Adapter exception/error strings
+# may contain another tenant's identifiers, even when the typed envelope is local.
+PUBLIC_REASONS = frozenset(
+    {
+        "",
+        "Awaiting authoritative acceptance",
+        "Authority rejected request",
+        "Authority response unavailable",
+        "Authority response schema invalid",
+        "Source is not connected",
+        "Configured authority is not connected",
+        "Source snapshot identity mismatch",
+        "Source record unavailable",
+        "Adapter provenance mismatch",
+        "Authority receipt binding or scope mismatch",
+        "Receipt business key mismatch",
+        "No authoritative operation found; dispatch may now retry the same business key",
+        "Authority outcome unknown",
+        "Intent committed; query authoritative business key before submission",
+        "Authoritative source received",
+        "Source identity and domain detail validated",
+        "External actor and signature retained",
+        "Authoritative source attached without duplicate quantities",
+        "Receipt received",
+        "Receipt identity already applied to different detail",
+        "Receipt hash, source object or version mismatch",
+        "Rejected receipt claims accepted quantity",
+        "Stale receipt sequence",
+        "Future receipt clock",
+        "Receipt detail keys differ",
+        "Receipt detail identity, owner or unit mismatch",
+        "Receipt detail quantity differs from requested total",
+        "Receipt quantity precision invalid",
+        "Accepted receipt contains no quantity",
+        "Reservation already confirmed",
+        "Identity, version, sequence and keyed quantities validated",
+        "Authority approved reservation",
+        "File evidence received",
+        "Entire bounded batch validated; no authority acceptance inferred",
+        "Authoritative correction appended",
+        "Original manual fact retained; authoritative correction appended",
+        "Keyed receipt detail reconciled",
+        "Keyed receipt detail discrepancy; equal totals do not prove equality",
+        "Inbound record does not match requested type or scope",
+        "Inbound source identity or provenance mismatch",
+        "Inspection link does not match referenced receipt",
+        "Workflow resource not found",
+        "Referenced receipt must be pulled first",
+        "Customer scope mismatch",
+        "Invalid source clock",
+        "Invalid source type or provenance",
+        "Source identity has changed detail",
+        "Manual receipt differs from authoritative detail; retain evidence and resolve discrepancy",
+        "Inspection event differs from authoritative detail",
+        "IQC quantity exceeds effective receipt",
+        "Inspection event identity or version conflicts",
+        "Explicit inspection link conflicts with source event",
+        "Inspection already belongs to another source event",
+        "Ambiguous manual inspections require an explicit scoped link",
+        "Inspection source event belongs to another receipt",
+        "Initiating business action permission denied",
+    }
+)
+
+
+def public_reason(reason):
+    return (
+        reason
+        if reason in PUBLIC_REASONS
+        else "Exchange evidence requires reconciliation"
+    )
+
+
+def receipt_scope(tx, row, receipt):
+    """Receipt evidence is visible only after binding all referenced identities to the request."""
+    if row["action"] != "reservation.request":
+        return False
+    request = ExternalRequest.model_validate_json(row["request_json"])
+    payload = request.typed_payload
+    if (
+        receipt.business_key != row["business_key"]
+        or receipt.request_hash != row["request_hash"]
+        or receipt.source_object_id != str(payload.reservation_id)
+        or len(receipt.details) != 1
+    ):
+        return False
+    detail = receipt.details[0]
+    if (detail.key, str(detail.lot_id), detail.owner_id, detail.unit) != (
+        str(payload.requirement_id),
+        str(payload.lot_id),
+        payload.owner_id,
+        payload.unit,
+    ):
+        return False
+    scoped = tx.execute(
+        """SELECT 1 FROM reservations r JOIN requirements q ON q.id=r.requirement_id AND q.project_id=r.project_id
+        JOIN material_lots l ON l.id=r.material_lot_id AND l.project_id=r.project_id
+        WHERE r.project_id=? AND r.id=? AND r.requirement_id=? AND r.work_order_id=? AND r.material_lot_id=?""",
+        (
+            row["project_id"],
+            str(payload.reservation_id),
+            str(payload.requirement_id),
+            str(payload.work_order_id),
+            str(payload.lot_id),
+        ),
+    ).fetchone()
+    return (
+        bool(scoped)
+        and not tx.execute(
+            "SELECT 1 FROM reservations WHERE authority_receipt_id=? AND project_id<>?",
+            (str(receipt.receipt_id), row["project_id"]),
+        ).fetchone()
+    )
+
+
+def public_receipt(receipt):
+    return receipt.model_copy(
+        update={
+            "error": "Authority rejected request"
+            if receipt.phase == "rejected"
+            else None
+        }
+    )
+
+
 def event(tx, row, phase, reason, payload=None):
+    reason = public_reason(reason)
     tx.execute(
         "INSERT INTO exchange_events(exchange_id,project_id,phase,reason,payload_json,created_at) VALUES (?,?,?,?,?,?)",
         (
@@ -73,19 +194,7 @@ def event(tx, row, phase, reason, payload=None):
     )
 
 
-def authorize_policy(tx, actor, project_id, policy):
-    require_project(tx, actor, project_id)
-    grant = tx.execute(
-        "SELECT * FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
-        (str(project_id), str(actor.user_id)),
-    ).fetchone()
-    entry = COMMAND_REGISTRY.registration(policy)
-    if actor.read_only or not COMMAND_REGISTRY.permits(
-        entry, json.loads(grant["roles_json"]), json.loads(grant["qualifications_json"])
-    ):
-        raise DomainError(
-            "FORBIDDEN", 403, "Initiating business action permission denied"
-        )
+authorize_policy = require_action
 
 
 class ExchangeService:
@@ -216,16 +325,16 @@ class ExchangeService:
                         if isinstance(receipt, ExternalReceipt)
                         else receipt
                     )
-        except (TimeoutError, OSError) as exc:
+        except (TimeoutError, OSError):
             receipt, records = None, None
-            problem = str(exc)
+            problem = "Authority response unavailable"
         except ValidationError:
             receipt, records = None, None
             problem = "Authority response schema invalid"
             rejected_boundary = True
         except DomainError as exc:
             receipt, records = None, None
-            problem = exc.message
+            problem = public_reason(exc.message)
             rejected_boundary = exc.status != 503
         # Internal apply is another audited, UUID-idempotent command boundary. Revalidate current policy.
         with self.workflow.store.transaction(write=True) as tx:
@@ -249,50 +358,71 @@ class ExchangeService:
                 self,
             )
             if receipt is not None:
-                if receipt.business_key != row["business_key"]:
-                    tx.execute(
-                        "INSERT OR IGNORE INTO exchange_receipts(exchange_id,project_id,receipt_id,payload_json,valid,reason) VALUES (?,?,?,?,0,?)",
-                        (
-                            row["id"],
-                            str(project_id),
-                            str(receipt.receipt_id),
-                            receipt.model_dump_json(),
-                            "Receipt business key mismatch",
-                        ),
+                if not receipt_scope(tx, row, receipt):
+                    self._reject(
+                        tx,
+                        context,
+                        row,
+                        "Authority receipt binding or scope mismatch",
+                        receipt_hash=digest(receipt.model_dump(mode="json")),
                     )
-                    self._reject(tx, context, row, "Receipt business key mismatch")
                 else:
-                    self.apply(tx, context, receipt)
+                    self.apply(tx, context, public_receipt(receipt))
             elif records is not None:
-                event(
-                    tx,
-                    row,
-                    "received",
-                    "Authoritative source received",
-                    {"records": [r.model_dump(mode="json") for r in records]},
-                )
-                tx.execute("SAVEPOINT inbound_batch")
+                pull = PullSource.model_validate_json(row["request_json"])
                 try:
-                    event(tx, row, "received", "Authoritative source received")
-                    ingest(tx, context, records, trusted=True)
-                    event(
+                    admit_records(
                         tx,
-                        row,
-                        "validated",
-                        "Source identity and domain detail validated",
+                        context,
+                        records,
+                        object_type=pull.object_type,
+                        trusted=True,
+                        system=pull.system,
+                        external_id=pull.external_id,
+                        mode=self.adapter.mode,
                     )
-                    event(tx, row, "approved", "External actor and signature retained")
-                    event(
-                        tx,
-                        row,
-                        "accepted",
-                        "Authoritative source attached without duplicate quantities",
-                    )
-                    tx.execute("RELEASE inbound_batch")
                 except DomainError as exc:
-                    tx.execute("ROLLBACK TO inbound_batch")
-                    tx.execute("RELEASE inbound_batch")
                     self._reject(tx, context, row, exc.message)
+                else:
+                    event(
+                        tx,
+                        row,
+                        "received",
+                        "Authoritative source received",
+                        {"records": [r.model_dump(mode="json") for r in records]},
+                    )
+                    tx.execute("SAVEPOINT inbound_batch")
+                    try:
+                        ingest(
+                            tx,
+                            context,
+                            records,
+                            object_type=pull.object_type,
+                            trusted=True,
+                            system=pull.system,
+                            external_id=pull.external_id,
+                            mode=self.adapter.mode,
+                        )
+                        event(
+                            tx,
+                            row,
+                            "validated",
+                            "Source identity and domain detail validated",
+                        )
+                        event(
+                            tx, row, "approved", "External actor and signature retained"
+                        )
+                        event(
+                            tx,
+                            row,
+                            "accepted",
+                            "Authoritative source attached without duplicate quantities",
+                        )
+                        tx.execute("RELEASE inbound_batch")
+                    except DomainError as exc:
+                        tx.execute("ROLLBACK TO inbound_batch")
+                        tx.execute("RELEASE inbound_batch")
+                        self._reject(tx, context, row, exc.message)
             elif rejected_boundary:
                 self._reject(tx, context, row, problem)
             else:
@@ -328,8 +458,15 @@ class ExchangeService:
         )
 
     @staticmethod
-    def _reject(tx, context, row, reason):
-        event(tx, row, "rejected", reason)
+    def _reject(tx, context, row, reason, *, receipt_hash=None):
+        reason = public_reason(reason)
+        event(
+            tx,
+            row,
+            "rejected",
+            reason,
+            {"receipt_hash": receipt_hash} if receipt_hash else None,
+        )
         tx.execute(
             "INSERT INTO exchange_discrepancies(exchange_id,project_id,owner_id,owner_name,reason,evidence) VALUES (?,?,?,?,?,?)",
             (
@@ -338,7 +475,7 @@ class ExchangeService:
                 str(context.actor.user_id),
                 context.actor.display_name,
                 reason,
-                "Receipt/source retained for reconciliation",
+                "Rejected outcome recorded for reconciliation",
             ),
         )
 
@@ -351,6 +488,20 @@ class ExchangeService:
         if not row:
             fail("Unknown receipt business key")
         authorize_policy(tx, context.actor, context.project_id, row["policy_action"])
+        if not receipt_scope(tx, row, receipt):
+            self._reject(
+                tx,
+                context,
+                row,
+                "Authority receipt binding or scope mismatch",
+                receipt_hash=digest(receipt.model_dump(mode="json")),
+            )
+            return MutationResult(
+                object_type="exchange",
+                object_id=UUID(row["id"]),
+                exchange_id=UUID(row["id"]),
+            )
+        receipt = public_receipt(receipt)
         request = ExternalRequest.model_validate_json(row["request_json"])
         payload = request.typed_payload
         reason = ""
@@ -620,11 +771,7 @@ def import_source(tx, context, command):
         records = parse_import(content, command.format, command.object_type)
     else:
         records = command.rows
-    for row in records:
-        if row.object_type != command.object_type:
-            raise DomainError("IMPORT_INVALID", 422, "Mixed import object types")
-        validate_record(row, context, trusted=False)
-    result = ingest(tx, context, records)[-1]
+    result = ingest(tx, context, records, object_type=command.object_type)[-1]
     eid = str(uuid4())
     tx.execute(
         "INSERT INTO exchanges(id,project_id,action,policy_action,system,business_key,mode,request_json,request_hash,phase,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -690,6 +837,10 @@ def reconcile(tx, context, command):
             tx,
             context,
             records,
+            object_type=PullSource.model_validate_json(row["request_json"]).object_type,
+            system=row["system"],
+            external_id=PullSource.model_validate_json(row["request_json"]).external_id,
+            mode=row["mode"],
             trusted=True,
             correction_exchange=row["id"],
             correction_evidence=command.evidence,
@@ -816,13 +967,17 @@ def detail(tx, pid, kind, ident):
             "SELECT payload_json FROM exchange_receipts WHERE exchange_id=? ORDER BY seq DESC LIMIT 1",
             (row["id"],),
         ).fetchone()
-        receipt = (
-            ExternalReceipt.model_validate_json(row["receipt_json"])
-            if row["receipt_json"]
-            else ExternalReceipt.model_validate_json(received[0])
-            if received
-            else None
-        )
+        receipt = None
+        try:
+            raw_receipt = row["receipt_json"] or (received[0] if received else None)
+            if raw_receipt:
+                receipt = ExternalReceipt.model_validate_json(raw_receipt)
+        except (ValidationError, ValueError):
+            pass
+        if receipt is not None:
+            receipt = (
+                public_receipt(receipt) if receipt_scope(tx, row, receipt) else None
+            )
         req = (
             ExternalRequest.model_validate_json(row["request_json"])
             if row["action"] == "reservation.request"
@@ -832,10 +987,30 @@ def detail(tx, pid, kind, ident):
             "SELECT payload_json FROM exchange_events WHERE exchange_id=? AND json_type(payload_json,'$.records')='array' ORDER BY seq DESC LIMIT 1",
             (row["id"],),
         ).fetchone()
-        inbound = json.loads(saved[0])["records"][0] if saved else None
+        inbound = None
+        if saved and row["action"] == "source.pull":
+            from .imports import record_adapter
+
+            try:
+                stored_records = json.loads(saved[0])["records"]
+                pull = PullSource.model_validate_json(row["request_json"])
+                if len(stored_records) == 1:
+                    stored = record_adapter.validate_python(stored_records[0])
+                    record_scope(
+                        tx,
+                        pid,
+                        stored,
+                        object_type=pull.object_type,
+                        system=pull.system,
+                        external_id=pull.external_id,
+                        mode=row["mode"],
+                    )
+                    inbound = stored.model_dump(mode="json")
+            except (DomainError, ValidationError, ValueError, KeyError):
+                pass
         value = ExchangeValue(
             discrepancies=[
-                dict(r)
+                {**dict(r), "reason": public_reason(r["reason"])}
                 for r in tx.execute(
                     "SELECT seq sequence,owner_id,owner_name,reason,evidence,resolves_seq resolves_sequence FROM exchange_discrepancies WHERE exchange_id=? ORDER BY seq DESC LIMIT 100",
                     (row["id"],),
@@ -858,9 +1033,9 @@ def detail(tx, pid, kind, ident):
             else "0",
             rejected=str(receipt.rejected_quantity) if receipt else "0",
             unit=req.typed_payload.unit if req else "",
-            reason=row["reason"],
+            reason=public_reason(row["reason"]),
             events=[
-                dict(r)
+                {**dict(r), "reason": public_reason(r["reason"])}
                 for r in tx.execute(
                     "SELECT seq sequence,phase,reason FROM exchange_events WHERE exchange_id=? ORDER BY seq DESC LIMIT 100",
                     (row["id"],),

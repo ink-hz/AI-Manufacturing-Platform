@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from pydantic import TypeAdapter, ValidationError
 
+from .authorization import require_action
 from .contracts import DomainError, MutationResult
 from .exchange_models import (
     InboundApproval,
@@ -15,9 +16,19 @@ from .exchange_models import (
     TypedInboundRecord,
 )
 from .orders import own, source_key
-from .supply import atoms, inspect_supply, receive_supply
+from .supply import (
+    atoms,
+    inspect_supply,
+    receive_supply,
+    validate_inspection_conservation,
+)
 from .supply_models import InspectSupply, ReceiveSupply
 
+SOURCE_POLICIES = {
+    "receipt": "supply.receive",
+    "iqc": "supply.inspect",
+    "customer_approval": "engineering.customer_approval",
+}
 MAX_BYTES = 1024 * 1024
 record_adapter = TypeAdapter(TypedInboundRecord)
 
@@ -95,17 +106,192 @@ def validate_record(record, context, *, trusted):
         raise DomainError("IMPORT_INVALID", 422, "Invalid source clock")
 
 
+def record_scope(
+    tx, project_id, record, *, object_type, system=None, external_id=None, mode=None
+):
+    """Admission/read predicate: requested type and source identity precede evidence visibility."""
+    key = source_key(record.source)
+    if (
+        record.project_id != UUID(str(project_id))
+        or record.object_type != object_type
+        or key[1] != object_type
+    ):
+        raise DomainError(
+            "SOURCE_DISCREPANCY",
+            409,
+            "Inbound record does not match requested type or scope",
+        )
+    if (
+        (system is not None and key[0] != system.strip().casefold())
+        or (external_id is not None and key[2] != external_id.strip())
+        or (mode is not None and record.source.mode != mode)
+    ):
+        raise DomainError(
+            "SOURCE_DISCREPANCY", 409, "Inbound source identity or provenance mismatch"
+        )
+    if tx.execute(
+        "SELECT 1 FROM source_confirmations WHERE system=? AND object_type=? AND external_id=? AND project_id<>? LIMIT 1",
+        (*key, str(project_id)),
+    ).fetchone():
+        raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+    if isinstance(record, InboundReceipt):
+        own(tx, "supply_commitments", project_id, record.commitment_id)
+        own(tx, "material_lots", project_id, record.material_lot_id)
+    elif isinstance(record, InboundIQC):
+        receipt = tx.execute(
+            "SELECT id FROM supply_receipts WHERE project_id=? AND source_system=? AND source_type='receipt' AND source_external_id=?",
+            (
+                str(project_id),
+                record.receipt_system.strip().casefold(),
+                record.receipt_external_id.strip(),
+            ),
+        ).fetchone()
+        if receipt is None:
+            raise DomainError(
+                "NOT_FOUND", 404, "Referenced receipt must be pulled first"
+            )
+        if record.manual_iqc_id:
+            manual = own(tx, "iqc_results", project_id, record.manual_iqc_id)
+            if manual["receipt_id"] != receipt["id"]:
+                raise DomainError(
+                    "SOURCE_DISCREPANCY",
+                    409,
+                    "Inspection link does not match referenced receipt",
+                )
+    elif isinstance(record, InboundApproval):
+        own(tx, "engineering_revisions", project_id, record.revision_id)
+        project = tx.execute(
+            "SELECT customer_id FROM projects WHERE id=?", (str(project_id),)
+        ).fetchone()
+        if project["customer_id"] != record.customer_id:
+            raise DomainError("SOURCE_DISCREPANCY", 409, "Customer scope mismatch")
+
+
+def admit_records(
+    tx,
+    context,
+    records,
+    *,
+    object_type,
+    trusted=False,
+    system=None,
+    external_id=None,
+    mode=None,
+):
+    """One boundary for pull, imports and retained reconciliation, before any visible write."""
+    require_action(tx, context.actor, context.project_id, SOURCE_POLICIES[object_type])
+    for number, record in enumerate(records, 1):
+        try:
+            if not trusted and record.object_type != object_type:
+                raise DomainError("IMPORT_INVALID", 422, "Mixed import object types")
+            record_scope(
+                tx,
+                context.project_id,
+                record,
+                object_type=object_type,
+                system=system,
+                external_id=external_id,
+                mode=mode,
+            )
+            validate_record(record, context, trusted=trusted)
+            # Do not let a broad envelope policy authorize another row's business action.
+            require_action(
+                tx,
+                context.actor,
+                context.project_id,
+                SOURCE_POLICIES[record.object_type],
+            )
+        except DomainError as exc:
+            exc.fields = {**exc.fields, "line": number}
+            raise
+
+
+def inspection_target(tx, project_id, receipt_id, record):
+    """Bind exact normalized event identity first; quantities never select an event."""
+    key = source_key(record.source)
+    known = tx.execute(
+        "SELECT fact_id,version FROM source_confirmations WHERE system=? AND object_type=? AND external_id=? ORDER BY seq",
+        key,
+    ).fetchall()
+    matched = None
+    if known:
+        if (
+            any(r["version"] != record.source.version for r in known)
+            or len({r["fact_id"] for r in known}) != 1
+        ):
+            raise DomainError(
+                "SOURCE_DISCREPANCY",
+                409,
+                "Inspection event identity or version conflicts",
+            )
+        matched = own(tx, "effective_iqc_results", project_id, known[0]["fact_id"])
+        if record.manual_iqc_id and str(record.manual_iqc_id) != matched["id"]:
+            raise DomainError(
+                "SOURCE_DISCREPANCY",
+                409,
+                "Explicit inspection link conflicts with source event",
+            )
+    elif record.manual_iqc_id:
+        matched = own(tx, "effective_iqc_results", project_id, record.manual_iqc_id)
+        if tx.execute(
+            "SELECT 1 FROM source_confirmations WHERE object_type='iqc' AND fact_id=? LIMIT 1",
+            (matched["id"],),
+        ).fetchone():
+            raise DomainError(
+                "SOURCE_DISCREPANCY",
+                409,
+                "Inspection already belongs to another source event",
+            )
+    else:
+        # A uniquely unkeyed manual observation on this exact receipt can be proposed
+        # for confirmation; multiple observations require an explicit scoped link.
+        candidates = tx.execute(
+            """SELECT i.* FROM effective_iqc_results i WHERE i.project_id=? AND i.receipt_id=?
+            AND NOT EXISTS(SELECT 1 FROM source_confirmations c WHERE c.object_type='iqc' AND c.fact_id=i.id)
+            ORDER BY i.accepted_seq LIMIT 2""",
+            (str(project_id), receipt_id),
+        ).fetchall()
+        if len(candidates) > 1:
+            raise DomainError(
+                "SOURCE_DISCREPANCY",
+                409,
+                "Ambiguous manual inspections require an explicit scoped link",
+            )
+        matched = candidates[0] if candidates else None
+    if matched and matched["receipt_id"] != receipt_id:
+        raise DomainError(
+            "SOURCE_DISCREPANCY",
+            409,
+            "Inspection source event belongs to another receipt",
+        )
+    return matched
+
+
 def ingest(
     tx,
     context,
     records,
     *,
+    object_type,
     trusted=False,
+    system=None,
+    external_id=None,
+    mode=None,
     correction_exchange=None,
     correction_evidence="",
 ):
     from .adapters.mock import digest
 
+    admit_records(
+        tx,
+        context,
+        records,
+        object_type=object_type,
+        trusted=trusted,
+        system=system,
+        external_id=external_id,
+        mode=mode,
+    )
     results = []
     # Entire command is transactional; any failure rolls back every prior row.
     for index, record in enumerate(records, 1):
@@ -129,6 +315,10 @@ def ingest(
                     "iqc": "receipt",
                     "customer_approval": "revision",
                 }[record.object_type]
+                if kind == "receipt":
+                    validate_inspection_conservation(
+                        tx, context.project_id, existing["object_id"]
+                    )
                 results.append(
                     MutationResult(
                         object_type=kind, object_id=UUID(existing["object_id"])
@@ -175,16 +365,12 @@ def ingest(
                         and actual[4] == expected[4]
                         and prior["source_version"] == record.source.version
                     ):
-                        checked = tx.execute(
-                            "SELECT COALESCE(SUM(accepted_atoms+rejected_atoms),0) FROM effective_iqc_results WHERE receipt_id=?",
-                            (prior["id"],),
-                        ).fetchone()[0]
-                        if expected[3] < checked:
-                            raise DomainError(
-                                "SOURCE_DISCREPANCY",
-                                409,
-                                "Corrected receipt cannot be below inspected quantity; reconcile inspection first",
-                            )
+                        validate_inspection_conservation(
+                            tx,
+                            context.project_id,
+                            prior["id"],
+                            received_atoms=expected[3],
+                        )
                         tx.execute(
                             "INSERT INTO source_corrections(project_id,receipt_id,received_delta,exchange_id,evidence) VALUES (?,?,?,?,?)",
                             (
@@ -244,50 +430,40 @@ def ingest(
                 rejected = atoms(
                     record.rejected, lot["unit"], lot["unit"], lot["scale"]
                 )
-                matches = tx.execute(
-                    """SELECT i.* FROM effective_iqc_results i WHERE i.project_id=? AND i.receipt_id=? AND NOT EXISTS(SELECT 1 FROM source_confirmations c WHERE c.object_type='iqc' AND c.fact_id=i.id AND c.mode IN ('mock','api')) ORDER BY i.accepted_seq""",
-                    (str(context.project_id), receipt["id"]),
-                ).fetchall()
-                matched = None
-                if record.manual_iqc_id:
-                    matched = next(
-                        (i for i in matches if i["id"] == str(record.manual_iqc_id)),
-                        None,
-                    )
-                    if not matched or (
+                matched = inspection_target(
+                    tx, context.project_id, receipt["id"], record
+                )
+                if matched:
+                    differs = (
                         matched["accepted_atoms"],
                         matched["rejected_atoms"],
-                    ) != (accepted, rejected):
+                    ) != (accepted, rejected)
+                    if differs and not correction_exchange:
                         raise DomainError(
                             "SOURCE_DISCREPANCY",
                             409,
-                            "Manual inspection differs from authoritative detail",
+                            "Inspection event differs from authoritative detail",
                         )
-                elif len(matches) == 1 and (
-                    matches[0]["accepted_atoms"],
-                    matches[0]["rejected_atoms"],
-                ) == (accepted, rejected):
-                    matched = matches[0]
-                if correction_exchange and not matched and len(matches) == 1:
-                    matched = matches[0]
-                    if accepted + rejected > receipt["q_atoms"]:
-                        raise DomainError(
-                            "SOURCE_DISCREPANCY",
-                            409,
-                            "Corrected inspection exceeds receipt",
-                        )
-                    tx.execute(
-                        "INSERT INTO source_corrections(project_id,receipt_id,iqc_id,accepted_delta,rejected_delta,exchange_id,evidence) VALUES (?,?,?,?,?,?,?)",
-                        (
-                            str(context.project_id),
-                            receipt["id"],
-                            matched["id"],
-                            accepted - matched["accepted_atoms"],
-                            rejected - matched["rejected_atoms"],
-                            correction_exchange,
-                            correction_evidence,
-                        ),
+                    validate_inspection_conservation(
+                        tx,
+                        context.project_id,
+                        receipt["id"],
+                        replacement=(accepted, rejected),
+                        target_id=matched["id"],
                     )
+                    if differs:
+                        tx.execute(
+                            "INSERT INTO source_corrections(project_id,receipt_id,iqc_id,accepted_delta,rejected_delta,exchange_id,evidence) VALUES (?,?,?,?,?,?,?)",
+                            (
+                                str(context.project_id),
+                                receipt["id"],
+                                matched["id"],
+                                accepted - matched["accepted_atoms"],
+                                rejected - matched["rejected_atoms"],
+                                correction_exchange,
+                                correction_evidence,
+                            ),
+                        )
                 if matched:
                     result = MutationResult(
                         object_type="receipt", object_id=UUID(receipt["id"])

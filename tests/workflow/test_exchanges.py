@@ -391,3 +391,167 @@ def test_apply_returns_fresh_version_metadata_without_rewriting_intent(workflow)
     )
     assert replay["project_version"] == dispatched["project_version"]
     assert replay["current_project_version"] == current
+
+
+@pytest.mark.parametrize("corruption", ["wrong_key", "foreign_detail"])
+def test_review_foreign_receipt_is_not_project_visible(
+    workflow, monkeypatch, corruption
+):
+    import json
+
+    from manufacturing_platform.workflow.adapters.mock import MockAuthorityAdapter
+
+    from .test_imports import review_iqc, review_receipt
+
+    pa, ra, sa, ea = reserve(workflow)
+    pb, _, sb, eb = reserve(workflow)
+    stock(workflow, pa, sa)
+    review_receipt(workflow, pb, sb)
+    review_iqc(workflow, pb, "foreign-iqc", "100")
+    act(workflow, pb, eb)
+    foreign = authority(workflow).query("erp", eb["exchange_id"])
+    workflow.grant(pb["id"], "planner", [], active=False)
+    assert (
+        workflow.client("planner").get(f"{BASE}/projects/{pb['id']}").status_code == 404
+    )
+    original = MockAuthorityAdapter.submit
+
+    def corrupt(self, request):
+        actual = original(self, request)
+        return (
+            foreign
+            if corruption == "wrong_key"
+            else actual.model_copy(
+                update={
+                    "details": foreign.details,
+                    "error": f"Foreign {pb['id']} {eb['exchange_id']} {sb['lot_id']}",
+                }
+            )
+        )
+
+    monkeypatch.setattr(MockAuthorityAdapter, "submit", corrupt)
+    act(workflow, pa, ea)
+    response = workflow.client("planner").get(
+        f"{BASE}/projects/{pa['id']}/objects/exchange/{ea['exchange_id']}"
+    )
+    assert response.status_code == 200
+    body = response.json()["value"]
+    assert body["phase"] == "rejected" and body["receipt"] is None
+    for secret in (pb["id"], eb["exchange_id"], sb["lot_id"]):
+        assert secret not in response.text
+        with workflow.db() as db:
+            visible = json.dumps(
+                [
+                    tuple(r)
+                    for r in db.execute(
+                        "SELECT payload_json,reason FROM exchange_events WHERE exchange_id=?",
+                        (ea["exchange_id"],),
+                    )
+                ]
+            )
+        assert secret not in visible
+    assert workflow.balance(pa["id"], ra["id"])["reserved"] == "0"
+    assert authority(workflow).balance(sa["lot_id"]) == "20"
+    workflow.command(
+        pa["id"],
+        "reservation.request",
+        actor_name="planner",
+        work_order_id=sa["work_order_id"],
+        requirement_id=ra["id"],
+        lot_id=sa["lot_id"],
+        quantity="80",
+        unit="kg",
+        expected_status=409,
+    )
+
+    monkeypatch.setattr(MockAuthorityAdapter, "submit", original)
+    act(workflow, pa, ea, "exchange.query")
+    assert workflow.balance(pa["id"], ra["id"])["reserved"] == "80"
+    assert authority(workflow).operation_count(ea["exchange_id"]) == 1
+
+
+def test_review_old_invalid_evidence_is_defensively_filtered(workflow):
+    import sqlite3
+
+    from .test_imports import review_iqc, review_receipt
+
+    pa, _, _, ea = reserve(workflow)
+    pb, _, sb, eb = reserve(workflow)
+    review_receipt(workflow, pb, sb)
+    review_iqc(workflow, pb, "legacy-iqc", "100")
+    act(workflow, pb, eb)
+    foreign = authority(workflow).query("erp", eb["exchange_id"])
+    workflow.grant(pb["id"], "planner", [], active=False)
+    leaked = f"Provider diagnostic {pb['id']} {sb['lot_id']} {eb['exchange_id']}"
+    # Historical invalid protocol-evidence fixture only: no stock, inspection,
+    # reservation confirmation, successful operation or authoritative fact is fabricated.
+    with sqlite3.connect(workflow.paths.domain) as db:
+        db.execute(
+            "INSERT INTO exchange_receipts(exchange_id,project_id,receipt_id,payload_json,valid,reason) VALUES (?,?,?,?,0,?)",
+            (
+                ea["exchange_id"],
+                pa["id"],
+                str(foreign.receipt_id),
+                foreign.model_dump_json(),
+                leaked,
+            ),
+        )
+        db.execute(
+            "INSERT INTO exchange_events(exchange_id,project_id,phase,reason,payload_json,created_at) VALUES (?,?,?,?,?,?)",
+            (
+                ea["exchange_id"],
+                pa["id"],
+                "rejected",
+                leaked,
+                foreign.model_dump_json(),
+                foreign.occurred_at.isoformat(),
+            ),
+        )
+    response = workflow.client("planner").get(
+        f"{BASE}/projects/{pa['id']}/objects/exchange/{ea['exchange_id']}"
+    )
+    assert response.status_code == 200 and response.json()["value"]["receipt"] is None
+    for secret in (pb["id"], sb["lot_id"], eb["exchange_id"]):
+        assert secret not in response.text
+
+
+def test_review_bound_receipt_and_adapter_exception_do_not_publish_provider_strings(
+    workflow, monkeypatch
+):
+    from manufacturing_platform.workflow.adapters.mock import MockAuthorityAdapter
+
+    p, req, supply, result = reserve(workflow)
+    stock(workflow, p, supply)
+    secret = "foreign-business-key-unpublished"
+    original = MockAuthorityAdapter.submit
+
+    def corrupt(self, request):
+        return original(self, request).model_copy(update={"error": secret})
+
+    monkeypatch.setattr(MockAuthorityAdapter, "submit", corrupt)
+    act(workflow, p, result)
+    response = workflow.client().get(
+        f"{BASE}/projects/{p['id']}/objects/exchange/{result['exchange_id']}"
+    )
+    assert secret not in response.text
+    assert workflow.balance(p["id"], req["id"])["reserved"] == "80"
+
+
+def test_review_adapter_transport_errors_do_not_publish_provider_strings(
+    workflow, monkeypatch
+):
+    from manufacturing_platform.workflow.adapters.mock import MockAuthorityAdapter
+
+    p, _, _, result = reserve(workflow)
+    secret = "foreign-operation-identifier-in-exception"
+
+    def unavailable(*args):
+        raise TimeoutError(secret)
+
+    monkeypatch.setattr(MockAuthorityAdapter, "query", unavailable)
+    act(workflow, p, result)
+    response = workflow.client().get(
+        f"{BASE}/projects/{p['id']}/objects/exchange/{result['exchange_id']}"
+    )
+    assert response.json()["value"]["phase"] == "unknown"
+    assert secret not in response.text

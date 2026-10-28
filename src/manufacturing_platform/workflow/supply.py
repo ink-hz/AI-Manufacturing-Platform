@@ -391,6 +391,39 @@ def receive_supply(
     return MutationResult(object_type=ObjectKind.receipt, object_id=UUID(ident))
 
 
+def validate_inspection_conservation(
+    tx, project_id, receipt_id, *, replacement=None, target_id=None, received_atoms=None
+):
+    """One invariant for inspection append/replacement and receipt quantity correction."""
+    receipt = own(tx, "effective_supply_receipts", project_id, receipt_id)
+    if target_id is not None:
+        target = own(tx, "effective_iqc_results", project_id, target_id)
+        if target["receipt_id"] != receipt["id"] or replacement is None:
+            fail("Inspection target does not match receipt")
+    total = tx.execute(
+        """SELECT COALESCE(SUM(accepted_atoms+rejected_atoms),0) checked,
+            COALESCE(MIN(accepted_atoms),0) min_accepted,COALESCE(MIN(rejected_atoms),0) min_rejected
+            FROM effective_iqc_results WHERE project_id=? AND receipt_id=? AND (? IS NULL OR id<>?)""",
+        (
+            str(project_id),
+            receipt["id"],
+            str(target_id) if target_id else None,
+            str(target_id) if target_id else None,
+        ),
+    ).fetchone()
+    accepted, rejected = replacement if replacement is not None else (0, 0)
+    received = receipt["q_atoms"] if received_atoms is None else received_atoms
+    if (
+        min(total["min_accepted"], total["min_rejected"], accepted, rejected, received)
+        < 0
+    ):
+        fail("Receipt and inspection quantities must remain nonnegative")
+    if replacement is not None and accepted + rejected == 0:
+        fail("IQC result has no quantity")
+    if total["checked"] + accepted + rejected > received:
+        fail("IQC quantity exceeds effective receipt")
+
+
 def inspect_supply(tx, context, command: InspectSupply):
     receipt = own(
         tx, "effective_supply_receipts", context.project_id, command.receipt_id
@@ -398,14 +431,9 @@ def inspect_supply(tx, context, command: InspectSupply):
     lot = own(tx, "material_lots", context.project_id, receipt["material_lot_id"])
     accepted = atoms(command.accepted, lot["unit"], lot["unit"], lot["scale"])
     rejected = atoms(command.rejected, lot["unit"], lot["unit"], lot["scale"])
-    if accepted + rejected == 0:
-        fail("IQC result has no quantity")
-    checked = tx.execute(
-        "SELECT COALESCE(SUM(accepted_atoms+rejected_atoms),0) FROM effective_iqc_results WHERE project_id=? AND receipt_id=?",
-        (str(context.project_id), receipt["id"]),
-    ).fetchone()[0]
-    if checked + accepted + rejected > receipt["q_atoms"]:
-        fail("IQC quantity exceeds uninspected receipt")
+    validate_inspection_conservation(
+        tx, context.project_id, receipt["id"], replacement=(accepted, rejected)
+    )
     tx.execute(
         "INSERT INTO iqc_results VALUES (?,?,?,?,?,?,?,?)",
         (
