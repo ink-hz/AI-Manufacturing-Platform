@@ -140,7 +140,7 @@ export interface ExchangeValue {
 export type CommandFields =
   | {action:"unit.register";work_order_id:string;sns:string[]}
   | {action:"production.start";work_order_id:string;mode:"trial"|"bulk";unit_ids:string[];quantity:string}
-  | {action:"production.interrupt";work_order_id:string;reason:string;kind:"S3"|"S4"|"other";interruption_id?:string|null}
+  | {action:"production.interrupt";work_order_id:string;reason:string;kind:"S3"|"S4"|"other";interruption_id?:string|null;start_id?:string|null}
   | {action:"production.resume";interruption_id:string;plan_id:string;evidence:string}
   | {action:"execution.record";source:SourceRef;work_order_id:string;sn:string;station:string;route_version:string;program_version:string;firmware_version:string;material_uses:{lot_id:string;quantity:string;unit:string}[];result:"pass"|"fail";occurred_at:string;supersedes_event_id?:string|null;rework_order_id?:string|null}
   | {action:"first_article.record";work_order_id:string;unit_ids:string[];test_ids:string[];inspection_id:string}
@@ -304,8 +304,8 @@ export interface WorkOrderImpactPreview {
 }
 export type DomainValue =
   | ExchangeValue
-  | {kind:"unit";id:string;project_id:string;work_order_id:string;revision_id:string;sn:string;state:"registered"|"start_pending"|"running"|"stopped";mode:"trial"|"bulk"|null;accepted_start_id:string|null;execution_event_ids:string[];execution_event_total:number;execution_events:{id:string;source:SourceRef;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[]}
-  | {kind:"interruption";id:string;work_order_id:string;reason:string;exception_id:string|null;exception_kind:"S3"|"S4"|"other";requested_at:string;authority_stopped_at:string|null;resolved_at:string|null;plan_id:string|null;stop_exchange_id:string;resume_exchange_id:string|null;stop_exchange_ids:string[];resume_exchange_ids:string[]}
+  | {kind:"unit";id:string;project_id:string;work_order_id:string;revision_id:string;sn:string;state:"registered"|"start_pending"|"running"|"stopped";mode:"trial"|"bulk"|null;accepted_start_id:string|null;authority_start_accepted:boolean;execution_event_ids:string[];execution_event_total:number;execution_events:{id:string;source:SourceRef;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[]}
+  | {kind:"interruption";id:string;work_order_id:string;reason:string;exception_id:string|null;exception_kind:"S3"|"S4"|"other";requested_at:string;authority_stopped_at:string|null;resolved_at:string|null;plan_id:string|null;stop_exchange_id:string;recovery_start_id:string|null;resume_exchange_id:string|null;stop_exchange_ids:string[];resume_exchange_ids:string[]}
   | {kind:"reservation";requirement_id:string;work_order_id:string;material_lot_id:string;requested:string;confirmed:string;remaining:string;unit:string;source_version:number;authority_receipt_id:string|null;exchange_id:string}
   | {
       kind: "demand";
@@ -393,6 +393,7 @@ export type DomainValue =
       bulk_readiness: Readiness;
       execution_event_total:number;
       execution_events:{id:string;claimed_sn:string;source:SourceRef;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[];
+      held_start_scopes?:{id:string;mode:"trial"|"bulk";sns:string[];exchange_id:string;receipt_id:string}[];
     }
   | {kind:"plan";state:"confirmed"|"rejected";reason:string;source:SourceRef;input_revision_ids:string[];input_order_versions:{order_line_id:string;version:number}[];requirement_ids:string[];cutoff:string|null}
   | {kind:"requirement";plan_id:string;lineage_id:string;supersedes_requirement_id:string|null;work_order_id:string;execution_scope:"trial"|"bulk"|"common";material_id:string;owner_id:string;quantity:string;unit:string;balance:MaterialBalance;unqualified_quantity:string}

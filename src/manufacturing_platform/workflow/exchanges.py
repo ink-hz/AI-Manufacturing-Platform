@@ -195,7 +195,19 @@ def receipt_scope(tx, row, receipt):
                 "stop" if isinstance(payload, StopPayload) else "resume",
             ),
         ).fetchone()
-        return bool(scoped) and not receipt.details
+        start_scoped = True
+        if isinstance(payload, StopPayload) and payload.start_id:
+            start_scoped = bool(
+                tx.execute(
+                    "SELECT 1 FROM start_requests WHERE id=? AND project_id=? AND work_order_id=? AND accepted_receipt_id IS NOT NULL",
+                    (
+                        str(payload.start_id),
+                        row["project_id"],
+                        str(payload.work_order_id),
+                    ),
+                ).fetchone()
+            )
+        return bool(scoped) and start_scoped and not receipt.details
     if row["action"] != "reservation.request":
         return False
     request = ExternalRequest.model_validate_json(row["request_json"])
@@ -388,7 +400,28 @@ class ExchangeService:
                 # Even the first dispatch queries; a crash after submission can never blindly resend.
                 receipt = self.adapter.query(request.system, request.business_key)
                 if receipt is None and isinstance(command, DispatchExchange):
-                    receipt = self.adapter.submit(request)
+                    if isinstance(request.typed_payload, (StartPayload, ResumePayload)):
+                        from .execution import outbound_execution_ready
+
+                        with self.workflow.store.transaction() as live_tx:
+                            live_row = own(
+                                live_tx, "exchanges", project_id, result.exchange_id
+                            )
+                            authorize_policy(
+                                live_tx, actor, project_id, live_row["policy_action"]
+                            )
+                            ready = outbound_execution_ready(
+                                live_tx,
+                                project_id,
+                                request.typed_payload,
+                                datetime.now(UTC),
+                            )
+                    else:
+                        ready = True
+                    if ready:
+                        receipt = self.adapter.submit(request)
+                    else:
+                        problem = "Current readiness blocks authority submission; restore and dispatch this intent"
                 elif receipt is None:
                     problem = "No authoritative operation found; dispatch may now retry the same business key"
                 if receipt is not None:
@@ -842,12 +875,49 @@ class ExchangeService:
                         for mode in modes
                     )
                 ):
-                    self._reject(
-                        tx,
-                        context,
-                        row,
-                        "Readiness changed before authority acceptance",
-                    )
+                    if isinstance(payload, StartPayload):
+                        tx.execute(
+                            "UPDATE exchanges SET receipt_json=?,source_sequence=? WHERE id=?",
+                            (receipt.model_dump_json(), receipt.sequence, row["id"]),
+                        )
+                        tx.execute(
+                            "UPDATE start_requests SET accepted_receipt_id=?,accepted_seq=? WHERE id=?",
+                            (str(receipt.receipt_id), receipt.sequence, source_id),
+                        )
+                        for uid, _ in payload.units:
+                            tx.execute(
+                                "UPDATE units SET accepted_start_id=? WHERE id=? AND project_id=? AND state='start_pending'",
+                                (source_id, str(uid), str(context.project_id)),
+                            )
+                        event(
+                            tx,
+                            row,
+                            "accepted",
+                            "MES accepted start; local safety hold requires scoped stop and replan",
+                        )
+                    else:
+                        tx.execute(
+                            "UPDATE exchanges SET receipt_json=?,source_sequence=? WHERE id=?",
+                            (receipt.model_dump_json(), receipt.sequence, row["id"]),
+                        )
+                        tx.execute(
+                            "UPDATE interruptions SET resolved_at=? WHERE id=? AND project_id=?",
+                            (
+                                receipt.occurred_at.isoformat(),
+                                source_id,
+                                str(context.project_id),
+                            ),
+                        )
+                        tx.execute(
+                            "UPDATE units SET state='start_pending' WHERE project_id=? AND work_order_id=? AND state='stopped' AND accepted_start_id IS NOT NULL",
+                            (str(context.project_id), str(payload.work_order_id)),
+                        )
+                        event(
+                            tx,
+                            row,
+                            "accepted",
+                            "MES accepted resume; local safety hold requires a new scoped stop",
+                        )
                     return MutationResult(
                         object_type="exchange",
                         object_id=UUID(row["id"]),
@@ -883,7 +953,7 @@ class ExchangeService:
                     ),
                 )
                 tx.execute(
-                    "UPDATE units SET state='stopped' WHERE project_id=? AND work_order_id=? AND state='running'",
+                    "UPDATE units SET state='stopped' WHERE project_id=? AND work_order_id=? AND (state='running' OR (state='start_pending' AND accepted_start_id IS NOT NULL))",
                     (str(context.project_id), str(payload.work_order_id)),
                 )
             elif isinstance(payload, ResumePayload):

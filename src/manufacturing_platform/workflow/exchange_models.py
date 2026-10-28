@@ -75,6 +75,7 @@ class StopPayload(StrictModel):
     interruption_id: UUID
     work_order_id: UUID
     reason: str = Field(min_length=1, max_length=2000)
+    start_id: UUID | None = None
 
 
 class ResumePayload(StrictModel):

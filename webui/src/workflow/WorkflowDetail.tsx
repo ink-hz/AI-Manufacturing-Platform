@@ -260,6 +260,7 @@ export function DetailContent({
           />
           <ReadinessView title="试产准备" value={v.trial_readiness} />
           <ReadinessView title="量产准备" value={v.bulk_readiness} />
+          {(v.held_start_scopes||[]).length>0&&<section role="alert"><h4>MES 已接受，本地安全暂缓</h4><p>原开工范围仍占序列号与工单预算。请求 MES 停机，修复准备并接收新计划后恢复同一范围。</p>{(v.held_start_scopes||[]).map(s=><p key={s.id}>{s.mode==="trial"?"试产":"批量"} · {s.sns.join("、")} · <button onClick={()=>onOpen({projectId:data.summary.project_id,kind:"exchange",id:s.exchange_id})}>查看 MES 开工回执</button></p>)}</section>}
           <h4>工位来源事件（最近 100 条，共 {v.execution_event_total||0} 条）</h4><ol>{(v.execution_events||[]).map(e=><li key={e.id}>{e.claimed_sn} · {e.station} / {e.route_version} · {label(e.status)} · {e.reason||e.result} · {e.source.system} / {e.source.external_id}</li>)}</ol>
         </>
       )}
@@ -288,7 +289,7 @@ export function DetailContent({
       {v.kind === "receipt" && <Facts items={[["原始登记数量",(v.original_quantity||v.quantity)+" "+v.unit],["当前到货事实",v.quantity+" "+v.unit],["检验合格",v.accepted],
         ["拒收",v.rejected],["待检",v.uninspected]]}/>}
       {v.kind === "reservation" && <Facts items={[["请求预留",v.requested+" "+v.unit],["确认预留",v.confirmed],["尚未接受",v.remaining],["权威对象版本",v.source_version]]}/>}
-      {v.kind === "unit" && <Facts items={[["序列号",v.sn],["状态",label(v.state)],["执行范围",v.mode?label(v.mode):"未开工"],["来源事件数",v.execution_event_ids.length]]}/>}
+      {v.kind === "unit" && <Facts items={[["序列号",v.sn],["状态",v.state==="start_pending"&&v.authority_start_accepted?"MES 已接受，本地安全暂缓":label(v.state)],["执行范围",v.mode?label(v.mode):"未开工"],["MES 开工确认",v.authority_start_accepted?"已确认":"尚未确认"],["来源事件数",v.execution_event_ids.length]]}/>}
       {v.kind === "unit" && <><h4>工位来源事件（最近 100 条，共 {v.execution_event_total} 条）</h4><ol>{v.execution_events.map(e=><li key={e.id}>{e.occurred_at} · {e.station} / {e.route_version} · {label(e.status)} · {e.reason||e.result} · {e.source.system} / {e.source.external_id}{e.supersedes_event_id&&" · 新事件纠正旧记录"}{e.material_uses.map((u,i)=><p key={i}>用料：{u.material_id} · 所有者 {u.owner_id} · {u.quantity} {u.unit}</p>)}</li>)}</ol></>}
       {v.kind === "interruption" && <Facts items={[["异常类别",v.exception_kind],["中断原因",v.reason],["本地安全请求",v.requested_at],["MES 确认停机",v.authority_stopped_at||"尚未确认"],["MES 确认恢复",v.resolved_at||"尚未确认"]]}/>}
       {v.kind === "interruption" && <><h4>MES 操作历史</h4>{v.stop_exchange_ids.map((id,i)=><button key={id} onClick={()=>onOpen({projectId:data.summary.project_id,kind:"exchange",id})}>停机尝试 {i+1}</button>)}{v.resume_exchange_ids.map((id,i)=><button key={id} onClick={()=>onOpen({projectId:data.summary.project_id,kind:"exchange",id})}>恢复尝试 {i+1}</button>)}</>}

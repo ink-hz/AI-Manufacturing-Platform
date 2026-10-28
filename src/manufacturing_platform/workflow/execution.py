@@ -115,12 +115,61 @@ def _active_interruption(tx, project_id, work_order_id):
     ).fetchone()
 
 
+def outbound_execution_ready(tx, project_id, payload, now):
+    """Fresh local gate after authority query and before a new external effect."""
+    if isinstance(payload, StartPayload):
+        if _active_interruption(tx, project_id, payload.work_order_id):
+            return False
+        if tx.execute(
+            "SELECT 1 FROM units WHERE project_id=? AND work_order_id=? AND state='start_pending' AND accepted_start_id IS NOT NULL LIMIT 1",
+            (str(project_id), str(payload.work_order_id)),
+        ).fetchone():
+            return False
+        request = tx.execute(
+            "SELECT 1 FROM start_requests WHERE id=? AND project_id=? AND work_order_id=? AND accepted_receipt_id IS NULL",
+            (str(payload.start_id), str(project_id), str(payload.work_order_id)),
+        ).fetchone()
+        return (
+            bool(request)
+            and evaluate(tx, project_id, payload.work_order_id, payload.mode, now).ready
+        )
+    interruption = tx.execute(
+        "SELECT * FROM interruptions WHERE id=? AND project_id=? AND work_order_id=?",
+        (str(payload.interruption_id), str(project_id), str(payload.work_order_id)),
+    ).fetchone()
+    if (
+        not interruption
+        or not interruption["authority_stopped_at"]
+        or interruption["resolved_at"]
+        or current_plan_id(tx, project_id, payload.work_order_id)
+        != str(payload.plan_id)
+        or interruption["interrupted_plan_id"] == str(payload.plan_id)
+    ):
+        return False
+    modes = [
+        r[0]
+        for r in tx.execute(
+            "SELECT DISTINCT mode FROM start_requests WHERE project_id=? AND work_order_id=? AND accepted_receipt_id IS NOT NULL",
+            (str(project_id), str(payload.work_order_id)),
+        )
+    ]
+    return bool(modes) and all(
+        evaluate(tx, project_id, payload.work_order_id, mode, now).ready
+        for mode in modes
+    )
+
+
 def start_production(tx, context, command: StartProduction):
     wo, total, trial_limit = integer_units(
         tx, context.project_id, command.work_order_id
     )
     if _active_interruption(tx, context.project_id, wo["id"]):
         fail("production is interrupted")
+    if tx.execute(
+        "SELECT 1 FROM units WHERE project_id=? AND work_order_id=? AND state='start_pending' AND accepted_start_id IS NOT NULL LIMIT 1",
+        (str(context.project_id), wo["id"]),
+    ).fetchone():
+        fail("MES accepted scope is under local safety hold; request a scoped stop")
     readiness = evaluate(tx, context.project_id, wo["id"], command.mode, context.now)
     if not readiness.ready:
         reasons = [
@@ -224,6 +273,15 @@ def interrupt_production(tx, context, command: InterruptProduction):
             fail(
                 "production already interrupted; a new stop attempt requires the rejected interruption"
             )
+        old_request = tx.execute(
+            "SELECT request_json FROM exchanges WHERE id=? AND project_id=?",
+            (active["stop_exchange_id"], str(context.project_id)),
+        ).fetchone()
+        old_start_id = ExternalRequest.model_validate_json(
+            old_request[0]
+        ).typed_payload.start_id
+        if command.start_id != old_start_id:
+            fail("stop retry must preserve the original held start scope")
         iid, eid = UUID(active["id"]), uuid4()
     else:
         if command.interruption_id:
@@ -233,6 +291,21 @@ def interrupt_production(tx, context, command: InterruptProduction):
             (str(context.project_id), wo["id"]),
         ).fetchone():
             fail("no accepted production scope to interrupt")
+        held = tx.execute(
+            """SELECT s.id,s.q_units,COUNT(u.id) held_units FROM start_requests s
+               JOIN start_units su ON su.start_id=s.id JOIN units u ON u.id=su.unit_id
+               WHERE s.project_id=? AND s.work_order_id=? AND s.accepted_receipt_id IS NOT NULL
+                 AND u.state='start_pending' AND u.accepted_start_id=s.id
+               GROUP BY s.id ORDER BY s.accepted_seq LIMIT 500""",
+            (str(context.project_id), wo["id"]),
+        ).fetchall()
+        if held and not command.start_id:
+            fail("select an MES accepted held start scope for the safety stop")
+        if command.start_id and not any(
+            r["id"] == str(command.start_id) and r["held_units"] == r["q_units"]
+            for r in held
+        ):
+            fail("held start scope is not an accepted scope of this work order")
         iid, eid = uuid4(), uuid4()
     request = ExternalRequest(
         id=eid,
@@ -245,6 +318,7 @@ def interrupt_production(tx, context, command: InterruptProduction):
             interruption_id=iid,
             work_order_id=command.work_order_id,
             reason=command.reason,
+            start_id=command.start_id,
         ),
     )
     context.exchange_service.prepare(tx, context, request)
@@ -579,12 +653,17 @@ def record_first_article(tx, context, command: RecordFirstArticle):
 
 
 def unit_summary(row):
+    visible_state = (
+        "mes_accepted_held"
+        if row["state"] == "start_pending" and row["accepted_start_id"]
+        else row["state"]
+    )
     return ObjectSummary(
         id=row["id"],
         project_id=row["project_id"],
         kind="unit",
         title=row["sn"],
-        state=row["state"],
+        state=visible_state,
         version=row["registered_seq"],
         next_actions=["execution.record"] if row["state"] == "running" else [],
     )
@@ -661,6 +740,7 @@ def unit_detail(tx, pid, ident):
             state=row["state"],
             mode=row["mode"],
             accepted_start_id=row["accepted_start_id"],
+            authority_start_accepted=row["accepted_start_id"] is not None,
             execution_event_ids=[e["id"] for e in reversed(events)],
             execution_event_total=event_total,
             execution_events=event_views,
@@ -717,6 +797,15 @@ def interruption_detail(tx, pid, ident):
         "SELECT exchange_id,kind FROM interruption_actions WHERE project_id=? AND interruption_id=? ORDER BY seq LIMIT 100",
         (str(pid), row["id"]),
     ).fetchall()
+    stop_request = tx.execute(
+        "SELECT request_json FROM exchanges WHERE id=? AND project_id=?",
+        (row["stop_exchange_id"], str(pid)),
+    ).fetchone()
+    recovery_start_id = (
+        ExternalRequest.model_validate_json(stop_request[0]).typed_payload.start_id
+        if stop_request
+        else None
+    )
     return ObjectDetail[InterruptionValue](
         summary=interruption_summary(row),
         value=InterruptionValue(
@@ -730,6 +819,7 @@ def interruption_detail(tx, pid, ident):
             resolved_at=row["resolved_at"],
             plan_id=row["plan_id"],
             stop_exchange_id=row["stop_exchange_id"],
+            recovery_start_id=recovery_start_id,
             resume_exchange_id=row["resume_exchange_id"],
             stop_exchange_ids=[
                 a["exchange_id"] for a in actions if a["kind"] == "stop"

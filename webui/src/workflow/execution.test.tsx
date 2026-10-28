@@ -45,3 +45,11 @@ it("shows the fixed package basis beside execution actions",async()=>{
   await act(async()=>root.render(<ExecutionWorkspace api={api} project={project} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} requestLeave={f=>f()}/>));await flush();
   expect(host.textContent).toContain("camera-pkg");expect(host.textContent).toContain("S1");expect(host.textContent).toContain("P1");expect(host.textContent).toContain("F1");
 });
+it("offers a scoped MES safety stop for an accepted start held locally",async()=>{
+  const held="00000000-0000-4000-8000-000000000003";
+  api.object.mockImplementation(async()=>({value:{kind:"work_order",revision_id:id,held_start_scopes:[{id:held,mode:"trial",sns:["SN-003"],exchange_id:id,receipt_id:id}],trial_readiness:{ready:false,checks:[],input_versions:{}},bulk_readiness:{ready:false,checks:[],input_versions:{}}}}));
+  await act(async()=>root.render(<ExecutionWorkspace api={api} project={project} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} requestLeave={f=>f()}/>));await flush();
+  expect(host.textContent).toContain("MES 已接受");expect(host.textContent).toContain("SN-003");
+  await click("请求生产中断");await field("中断原因与异常","calibration changed");await click("请求 MES 停机");
+  expect(writes[0]).toMatchObject({action:"production.interrupt",work_order_id:id,start_id:held,reason:"calibration changed"});
+});

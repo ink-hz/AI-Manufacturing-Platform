@@ -51,6 +51,7 @@ class InterruptProduction(WorkflowCommand):
     reason: str = Field(min_length=1, max_length=2000)
     kind: Literal["S3", "S4", "other"] = "other"
     interruption_id: UUID | None = None
+    start_id: UUID | None = None
 
 
 class ResumeProduction(WorkflowCommand):
@@ -101,9 +102,18 @@ class UnitValue(DomainValue):
     state: Literal["registered", "start_pending", "running", "stopped"]
     mode: Literal["trial", "bulk"] | None
     accepted_start_id: UUID | None
+    authority_start_accepted: bool
     execution_event_ids: list[UUID]
     execution_event_total: int
     execution_events: list["ExecutionEventView"]
+
+
+class HeldStartScope(StrictModel):
+    id: UUID
+    mode: Literal["trial", "bulk"]
+    sns: list[str]
+    exchange_id: UUID
+    receipt_id: UUID
 
 
 class MaterialConsumptionView(StrictModel):
@@ -144,6 +154,7 @@ class InterruptionValue(DomainValue):
     resolved_at: datetime | None
     plan_id: UUID | None
     stop_exchange_id: UUID
+    recovery_start_id: UUID | None
     resume_exchange_id: UUID | None
     stop_exchange_ids: list[UUID]
     resume_exchange_ids: list[UUID]

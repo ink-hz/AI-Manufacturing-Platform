@@ -398,6 +398,28 @@ def work_order_detail(tx, project_id, object_id):
 
     now = datetime.now(UTC)
     event_total, events = work_order_events(tx, project_id, object_id)
+    held_rows = tx.execute(
+        """SELECT s.id,s.mode,s.exchange_id,s.accepted_receipt_id,u.sn
+           FROM start_requests s JOIN start_units su ON su.start_id=s.id
+           JOIN units u ON u.id=su.unit_id AND u.project_id=s.project_id
+           WHERE s.project_id=? AND s.work_order_id=? AND s.accepted_receipt_id IS NOT NULL
+             AND u.state='start_pending' AND u.accepted_start_id=s.id
+           ORDER BY s.accepted_seq,u.registered_seq LIMIT 500""",
+        (str(project_id), str(object_id)),
+    ).fetchall()
+    held = {}
+    for scope in held_rows:
+        item = held.setdefault(
+            scope["id"],
+            {
+                "id": scope["id"],
+                "mode": scope["mode"],
+                "sns": [],
+                "exchange_id": scope["exchange_id"],
+                "receipt_id": scope["accepted_receipt_id"],
+            },
+        )
+        item["sns"].append(scope["sn"])
     value = WorkOrder(
         order_line_id=row["order_line_id"],
         revision_id=row["revision_id"],
@@ -412,6 +434,7 @@ def work_order_detail(tx, project_id, object_id):
         bulk_readiness=evaluate(tx, project_id, object_id, "bulk", now),
         execution_event_total=event_total,
         execution_events=events,
+        held_start_scopes=list(held.values()),
     )
     relations = [
         ObjectRelation(

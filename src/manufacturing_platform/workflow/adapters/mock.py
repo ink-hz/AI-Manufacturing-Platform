@@ -276,10 +276,21 @@ class MockAuthorityAdapter:
                 "SELECT * FROM authority_work_orders WHERE project_id=? AND work_order_id=?",
                 (str(request.project_id), str(payload.work_order_id)),
             ).fetchone()
+            start_scoped = payload.start_id is None or bool(
+                tx.execute(
+                    "SELECT 1 FROM authority_start_units WHERE project_id=? AND work_order_id=? AND start_id=? LIMIT 1",
+                    (
+                        str(request.project_id),
+                        str(payload.work_order_id),
+                        str(payload.start_id),
+                    ),
+                ).fetchone()
+            )
             if (
                 wo
                 and wo["started_units"] > 0
                 and wo["state"] == "running"
+                and start_scoped
                 and fault_name != "reject"
             ):
                 tx.execute(

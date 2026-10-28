@@ -1,6 +1,7 @@
 """B3 execution through the public API and the independent authority boundary."""
 
 from datetime import UTC, datetime, timedelta
+from threading import Event, Thread
 from uuid import uuid4
 
 import pytest
@@ -283,7 +284,305 @@ def test_serial_normalization_rejects_compatibility_alias_across_projects(workfl
     )["blocking_reasons"]
 
 
-def test_start_apply_rechecks_live_readiness_after_authority_commits(workflow):
+def test_start_apply_rechecks_live_readiness_after_authority_commits(
+    workflow, monkeypatch
+):
+    p, wo, units, authority = ready_for_trial(workflow)
+    start = workflow.command(
+        p["id"],
+        "production.start",
+        actor_name="production",
+        work_order_id=wo["id"],
+        mode="trial",
+        unit_ids=units[:1],
+        quantity="1",
+    )
+    entered, release = Event(), Event()
+    original_submit = MockAuthorityAdapter.submit
+
+    def held_submit(adapter, request):
+        if request.action == "production.start":
+            entered.set()
+            assert release.wait(5), "MES release barrier timed out"
+        return original_submit(adapter, request)
+
+    monkeypatch.setattr(MockAuthorityAdapter, "submit", held_submit)
+    outcomes = []
+    dispatch = Thread(
+        target=lambda: outcomes.append(
+            workflow.command(
+                p["id"],
+                "exchange.dispatch",
+                actor_name="production",
+                expected_status=409,
+                exchange_id=start["exchange_id"],
+            )
+        )
+    )
+    dispatch.start()
+    assert entered.wait(5), "MES submit barrier was not reached"
+    workflow.command(
+        p["id"],
+        "readiness.record",
+        actor_name="engineering",
+        work_order_id=wo["id"],
+        kind="equipment",
+        reference="cal-1",
+        evidence="calibration revoked",
+        valid_until=(datetime.now(UTC) + timedelta(days=90)).isoformat(),
+        decision="rejected",
+    )
+    release.set()
+    dispatch.join(5)
+    assert not dispatch.is_alive()
+    assert outcomes and outcomes[0]["code"] == "VERSION_CONFLICT"
+    assert authority.operation_count(start["exchange_id"]) == 1
+    workflow.command(
+        p["id"],
+        "exchange.query",
+        actor_name="production",
+        exchange_id=start["exchange_id"],
+    )
+    held = workflow.object(p["id"], "unit", units[0])
+    assert held["state"] == "start_pending"
+    assert held["accepted_start_id"]
+    assert held["authority_start_accepted"] is True
+    unit_page = (
+        workflow.client()
+        .get(
+            f"/api/v1/manufacturing/workflow/projects/{p['id']}/objects/unit?limit=50&offset=0"
+        )
+        .json()
+    )
+    assert (
+        next(u for u in unit_page["items"] if u["id"] == units[0])["state"]
+        == "mes_accepted_held"
+    )
+    assert (
+        workflow.object(p["id"], "exchange", start["exchange_id"])["phase"]
+        == "accepted"
+    )
+    assert (
+        workflow.object(p["id"], "work_order", wo["id"])["held_start_scopes"][0]["id"]
+        == held["accepted_start_id"]
+    )
+    workflow.command(
+        p["id"],
+        "exchange.query",
+        actor_name="production",
+        exchange_id=start["exchange_id"],
+    )
+    assert workflow.object(p["id"], "unit", units[0])["state"] == "start_pending"
+    assert authority.operation_count(start["exchange_id"]) == 1
+
+    assert workflow.command(
+        p["id"],
+        "production.interrupt",
+        actor_name="production",
+        expected_status=409,
+        work_order_id=wo["id"],
+        start_id=str(uuid4()),
+        kind="S4",
+        reason="wrong held scope",
+    )["blocking_reasons"]
+
+    stop = workflow.command(
+        p["id"],
+        "production.interrupt",
+        actor_name="production",
+        work_order_id=wo["id"],
+        start_id=held["accepted_start_id"],
+        kind="S4",
+        reason="MES accepted while calibration revoked",
+    )
+    assert (
+        workflow.object(p["id"], "interruption", stop["object_id"])["recovery_start_id"]
+        == held["accepted_start_id"]
+    )
+    assert workflow.object(p["id"], "unit", units[0])["state"] == "start_pending"
+    authority.configure_fault("reject")
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=stop["exchange_id"],
+    )
+    assert workflow.object(p["id"], "unit", units[0])["state"] == "start_pending"
+    assert (
+        workflow.object(p["id"], "interruption", stop["object_id"])[
+            "authority_stopped_at"
+        ]
+        is None
+    )
+    assert authority.operation_count(stop["exchange_id"]) == 1
+    authority.configure_fault("none")
+    stop = workflow.command(
+        p["id"],
+        "production.interrupt",
+        actor_name="production",
+        work_order_id=wo["id"],
+        start_id=held["accepted_start_id"],
+        interruption_id=stop["object_id"],
+        kind="S4",
+        reason="MES accepted while calibration revoked",
+    )
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=stop["exchange_id"],
+    )
+    assert workflow.object(p["id"], "unit", units[0])["state"] == "stopped"
+    assert authority.operation_count(stop["exchange_id"]) == 1
+    with authority.store.transaction() as tx:
+        actual = tx.execute(
+            "SELECT started_units,started_trial,state FROM authority_work_orders WHERE project_id=? AND work_order_id=?",
+            (p["id"], wo["id"]),
+        ).fetchone()
+        assert tuple(actual) == (1, 1, "stopped")
+    assert workflow.command(
+        p["id"],
+        "production.resume",
+        actor_name="production",
+        expected_status=409,
+        interruption_id=stop["object_id"],
+        plan_id=workflow.object(p["id"], "work_order", wo["id"])["trial_readiness"][
+            "input_versions"
+        ]["plan_id"],
+        evidence="old plan",
+    )["blocking_reasons"]
+    workflow.command(
+        p["id"],
+        "readiness.record",
+        actor_name="engineering",
+        work_order_id=wo["id"],
+        kind="equipment",
+        reference="cal-2",
+        evidence="new calibration",
+        valid_until=(datetime.now(UTC) + timedelta(days=90)).isoformat(),
+        decision="verified",
+    )
+    now = datetime.now(UTC)
+    with workflow.db() as db:
+        basis = db.execute(
+            "SELECT order_line_id,revision_id FROM work_orders WHERE id=?", (wo["id"],)
+        ).fetchone()
+        order_version = db.execute(
+            "SELECT source_version FROM order_lines WHERE id=?", (basis[0],)
+        ).fetchone()[0]
+        lot_id = db.execute(
+            "SELECT id FROM material_lots WHERE project_id=? LIMIT 1", (p["id"],)
+        ).fetchone()[0]
+    source = workflow.source(f"held-replan-{uuid4()}", object_type="plan")
+    source.update(
+        occurred_at=(now - timedelta(minutes=2)).isoformat(),
+        collected_at=(now - timedelta(minutes=1)).isoformat(),
+        cutoff=(now - timedelta(minutes=2)).isoformat(),
+    )
+    plan = workflow.command(
+        p["id"],
+        "plan.receive",
+        actor_name="planner",
+        source=source,
+        input_revision_ids=[basis[1]],
+        input_order_versions=[{"order_line_id": basis[0], "version": order_version}],
+        requirements=[
+            {
+                "work_order_id": wo["id"],
+                "execution_scope": scope,
+                "material_id": "steel-1",
+                "owner_id": "Customer 1",
+                "quantity": qty,
+                "unit": "kg",
+            }
+            for scope, qty in (("trial", "2"), ("bulk", "1"))
+        ],
+    )
+    assert workflow.command(
+        p["id"],
+        "production.resume",
+        actor_name="production",
+        expected_status=409,
+        interruption_id=stop["object_id"],
+        plan_id=plan["object_id"],
+        evidence="stock short",
+    )["blocking_reasons"]
+    ext = f"held-topup-{uuid4()}"
+    authority.receive(
+        project_id=p["id"],
+        external_id=ext,
+        commitment_id=str(uuid4()),
+        lot_id=lot_id,
+        material_id="steel-1",
+        owner_id="Customer 1",
+        quantity="1",
+        unit="kg",
+        scale=3,
+        expiry=(now + timedelta(days=120)).date().isoformat(),
+        external_actor="WMS",
+        signature="signed topup",
+    )
+    authority.inspect(
+        project_id=p["id"],
+        external_id=f"held-iqc-{uuid4()}",
+        receipt_external_id=ext,
+        accepted="1",
+        rejected="0",
+        external_actor="QMS",
+        signature="signed inspection",
+    )
+    with workflow.db() as db:
+        trial_req = db.execute(
+            "SELECT id FROM requirements WHERE plan_id=? AND execution_scope='trial'",
+            (plan["object_id"],),
+        ).fetchone()[0]
+    reserve = workflow.command(
+        p["id"],
+        "reservation.request",
+        actor_name="planner",
+        work_order_id=wo["id"],
+        requirement_id=trial_req,
+        lot_id=lot_id,
+        quantity="1",
+        unit="kg",
+    )
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="planner",
+        exchange_id=reserve["exchange_id"],
+    )
+    resume = workflow.command(
+        p["id"],
+        "production.resume",
+        actor_name="production",
+        interruption_id=stop["object_id"],
+        plan_id=plan["object_id"],
+        evidence="new plan, calibration and stock verified",
+    )
+    assert workflow.object(p["id"], "unit", units[0])["state"] == "stopped"
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=resume["exchange_id"],
+    )
+    assert workflow.object(p["id"], "unit", units[0])["state"] == "running"
+    assert (
+        workflow.object(p["id"], "unit", units[0])["accepted_start_id"]
+        == held["accepted_start_id"]
+    )
+    assert authority.operation_count(resume["exchange_id"]) == 1
+    with authority.store.transaction() as tx:
+        actual = tx.execute(
+            "SELECT started_units,started_trial,state FROM authority_work_orders WHERE project_id=? AND work_order_id=?",
+            (p["id"], wo["id"]),
+        ).fetchone()
+        assert tuple(actual) == (1, 1, "running")
+    assert authority.operation_count(start["exchange_id"]) == 1
+
+
+def test_known_unready_start_is_not_submitted_after_authority_query(workflow):
     p, wo, units, authority = ready_for_trial(workflow)
     start = workflow.command(
         p["id"],
@@ -300,7 +599,7 @@ def test_start_apply_rechecks_live_readiness_after_authority_commits(workflow):
         actor_name="engineering",
         work_order_id=wo["id"],
         kind="equipment",
-        reference="cal-1",
+        reference="cal-revoked",
         evidence="calibration revoked",
         valid_until=(datetime.now(UTC) + timedelta(days=90)).isoformat(),
         decision="rejected",
@@ -311,27 +610,28 @@ def test_start_apply_rechecks_live_readiness_after_authority_commits(workflow):
         actor_name="production",
         exchange_id=start["exchange_id"],
     )
-    assert authority.operation_count(start["exchange_id"]) == 1
+    assert authority.operation_count(start["exchange_id"]) == 0
     assert workflow.object(p["id"], "unit", units[0])["state"] == "start_pending"
+    assert workflow.object(p["id"], "unit", units[0])["accepted_start_id"] is None
     workflow.command(
         p["id"],
         "readiness.record",
         actor_name="engineering",
         work_order_id=wo["id"],
         kind="equipment",
-        reference="cal-2",
-        evidence="new calibration",
+        reference="cal-restored",
+        evidence="calibration restored",
         valid_until=(datetime.now(UTC) + timedelta(days=90)).isoformat(),
         decision="verified",
     )
     workflow.command(
         p["id"],
-        "exchange.query",
+        "exchange.dispatch",
         actor_name="production",
         exchange_id=start["exchange_id"],
     )
-    assert workflow.object(p["id"], "unit", units[0])["state"] == "running"
     assert authority.operation_count(start["exchange_id"]) == 1
+    assert workflow.object(p["id"], "unit", units[0])["state"] == "running"
 
 
 def test_lost_start_reply_keeps_trial_budget_until_query_recovers_one_authority_start(
@@ -1110,6 +1410,7 @@ def test_trial_one_and_bulk_four_consume_exact_five_unit_authority_budget(workfl
 
 def test_interruption_requires_authority_stop_and_accepted_replan_before_resume(
     workflow,
+    monkeypatch,
 ):
     p, wo, units, authority = ready_for_trial(workflow)
     trial = workflow.command(
@@ -1282,6 +1583,36 @@ def test_interruption_requires_authority_stop_and_accepted_replan_before_resume(
         workflow.object(p["id"], "interruption", stop["object_id"])["resolved_at"]
         is None
     )
+    workflow.command(
+        p["id"],
+        "readiness.record",
+        actor_name="engineering",
+        work_order_id=wo["id"],
+        kind="equipment",
+        reference="resume-cal-revoked",
+        evidence="calibration revoked before MES resume",
+        valid_until=(datetime.now(UTC) + timedelta(days=90)).isoformat(),
+        decision="rejected",
+    )
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=resumed["exchange_id"],
+    )
+    assert authority.operation_count(resumed["exchange_id"]) == 0
+    assert workflow.object(p["id"], "unit", units[0])["state"] == "stopped"
+    workflow.command(
+        p["id"],
+        "readiness.record",
+        actor_name="engineering",
+        work_order_id=wo["id"],
+        kind="equipment",
+        reference="resume-cal-restored",
+        evidence="calibration restored before MES resume",
+        valid_until=(datetime.now(UTC) + timedelta(days=90)).isoformat(),
+        decision="verified",
+    )
     authority.configure_fault("reject")
     workflow.command(
         p["id"],
@@ -1302,9 +1633,48 @@ def test_interruption_requires_authority_stop_and_accepted_replan_before_resume(
         plan_id=plan["object_id"],
         evidence="MES retry after rejection",
     )
+    entered, release = Event(), Event()
+    original_submit = MockAuthorityAdapter.submit
+
+    def paused_resume(adapter, request):
+        if request.action == "production.resume":
+            entered.set()
+            assert release.wait(5), "MES resume release barrier timed out"
+        return original_submit(adapter, request)
+
+    monkeypatch.setattr(MockAuthorityAdapter, "submit", paused_resume)
+    outcomes = []
+    dispatch = Thread(
+        target=lambda: outcomes.append(
+            workflow.command(
+                p["id"],
+                "exchange.dispatch",
+                actor_name="production",
+                expected_status=409,
+                exchange_id=retry["exchange_id"],
+            )
+        )
+    )
+    dispatch.start()
+    assert entered.wait(5), "MES resume barrier was not reached"
     workflow.command(
         p["id"],
-        "exchange.dispatch",
+        "readiness.record",
+        actor_name="engineering",
+        work_order_id=wo["id"],
+        kind="equipment",
+        reference="resume-race-revoked",
+        evidence="calibration revoked in flight",
+        valid_until=(datetime.now(UTC) + timedelta(days=90)).isoformat(),
+        decision="rejected",
+    )
+    release.set()
+    dispatch.join(5)
+    assert outcomes and outcomes[0]["code"] == "VERSION_CONFLICT"
+    assert authority.operation_count(retry["exchange_id"]) == 1
+    workflow.command(
+        p["id"],
+        "exchange.query",
         actor_name="production",
         exchange_id=retry["exchange_id"],
     )
@@ -1312,7 +1682,46 @@ def test_interruption_requires_authority_stop_and_accepted_replan_before_resume(
     assert workflow.object(p["id"], "interruption", stop["object_id"])[
         "resume_exchange_ids"
     ] == [resumed["exchange_id"], retry["exchange_id"]]
-    assert workflow.object(p["id"], "unit", units[0])["state"] == "running"
+    held = workflow.object(p["id"], "unit", units[0])
+    assert held["state"] == "start_pending" and held["authority_start_accepted"]
+    assert (
+        workflow.object(p["id"], "exchange", retry["exchange_id"])["phase"]
+        == "accepted"
+    )
+    assert workflow.command(
+        p["id"],
+        "production.start",
+        actor_name="production",
+        expected_status=409,
+        work_order_id=wo["id"],
+        mode="trial",
+        unit_ids=units[1:2],
+        quantity="1",
+    )["blocking_reasons"]
+    safety_stop = workflow.command(
+        p["id"],
+        "production.interrupt",
+        actor_name="production",
+        work_order_id=wo["id"],
+        start_id=held["accepted_start_id"],
+        kind="S4",
+        reason="MES resumed during calibration loss",
+    )
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=safety_stop["exchange_id"],
+    )
+    assert workflow.object(p["id"], "unit", units[0])["state"] == "stopped"
+    with authority.store.transaction() as tx:
+        assert (
+            tx.execute(
+                "SELECT state FROM authority_work_orders WHERE project_id=? AND work_order_id=?",
+                (p["id"], wo["id"]),
+            ).fetchone()[0]
+            == "stopped"
+        )
 
 
 class ProvisionalCompleteTest:
