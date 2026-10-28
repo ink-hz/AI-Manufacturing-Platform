@@ -46,7 +46,7 @@ export function OrderChangePreview({
       active = false;
     };
   }, [api, projectId, orderId, onReady]);
-  if (!orderId) return <p>选择订单后读取承诺、已分配合计与全部已登记工单。</p>;
+  if (!orderId) return <p>选择订单后读取承诺、已分配合计与已登记工单总量。</p>;
   return (
     <section aria-label="承诺变更影响预览" className="wf-comparison">
       <h4>提交前影响预览</h4>
@@ -63,6 +63,10 @@ export function OrderChangePreview({
           <p>
             当前 → 拟变更交期：{data.current_due} → {dueDate || "待填写"}
           </p>
+          <p>
+            变更来源须沿用 {data.source.system} · {data.source.external_id}，来源版本须大于 {data.source.version}。
+          </p>
+          {cancel && <p>取消时变更后数量仍须填写当前数量 {data.current_quantity}，作为撤销依据；实际承诺为 0。</p>}
           <p>
             已分配合计：{data.allocated} {data.unit}（订单级事实）
           </p>

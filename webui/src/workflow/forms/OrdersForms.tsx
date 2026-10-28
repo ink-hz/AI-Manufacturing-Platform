@@ -167,7 +167,7 @@ export function OrdersForms(p: Props) {
             quantity: "",
             unit: p.project.unit.code,
             due_date: "",
-            source: source("order"),
+            source: source("order_line"),
           })}
         >
           {(v, set) => (
@@ -218,7 +218,7 @@ export function OrdersForms(p: Props) {
             new_due_date: "",
             cancel: false as boolean,
             reason: "",
-            source: source("order_change"),
+            source: source("order_line"),
           })}
         >
           {(v, set) => (

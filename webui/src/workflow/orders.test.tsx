@@ -581,7 +581,7 @@ const demandId = "00000000-0000-4000-8000-000000000020",
 function businessFixtures(): Record<string, ObjectDetail> {
   const source = {
     system: "ERP",
-    object_type: "order",
+    object_type: "order_line",
     external_id: "ERP-ORDER-21",
     version: 1,
     mode: "manual" as const,
@@ -822,7 +822,7 @@ it("submits the actual named formal order form with API-selected demand and exac
     unit: "件",
     due_date: "2026-12-01",
     source: {
-      object_type: "order",
+      object_type: "order_line",
       external_id: "ERP-NEW-ORDER",
       mode: "manual",
       evidence: "签署订单",
@@ -845,15 +845,19 @@ it("previews exact current to proposed commitments and allocated/registered work
   );
   const preview = host.querySelector('[aria-label="承诺变更影响预览"]');
   expect(preview?.textContent).toContain("已分配合计：0.100001 件");
+  expect(preview?.textContent).toContain("变更来源须沿用 ERP · ERP-ORDER-21，来源版本须大于 1");
   expect(preview?.textContent).toContain("MES-WO-22");
   expect(preview?.textContent).toContain("0.100001");
   expect(preview?.textContent).toContain("MES-WO-23");
   expect(preview?.textContent).toContain("0.000002");
   await field("取消订单", "true");
   expect(preview?.textContent).toContain("9007199254.123456 → 0 件");
+  expect(preview?.textContent).toContain("取消时变更后数量仍须填写当前数量 9007199254.123456，作为撤销依据；实际承诺为 0");
   await field("取消订单", "false");
   await field("变更原因", "客户缩量");
-  await field("来源业务编号", "ERP-CHANGE");
+  await field("来源系统", "ERP");
+  await field("来源业务编号", "ERP-ORDER-21");
+  await field("来源版本", "2");
   await field("来源凭据", "客户变更邮件");
   await click("保存承诺变更");
   expect(
@@ -864,6 +868,31 @@ it("previews exact current to proposed commitments and allocated/registered work
     new_due_date: "2026-12-02",
     cancel: false,
     reason: "客户缩量",
+    source: { object_type: "order_line", system: "ERP", external_id: "ERP-ORDER-21", version: 2 },
+  });
+});
+it("submits cancellation with the original quantity as evidence and the next order source revision", async () => {
+  installBusinessFacts(["order.change"]);
+  await mount();
+  await click("制造项目");
+  await click("相机项目");
+  await click("变更订单承诺");
+  await field("变更订单", orderId);
+  await field("变更后数量", "9007199254.123456");
+  await field("变更后交期", "2026-12-01");
+  await field("取消订单", "true");
+  await field("变更原因", "客户取消");
+  await field("来源系统", "ERP");
+  await field("来源业务编号", "ERP-ORDER-21");
+  await field("来源版本", "2");
+  await field("来源凭据", "客户取消通知");
+  await flush();
+  await click("保存承诺变更");
+  expect(requests.find((r) => r.body?.action === "order.change")?.body).toMatchObject({
+    order_line_id: orderId,
+    new_quantity: "9007199254.123456",
+    cancel: true,
+    source: { object_type: "order_line", system: "ERP", external_id: "ERP-ORDER-21", version: 2 },
   });
 });
 it.each([
@@ -1022,7 +1051,9 @@ it("compares newer order facts beside an unchanged proposed commitment and retri
   await field("变更后数量", "9007199254.123455");
   await field("变更后交期", "2026-12-02");
   await field("变更原因", "调整承诺");
-  await field("来源业务编号", "CHANGE-CAS");
+  await field("来源系统", "ERP");
+  await field("来源业务编号", "ERP-ORDER-21");
+  await field("来源版本", "2");
   await field("来源凭据", "客户变更记录");
   await flush();
   await click("保存承诺变更");
