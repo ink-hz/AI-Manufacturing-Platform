@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from sqlite3 import Connection
 from typing import (
+    TYPE_CHECKING,
     Annotated,
     Generic,
     Literal,
@@ -18,6 +19,10 @@ from uuid import UUID
 from pydantic import Field, TypeAdapter
 
 from .contracts import Actor, CommandBase, Dataset, DomainError, MutationResult
+
+if TYPE_CHECKING:
+    from .exchanges import ExchangeService
+
 
 WorkflowAction = Literal[
     "demand.record",
@@ -83,8 +88,8 @@ class CommandContext:
     project_version: int
     now: datetime
     dataset: Dataset
-    # Reserved for the B2 exchange service. A1 has no external dispatch capability.
-    exchange_service: None = None
+    # Prepare writes only; the orchestrator performs I/O after the transaction closes.
+    exchange_service: "ExchangeService | None" = None
 
 
 C = TypeVar("C", bound=WorkflowCommand)

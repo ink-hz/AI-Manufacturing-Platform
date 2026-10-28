@@ -16,6 +16,22 @@ export function SupplyForms(p:Props){
   const selectedLotIds=useRef<Record<number,string>>({});
   const fill=<T,>(current:T,atLookup:T,fetched:T)=>current===atLookup?fetched:current;
   switch(p.action){
+    case "reservation.request": return <CommandForm<Extract<CommandFields,{action:"reservation.request"}>> {...p}
+      title="请求权威库存预留" save="保存预留请求" canSubmit={v=>p.project.allowed_actions.includes("reservation.request")&&!!v.work_order_id && !!v.requirement_id && !!v.lot_id}
+      initial={()=>({action:"reservation.request",work_order_id:"",requirement_id:"",lot_id:"",quantity:"",unit:""})}>
+      {(v,set)=><>
+        <p>库存预留由权威系统原子接受。保存请求后，在同步与回执中发送并查询；待确认请求占用请求额度，不能作为开工依据。</p>
+        <ObjectChoice name="预留对应需求" items={p.requirements} value={v.requirement_id} onChange={x=>{
+          set(old=>({...old,requirement_id:x,work_order_id:"",unit:""}));
+          if(x)void p.api.object(p.project.id,"requirement",x).then(d=>{const detail=d.value;
+            if(detail.kind==="requirement")set(old=>old.requirement_id===x?{...old,work_order_id:detail.work_order_id,unit:detail.unit}:old);
+          });
+        }}/>
+        <ObjectChoice name="预留物料批次" items={p.lots} value={v.lot_id} onChange={x=>set({...v,lot_id:x})}/>
+        <Field name="请求预留数量" value={v.quantity} onChange={x=>set({...v,quantity:x})}/>
+        <p>物料计量单位：{v.unit||"先选择需求"}</p>
+      </>}
+    </CommandForm>;
     case "material.define": return <CommandForm<Define> {...p} title="定义物料批次" save="保存物料批次"
       initial={()=>({action:"material.define",material_id:"",lot_id:"",owner_id:p.project.customer_id,unit:"kg",scale:3,expiry:"",source:source("material_lot")})}>
       {(v,set)=><>

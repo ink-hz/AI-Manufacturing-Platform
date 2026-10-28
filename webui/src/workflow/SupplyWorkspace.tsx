@@ -4,8 +4,9 @@ import { ObjectTable } from "./OrdersWorkspace";
 import { SupplyForms } from "./forms/SupplyForms";
 import { label } from "./labels";
 
-const kinds: ObjectKind[]=["material_lot","plan","requirement","commitment","receipt"];
+const kinds: ObjectKind[]=["material_lot","plan","requirement","commitment","receipt","reservation"];
 const actions: Record<string,string>={
+  "reservation.request":"请求权威库存预留",
   "material.define":"定义物料批次","plan.receive":"接收供应计划",
   "supply.commit":"登记供应承诺","supply.receive":"登记到货",
   "supply.inspect":"登记来料检验",

@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 SUPPLY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS material_lots(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),material_id TEXT NOT NULL,lot_id TEXT NOT NULL,owner_id TEXT NOT NULL,unit TEXT NOT NULL,scale INTEGER NOT NULL,expiry TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('active','frozen')),source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_version INTEGER NOT NULL,source_json TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(project_id,lot_id),UNIQUE(source_system,source_type,source_external_id));
 CREATE INDEX IF NOT EXISTS material_lots_page ON material_lots(project_id,created_at,id);
@@ -28,8 +28,9 @@ CREATE TABLE revision_items(revision_id TEXT NOT NULL REFERENCES engineering_rev
 CREATE TABLE revision_routes(revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),project_id TEXT NOT NULL REFERENCES projects(id),position INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(revision_id,position));
 CREATE TABLE handoffs(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),to_system TEXT NOT NULL,received_revision TEXT NOT NULL,decision TEXT NOT NULL,status TEXT NOT NULL,evidence TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE INDEX handoffs_latest ON handoffs(project_id,revision_id,to_system,created_at,id);
-CREATE TABLE customer_approvals(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),customer_id TEXT NOT NULL,external_signatory TEXT NOT NULL,method TEXT NOT NULL CHECK(method='manual'),decision TEXT NOT NULL,evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE customer_approvals(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),customer_id TEXT NOT NULL,external_signatory TEXT NOT NULL,method TEXT NOT NULL CHECK(method IN ('manual','file','mock','api')),decision TEXT NOT NULL,evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,accepted_seq INTEGER NOT NULL);
 CREATE INDEX approvals_latest ON customer_approvals(project_id,revision_id,created_at,id);
+CREATE UNIQUE INDEX approvals_acceptance_order ON customer_approvals(project_id,accepted_seq);
 CREATE TABLE work_orders(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),order_line_id TEXT NOT NULL REFERENCES order_lines(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),q_atoms INTEGER NOT NULL CHECK(q_atoms>0),unit TEXT NOT NULL,purpose TEXT NOT NULL,trial_q_atoms INTEGER NOT NULL CHECK(trial_q_atoms>0 AND trial_q_atoms<=q_atoms),source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_version INTEGER NOT NULL,source_json TEXT NOT NULL,planned_start TEXT NOT NULL,planned_end TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id));
 CREATE INDEX work_orders_project_page ON work_orders(project_id,planned_start,id);
 CREATE TABLE readiness_checks(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),kind TEXT NOT NULL CHECK(kind IN ('equipment','people')),reference TEXT NOT NULL,evidence TEXT NOT NULL,valid_until TEXT NOT NULL,decision TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -49,6 +50,21 @@ CREATE TABLE change_impacts(change_id TEXT NOT NULL REFERENCES commitment_change
 CREATE TABLE allocations(id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), order_line_id TEXT NOT NULL REFERENCES order_lines(id), work_order_id TEXT NOT NULL, q_atoms INTEGER NOT NULL CHECK(q_atoms>0), unit TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX allocations_work_order ON allocations(project_id,work_order_id);
 """
+
+EXCHANGE_SCHEMA = """
+CREATE TABLE exchanges(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),reservation_id TEXT REFERENCES reservations(id),action TEXT NOT NULL,policy_action TEXT NOT NULL,system TEXT NOT NULL,business_key TEXT NOT NULL UNIQUE,mode TEXT NOT NULL,request_json TEXT NOT NULL,request_hash TEXT NOT NULL,phase TEXT NOT NULL,attempted INTEGER NOT NULL DEFAULT 0,reason TEXT NOT NULL DEFAULT '',receipt_json TEXT,source_sequence INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL);
+CREATE INDEX exchanges_project ON exchanges(project_id,seq);
+CREATE TABLE exchange_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,exchange_id TEXT NOT NULL REFERENCES exchanges(id),project_id TEXT NOT NULL REFERENCES projects(id),phase TEXT NOT NULL,reason TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE exchange_receipts(seq INTEGER PRIMARY KEY AUTOINCREMENT,exchange_id TEXT NOT NULL REFERENCES exchanges(id),project_id TEXT NOT NULL REFERENCES projects(id),receipt_id TEXT NOT NULL,payload_json TEXT NOT NULL,valid INTEGER NOT NULL,reason TEXT NOT NULL,UNIQUE(exchange_id,receipt_id,payload_json));
+CREATE TABLE source_confirmations(seq INTEGER PRIMARY KEY AUTOINCREMENT,project_id TEXT NOT NULL REFERENCES projects(id),system TEXT NOT NULL,object_type TEXT NOT NULL,external_id TEXT NOT NULL,version INTEGER NOT NULL,object_id TEXT NOT NULL,payload_hash TEXT NOT NULL,source_json TEXT NOT NULL,mode TEXT NOT NULL,fact_id TEXT NOT NULL,external_actor TEXT NOT NULL,signature TEXT NOT NULL,recorded_by TEXT NOT NULL,UNIQUE(system,object_type,external_id,version,mode));
+CREATE TABLE exchange_discrepancies(seq INTEGER PRIMARY KEY AUTOINCREMENT,exchange_id TEXT NOT NULL REFERENCES exchanges(id),project_id TEXT NOT NULL REFERENCES projects(id),owner_id TEXT NOT NULL,owner_name TEXT NOT NULL,reason TEXT NOT NULL,evidence TEXT NOT NULL,resolves_seq INTEGER REFERENCES exchange_discrepancies(seq));
+CREATE TABLE source_corrections(seq INTEGER PRIMARY KEY AUTOINCREMENT,project_id TEXT NOT NULL REFERENCES projects(id),receipt_id TEXT NOT NULL REFERENCES supply_receipts(id),iqc_id TEXT REFERENCES iqc_results(id),received_delta INTEGER NOT NULL DEFAULT 0,accepted_delta INTEGER NOT NULL DEFAULT 0,rejected_delta INTEGER NOT NULL DEFAULT 0,exchange_id TEXT NOT NULL REFERENCES exchanges(id),evidence TEXT NOT NULL);
+CREATE VIEW effective_supply_receipts AS SELECT r.id,r.project_id,r.commitment_id,r.material_lot_id,r.q_atoms+COALESCE((SELECT SUM(c.received_delta) FROM source_corrections c WHERE c.receipt_id=r.id),0) q_atoms,r.unit,r.source_json,r.source_system,r.source_type,r.source_external_id,r.source_version,r.created_at FROM supply_receipts r;
+CREATE VIEW effective_iqc_results AS SELECT i.rowid accepted_seq,i.id,i.project_id,i.receipt_id,i.accepted_atoms+COALESCE((SELECT SUM(c.accepted_delta) FROM source_corrections c WHERE c.iqc_id=i.id),0) accepted_atoms,i.rejected_atoms+COALESCE((SELECT SUM(c.rejected_delta) FROM source_corrections c WHERE c.iqc_id=i.id),0) rejected_atoms,i.evidence,i.actor_id,i.created_at FROM iqc_results i;
+ALTER TABLE reservations ADD COLUMN exchange_id TEXT REFERENCES exchanges(id);
+ALTER TABLE reservations ADD COLUMN accepted_sequence INTEGER NOT NULL DEFAULT 0;
+"""
+
 SCHEMA = (
     """
 CREATE TABLE schema_version(version INTEGER NOT NULL);
@@ -61,4 +77,5 @@ CREATE TABLE audit_events(id INTEGER PRIMARY KEY, project_id TEXT NOT NULL REFER
     + ORDER_SCHEMA
     + ENGINEERING_SCHEMA
     + SUPPLY_SCHEMA
+    + EXCHANGE_SCHEMA
 )

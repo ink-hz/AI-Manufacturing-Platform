@@ -121,7 +121,7 @@ export function createWorkflowApi(
     command: (id: string, v: WorkflowCommand) =>
       request<CommandResult>(p(id) + "/commands", "POST", v),
     dashboard: () => request<Dashboard>("/dashboard"),
-    exchanges: (id: string) => request<unknown>(p(id) + "/exchanges"),
+    exchanges: (id: string, limit=50, offset=0) => request<ObjectPage>(p(id) + `/exchanges?limit=${limit}&offset=${offset}`),
     trace: (id: string) => request<unknown>(p(id) + "/trace"),
     handbook: () => request<Handbook>("/handbook"),
     dispose,

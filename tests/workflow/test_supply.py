@@ -643,6 +643,12 @@ def test_v3_database_migrates_supply_without_touching_existing_orders(workflow):
     p, order, _, _ = workflow.order_workorder()
     with sqlite3.connect(workflow.paths.domain) as db:
         db.execute("PRAGMA foreign_keys=OFF")
+        for view in ("effective_supply_receipts", "effective_iqc_results"):
+            db.execute(f"DROP VIEW {view}")
+        for table in ("source_corrections", "exchange_discrepancies", "source_confirmations", "exchange_receipts", "exchange_events", "exchanges"):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("ALTER TABLE reservations DROP COLUMN exchange_id")
+        db.execute("ALTER TABLE reservations DROP COLUMN accepted_sequence")
         for table in (
             "reservations",
             "iqc_results",
@@ -676,7 +682,7 @@ def test_v3_database_migrates_supply_without_touching_existing_orders(workflow):
         == "material_lot"
     )
     with workflow.db() as db:
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 5
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 6
 
 
 def test_v4_migration_orders_audited_plans_and_normalizes_supply_keys(workflow):
@@ -691,6 +697,12 @@ def test_v4_migration_orders_audited_plans_and_normalizes_supply_keys(workflow):
         source["external_id"] += " "
         db.execute("UPDATE plans SET source_json=?,source_system=?,source_type=?,source_external_id=? WHERE id=?",
                    (json.dumps(source), " ERP ", " Plan ", source["external_id"], plan_id))
+        for view in ("effective_supply_receipts", "effective_iqc_results"):
+            db.execute(f"DROP VIEW {view}")
+        for table in ("source_corrections", "exchange_discrepancies", "source_confirmations", "exchange_receipts", "exchange_events", "exchanges"):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("ALTER TABLE reservations DROP COLUMN exchange_id")
+        db.execute("ALTER TABLE reservations DROP COLUMN accepted_sequence")
         db.execute("DROP INDEX plans_acceptance_order")
         db.execute("ALTER TABLE plans DROP COLUMN accepted_seq")
         db.execute("UPDATE schema_version SET version=4")
@@ -700,7 +712,7 @@ def test_v4_migration_orders_audited_plans_and_normalizes_supply_keys(workflow):
     with workflow.db() as db:
         row = db.execute("SELECT source_system,source_type,source_external_id,accepted_seq FROM plans WHERE id=?", (plan_id,)).fetchone()
         assert tuple(row) == ("erp", "plan", source["external_id"].strip(), 1)
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 5
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 6
     source["system"] = "erp"
     source["external_id"] = source["external_id"].strip()
     source["version"] = 2
@@ -733,6 +745,12 @@ def test_v4_migration_fails_closed_on_historical_blank_source_key(workflow):
         source = json.loads(db.execute("SELECT source_json FROM plans WHERE id=?", (plan_id,)).fetchone()[0])
         source["system"] = " \t "
         db.execute("UPDATE plans SET source_json=? WHERE id=?", (json.dumps(source), plan_id))
+        for view in ("effective_supply_receipts", "effective_iqc_results"):
+            db.execute(f"DROP VIEW {view}")
+        for table in ("source_corrections", "exchange_discrepancies", "source_confirmations", "exchange_receipts", "exchange_events", "exchanges"):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("ALTER TABLE reservations DROP COLUMN exchange_id")
+        db.execute("ALTER TABLE reservations DROP COLUMN accepted_sequence")
         db.execute("DROP INDEX plans_acceptance_order")
         db.execute("ALTER TABLE plans DROP COLUMN accepted_seq")
         db.execute("UPDATE schema_version SET version=4")

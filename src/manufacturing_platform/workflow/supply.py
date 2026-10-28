@@ -53,8 +53,15 @@ def atoms(value, unit, expected_unit, scale):
     return int(result)
 
 
-def source_ok(source, expected_type, now, *, retain_bad_time=False):
-    if source_key(source)[1] != expected_type or source.mode != "manual":
+def source_ok(
+    source,
+    expected_type,
+    now,
+    *,
+    retain_bad_time=False,
+    source_modes=frozenset({"manual"}),
+):
+    if source_key(source)[1] != expected_type or source.mode not in source_modes:
         fail("manual source type or mode mismatch")
     if source.collected_at < source.occurred_at:
         fail("source collected before occurrence")
@@ -175,10 +182,13 @@ def receive_plan(tx, context, command: ReceivePlan):
         q = atoms(req.quantity, req.unit, material["unit"], material["scale"])
         material_meta[id(req)] = (q, material["scale"])
     for revision_id in revisions:
-        if tx.execute(
-            "SELECT 1 FROM engineering_revisions WHERE project_id=? AND id=?",
-            (str(context.project_id), revision_id),
-        ).fetchone() is None:
+        if (
+            tx.execute(
+                "SELECT 1 FROM engineering_revisions WHERE project_id=? AND id=?",
+                (str(context.project_id), revision_id),
+            ).fetchone()
+            is None
+        ):
             reasons.append("declared revision input missing or inaccessible")
     for order_id, version in versions.items():
         order = tx.execute(
@@ -340,7 +350,9 @@ def commit_supply(tx, context, command: CommitSupply):
     return MutationResult(object_type=ObjectKind.commitment, object_id=UUID(ident))
 
 
-def receive_supply(tx, context, command: ReceiveSupply):
+def receive_supply(
+    tx, context, command: ReceiveSupply, *, source_modes=frozenset({"manual"})
+):
     commitment = own(
         tx, "supply_commitments", context.project_id, command.commitment_id
     )
@@ -357,7 +369,7 @@ def receive_supply(tx, context, command: ReceiveSupply):
     if lot["state"] != "active" or lot["expiry"] < context.now.date().isoformat():
         fail("material lot frozen or expired")
     q = atoms(command.quantity, command.unit, lot["unit"], lot["scale"])
-    source_ok(command.source, "receipt", context.now)
+    source_ok(command.source, "receipt", context.now, source_modes=source_modes)
     source_free(tx, "supply_receipts", command.source)
     ident = str(uuid4())
     key = source_key(command.source)
@@ -380,14 +392,16 @@ def receive_supply(tx, context, command: ReceiveSupply):
 
 
 def inspect_supply(tx, context, command: InspectSupply):
-    receipt = own(tx, "supply_receipts", context.project_id, command.receipt_id)
+    receipt = own(
+        tx, "effective_supply_receipts", context.project_id, command.receipt_id
+    )
     lot = own(tx, "material_lots", context.project_id, receipt["material_lot_id"])
     accepted = atoms(command.accepted, lot["unit"], lot["unit"], lot["scale"])
     rejected = atoms(command.rejected, lot["unit"], lot["unit"], lot["scale"])
     if accepted + rejected == 0:
         fail("IQC result has no quantity")
     checked = tx.execute(
-        "SELECT COALESCE(SUM(accepted_atoms+rejected_atoms),0) FROM iqc_results WHERE project_id=? AND receipt_id=?",
+        "SELECT COALESCE(SUM(accepted_atoms+rejected_atoms),0) FROM effective_iqc_results WHERE project_id=? AND receipt_id=?",
         (str(context.project_id), receipt["id"]),
     ).fetchone()[0]
     if checked + accepted + rejected > receipt["q_atoms"]:
@@ -413,8 +427,8 @@ def available(tx, project_id, requirement_id, now) -> MaterialBalance:
     plan = own(tx, "plans", project_id, req["plan_id"])
     totals = tx.execute(
         """SELECT COALESCE(SUM(MAX(0,c.current_q_atoms-(SELECT COALESCE(SUM(r.q_atoms),0)
-                      FROM supply_receipts r WHERE r.project_id=c.project_id AND r.commitment_id=c.id))),0) in_transit,
-                  COALESCE(SUM((SELECT COALESCE(SUM(r.q_atoms),0) FROM supply_receipts r WHERE r.project_id=c.project_id AND r.commitment_id=c.id)),0) received
+                      FROM effective_supply_receipts r WHERE r.project_id=c.project_id AND r.commitment_id=c.id))),0) in_transit,
+                  COALESCE(SUM((SELECT COALESCE(SUM(r.q_atoms),0) FROM effective_supply_receipts r WHERE r.project_id=c.project_id AND r.commitment_id=c.id)),0) received
            FROM supply_commitments c JOIN requirements prior ON prior.id=c.requirement_id
            WHERE c.project_id=? AND prior.project_id=c.project_id AND prior.lineage_id=?""",
         (str(project_id), req["lineage_id"]),
@@ -422,8 +436,8 @@ def available(tx, project_id, requirement_id, now) -> MaterialBalance:
     qualified = tx.execute(
         """SELECT COALESCE(SUM(i.accepted_atoms),0),COALESCE(SUM(i.rejected_atoms),0)
            FROM supply_commitments c JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id
-           JOIN supply_receipts r ON r.commitment_id=c.id AND r.project_id=c.project_id
-           JOIN iqc_results i ON i.receipt_id=r.id AND i.project_id=r.project_id
+           JOIN effective_supply_receipts r ON r.commitment_id=c.id AND r.project_id=c.project_id
+           JOIN effective_iqc_results i ON i.receipt_id=r.id AND i.project_id=r.project_id
            WHERE c.project_id=? AND prior.lineage_id=?""",
         (str(project_id), req["lineage_id"]),
     ).fetchone()
@@ -452,9 +466,9 @@ def available(tx, project_id, requirement_id, now) -> MaterialBalance:
 def _totals(tx, where, args):
     row = tx.execute(
         f"""SELECT COALESCE(SUM(r.q_atoms),0) received,
-                   COALESCE(SUM((SELECT COALESCE(SUM(i.accepted_atoms),0) FROM iqc_results i WHERE i.receipt_id=r.id)),0) qualified,
-                   COALESCE(SUM((SELECT COALESCE(SUM(i.rejected_atoms),0) FROM iqc_results i WHERE i.receipt_id=r.id)),0) rejected
-            FROM supply_receipts r WHERE {where}""",
+                   COALESCE(SUM((SELECT COALESCE(SUM(i.accepted_atoms),0) FROM effective_iqc_results i WHERE i.receipt_id=r.id)),0) qualified,
+                   COALESCE(SUM((SELECT COALESCE(SUM(i.rejected_atoms),0) FROM effective_iqc_results i WHERE i.receipt_id=r.id)),0) rejected
+            FROM effective_supply_receipts r WHERE {where}""",
         args,
     ).fetchone()
     return row["received"], row["qualified"], row["rejected"]
@@ -501,7 +515,7 @@ def _detail(tx, project_id, kind, object_id):
         "requirement": "requirements",
         "commitment": "supply_commitments",
         "material_lot": "material_lots",
-        "receipt": "supply_receipts",
+        "receipt": "effective_supply_receipts",
     }[kind]
     row = tx.execute(
         f"SELECT * FROM {table} WHERE project_id=? AND id=?",
@@ -602,7 +616,7 @@ def _detail(tx, project_id, kind, object_id):
         lot_ids = [
             r["material_lot_id"]
             for r in tx.execute(
-                "SELECT DISTINCT material_lot_id FROM supply_receipts WHERE project_id=? AND commitment_id=? ORDER BY material_lot_id LIMIT 200",
+                "SELECT DISTINCT material_lot_id FROM effective_supply_receipts WHERE project_id=? AND commitment_id=? ORDER BY material_lot_id LIMIT 200",
                 (str(project_id), row["id"]),
             )
         ]
@@ -676,10 +690,43 @@ def _detail(tx, project_id, kind, object_id):
     else:
         lot = own(tx, "material_lots", project_id, row["material_lot_id"])
         iqc = tx.execute(
-            "SELECT COALESCE(SUM(accepted_atoms),0),COALESCE(SUM(rejected_atoms),0) FROM iqc_results WHERE project_id=? AND receipt_id=?",
+            "SELECT COALESCE(SUM(accepted_atoms),0),COALESCE(SUM(rejected_atoms),0) FROM effective_iqc_results WHERE project_id=? AND receipt_id=?",
             (str(project_id), row["id"]),
         ).fetchone()
+        confirmations = []
+        for confirmation in tx.execute(
+            "SELECT * FROM source_confirmations WHERE project_id=? AND object_id=? ORDER BY seq LIMIT 500",
+            (str(project_id), row["id"]),
+        ):
+            source = json.loads(confirmation["source_json"])
+            source.pop("iqc_id", None)
+            confirmations.append(
+                {
+                    "source": source,
+                    "external_actor": confirmation["external_actor"],
+                    "signature": confirmation["signature"],
+                    "recorded_by": confirmation["recorded_by"],
+                    "sequence": confirmation["seq"],
+                }
+            )
+        original = own(tx, "supply_receipts", project_id, row["id"])
+        corrections = [
+            {
+                "sequence": c["seq"],
+                "received_delta": amount(c["received_delta"], lot["scale"]),
+                "accepted_delta": amount(c["accepted_delta"], lot["scale"]),
+                "rejected_delta": amount(c["rejected_delta"], lot["scale"]),
+                "evidence": c["evidence"],
+            }
+            for c in tx.execute(
+                "SELECT * FROM source_corrections WHERE project_id=? AND receipt_id=? ORDER BY seq LIMIT 500",
+                (str(project_id), row["id"]),
+            )
+        ]
         value = ReceiptValue(
+            original_quantity=amount(original["q_atoms"], lot["scale"]),
+            corrections=corrections,
+            confirmations=confirmations,
             commitment_id=row["commitment_id"],
             material_lot_id=row["material_lot_id"],
             quantity=amount(row["q_atoms"], lot["scale"]),
@@ -718,7 +765,7 @@ def _detail(tx, project_id, kind, object_id):
         evidence += [
             ObjectEvidence(reference=r["evidence"])
             for r in tx.execute(
-                "SELECT evidence FROM iqc_results WHERE project_id=? AND receipt_id=? ORDER BY created_at,id",
+                "SELECT evidence FROM effective_iqc_results WHERE project_id=? AND receipt_id=? ORDER BY created_at,id",
                 (str(project_id), row["id"]),
             )
         ]
@@ -747,9 +794,9 @@ def _page_balances(tx, project_id, rows):
         r["lineage_id"]: r
         for r in tx.execute(
             f"""SELECT prior.lineage_id,COALESCE(SUM(MAX(0,c.current_q_atoms-
-                      (SELECT COALESCE(SUM(sr.q_atoms),0) FROM supply_receipts sr
+                      (SELECT COALESCE(SUM(sr.q_atoms),0) FROM effective_supply_receipts sr
                        WHERE sr.project_id=c.project_id AND sr.commitment_id=c.id))),0) in_transit,
-                       COALESCE(SUM((SELECT COALESCE(SUM(sr.q_atoms),0) FROM supply_receipts sr
+                       COALESCE(SUM((SELECT COALESCE(SUM(sr.q_atoms),0) FROM effective_supply_receipts sr
                            WHERE sr.project_id=c.project_id AND sr.commitment_id=c.id)),0) received
                 FROM supply_commitments c JOIN requirements prior
                   ON prior.id=c.requirement_id AND prior.project_id=c.project_id
@@ -762,7 +809,7 @@ def _page_balances(tx, project_id, rows):
         for r in tx.execute(
             f"""SELECT prior.lineage_id,COALESCE(SUM(i.accepted_atoms),0) qualified,
                        COALESCE(SUM(i.rejected_atoms),0) rejected
-                FROM iqc_results i JOIN supply_receipts sr ON sr.id=i.receipt_id
+                FROM effective_iqc_results i JOIN effective_supply_receipts sr ON sr.id=i.receipt_id
                 JOIN supply_commitments c ON c.id=sr.commitment_id
                 JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id
                 WHERE prior.project_id=? AND prior.lineage_id IN ({slots}) GROUP BY prior.lineage_id""",
@@ -830,7 +877,7 @@ def _page(kind, table):
             )
         elif kind == "receipt":
             rows = tx.execute(
-                """SELECT sr.*,l.scale FROM supply_receipts sr JOIN material_lots l ON l.id=sr.material_lot_id
+                """SELECT sr.*,l.scale FROM effective_supply_receipts sr JOIN material_lots l ON l.id=sr.material_lot_id
                    WHERE sr.project_id=? ORDER BY sr.created_at,sr.id LIMIT ? OFFSET ?""",
                 (str(project_id), limit, offset),
             )

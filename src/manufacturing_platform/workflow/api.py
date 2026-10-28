@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse, Response
 
@@ -190,10 +191,13 @@ def build_workflow_router(
             payload = await request.json()
         except ValueError:
             raise HTTPException(422, "Invalid request")
-        return service.execute(actor(request), project_id, payload)
+        return await run_in_threadpool(service.execute, actor(request), project_id, payload)
+
+    @router.get("/projects/{project_id}/exchanges")
+    def exchanges(project_id: UUID, request: Request, limit: int = 50, offset: int = 0):
+        return service.objects(actor(request), project_id, ObjectKind.exchange, limit=limit, offset=offset)
 
     @router.get("/projects/{project_id}/trace")
-    @router.get("/projects/{project_id}/exchanges")
     def unavailable_project(project_id: UUID, request: Request):
         service.detail(actor(request), project_id)
         raise HTTPException(503, "Workflow feature unavailable")

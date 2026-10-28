@@ -80,7 +80,7 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         )
     required = contract["customer_approval_required"] is not False
     approval = tx.execute(
-        "SELECT * FROM customer_approvals WHERE project_id=? AND revision_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
+        "SELECT * FROM customer_approvals WHERE project_id=? AND revision_id=? ORDER BY accepted_seq DESC LIMIT 1",
         (str(project_id), row["revision_id"]),
     ).fetchone()
     customer_ok = (

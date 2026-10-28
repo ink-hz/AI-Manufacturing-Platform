@@ -134,8 +134,9 @@ class HandoffView(StrictModel):
 
 
 class CustomerApprovalView(StrictModel):
+    source: SourceRef | None = None
     id: UUID
-    method: Literal["manual"]
+    method: Literal["manual", "file", "mock", "api"]
     recorded_by: UUID
     customer_id: str
     external_signatory: str

@@ -4,7 +4,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from . import engineering, orders, supply  # noqa: F401 - trusted domain registration
+from . import (  # noqa: F401 - trusted domain registration
+    engineering,
+    exchanges,
+    orders,
+    supply,
+)
 from .authorization import require_project
 from .commands import COMMAND_REGISTRY, CommandContext, WorkflowCommand
 from .contracts import (
@@ -56,6 +61,7 @@ class WorkflowService:
         self, store, resolve_subject, *, command_registry=None, object_registry=None
     ):
         self.store, self.resolve_subject = store, resolve_subject
+        self.exchange_service = exchanges.ExchangeService(self)
         self.command_registry = (
             COMMAND_REGISTRY if command_registry is None else command_registry
         )
@@ -359,9 +365,16 @@ class WorkflowService:
                 json.loads(grant["qualifications_json"]),
             ):
                 raise DomainError("FORBIDDEN", 403, "Action permission denied")
+            self.exchange_service.authorize(tx, actor, project_id, command)
             replay = self._replay(tx, actor, command.operation_id, payload)
             if replay is not None:
-                return CommandResult.model_validate({**replay, "replayed": True})
+                return CommandResult.model_validate(
+                    {
+                        **replay,
+                        "replayed": True,
+                        "current_project_version": row["version"],
+                    }
+                )
             if row["version"] != command.expected_version:
                 raise DomainError(
                     "VERSION_CONFLICT",
@@ -375,6 +388,7 @@ class WorkflowService:
                 row["version"],
                 datetime.now(UTC),
                 Dataset.model_validate(self.store.dataset),
+                self.exchange_service,
             )
             mutation = entry.handler(tx, context, command)
             if not isinstance(mutation, MutationResult):
@@ -400,4 +414,9 @@ class WorkflowService:
                 command.action,
                 mutation.object_id,
             )
-            return result
+        if isinstance(
+            command,
+            (exchanges.DispatchExchange, exchanges.QueryExchange, exchanges.PullSource),
+        ):
+            return self.exchange_service.perform(actor, project_id, command, result)
+        return result

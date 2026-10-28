@@ -307,6 +307,12 @@ def test_v2_database_migrates_without_losing_reviewed_order(workflow):
 
     with sqlite3.connect(workflow.paths.domain) as db:
         db.execute("PRAGMA foreign_keys=OFF")
+        for view in ("effective_supply_receipts", "effective_iqc_results"):
+            db.execute(f"DROP VIEW {view}")
+        for table in ("source_corrections", "exchange_discrepancies", "source_confirmations", "exchange_receipts", "exchange_events", "exchanges"):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("ALTER TABLE reservations DROP COLUMN exchange_id")
+        db.execute("ALTER TABLE reservations DROP COLUMN accepted_sequence")
         for table in (
             "readiness_checks",
             "work_orders",
@@ -324,7 +330,7 @@ def test_v2_database_migrates_without_losing_reviewed_order(workflow):
     )
     assert workflow.revision(p["id"], internal_revision="M2")["id"]
     with workflow.db() as db:
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 5
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 6
 
 
 def test_measurement_limits_accept_finite_zero_and_negative_bounds():

@@ -193,3 +193,70 @@ it("ignores stale plan material lookup after a different lot is selected",async(
   await act(async()=>pending.get(b.id)!({value:{kind:"material_lot",material_id:"new",owner_id:"B",unit:"m"}}));
   expect(host.textContent).toContain("物料 new");
 });
+it("reservation form uses named requirement and lot selectors with exact quantity",async()=>{
+  const props:any={api:{object:vi.fn().mockResolvedValue({value:{kind:"requirement",work_order_id:id,unit:"kg"}}),command:vi.fn()},project:{...project,allowed_actions:["reservation.request"]},onChanged:vi.fn(),onOpen:vi.fn(),onDirty:vi.fn(),readOnly:false,
+    action:"reservation.request",workOrders:[],orders:[],revisions:[],requirements:[summary(2,"requirement")],lots:[summary(3,"material_lot")],commitments:[],receipts:[]};
+  await act(async()=>root.render(<SupplyForms {...props}/>));
+  await select("预留对应需求",summary(2,"requirement").id);await flush();
+  await select("预留物料批次",summary(3,"material_lot").id);
+  await field("请求预留数量","1.250");await click("保存预留请求");
+  expect(props.api.command).toHaveBeenCalledWith(id,expect.objectContaining({action:"reservation.request",quantity:"1.250",unit:"kg",work_order_id:id,requirement_id:summary(2,"requirement").id,lot_id:summary(3,"material_lot").id}));
+});
+it("exchange workspace exposes synchronization and bounded request list",async()=>{
+  await act(async()=>root.render(<WorkflowApp options={{apiBase:"/api/v1/manufacturing",csrfToken:"csrf",readOnly:false,bootstrap}}/>));
+  await flush();await click("制造项目");await click("相机项目");await click("同步与回执");
+  expect(host.textContent).toContain("权威系统");
+  expect(host.textContent).toContain("模拟");
+});
+it("source pull submits named configured identity and preserves the frozen retry",async()=>{
+  const {ExchangeWorkspace}=await import("./ExchangeWorkspace");
+  const {WorkflowError}=await import("./api");
+  const command=vi.fn().mockRejectedValue(new WorkflowError(409,"VERSION_CONFLICT"));
+  const props:any={api:{objects:vi.fn().mockResolvedValue({items:[],total:0}),command},project:{...project,allowed_actions:["source.pull","supply.receive"]},onChanged:vi.fn(),onOpen:vi.fn(),onDirty:vi.fn(),readOnly:false,mode:"test",requestLeave:(f:()=>void)=>f()};
+  await act(async()=>root.render(<ExchangeWorkspace {...props}/>));await flush();
+  await click("获取来源事实");await field("外部业务编号","WMS-DELIVERY-25");await click("读取权威来源");await click("读取权威来源");
+  expect(command).toHaveBeenCalledTimes(2);expect(command.mock.calls[0][1]).toEqual(command.mock.calls[1][1]);
+  expect(command.mock.calls[0][1]).toMatchObject({action:"source.pull",system:"erp",object_type:"receipt",external_id:"WMS-DELIVERY-25",expected_version:7});
+  expect(command.mock.calls[0][1]).not.toHaveProperty("receipt");
+});
+it("exchange detail distinguishes uncertain simulation from confirmed inventory",async()=>{
+  await act(async()=>root.render(<DetailContent data={{summary:{id,project_id:id,kind:"exchange",title:"ERP 库存请求",state:"unknown",quantity:null,unit:null,version:1,blocking_reasons:[],next_actions:[]},value:{kind:"exchange",action:"reservation.request",policy_action:"reservation.request",system:"erp",business_key:id,mode:"mock",phase:"unknown",requested:"80",accepted:"0",rejected:"0",unit:"kg",reason:"Reply lost; query existing business key",events:[{sequence:1,phase:"unknown",reason:"请求已保存"}],receipt:null,reservation_id:id,source:null,source_object_type:null},relations:[],history:[],evidence:[]} as ObjectDetail} onOpen={vi.fn()}/>));
+  expect(host.textContent).toContain("模拟权威系统");expect(host.textContent).toContain("已接受");expect(host.textContent).toContain("Reply lost");expect(host.textContent).toContain("请求已保存");
+});
+it("production exchange workspace is visibly unconnected and read-only disables actions",async()=>{
+  const {ExchangeWorkspace}=await import("./ExchangeWorkspace");
+  const props:any={api:{objects:vi.fn().mockResolvedValue({items:[],total:0})},project:{...project,allowed_actions:["source.pull","supply.receive","exchange.dispatch"]},onChanged:vi.fn(),onOpen:vi.fn(),onDirty:vi.fn(),readOnly:true,mode:"production",requestLeave:(f:()=>void)=>f()};
+  await act(async()=>root.render(<ExchangeWorkspace {...props}/>));await flush();
+  expect(host.textContent).toContain("权威系统未接入");expect(host.textContent).not.toContain("模拟权威系统");
+  expect([...host.querySelectorAll("button")].some(b=>b.textContent==="发送权威请求")).toBe(false);
+});
+it("uses completed apply version for the next draft while project refresh remains delayed",async()=>{
+  const original=vi.mocked(fetch).getMockImplementation()!;
+  const reads:((r:Response)=>void)[]=[];
+  const currentProject={...project,allowed_actions:["exchange.dispatch","reservation.request","source.pull","supply.receive"]};
+  const exchangeId="00000000-0000-4000-8000-000000000099";
+  const item={id:exchangeId,project_id:id,kind:"exchange",title:"ERP 预留请求",state:"unknown",quantity:"80",unit:"kg",version:1,blocking_reasons:[],next_actions:["exchange.query","exchange.dispatch"]};
+  vi.mocked(fetch).mockImplementation(async(u,i={})=>{
+    const url=String(u);
+    if(i.method==="POST"){
+      const body=JSON.parse(String(i.body));writes.push(body);
+      return response({operation_id:body.operation_id,project_id:id,project_version:6+writes.length*2,
+        current_project_version:7+writes.length*2,object_type:"exchange",object_id:exchangeId,exchange_id:exchangeId,replayed:false});
+    }
+    if(url.endsWith("/projects")||url.endsWith("/projects/"+id)){
+      if(writes.length)return new Promise<Response>(r=>reads.push(r));
+      return response(url.endsWith("/projects")?{items:[currentProject]}:currentProject);
+    }
+    if(url.includes("/objects/exchange/"))return response({summary:item,value:{kind:"exchange",action:"reservation.request",policy_action:"reservation.request",system:"erp",business_key:exchangeId,mode:"mock",phase:"unknown",requested:"80",accepted:"0",rejected:"0",unit:"kg",reason:"等待权威确认",events:[],receipt:null,reservation_id:null,source:null,source_object_type:null},relations:[],history:[],evidence:[]});
+    if(url.includes("/objects/exchange?"))return response({items:[item],total:1,limit:50,offset:0});
+    return original(u,i);
+  });
+  await act(async()=>root.render(<WorkflowApp options={{apiBase:"/api/v1/manufacturing",csrfToken:"csrf",readOnly:false,bootstrap}}/>));
+  await flush();await click("制造项目");await click("相机项目");await click("同步与回执");await click("发送权威请求");
+  await select("待处理交换",exchangeId);await flush();await click("查询后发送原请求");
+  await click("返回业务列表");await click("获取来源事实");await field("外部业务编号","DELIVERY-1");await click("读取权威来源");
+  expect(writes.map(w=>w.expected_version)).toEqual([7,9]);
+  await act(async()=>reads.forEach(r=>r(response({items:[currentProject]}))));await flush();
+  await click("返回业务列表");await click("获取来源事实");await field("外部业务编号","DELIVERY-2");await click("读取权威来源");
+  expect(writes.map(w=>w.expected_version)).toEqual([7,9,11]);
+});

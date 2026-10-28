@@ -1,5 +1,6 @@
 import type { ObjectSummary } from "./types";
 export const labels: Record<string, string> = {
+  exchange:"同步交换", reservation:"库存预留", iqc:"来料检验", customer_approval:"客户批准", requested:"已请求", validated:"已校验", posted:"已过账", unavailable:"未接入",
   "MES receipt matches fixed revision": "MES 接收版本与固定修订一致",
   "fixed revision lacks matching accepted MES receipt":
     "固定修订缺少匹配的 MES 接收回执",

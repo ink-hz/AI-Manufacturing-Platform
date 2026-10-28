@@ -99,6 +99,8 @@ class CommandBase(StrictModel):
 
 
 class CommandResult(StrictModel):
+    # Live read metadata; never rewrites the immutable saved intent result.
+    current_project_version: int | None = Field(default=None, strict=True, ge=1)
     operation_id: UUID
     project_id: UUID
     project_version: int
@@ -194,6 +196,7 @@ class ObjectKind(str, Enum):
     receipt = "receipt"
     material_lot = "material_lot"
     reservation = "reservation"
+    exchange = "exchange"
     unit = "unit"
     interruption = "interruption"
     eco = "eco"

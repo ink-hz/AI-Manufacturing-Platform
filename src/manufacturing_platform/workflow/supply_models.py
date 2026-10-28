@@ -155,7 +155,21 @@ class MaterialLotValue(DomainValue):
     rejected: NonnegativeQuantity
 
 
+from .exchange_models import SourceConfirmation
+
+
+class SourceQuantityCorrection(StrictModel):
+    sequence: int
+    received_delta: str
+    accepted_delta: str
+    rejected_delta: str
+    evidence: str
+
+
 class ReceiptValue(DomainValue):
+    original_quantity: Quantity
+    corrections: list[SourceQuantityCorrection] = Field(default_factory=list)
+    confirmations: list[SourceConfirmation] = Field(default_factory=list)
     kind: Literal["receipt"] = "receipt"
     commitment_id: UUID
     material_lot_id: UUID

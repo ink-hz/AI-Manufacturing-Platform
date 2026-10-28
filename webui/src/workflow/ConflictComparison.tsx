@@ -43,6 +43,12 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
       return [...target("requirement",draft.requirement_id),...target("commitment",draft.commitment_id||"")];
     case "supply.receive":
       return [...target("commitment",draft.commitment_id),...target("material_lot",draft.material_lot_id)];
+    case "exchange.dispatch":
+    case "exchange.query":
+    case "exchange.reconcile":
+      return target("exchange",draft.exchange_id);
+    case "reservation.request":
+      return [...target("requirement",draft.requirement_id),...target("material_lot",draft.lot_id)];
     case "supply.inspect":
       return target("receipt",draft.receipt_id);
     default:
@@ -51,6 +57,8 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
 }
 function facts(v: DomainValue): [string, string][] {
   switch (v.kind) {
+    case "exchange":return [["阶段",label(v.phase)],["请求数量",v.requested],["已接受",v.accepted],["原因",v.reason]];
+    case "reservation":return [["请求数量",v.requested],["确认预留",v.confirmed],["待确认余量",v.remaining]];
     case "demand":
       return [
         ["需求类别", label(v.demand_kind)],

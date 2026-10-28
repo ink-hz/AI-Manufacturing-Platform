@@ -132,7 +132,7 @@ def record_customer_approval(tx, context, command: RecordCustomerApproval):
         fail("customer approval must name project customer")
     ident = str(uuid4())
     tx.execute(
-        "INSERT INTO customer_approvals VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO customer_approvals VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (
             ident,
             str(context.project_id),
@@ -144,6 +144,10 @@ def record_customer_approval(tx, context, command: RecordCustomerApproval):
             command.evidence,
             str(context.actor.user_id),
             context.now.isoformat(),
+            tx.execute(
+                "SELECT COALESCE(MAX(accepted_seq),0)+1 FROM customer_approvals WHERE project_id=?",
+                (str(context.project_id),),
+            ).fetchone()[0],
         ),
     )
     return MutationResult(
@@ -266,6 +270,7 @@ def fixed_revision(tx, project_id, revision_id) -> EngineeringRevision:
     ]
     approvals = [
         CustomerApprovalView(
+            source=json.loads(r["authority_source"]) if r["authority_source"] else None,
             id=r["id"],
             method=r["method"],
             recorded_by=r["actor_id"],
@@ -275,7 +280,7 @@ def fixed_revision(tx, project_id, revision_id) -> EngineeringRevision:
             evidence=r["evidence"],
         )
         for r in tx.execute(
-            "SELECT * FROM customer_approvals WHERE revision_id=? AND project_id=? ORDER BY created_at,id",
+            "SELECT a.*,(SELECT c.source_json FROM source_confirmations c WHERE c.fact_id=a.id AND c.project_id=a.project_id ORDER BY c.seq DESC LIMIT 1) authority_source FROM customer_approvals a WHERE revision_id=? AND project_id=? ORDER BY accepted_seq",
             (row["id"], str(project_id)),
         )
     ]

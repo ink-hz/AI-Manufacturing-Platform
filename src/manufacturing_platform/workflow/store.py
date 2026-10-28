@@ -8,6 +8,7 @@ from pathlib import Path
 from .orders import source_key
 from .schema import (
     ENGINEERING_SCHEMA,
+    EXCHANGE_SCHEMA,
     ORDER_SCHEMA,
     SCHEMA,
     SCHEMA_VERSION,
@@ -83,7 +84,7 @@ class WorkflowStore:
                 for statement in SUPPLY_SCHEMA.split(";"):
                     if statement.strip():
                         conn.execute(statement)
-                conn.execute("UPDATE schema_version SET version=?", (SCHEMA_VERSION,))
+                conn.execute("UPDATE schema_version SET version=5")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             if len(version) == 1 and version[0][0] == 4:
                 conn.execute("ALTER TABLE plans ADD COLUMN accepted_seq INTEGER")
@@ -110,16 +111,44 @@ class WorkflowStore:
                     "CREATE UNIQUE INDEX plans_acceptance_order ON plans(project_id,accepted_seq)"
                 )
                 for table in (
-                    "material_lots", "plans", "supply_promise_revisions", "supply_receipts"
+                    "material_lots",
+                    "plans",
+                    "supply_promise_revisions",
+                    "supply_receipts",
                 ):
-                    rows = conn.execute(f"SELECT id,source_json FROM {table}").fetchall()
+                    rows = conn.execute(
+                        f"SELECT id,source_json FROM {table}"
+                    ).fetchall()
                     for row in rows:
                         conn.execute(
                             f"""UPDATE {table} SET source_system=?,source_type=?,
                                 source_external_id=? WHERE id=?""",
                             (*source_key(json.loads(row["source_json"])), row["id"]),
                         )
-                conn.execute("UPDATE schema_version SET version=?", (SCHEMA_VERSION,))
+                conn.execute("UPDATE schema_version SET version=5")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 5:
+                for statement in EXCHANGE_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute(
+                    "ALTER TABLE customer_approvals RENAME TO customer_approvals_v5"
+                )
+                conn.execute("DROP INDEX approvals_latest")
+                conn.execute(
+                    """CREATE TABLE customer_approvals(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),customer_id TEXT NOT NULL,external_signatory TEXT NOT NULL,method TEXT NOT NULL CHECK(method IN ('manual','file','mock','api')),decision TEXT NOT NULL,evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,accepted_seq INTEGER NOT NULL)"""
+                )
+                conn.execute(
+                    "INSERT INTO customer_approvals SELECT id,project_id,revision_id,customer_id,external_signatory,method,decision,evidence,actor_id,created_at,rowid FROM customer_approvals_v5 ORDER BY rowid"
+                )
+                conn.execute("DROP TABLE customer_approvals_v5")
+                conn.execute(
+                    "CREATE INDEX approvals_latest ON customer_approvals(project_id,revision_id,created_at,id)"
+                )
+                conn.execute(
+                    "CREATE UNIQUE INDEX approvals_acceptance_order ON customer_approvals(project_id,accepted_seq)"
+                )
+                conn.execute("UPDATE schema_version SET version=6")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             metadata = conn.execute(
                 "SELECT id,mode,label FROM dataset_metadata"
