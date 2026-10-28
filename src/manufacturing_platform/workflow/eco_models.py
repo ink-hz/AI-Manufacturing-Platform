@@ -3,7 +3,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from .commands import WorkflowCommand
 from .contracts import DomainValue, NonnegativeQuantity, Quantity, StrictModel
@@ -43,7 +43,10 @@ class SwitchEco(WorkflowCommand):
     action: Literal["eco.switch"]
     eco_id: UUID
     target_work_order_id: UUID
-    boundary: Literal["split_remaining", "cancel_remaining"] = "split_remaining"
+    boundary: Literal["split_remaining", "cancel_remaining", "retain_existing"] = (
+        "split_remaining"
+    )
+    retained_quantity: Quantity | None = None
     new_revision_id: UUID | None = None
     evidence: str = Field(min_length=1, max_length=2000)
 
@@ -53,7 +56,16 @@ class SwitchEco(WorkflowCommand):
             raise ValueError(
                 "split requires new revision; cancellation has no new revision"
             )
+        if (self.boundary == "retain_existing") != (self.retained_quantity is not None):
+            raise ValueError("retained outcome requires explicit complete quantity")
         return self
+
+    @model_serializer(mode="wrap")
+    def preserve_existing_hash(self, handler):
+        data = handler(self)
+        if self.retained_quantity is None:
+            data.pop("retained_quantity", None)
+        return data
 
 
 class CloseEco(WorkflowCommand):
@@ -80,6 +92,9 @@ class EcoImpact(StrictModel):
     state: str
     resolved_quantity: NonnegativeQuantity = "0"
     dispositions: list[EcoDisposition] = Field(default_factory=list)
+    stock_basis: dict[str, NonnegativeQuantity] | None = None
+    opening_consumption: NonnegativeQuantity = Field(default="0", validate_default=True)
+    stock_basis_complete: bool = True
 
 
 class EcoSwitch(StrictModel):
@@ -91,6 +106,13 @@ class EcoSwitch(StrictModel):
     retained_quantity: NonnegativeQuantity
     exchange_id: UUID
     phase: str
+
+
+class EcoRetention(StrictModel):
+    work_order_id: UUID
+    quantity: Quantity
+    unit_ids: list[UUID]
+    evidence: str
 
 
 class EcoValue(DomainValue):
@@ -106,3 +128,8 @@ class EcoValue(DomainValue):
     state: Literal["open", "closed"]
     impacts: list[EcoImpact]
     switches: list[EcoSwitch]
+    retentions: list[EcoRetention] = Field(default_factory=list)
+    unresolved_stock_basis_ids: list[UUID] = Field(default_factory=list)
+    implementation_outcome: Literal[
+        "pending", "retained", "cancelled", "switched", "mixed"
+    ] = "pending"

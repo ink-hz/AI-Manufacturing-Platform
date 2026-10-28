@@ -1,5 +1,7 @@
 """ECO boundaries exercised through public commands and two durable stores."""
 
+import pytest
+
 from .conftest import WorkflowHarness
 
 
@@ -878,7 +880,7 @@ def test_v8_migration_preserves_original_registration_and_adds_empty_delta_proje
             )
             == original
         )
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 9
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 10
 
 
 def test_multiple_ecos_on_same_revision_have_independent_immutable_impact_evidence(
@@ -1011,3 +1013,592 @@ def test_source_start_after_cancel_intent_rejects_stale_boundary_and_local_new_s
                 (wo["id"],),
             ).fetchone()
         ) == (5, 1)
+
+
+def dispose_all(workflow, p, eco_id):
+    value = workflow.object(p["id"], "eco", eco_id)
+    for i in value["impacts"]:
+        if i["resolved_quantity"] != i["quantity"]:
+            workflow.command(
+                p["id"],
+                "eco.disposition",
+                actor_name="engineering",
+                eco_id=eco_id,
+                impact_id=i["id"],
+                quantity=i["quantity"],
+                decision="use_old",
+                evidence="explicit retained old-version use",
+            )
+
+
+def test_i1_distinct_replenishment_after_consumption_cannot_inherit_stock_disposition(
+    workflow,
+):
+    from decimal import Decimal
+
+    from .test_execution import running_execution
+
+    p, wo, _units, _authority, event = running_execution(workflow)
+    old = workflow.object(p["id"], "work_order", wo["id"])
+    eco = workflow.command(
+        p["id"],
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=old["revision_id"],
+        effective_work_order_ids=[wo["id"]],
+        reason="review old material",
+    )
+    dispose_all(workflow, p, eco["object_id"])
+    workflow.command(
+        p["id"],
+        "execution.record",
+        actor_name="production",
+        source=workflow.source("i1-use", object_type="execution"),
+        **event,
+    )
+    with workflow.db() as tx:
+        req = tx.execute(
+            "SELECT id FROM requirements WHERE work_order_id=? LIMIT 1", (wo["id"],)
+        ).fetchone()[0]
+    commitment = workflow.command(
+        p["id"],
+        "supply.commit",
+        actor_name="supply",
+        requirement_id=req,
+        type="customer",
+        owner_id="Customer 1",
+        quantity="1",
+        unit="kg",
+        original_due="2026-12-01",
+        current_due="2026-12-01",
+        source=workflow.source("i1-promise", object_type="commitment"),
+    )
+    workflow.receive(
+        p["id"],
+        commitment["object_id"],
+        quantity="0.1",
+        lot_id=event["material_uses"][0]["lot_id"],
+    )
+    value = workflow.object(p["id"], "eco", eco["object_id"])
+    unresolved = [
+        i
+        for i in value["impacts"]
+        if i["type"] == "stock"
+        and Decimal(i["quantity"]) > Decimal(i["resolved_quantity"])
+    ]
+    assert sum(Decimal(i["quantity"]) for i in unresolved) == Decimal("0.1")
+    assert (
+        workflow.object(p["id"], "eco", eco["object_id"])["impacts"] == value["impacts"]
+    )
+    rejected = workflow.command(
+        p["id"],
+        "eco.close",
+        actor_name="engineering",
+        eco_id=eco["object_id"],
+        expected_status=409,
+    )
+    assert unresolved[0]["id"] in rejected["fields"]["unresolved_impact_ids"]
+
+
+def test_i2_fully_started_old_scope_can_close_only_with_explicit_retained_proof(
+    workflow,
+):
+    from .test_execution import ready_for_trial
+
+    p, wo, units, authority = ready_for_trial(workflow, quantity="1")
+    start = workflow.command(
+        p["id"],
+        "production.start",
+        actor_name="production",
+        work_order_id=wo["id"],
+        mode="trial",
+        unit_ids=units,
+        quantity="1",
+    )
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=start["exchange_id"],
+    )
+    old = workflow.object(p["id"], "work_order", wo["id"])
+    eco = workflow.command(
+        p["id"],
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=old["revision_id"],
+        effective_work_order_ids=[wo["id"]],
+        reason="retain all old WIP",
+    )
+    dispose_all(workflow, p, eco["object_id"])
+    workflow.command(
+        p["id"],
+        "eco.close",
+        actor_name="engineering",
+        eco_id=eco["object_id"],
+        expected_status=409,
+    )
+    before = authority.operation_count()
+    result = workflow.command(
+        p["id"],
+        "eco.switch",
+        actor_name="engineering",
+        eco_id=eco["object_id"],
+        target_work_order_id=wo["id"],
+        boundary="retain_existing",
+        retained_quantity="1",
+        evidence="all accepted old units retained",
+    )
+    assert not result["exchange_id"] and result["object_type"] == "eco"
+    workflow.command(
+        p["id"], "eco.close", actor_name="engineering", eco_id=eco["object_id"]
+    )
+    value = workflow.object(p["id"], "eco", eco["object_id"])
+    assert value["state"] == "closed" and value["implementation_outcome"] == "retained"
+    assert value["retentions"][0]["unit_ids"] == units
+    assert authority.operation_count() == before
+
+
+@pytest.mark.parametrize("reserved,expected_delta", [("100", "0"), ("40", "60")])
+def test_i1_late_receipt_import_deduplicates_exact_or_partial_authority_coverage(
+    workflow, reserved, expected_delta
+):
+    from decimal import Decimal
+
+    from .test_exchanges import act, reserve, stock
+
+    p, _req, supply, intent = reserve(workflow, quantity=reserved)
+    stock(workflow, p, supply)
+    act(workflow, p, intent)
+    eco = workflow.command(
+        p["id"],
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=supply["revision_id"],
+        effective_work_order_ids=[supply["work_order_id"]],
+        reason="receipt overlap",
+    )
+    dispose_all(workflow, p, eco["object_id"])
+    workflow.command(
+        p["id"],
+        "source.pull",
+        actor_name="supply",
+        system="erp",
+        object_type="receipt",
+        external_id="delivery-1",
+    )
+    view = workflow.object(p["id"], "eco", eco["object_id"])
+    assert sum(
+        Decimal(i["quantity"]) - Decimal(i["resolved_quantity"])
+        for i in view["impacts"]
+        if i["type"] == "stock"
+    ) == Decimal(expected_delta)
+    assert not view["unresolved_stock_basis_ids"]
+    workflow.command(
+        p["id"],
+        "source.pull",
+        actor_name="supply",
+        system="erp",
+        object_type="receipt",
+        external_id="delivery-1",
+    )
+    assert (
+        workflow.object(p["id"], "eco", eco["object_id"])["impacts"] == view["impacts"]
+    )
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "project",
+        "lot",
+        "owner",
+        "unit",
+        "duplicate",
+        "coverage",
+        "source_quantity",
+        "foreign_identity",
+    ],
+)
+def test_i1_invalid_reservation_basis_is_never_admitted_or_displayed(
+    workflow, monkeypatch, invalid
+):
+    from decimal import Decimal
+    from uuid import uuid4
+
+    from manufacturing_platform.workflow.adapters.mock import MockAuthorityAdapter
+
+    from .test_exchanges import act, reserve, stock
+
+    p, _req, supply, intent = reserve(workflow)
+    stock(workflow, p, supply)
+    _foreign, _, foreign_supply = workflow.material_requirement(
+        required="1", qualified="1"
+    )
+    with workflow.db() as tx:
+        foreign = tx.execute(
+            "SELECT source_external_id FROM supply_receipts WHERE material_lot_id=?",
+            (foreign_supply["lot_id"],),
+        ).fetchone()[0]
+    original = MockAuthorityAdapter.submit
+
+    def corrupt(adapter, request):
+        receipt = original(adapter, request)
+        basis = receipt.details[0].stock_basis[0]
+        if invalid == "project":
+            basis.project_id = uuid4()
+        if invalid == "lot":
+            basis.lot_id = uuid4()
+        if invalid == "owner":
+            basis.owner_id = "wrong-owner"
+        if invalid == "unit":
+            basis.unit = "piece"
+        if invalid == "duplicate":
+            receipt.details[0].stock_basis.append(basis.model_copy())
+        if invalid == "coverage":
+            basis.quantity = Decimal(79)
+        if invalid == "source_quantity":
+            basis.source_quantity = Decimal(1)
+        if invalid == "foreign_identity":
+            basis.external_id = foreign
+        return receipt
+
+    monkeypatch.setattr(MockAuthorityAdapter, "submit", corrupt)
+    act(workflow, p, intent)
+    value = workflow.object(p["id"], "exchange", intent["exchange_id"])
+    assert value["phase"] == "rejected" and value["receipt"] is None
+    with workflow.db() as tx:
+        assert (
+            tx.execute(
+                "SELECT confirmed_atoms FROM reservations WHERE exchange_id=?",
+                (intent["exchange_id"],),
+            ).fetchone()[0]
+            == 0
+        )
+
+
+def test_i1_legacy_basis_absence_preserves_bytes_and_blocks_ambiguous_stock_closure(
+    workflow, monkeypatch
+):
+    from manufacturing_platform.workflow.adapters.mock import MockAuthorityAdapter
+    from manufacturing_platform.workflow.exchange_models import ExternalReceipt
+
+    from .test_exchanges import act, reserve, stock
+
+    p, _req, supply, intent = reserve(workflow)
+    stock(workflow, p, supply)
+    original = MockAuthorityAdapter.submit
+
+    def legacy(adapter, request):
+        receipt = original(adapter, request)
+        receipt.details[0].stock_basis = None
+        old = receipt.model_dump_json()
+        assert "stock_basis" not in old
+        assert ExternalReceipt.model_validate_json(old).model_dump_json() == old
+        return receipt
+
+    monkeypatch.setattr(MockAuthorityAdapter, "submit", legacy)
+    act(workflow, p, intent)
+    eco = workflow.command(
+        p["id"],
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=supply["revision_id"],
+        effective_work_order_ids=[supply["work_order_id"]],
+        reason="legacy overlap held",
+    )
+    dispose_all(workflow, p, eco["object_id"])
+    assert workflow.object(p["id"], "eco", eco["object_id"])[
+        "unresolved_stock_basis_ids"
+    ]
+    result = workflow.command(
+        p["id"],
+        "eco.close",
+        actor_name="engineering",
+        eco_id=eco["object_id"],
+        expected_status=409,
+    )
+    assert result["fields"]["unresolved_stock_basis_ids"]
+
+
+def test_i1_admitted_receipt_correction_appends_quantity_without_rewriting_prior_disposition(
+    workflow,
+):
+    from decimal import Decimal
+
+    from .test_exchanges import reserve, stock
+
+    p, _req, supply, _intent = reserve(workflow)
+    stock(workflow, p, supply)
+    workflow.receive(
+        p["id"],
+        supply["id"],
+        quantity="80",
+        lot_id=supply["lot_id"],
+        source=workflow.source("delivery-1", object_type="receipt"),
+    )
+    eco = workflow.command(
+        p["id"],
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=supply["revision_id"],
+        effective_work_order_ids=[supply["work_order_id"]],
+        reason="correct receipt",
+    )
+    dispose_all(workflow, p, eco["object_id"])
+    pull = workflow.command(
+        p["id"],
+        "source.pull",
+        actor_name="supply",
+        system="erp",
+        object_type="receipt",
+        external_id="delivery-1",
+    )
+    workflow.command(
+        p["id"],
+        "exchange.reconcile",
+        actor_name="supply",
+        exchange_id=pull["exchange_id"],
+        source=workflow.source("delivery-1", object_type="receipt"),
+        object_type="receipt",
+        source_version=1,
+        details=[],
+        resolution="accept_authority",
+        evidence="actual 100kg confirmed",
+    )
+    view = workflow.object(p["id"], "eco", eco["object_id"])
+    assert sum(
+        Decimal(i["quantity"]) - Decimal(i["resolved_quantity"])
+        for i in view["impacts"]
+        if i["type"] == "stock"
+    ) == Decimal(20)
+    with workflow.db() as tx:
+        assert (
+            tx.execute(
+                "SELECT q_atoms FROM supply_receipts WHERE material_lot_id=?",
+                (supply["lot_id"],),
+            ).fetchone()[0]
+            == 80000
+        )
+
+
+@pytest.mark.parametrize(
+    "state", ["unstarted", "unknown", "partial", "wrong_quantity", "foreign"]
+)
+def test_i2_retained_boundary_rejects_unproven_or_incomplete_membership(
+    workflow, state
+):
+    from .test_execution import ready_for_trial
+
+    p, wo, units, authority = ready_for_trial(
+        workflow, quantity="2" if state == "partial" else "1"
+    )
+    if state not in {"unstarted", "foreign"}:
+        start = workflow.command(
+            p["id"],
+            "production.start",
+            actor_name="production",
+            work_order_id=wo["id"],
+            mode="trial",
+            unit_ids=units[:1],
+            quantity="1",
+        )
+        if state == "unknown":
+            authority.configure_fault("timeout_after_commit")
+        workflow.command(
+            p["id"],
+            "exchange.dispatch",
+            actor_name="production",
+            exchange_id=start["exchange_id"],
+        )
+    old = workflow.object(p["id"], "work_order", wo["id"])
+    eco = workflow.command(
+        p["id"],
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=old["revision_id"],
+        effective_work_order_ids=[wo["id"]],
+        reason="retained scope guard",
+    )
+    dispose_all(workflow, p, eco["object_id"])
+    if state == "foreign":
+        _, _, wo, _ = workflow.order_workorder()
+    workflow.command(
+        p["id"],
+        "eco.switch",
+        actor_name="engineering",
+        expected_status=404 if state == "foreign" else 409,
+        eco_id=eco["object_id"],
+        target_work_order_id=wo["id"],
+        boundary="retain_existing",
+        retained_quantity="2" if state in {"partial", "wrong_quantity"} else "1",
+        evidence="must prove exact membership",
+    )
+    assert (
+        workflow.object(p["id"], "eco", eco["object_id"])["implementation_outcome"]
+        == "pending"
+    )
+
+
+def test_i1_arrival_consumed_before_review_still_needs_disposition(workflow):
+    from decimal import Decimal
+
+    from .test_execution import running_execution
+
+    p, wo, _units, _authority, event = running_execution(workflow)
+    old = workflow.object(p["id"], "work_order", wo["id"])
+    eco = workflow.command(
+        p["id"],
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=old["revision_id"],
+        effective_work_order_ids=[wo["id"]],
+        reason="arrival consumed before review",
+    )
+    dispose_all(workflow, p, eco["object_id"])
+    with workflow.db() as tx:
+        req = tx.execute(
+            "SELECT id FROM requirements WHERE work_order_id=? LIMIT 1", (wo["id"],)
+        ).fetchone()[0]
+    commitment = workflow.command(
+        p["id"],
+        "supply.commit",
+        actor_name="supply",
+        requirement_id=req,
+        type="customer",
+        owner_id="Customer 1",
+        quantity="1",
+        unit="kg",
+        original_due="2026-12-01",
+        current_due="2026-12-01",
+        source=workflow.source("consumed-arrival-promise", object_type="commitment"),
+    )
+    workflow.receive(
+        p["id"],
+        commitment["object_id"],
+        quantity="0.1",
+        lot_id=event["material_uses"][0]["lot_id"],
+    )
+    workflow.command(
+        p["id"],
+        "execution.record",
+        actor_name="production",
+        source=workflow.source("consumed-new-arrival", object_type="execution"),
+        **event,
+    )
+    view = workflow.object(p["id"], "eco", eco["object_id"])
+    assert sum(
+        Decimal(i["quantity"]) - Decimal(i["resolved_quantity"])
+        for i in view["impacts"]
+        if i["type"] == "stock"
+    ) == Decimal("0.1")
+
+
+def test_i2_legacy_switch_command_hash_omits_new_retention_field():
+    from uuid import uuid4
+
+    from manufacturing_platform.workflow.eco_models import SwitchEco
+
+    body = {
+        "action": "eco.switch",
+        "operation_id": str(uuid4()),
+        "expected_version": 1,
+        "eco_id": str(uuid4()),
+        "target_work_order_id": str(uuid4()),
+        "boundary": "cancel_remaining",
+        "new_revision_id": None,
+        "evidence": "original",
+    }
+    assert SwitchEco.model_validate(body).model_dump(mode="json") == body
+
+
+def test_i1_zero_net_opening_keeps_receipt_basis_and_does_not_resurface_consumed_stock(
+    workflow,
+):
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from .test_execution import review_article, running_execution
+
+    p, wo, units, _authority, event = running_execution(workflow)
+    review_article(workflow, p, wo, units[0])
+    bulk = workflow.command(
+        p["id"],
+        "production.start",
+        actor_name="production",
+        work_order_id=wo["id"],
+        mode="bulk",
+        unit_ids=units[1:2],
+        quantity="1",
+    )
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=bulk["exchange_id"],
+    )
+    lot = event["material_uses"][0]["lot_id"]
+    for n, uid in enumerate(units[:2]):
+        workflow.command(
+            p["id"],
+            "execution.record",
+            actor_name="production",
+            source=workflow.source(f"zero-opening-{n}", object_type="execution"),
+            **{
+                **event,
+                "sn": workflow.object(p["id"], "unit", uid)["sn"],
+                "material_uses": [{"lot_id": lot, "quantity": "1", "unit": "kg"}],
+                "occurred_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    old = workflow.object(p["id"], "work_order", wo["id"])
+    eco = workflow.command(
+        p["id"],
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=old["revision_id"],
+        effective_work_order_ids=[wo["id"]],
+        reason="zero opening stock",
+    )
+    assert not [
+        i
+        for i in workflow.object(p["id"], "eco", eco["object_id"])["impacts"]
+        if i["type"] == "stock"
+    ]
+    with workflow.db() as tx:
+        req = tx.execute(
+            "SELECT id FROM requirements WHERE work_order_id=? LIMIT 1", (wo["id"],)
+        ).fetchone()[0]
+        assert (
+            tx.execute(
+                "SELECT consumed_atoms FROM eco_stock_openings WHERE eco_id=?",
+                (eco["object_id"],),
+            ).fetchone()[0]
+            == 2000
+        )
+    promise = workflow.command(
+        p["id"],
+        "supply.commit",
+        actor_name="supply",
+        requirement_id=req,
+        type="customer",
+        owner_id="Customer 1",
+        quantity="1",
+        unit="kg",
+        original_due="2026-12-01",
+        current_due="2026-12-01",
+        source=workflow.source("zero-opening-promise", object_type="commitment"),
+    )
+    workflow.receive(p["id"], promise["object_id"], quantity="0.1", lot_id=lot)
+    current = workflow.object(p["id"], "eco", eco["object_id"])
+    assert sum(
+        Decimal(i["quantity"]) for i in current["impacts"] if i["type"] == "stock"
+    ) == Decimal("0.1")
+
+
+def test_i1_stock_basis_read_contract_uses_decimal_strings(workflow):
+    p, eco, _stock = workflow.open_eco_with_stock()
+    view = workflow.object(p["id"], "eco", eco["id"])
+    stock = next(i for i in view["impacts"] if i["type"] == "stock")
+    assert set(stock["stock_basis"].values()) == {"80"}
+    assert stock["opening_consumption"] == "0"

@@ -197,8 +197,14 @@ export function WorkflowApp({
     setRefresh((r) => r + 1);
     setDirtyKeys({});
     setEpoch((e) => e + 1);
-    if (
+    if (result.exchange_id) {
+      // An intent can reserve an ID before its business object exists.
+      setTarget({projectId:result.project_id,kind:"exchange",id:result.exchange_id});
+      setDetail(null);
+      setResolve(false);
+    } else if (
       [
+        "eco",
         "demand",
         "order_line",
         "commitment_change",

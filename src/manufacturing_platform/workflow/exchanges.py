@@ -4,6 +4,7 @@ import base64
 import binascii
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
@@ -248,6 +249,70 @@ def receipt_scope(tx, row, receipt):
         payload.unit,
     ):
         return False
+    if detail.stock_basis is not None:
+        from .supply import atoms
+
+        seen = set()
+        total = 0
+        try:
+            for basis in detail.stock_basis:
+                key = (basis.system.strip().casefold(), basis.external_id.strip())
+                if (
+                    basis.project_id != request.project_id
+                    or basis.lot_id != payload.lot_id
+                    or basis.owner_id != payload.owner_id
+                    or basis.unit != payload.unit
+                    or key[0] != row["system"].strip().casefold()
+                    or not key[1]
+                    or key in seen
+                ):
+                    return False
+                seen.add(key)
+                q = atoms(basis.quantity, basis.unit, payload.unit, payload.scale)
+                source_q = atoms(
+                    basis.source_quantity, basis.unit, payload.unit, payload.scale
+                )
+                if q > source_q:
+                    return False
+                prior_q = 0
+                for prior in tx.execute(
+                    "SELECT e.project_id,b.value FROM reservations r JOIN exchanges e ON e.id=r.exchange_id,json_each(e.receipt_json,'$.details[0].stock_basis') b WHERE r.authority_receipt_id IS NOT NULL AND e.id<>? AND lower(trim(json_extract(b.value,'$.system')))=? AND trim(json_extract(b.value,'$.external_id'))=?",
+                    (row["id"], *key),
+                ):
+                    b = json.loads(prior["value"])
+                    if (
+                        prior["project_id"] != row["project_id"]
+                        or b["lot_id"] != str(payload.lot_id)
+                        or b["owner_id"] != payload.owner_id
+                        or b["unit"] != payload.unit
+                        or b["source_version"] != basis.source_version
+                        or Decimal(b["source_quantity"]) != basis.source_quantity
+                    ):
+                        return False
+                    prior_q += atoms(
+                        Decimal(b["quantity"]), basis.unit, payload.unit, payload.scale
+                    )
+                if prior_q + q > source_q:
+                    return False
+                total += q
+                local = tx.execute(
+                    "SELECT project_id,material_lot_id,unit,source_version,q_atoms FROM effective_supply_receipts WHERE source_system=? AND source_external_id=?",
+                    key,
+                ).fetchone()
+                if local and (
+                    local["project_id"] != row["project_id"]
+                    or local["material_lot_id"] != str(payload.lot_id)
+                    or local["unit"] != payload.unit
+                    or local["source_version"] != basis.source_version
+                    or local["q_atoms"] != source_q
+                ):
+                    return False
+            if total != atoms(
+                detail.quantity, detail.unit, payload.unit, payload.scale
+            ):
+                return False
+        except DomainError:
+            return False
     scoped = tx.execute(
         """SELECT 1 FROM reservations r JOIN requirements q ON q.id=r.requirement_id AND q.project_id=r.project_id
         JOIN material_lots l ON l.id=r.material_lot_id AND l.project_id=r.project_id

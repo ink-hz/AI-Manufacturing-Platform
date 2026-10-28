@@ -166,6 +166,64 @@ class MockAuthorityAdapter:
                     accepted,
                 ),
             )
+        stock_basis = None
+        if accepted:
+            # Old anonymous reservations remain anonymous. Only assign actual
+            # remaining receipt coverage; never invent a provenance identity.
+            legacy = tx.execute(
+                "SELECT COALESCE(SUM(r.q_atoms),0) FROM authority_reservations r WHERE r.lot_id=? AND r.id<>? AND NOT EXISTS(SELECT 1 FROM authority_stock_coverage c WHERE c.reservation_id=r.id)",
+                (str(payload.lot_id), str(payload.reservation_id)),
+            ).fetchone()[0]
+            remaining = accepted
+            coverage = []
+            sources = tx.execute(
+                "SELECT external_id,version,payload_json FROM source_events WHERE project_id=? AND object_type='receipt' AND json_extract(payload_json,'$.material_lot_id')=? ORDER BY seq",
+                (str(request.project_id), str(payload.lot_id)),
+            ).fetchall()
+            for source in sources:
+                body = json.loads(source["payload_json"])
+                physical = atoms(
+                    Decimal(body["quantity"]), payload.unit, payload.unit, payload.scale
+                )
+                assigned = tx.execute(
+                    "SELECT COALESCE(SUM(c.q_atoms),0) FROM authority_stock_coverage c JOIN authority_reservations r ON r.id=c.reservation_id WHERE r.project_id=? AND r.lot_id=? AND c.source_external_id=?",
+                    (
+                        str(request.project_id),
+                        str(payload.lot_id),
+                        source["external_id"],
+                    ),
+                ).fetchone()[0]
+                available = max(0, physical - assigned)
+                skip = min(legacy, available)
+                legacy -= skip
+                take = min(remaining, available - skip)
+                if take:
+                    coverage.append((source, take))
+                    remaining -= take
+                if not remaining:
+                    break
+            if remaining == 0 and len(coverage) <= 500:
+                stock_basis = []
+                for source, take in coverage:
+                    tx.execute(
+                        "INSERT INTO authority_stock_coverage VALUES (?,?,?)",
+                        (str(payload.reservation_id), source["external_id"], take),
+                    )
+                    stock_basis.append(
+                        {
+                            "project_id": request.project_id,
+                            "lot_id": payload.lot_id,
+                            "owner_id": payload.owner_id,
+                            "unit": payload.unit,
+                            "system": request.system,
+                            "external_id": source["external_id"],
+                            "source_version": source["version"],
+                            "source_quantity": json.loads(source["payload_json"])[
+                                "quantity"
+                            ],
+                            "quantity": amount(take, payload.scale),
+                        }
+                    )
         receipt = ExternalReceipt(
             receipt_id=uuid4(),
             business_key=request.business_key,
@@ -183,6 +241,7 @@ class MockAuthorityAdapter:
                     "owner_id": payload.owner_id,
                     "quantity": amount(accepted, payload.scale),
                     "unit": payload.unit,
+                    **({"stock_basis": stock_basis} if stock_basis is not None else {}),
                 }
             ],
             occurred_at=datetime.now(UTC),

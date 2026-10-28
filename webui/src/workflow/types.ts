@@ -139,13 +139,13 @@ export interface ExchangeValue {
   receipt:{receipt_id:string;business_key:string;request_hash:string;source_object_id:string;source_version:number;sequence:number;
     phase:string;accepted_quantity:string;rejected_quantity:string;details:(ReceiptDetail|UnitReceiptDetail|ControlReceiptDetail|EcoReceiptDetail)[];occurred_at:string;error:string|null}|null;
 }
-export interface EcoImpact {id:string;type:"purchase"|"stock"|"wip"|"work_order"|"unit";object_id:string;title:string;owner_id:string;quantity:string;unit:string;scale:number;state:string;resolved_quantity:string;dispositions:{id:string;decision:"use_old"|"rework"|"return"|"scrap";quantity:string;evidence:string}[]}
-export interface EcoValue {kind:"eco";id:string;old_revision_id:string;new_revision_id:string|null;old_revision:string;new_revision:string|null;effective_work_order_ids:string[];effective_sn_ids:string[];reason:string;state:"open"|"closed";impacts:EcoImpact[];switches:{id:string;work_order_id:string;new_work_order_id:string|null;boundary:"split_remaining"|"cancel_remaining";quantity:string;retained_quantity:string;exchange_id:string;phase:string}[]}
+export interface EcoImpact {stock_basis?:Record<string,string>|null;opening_consumption?:string;stock_basis_complete?:boolean;id:string;type:"purchase"|"stock"|"wip"|"work_order"|"unit";object_id:string;title:string;owner_id:string;quantity:string;unit:string;scale:number;state:string;resolved_quantity:string;dispositions:{id:string;decision:"use_old"|"rework"|"return"|"scrap";quantity:string;evidence:string}[]}
+export interface EcoValue {retentions?:{work_order_id:string;quantity:string;unit_ids:string[];evidence:string}[];implementation_outcome?:"pending"|"retained"|"cancelled"|"switched"|"mixed";unresolved_stock_basis_ids?:string[];kind:"eco";id:string;old_revision_id:string;new_revision_id:string|null;old_revision:string;new_revision:string|null;effective_work_order_ids:string[];effective_sn_ids:string[];reason:string;state:"open"|"closed";impacts:EcoImpact[];switches:{id:string;work_order_id:string;new_work_order_id:string|null;boundary:"split_remaining"|"cancel_remaining";quantity:string;retained_quantity:string;exchange_id:string;phase:string}[]}
 export interface EcoReceiptDetail {key:string;effect:"cancel_remaining"|"create_replacement";work_order_id:string;revision_id:string;quantity:string;retained_quantity:string}
 export type CommandFields =
   | {action:"eco.open";old_revision_id:string;new_revision_id:string|null;effective_work_order_ids:string[];effective_sn_ids:string[];reason:string}
   | {action:"eco.disposition";eco_id:string;impact_id:string;decision:"use_old"|"rework"|"return"|"scrap";quantity:string;evidence:string}
-  | {action:"eco.switch";eco_id:string;target_work_order_id:string;new_revision_id:string|null;boundary:"split_remaining"|"cancel_remaining";evidence:string}
+  | {action:"eco.switch";eco_id:string;target_work_order_id:string;new_revision_id:string|null;boundary:"split_remaining"|"cancel_remaining"|"retain_existing";retained_quantity?:string;evidence:string}
   | {action:"eco.close";eco_id:string}
   | {action:"unit.register";work_order_id:string;sns:string[]}
   | {action:"production.start";work_order_id:string;mode:"trial"|"bulk";unit_ids:string[];quantity:string}

@@ -511,7 +511,7 @@ it("submits a typed split using the selected ECO target revision", async()=>{
   detail=ecoDetail(); await mount("eco.switch");
   await field("待处理 ECO",order); await flush();
   await field("切换原工单",workOrder); await field("切换凭据","未执行十五件拆分");
-  await click("请求权威切换");
+  await click("记录或请求边界");
   expect(commands[0]).toMatchObject({action:"eco.switch",eco_id:order,target_work_order_id:workOrder,new_revision_id:id,boundary:"split_remaining"});
 });
 it("submits close from a named ECO after showing the unresolved impacts", async()=>{
@@ -544,4 +544,41 @@ it("pages ECO and serial boundary selectors explicitly without object-detail sca
   expect(calls.filter(c=>c.includes("/objects/unit?"))).toHaveLength(2);
   expect(calls.filter(c=>c.includes("/objects/eco?"))).toHaveLength(2);
   expect(calls.every(c=>c.includes("limit=50"))).toBe(true);
+});
+
+it("I3 actual app navigates reserved split results to existing exchange, then opens accepted replacement",async()=>{
+  const {WorkflowApp}=await import("./WorkflowApp");
+  const replacement="00000000-0000-4000-8000-000000000080",exchange="00000000-0000-4000-8000-000000000081";
+  const requests:string[]=[];let accepted=false;
+  const p={...project,allowed_actions:["eco.switch"]};
+  const eco=ecoDetail();
+  vi.stubGlobal("fetch",vi.fn(async(url:string,init:RequestInit={})=>{
+    requests.push(url);
+    if(init.method==="POST") return response({operation_id:JSON.parse(String(init.body)).operation_id,project_id:id,project_version:8,object_type:"work_order",object_id:replacement,exchange_id:exchange,replayed:false});
+    if(url.endsWith("/projects"))return response({items:[{...p,version:8}]});
+    if(url.endsWith("/dashboard"))return response({counts:{},cards:[],project_ids:[id],project_count:1});
+    if(url.includes("/objects/eco/"))return response({...eco,value:{...eco.value,switches:accepted?[{id:revision,work_order_id:workOrder,new_work_order_id:replacement,boundary:"split_remaining",quantity:"15",retained_quantity:"5",exchange_id:exchange,phase:"accepted"}]:[]}});
+    if(url.endsWith("/objects/work_order/"+replacement)) return accepted?response({summary:summary(replacement,"work_order","M2 replacement"),value:{kind:"work_order",quantity:"15",remaining_obligation:"15",unit:"piece",purpose:"production",trial_quantity:"1",planned_start:"2026-12-01",planned_end:"2026-12-02",trial_readiness:{ready:false,checks:[],input_versions:{}},bulk_readiness:{ready:false,checks:[],input_versions:{}},execution_events:[],held_start_scopes:[]},relations:[],evidence:[],history:[]}):new Response("not created",{status:404});
+    if(url.endsWith("/objects/exchange/"+exchange))return response({summary:summary(exchange,"exchange","ECO待权威接受"),value:{kind:"exchange",action:"eco.switch",policy_action:"eco.switch",mode:"mock",phase:"requested",system:"erp",requested:"15",accepted:"0",rejected:"0",unit:"piece",reason:"waiting",events:[],receipt:null,source:null},relations:[],evidence:[],history:[]});
+    const kind=url.split("/objects/")[1]?.split("?")[0];
+    return response({items:kind==="eco"?[eco.summary]:kind==="work_order"?[summary(workOrder,"work_order","MES-OLD")]:[],total:kind==="eco"||kind==="work_order"?1:0,limit:50,offset:0});
+  }));
+  const bootstrap={protocol:1 as const,allowed:true,available:true,workflow_available:true,workflow_access:true,can_edit:true,release:"test",legacy_access:false,configuration_admin:false,dataset:{id:"test",mode:"test" as const,label:"test"},user:{id,display_name:"工程"},project_ids:[id]};
+  await act(async()=>root.render(<WorkflowApp options={{apiBase:"/api/v1/manufacturing",csrfToken:"csrf",readOnly:false,bootstrap}}/>));
+  await flush();await click("制造项目");await click("相机项目");await click("工程与工单");await click("切换 ECO 边界");
+  await field("待处理 ECO",order);await flush();await field("切换原工单",workOrder);await field("切换凭据","M2 split");await click("记录或请求边界");
+  expect(requests.some(u=>u.endsWith("/objects/work_order/"+replacement))).toBe(false);
+  expect(requests.some(u=>u.endsWith("/objects/exchange/"+exchange))).toBe(true);
+  expect(box.textContent).toContain("ECO待权威接受");
+  accepted=true;await click("返回业务列表");await click("ECO M1 → M2");await click("核验新版工单准备");
+  expect(requests.some(u=>u.endsWith("/objects/work_order/"+replacement))).toBe(true);
+  expect(box.textContent).toContain("M2 replacement");
+});
+
+it("records explicit full retained quantity and labels retention separately from implemented switching",async()=>{
+  detail={...ecoDetail(),value:{...ecoDetail().value,implementation_outcome:"retained",retentions:[{work_order_id:workOrder,quantity:"5",unit_ids:[id],evidence:"keep old"}]}} as ObjectDetail;
+  await mount("eco.switch");await field("待处理 ECO",order);await flush();await field("切换原工单",workOrder);await field("切换边界","retain_existing");await field("完整保留数量","5");await field("切换凭据","全部已接受旧版范围保留");await click("记录或请求边界");
+  expect(commands[0]).toMatchObject({boundary:"retain_existing",retained_quantity:"5",new_revision_id:null});
+  await act(async()=>root.render(<WorkflowDetail api={api} target={{projectId:id,kind:"eco",id:order}} onOpen={()=>{}}/>));await flush();
+  expect(box.textContent).toContain("保留旧版，未执行工程切换");
 });

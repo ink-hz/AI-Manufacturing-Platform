@@ -28,6 +28,58 @@ from .supply import amount as material_amount
 from .supply import atoms as material_atoms
 
 
+def stock_lots(tx, pid, rid):
+    return tx.execute(
+        "SELECT DISTINCT l.* FROM material_lots l JOIN requirements r ON r.project_id=l.project_id AND r.material_id=l.material_id AND r.owner_id=l.owner_id AND r.unit=l.unit JOIN work_orders w ON w.id=r.work_order_id AND w.project_id=r.project_id WHERE w.project_id=? AND w.revision_id=?",
+        (str(pid), str(rid)),
+    ).fetchall()
+
+
+def stock_evidence(tx, pid, lot):
+    """Admitted positive physical additions by immutable identity, not net stock."""
+    from .exchange_models import ExternalReceipt
+    from .exchanges import receipt_scope as admitted_receipt
+
+    evidence = {}
+    for r in tx.execute(
+        "SELECT * FROM effective_supply_receipts WHERE project_id=? AND material_lot_id=?",
+        (str(pid), lot["id"]),
+    ):
+        key = json.dumps(
+            [
+                "receipt",
+                r["source_system"].strip().casefold(),
+                r["source_external_id"].strip(),
+            ],
+            separators=(",", ":"),
+        )
+        evidence[key] = r["q_atoms"]
+    covered = {}
+    complete = True
+    unknown = 0
+    for r in tx.execute(
+        "SELECT e.*,v.confirmed_atoms FROM reservations v JOIN exchanges e ON e.id=v.exchange_id WHERE v.project_id=? AND v.material_lot_id=? AND v.authority_receipt_id IS NOT NULL",
+        (str(pid), lot["id"]),
+    ):
+        receipt = ExternalReceipt.model_validate_json(r["receipt_json"])
+        basis = receipt.details[0].stock_basis
+        if basis is None or not admitted_receipt(tx, r, receipt):
+            complete = False
+            unknown += r["confirmed_atoms"]
+            continue
+        for b in basis:
+            key = json.dumps(
+                ["receipt", b.system.strip().casefold(), b.external_id.strip()],
+                separators=(",", ":"),
+            )
+            covered[key] = covered.get(key, 0) + material_atoms(
+                b.quantity, b.unit, lot["unit"], lot["scale"]
+            )
+    for key, q in covered.items():
+        evidence[key] = max(evidence.get(key, 0), q)
+    return evidence, complete, unknown
+
+
 def impacts(tx, project_id, old_revision_id) -> list[EcoImpact]:
     """Actual revision-linked scope, including pooled stock with matching owner/material.
 
@@ -94,32 +146,33 @@ def impacts(tx, project_id, old_revision_id) -> list[EcoImpact]:
             c["owner_id"],
             c["type"],
         )
-    for lot in tx.execute(
-        """SELECT DISTINCT l.* FROM material_lots l JOIN requirements r ON r.project_id=l.project_id AND r.material_id=l.material_id AND r.owner_id=l.owner_id AND r.unit=l.unit JOIN work_orders w ON w.id=r.work_order_id AND w.project_id=r.project_id WHERE w.project_id=? AND w.revision_id=?""",
-        (pid, rid),
-    ):
-        received = tx.execute(
-            "SELECT COALESCE(SUM(q_atoms),0) FROM effective_supply_receipts WHERE project_id=? AND material_lot_id=?",
-            (pid, lot["id"]),
-        ).fetchone()[0]
-        reserved = tx.execute(
-            "SELECT COALESCE(SUM(confirmed_atoms),0) FROM reservations WHERE project_id=? AND material_lot_id=? AND authority_receipt_id IS NOT NULL",
-            (pid, lot["id"]),
-        ).fetchone()[0]
+    for lot in stock_lots(tx, pid, rid):
+        basis, complete, unknown = stock_evidence(tx, pid, lot)
         consumed = tx.execute(
             "SELECT COALESCE(SUM(q_atoms),0) FROM material_consumption WHERE project_id=? AND lot_id=?",
             (pid, lot["id"]),
         ).fetchone()[0]
+        gross = max(sum(basis.values()), unknown)
+        count = len(result)
         add(
             "stock",
             lot,
-            max(0, max(received, reserved) - consumed),
+            max(0, gross - consumed),
             lot["unit"],
             lot["scale"],
             lot["lot_id"],
             lot["owner_id"],
             lot["state"],
         )
+        if len(result) > count:
+            result[-1].stock_basis = {
+                key: Decimal(material_amount(q, lot["scale"]))
+                for key, q in basis.items()
+            }
+            result[-1].opening_consumption = Decimal(
+                material_amount(consumed, lot["scale"])
+            )
+            result[-1].stock_basis_complete = complete
     return result
 
 
@@ -133,16 +186,64 @@ def eco_impacts(tx, pid, row):
         )
     ]
     totals = {}
+    covered = {}
+    for opening in tx.execute(
+        "SELECT * FROM eco_stock_openings WHERE project_id=? AND eco_id=?",
+        (str(pid), row["id"]),
+    ):
+        for source, q in json.loads(opening["basis_json"]).items():
+            covered[(UUID(opening["lot_id"]), source)] = q
     for prior in saved:
         key = (prior.type, prior.object_id)
         totals[key] = totals.get(key, Decimal(0)) + prior.quantity
+        if prior.type == "stock":
+            for source, quantity in (prior.stock_basis or {}).items():
+                q = material_atoms(quantity, prior.unit, prior.unit, prior.scale)
+                covered[(prior.object_id, source)] = max(
+                    covered.get((prior.object_id, source), 0), q
+                )
     if row["state"] == "open":
         for current in impacts(tx, pid, row["old_revision_id"]):
+            if current.type == "stock":
+                continue
             current.id = uuid5(UUID(row["id"]), str(current.id))
             prior_total = totals.get((current.type, current.object_id), Decimal(0))
             if current.quantity > prior_total:
                 current.quantity -= prior_total
                 saved.append(current)
+        for lot in stock_lots(tx, pid, row["old_revision_id"]):
+            basis, complete, _unknown = stock_evidence(tx, pid, lot)
+            additions = {
+                key: q - covered.get((UUID(lot["id"]), key), 0)
+                for key, q in basis.items()
+                if q > covered.get((UUID(lot["id"]), key), 0)
+            }
+            if additions:
+                saved.append(
+                    EcoImpact(
+                        id=uuid5(
+                            UUID(row["id"]),
+                            lot["id"] + json.dumps(basis, sort_keys=True),
+                        ),
+                        type="stock",
+                        object_id=lot["id"],
+                        title=lot["lot_id"],
+                        owner_id=lot["owner_id"],
+                        quantity=material_amount(sum(additions.values()), lot["scale"]),
+                        unit=lot["unit"],
+                        scale=lot["scale"],
+                        state=lot["state"],
+                        stock_basis={
+                            key: material_amount(q, lot["scale"])
+                            for key, q in basis.items()
+                        },
+                        stock_basis_complete=complete,
+                    )
+                )
+            if not complete:
+                for old in saved:
+                    if old.type == "stock" and str(old.object_id) == lot["id"]:
+                        old.stock_basis_complete = False
     for i in saved:
         entries = tx.execute(
             "SELECT * FROM eco_dispositions WHERE project_id=? AND eco_id=? AND impact_id=? ORDER BY created_at,id",
@@ -202,6 +303,23 @@ def open_eco(tx, context, command):
             context.now.isoformat(),
         ),
     )
+    for lot in stock_lots(tx, context.project_id, command.old_revision_id):
+        basis, complete, _unknown = stock_evidence(tx, context.project_id, lot)
+        consumed = tx.execute(
+            "SELECT COALESCE(SUM(q_atoms),0) FROM material_consumption WHERE project_id=? AND lot_id=?",
+            (str(context.project_id), lot["id"]),
+        ).fetchone()[0]
+        tx.execute(
+            "INSERT INTO eco_stock_openings VALUES (?,?,?,?,?,?)",
+            (
+                str(ident),
+                str(context.project_id),
+                lot["id"],
+                json.dumps(basis, sort_keys=True),
+                consumed,
+                int(complete),
+            ),
+        )
     initial = impacts(tx, context.project_id, command.old_revision_id)
     for i in initial:
         i.id = uuid5(ident, str(i.id))
@@ -271,10 +389,114 @@ def revision_ready(tx, pid, revision_id):
             fail("new revision customer approval or contract is unknown or missing")
 
 
+def accepted_membership(tx, pid, wid):
+    if tx.execute(
+        "SELECT 1 FROM start_requests s JOIN exchanges e ON e.id=s.exchange_id WHERE s.project_id=? AND s.work_order_id=? AND s.accepted_receipt_id IS NULL AND (e.phase!='rejected' OR e.receipt_json IS NULL)",
+        (str(pid), str(wid)),
+    ).fetchone():
+        fail("unresolved physical start membership prevents retained approval")
+    return [
+        r[0]
+        for r in tx.execute(
+            "SELECT u.id FROM units u JOIN start_requests s ON s.id=u.accepted_start_id AND s.project_id=u.project_id WHERE u.project_id=? AND u.work_order_id=? AND s.accepted_receipt_id IS NOT NULL ORDER BY u.id",
+            (str(pid), str(wid)),
+        )
+    ]
+
+
+def verify_retention(tx, pid, row, wid, quantity, evidence_ids=None):
+    wo = own(tx, "work_orders", pid, wid)
+    ids = accepted_membership(tx, pid, wid)
+    scale = 10 ** project(tx, pid)["unit_scale"]
+    if (
+        scope_locked(tx, pid, wid)
+        or quantity != wo["q_atoms"]
+        or len(ids) * scale != quantity
+        or (evidence_ids is not None and ids != evidence_ids)
+    ):
+        fail(
+            "retained boundary must exactly cover current accepted original membership"
+        )
+    relevant = [
+        i
+        for i in eco_impacts(tx, pid, row)
+        if (i.type == "work_order" and str(i.object_id) == str(wid))
+        or (i.type in {"unit", "wip"} and str(i.object_id) in ids)
+    ]
+    if not relevant or any(
+        i.quantity != i.resolved_quantity
+        or any(d.decision != "use_old" for d in i.dispositions)
+        for i in relevant
+    ):
+        fail(
+            "complete old-use dispositions required for retained WO and accepted SN/WIP"
+        )
+    return ids
+
+
+def retain(tx, context, command, row):
+    p = project(tx, context.project_id)
+    q = material_atoms(
+        command.retained_quantity, p["unit_code"], p["unit_code"], p["unit_scale"]
+    )
+    ids = verify_retention(tx, context.project_id, row, command.target_work_order_id, q)
+    if tx.execute(
+        "SELECT 1 FROM eco_retentions WHERE eco_id=? AND work_order_id=?",
+        (row["id"], str(command.target_work_order_id)),
+    ).fetchone():
+        fail("retained boundary already recorded")
+    tx.execute(
+        "INSERT INTO eco_retentions VALUES (?,?,?,?,?,?,?)",
+        (
+            row["id"],
+            str(context.project_id),
+            str(command.target_work_order_id),
+            q,
+            json.dumps(ids),
+            command.evidence,
+            context.now.isoformat(),
+        ),
+    )
+    return MutationResult(object_type="eco", object_id=command.eco_id)
+
+
+def uncertain_stock(tx, pid, row, values):
+    ids = {
+        str(i.id)
+        for i in values
+        if i.type == "stock" and (i.stock_basis is None or not i.stock_basis_complete)
+    }
+    ids.update(
+        r[0]
+        for r in tx.execute(
+            "SELECT lot_id FROM eco_stock_openings WHERE eco_id=? AND complete=0",
+            (row["id"],),
+        )
+    )
+    if row["state"] == "open":
+        ids.update(
+            lot["id"]
+            for lot in stock_lots(tx, pid, row["old_revision_id"])
+            if not stock_evidence(tx, pid, lot)[1]
+        )
+    return sorted(ids)
+
+
 def close(tx, context, command):
     row = open_row(tx, context.project_id, command.eco_id)
     values = eco_impacts(tx, context.project_id, row)
+    uncertain = uncertain_stock(tx, context.project_id, row, values)
     unresolved = [str(i.id) for i in values if i.resolved_quantity != i.quantity]
+    if uncertain:
+        raise DomainError(
+            "PRECONDITION_FAILED",
+            409,
+            "Stock evidence overlap requires authoritative source reconciliation",
+            fields={
+                "unresolved_stock_basis_ids": uncertain,
+                "unresolved_impact_ids": unresolved,
+            },
+        )
     if unresolved:
         raise DomainError(
             "PRECONDITION_FAILED",
@@ -289,11 +511,25 @@ def close(tx, context, command):
             (str(context.project_id), row["id"]),
         )
     }
-    if not set(json.loads(row["work_order_ids_json"])) <= switched:
+    retained = set()
+    for proof in tx.execute(
+        "SELECT * FROM eco_retentions WHERE project_id=? AND eco_id=?",
+        (str(context.project_id), row["id"]),
+    ):
+        verify_retention(
+            tx,
+            context.project_id,
+            row,
+            proof["work_order_id"],
+            proof["q_atoms"],
+            json.loads(proof["unit_ids_json"]),
+        )
+        retained.add(proof["work_order_id"])
+    if not set(json.loads(row["work_order_ids_json"])) <= switched | retained:
         fail(
             "every selected work order requires actual switch or cancellation receipts"
         )
-    if row["new_revision_id"]:
+    if row["new_revision_id"] and switched:
         revision_ready(tx, context.project_id, row["new_revision_id"])
     save_impacts(tx, context.project_id, row["id"], values)
     tx.execute("UPDATE eco_changes SET state='closed' WHERE id=?", (row["id"],))
@@ -347,6 +583,23 @@ def detail(tx, pid, ident):
             (str(pid), row["id"]),
         )
     ]
+    retentions = [
+        {
+            "work_order_id": r["work_order_id"],
+            "quantity": amount(r["q_atoms"], p),
+            "unit_ids": json.loads(r["unit_ids_json"]),
+            "evidence": r["evidence"],
+        }
+        for r in tx.execute(
+            "SELECT * FROM eco_retentions WHERE project_id=? AND eco_id=? ORDER BY work_order_id",
+            (str(pid), row["id"]),
+        )
+    ]
+    outcomes = ({"retained"} if retentions else set()) | {
+        "switched" if item["boundary"] == "split_remaining" else "cancelled"
+        for item in switches
+        if item["phase"] == "accepted"
+    }
     value = EcoValue(
         id=ident,
         old_revision_id=row["old_revision_id"],
@@ -361,6 +614,15 @@ def detail(tx, pid, ident):
         state=row["state"],
         impacts=eco_impacts(tx, pid, row),
         switches=switches,
+        retentions=retentions,
+        unresolved_stock_basis_ids=uncertain_stock(
+            tx, pid, row, eco_impacts(tx, pid, row)
+        ),
+        implementation_outcome=next(iter(outcomes))
+        if len(outcomes) == 1
+        else "mixed"
+        if outcomes
+        else "pending",
     )
     return ObjectDetail[EcoValue](
         summary=summary(row),
@@ -396,6 +658,13 @@ def switch(tx, context, command):
     wo = own(tx, "work_orders", context.project_id, command.target_work_order_id)
     if wo["id"] not in json.loads(row["work_order_ids_json"]):
         fail("work order outside explicit ECO boundary")
+    if command.boundary == "retain_existing":
+        return retain(tx, context, command, row)
+    if tx.execute(
+        "SELECT 1 FROM eco_retentions WHERE eco_id=? AND work_order_id=?",
+        (row["id"], wo["id"]),
+    ).fetchone():
+        fail("retained boundary cannot be overwritten by a switch")
     if scope_locked(tx, context.project_id, wo["id"]):
         fail("remaining scope already switched or awaiting authoritative result")
     if tx.execute(

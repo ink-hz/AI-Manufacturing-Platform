@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -120,3 +120,9 @@ CREATE VIEW IF NOT EXISTS effective_work_orders AS SELECT w.*, w.q_atoms-COALESC
 CREATE VIEW IF NOT EXISTS effective_allocations AS SELECT id,project_id,order_line_id,work_order_id,q_atoms,unit,created_at FROM allocations UNION ALL SELECT a.id,a.project_id,a.order_line_id,a.work_order_id,a.delta_atoms,w.unit,s.created_at FROM allocation_adjustments a JOIN work_orders w ON w.id=a.work_order_id JOIN eco_switches s ON s.id=a.switch_id;
 """
 SCHEMA += ECO_SCHEMA
+
+ECO_REVIEW_SCHEMA = """
+CREATE TABLE IF NOT EXISTS eco_stock_openings(eco_id TEXT NOT NULL REFERENCES eco_changes(id),project_id TEXT NOT NULL REFERENCES projects(id),lot_id TEXT NOT NULL REFERENCES material_lots(id),basis_json TEXT NOT NULL,consumed_atoms INTEGER NOT NULL,complete INTEGER NOT NULL,PRIMARY KEY(eco_id,lot_id));
+CREATE TABLE IF NOT EXISTS eco_retentions(eco_id TEXT NOT NULL REFERENCES eco_changes(id),project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),q_atoms INTEGER NOT NULL CHECK(q_atoms>0),unit_ids_json TEXT NOT NULL,evidence TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(eco_id,work_order_id));
+"""
+SCHEMA += ECO_REVIEW_SCHEMA

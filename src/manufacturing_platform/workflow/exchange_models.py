@@ -169,12 +169,32 @@ class ExternalRequest(StrictModel):
         return self
 
 
+class StockBasis(StrictModel):
+    project_id: UUID
+    lot_id: UUID
+    owner_id: str = Field(min_length=1, max_length=200)
+    unit: str = Field(min_length=1, max_length=40)
+    system: str = Field(min_length=1, max_length=200)
+    external_id: str = Field(min_length=1, max_length=200)
+    source_version: int = Field(strict=True, ge=1)
+    source_quantity: Quantity
+    quantity: Quantity
+
+
 class ReceiptDetail(StrictModel):
     key: str = Field(min_length=1, max_length=200)
     lot_id: UUID
     owner_id: str = Field(min_length=1, max_length=200)
     quantity: NonnegativeQuantity
     unit: str = Field(min_length=1, max_length=40)
+    stock_basis: list[StockBasis] | None = Field(default=None, max_length=500)
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_receipt(self, handler):
+        data = handler(self)
+        if self.stock_basis is None:
+            data.pop("stock_basis", None)
+        return data
 
 
 class UnitReceiptDetail(StrictModel):

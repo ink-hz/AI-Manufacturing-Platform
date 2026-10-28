@@ -97,6 +97,9 @@ export function DetailContent({
       </p>
       {v.kind === "eco" && <>
         <Facts items={[["旧固定版本",v.old_revision],["新固定版本",v.new_revision||"仅取消剩余范围"],["变更原因",v.reason]]}/>
+        {!!v.unresolved_stock_basis_ids?.length&&<p role="alert">库存来源覆盖尚未核清，关闭受阻；需权威来源对账。</p>}
+        <p>实施结果：{({pending:"尚未实施",retained:"保留旧版，未执行工程切换",cancelled:"实际取消剩余范围",switched:"已执行新版切换",mixed:"多种边界结果"} as Record<string,string>)[v.implementation_outcome||"pending"]}</p>
+        {(v.retentions||[]).map(r=><p key={r.work_order_id}>保留旧版 {r.quantity} · 已接受序列号 {r.unit_ids.length} · {r.evidence}</p>)}
         <h4>旧版本受影响记录与处置</h4><table><thead><tr><th>类别 / 对象</th><th>所有者</th><th>数量</th><th>已处置</th><th>凭据</th></tr></thead><tbody>{v.impacts.map(i=><tr key={i.id}><td>{label(i.type)} · {i.title} · {label(i.state)}</td><td>{i.owner_id}</td><td>{i.quantity} {i.unit}</td><td>{i.resolved_quantity}</td><td>{i.dispositions.map(d=>`${label(d.decision)} ${d.quantity} · ${d.evidence}`).join("；")||"待处置"}</td></tr>)}</tbody></table>
         <h4>取消与创建边界</h4>{v.switches.map(s=><section key={s.id}><p>{s.boundary==="split_remaining"?"拆分新版工单":"仅取消剩余"} · 保留旧范围 {s.retained_quantity} · 未执行范围 {s.quantity} · {s.phase==="accepted"?"权威已接受":"等待权威接受"}（{label(s.phase)}）</p><button onClick={()=>onOpen({projectId:data.summary.project_id,kind:"exchange",id:s.exchange_id})}>查看取消与创建回执</button>{s.phase==="accepted"&&s.new_work_order_id&&<button onClick={()=>onOpen({projectId:data.summary.project_id,kind:"work_order",id:s.new_work_order_id!})}>核验新版工单准备</button>}</section>)}
       </>}

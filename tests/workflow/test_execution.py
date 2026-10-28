@@ -2531,7 +2531,7 @@ def test_review_v7_resume_envelope_survives_additive_migration(
         )
         for key in ("request_json", "request_hash", "business_key"):
             assert after[key] == row[key]
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 9
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 10
     with authority.store.transaction() as tx:
         assert tx.execute(
             "SELECT 1 FROM sqlite_master WHERE type='index' AND name='authority_stop_lineage'"
