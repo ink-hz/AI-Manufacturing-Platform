@@ -1,11 +1,12 @@
+import { useEffect, useRef, useState } from 'react';
 import type { CommandFields, DomainValue, ObjectSummary, ReleaseKind, WorkspaceProps } from '../types';
 import { Choice, CommandForm, Field, ObjectChoice, SourceFields, source } from './shared';
 type Action='test.record'|'nonconformance.open'|'nonconformance.disposition'|'rework.complete'|'release.decide';
 type Props=WorkspaceProps&{action:Action;releaseKind?:ReleaseKind;units:ObjectSummary[];tests:ObjectSummary[];nonconformances:ObjectSummary[];reworks:ObjectSummary[];unit?:Extract<DomainValue,{kind:'unit'}>|null;revision?:Extract<DomainValue,{kind:'revision'}>|null;rework?:Extract<DomainValue,{kind:'rework'}>|null};
 const first=(items:ObjectSummary[])=>items[0]?.id||'';
-function releaseRevision(units:ObjectSummary[], ids:string[]) {
+function releaseRevision(units:ObjectSummary[], ids:string[], projectId:string) {
  if (!ids.length) return {id:'', reason:'请选择同一固定修订的序列号。'};
- const selected=ids.map(id=>units.find(u=>u.id===id)?.revision_id);
+ const selected=ids.map(id=>units.find(u=>u.id===id&&u.project_id===projectId)?.revision_id);
  if(selected.some(id=>!id)) return {id:'', reason:'固定修订资料缺失，请重新读取序列号资料后再登记客户收据。'};
  const revisions=new Set(selected);
  if(revisions.size!==1) return {id:'', reason:'所选序列号属于不同固定修订，请按修订分别登记客户收据。'};
@@ -18,5 +19,63 @@ export function QualityForms(p:Props){
  if(p.action==='nonconformance.open')return <CommandForm<Extract<CommandFields,{action:'nonconformance.open'}>> {...p} title="登记不合格" save="保存不合格" initial={()=>({action:'nonconformance.open',test_id:first(p.tests.filter(t=>t.state==='fail')),defect:'',evidence:''})} canSubmit={v=>!!v.test_id&&!!v.defect&&!!v.evidence}>{(v,set)=><><ObjectChoice name="失败测量" items={p.tests.filter(t=>t.state==='fail')} value={v.test_id} onChange={x=>set({...v,test_id:x})}/><Field name="缺陷" value={v.defect} onChange={x=>set({...v,defect:x})}/><Field name="不合格凭据" value={v.evidence} onChange={x=>set({...v,evidence:x})}/></>}</CommandForm>;
  if(p.action==='nonconformance.disposition')return <CommandForm<Extract<CommandFields,{action:'nonconformance.disposition'}>> {...p} title="不合格处置" save="保存处置" initial={()=>({action:'nonconformance.disposition',nonconformance_id:first(p.nonconformances),decision:'rework',route_id:'',route_steps:[{station:'',instruction_version:''}],evidence:''})} canSubmit={v=>!!v.nonconformance_id&&!!v.evidence&&(v.decision==='scrap'||(!!v.route_id&&v.route_steps.every(s=>!!s.station&&!!s.instruction_version)))}>{(v,set)=><><ObjectChoice name="不合格记录" items={p.nonconformances} value={v.nonconformance_id} onChange={x=>set({...v,nonconformance_id:x})}/><Choice name="处置决定" value={v.decision} choices={{rework:'独立路线返工',scrap:'不可逆报废'}} onChange={x=>set({...v,decision:x as 'rework'|'scrap',route_id:x==='scrap'?null:'',route_steps:x==='scrap'?[]:[{station:'',instruction_version:''}]})}/>{v.decision==='rework'&&<><Field name="返工路线编号" value={v.route_id||''} onChange={x=>set({...v,route_id:x})}/>{v.route_steps.map((s,i)=><fieldset key={i}><Choice name={`返工用料要求 ${i+1}`} value={s.material_consumption||'required'} choices={{required:'必须记录实际用料',none:'无新增物料消耗'}} onChange={x=>set({...v,route_steps:v.route_steps.map((old,n)=>n===i?{...old,material_consumption:x as 'required'|'none'}:old)})}/><Field name={`返工工位 ${i+1}`} value={s.station} onChange={x=>set({...v,route_steps:v.route_steps.map((old,n)=>n===i?{...old,station:x}:old)})}/><Field name={`返工作业指导 ${i+1}`} value={s.instruction_version} onChange={x=>set({...v,route_steps:v.route_steps.map((old,n)=>n===i?{...old,instruction_version:x}:old)})}/></fieldset>)}<button type="button" onClick={()=>set({...v,route_steps:[...v.route_steps,{station:'',instruction_version:''}]})}>添加返工工位</button></>}<Field name="处置依据" value={v.evidence} onChange={x=>set({...v,evidence:x})}/><p>报废保留执行与首次失败历史；没有已配置政策时不提供让步放行。</p></>}</CommandForm>;
  if(p.action==='rework.complete')return <CommandForm<Extract<CommandFields,{action:'rework.complete'}>> {...p} title="完成返工" save="确认返工完成" initial={()=>({action:'rework.complete',rework_order_id:p.rework?.id||'',execution_event_ids:p.rework?.execution_event_ids||[],test_ids:p.rework?.test_ids||[]})} canSubmit={v=>!!v.rework_order_id&&v.execution_event_ids.length>0&&v.test_ids.length>0}>{(v,set)=><><p>选择上方返工单后，核对真实执行事件与该路线的最新通过复测。</p><fieldset><legend>返工执行凭据</legend>{(p.rework?.candidate_execution_events||[]).filter(e=>e.result==='pass').map(e=><label key={e.id}><input type="checkbox" checked={v.execution_event_ids.includes(e.id)} onChange={x=>set({...v,execution_event_ids:x.target.checked?[...v.execution_event_ids,e.id]:v.execution_event_ids.filter(id=>id!==e.id)})}/>{e.station} · {e.route_version} · {e.occurred_at}</label>)}</fieldset><ObjectChoice name="通过复测" items={p.tests.filter(t=>t.state==='pass')} value={v.test_ids[0]||''} onChange={x=>set({...v,test_ids:x?[x]:[]})}/></>}</CommandForm>;
- return <CommandForm<Extract<CommandFields,{action:'release.decide'}>> {...p} title="独立放行决定" save="保存独立放行" initial={()=>({action:'release.decide',kind:p.releaseKind!,unit_ids:[],decision:'approved',evidence:'',...(p.releaseKind==='customer'?{customer_id:p.project.customer_id,revision_id:'',customer_revision:p.project.contract.customer_revision,external_signatory:'',method:'manual' as const,source:source('customer_release')}:{})})} canSubmit={v=>v.unit_ids.length>0&&!!v.evidence&&(v.kind!=='customer'||(!!v.external_signatory&&!!v.revision_id&&v.revision_id===releaseRevision(p.units,v.unit_ids).id))}>{(v,set)=><><fieldset><legend>明确放行序列号</legend>{p.units.map(u=><label key={u.id}><input type="checkbox" checked={v.unit_ids.includes(u.id)} onChange={e=>{const unit_ids=e.target.checked?[...v.unit_ids,u.id]:v.unit_ids.filter(x=>x!==u.id);set({...v,unit_ids,...(v.kind==='customer'?{revision_id:releaseRevision(p.units,unit_ids).id}:{})});}}/>{u.title}</label>)}</fieldset><Choice name="放行决定" value={v.decision} choices={{approved:'批准',rejected:'拒绝'}} onChange={x=>set({...v,decision:x as 'approved'|'rejected'})}/><Field name="独立签署依据" value={v.evidence} onChange={x=>set({...v,evidence:x})}/>{v.kind==='customer'&&<><p>人工登记客户收据 · 客户 {v.customer_id} · 合同修订 {v.customer_revision}</p><p>{releaseRevision(p.units,v.unit_ids).reason||`放行固定修订：来自所选 ${v.unit_ids.length} 个序列号的同一固定修订。保存时由服务端核验当前合同与资格。`}</p><Field name="实际客户签署人" value={v.external_signatory||''} onChange={x=>set({...v,external_signatory:x})}/><SourceFields value={v.source!} onChange={x=>set({...v,source:x})}/></>}<p>制造、质量与客户决定分别保存；未测、失败、未结不合格和报废不能被批准。</p></>}</CommandForm>;
+ return <ReleaseForm key={p.project.id+':'+p.releaseKind} {...p}/>;
+}
+
+type Release = Extract<CommandFields,{action:'release.decide'}>;
+type ReceiptScope = {key:string;revisionId:string;customerRevision:string};
+function receiptKey(p:Props, ids:string[]) {
+ return JSON.stringify([p.project.id,p.project.version,ids.slice().sort().map(id=>[id,p.units.find(u=>u.id===id&&u.project_id===p.project.id)?.revision_id||null])]);
+}
+function ReleaseForm(p:Props) {
+ const [scope,setScope]=useState<ReceiptScope|null>(null);
+ return <CommandForm<Release> {...p} title="独立放行决定" save="保存独立放行"
+  initial={()=>({action:'release.decide',kind:p.releaseKind!,unit_ids:[],decision:'approved',evidence:'',...(p.releaseKind==='customer'?{customer_id:p.project.customer_id,revision_id:'',customer_revision:'',external_signatory:'',method:'manual' as const,source:source('customer_release')}:{})})}
+  canSubmit={v=>v.unit_ids.length>0&&!!v.evidence&&(v.kind!=='customer'||(!!v.external_signatory&&scope?.key===receiptKey(p,v.unit_ids)&&v.revision_id===scope.revisionId&&v.customer_revision===scope.customerRevision&&v.customer_id===p.project.customer_id))}>
+  {(v,set)=><ReleaseFields p={p} value={v} update={set} scope={scope} onScope={setScope}/>}
+ </CommandForm>;
+}
+function ReleaseFields({p,value:v,update:set,scope,onScope}:{p:Props;value:Release;update:(v:Release|((current:Release)=>Release))=>void;scope:ReceiptScope|null;onScope:(scope:ReceiptScope|null)=>void}) {
+ const key=receiptKey(p,v.unit_ids);
+ const selected=releaseRevision(p.units,v.unit_ids,p.project.id);
+ const [error,setError]=useState<{key:string;message:string}|null>(null);
+ const current=useRef({key,value:v,set});
+ current.current={key,value:v,set};
+ useEffect(()=>{
+  let active=true;
+  onScope(null);setError(null);
+  if(v.kind!=='customer'||!selected.id)return;
+  p.api.object(p.project.id,'revision',selected.id).then(detail=>{
+   if(!active||current.current.key!==key)return;
+   const revision=detail.value;
+   if(revision.kind!=='revision'||revision.id!==selected.id||revision.project_id!==p.project.id)throw Error('固定修订资料与所选序列号不匹配，请重新读取。');
+   const agreement=revision.contract_agreement;
+   if(agreement&&(agreement.revision_id!==revision.id||agreement.customer_id!==p.project.customer_id))throw Error('客户协议范围与所选修订不匹配。');
+   const policy=agreement?.contract||p.project.contract;
+   if(!policy.customer_revision||policy.customer_revision==='unknown'||policy.customer_revision!==revision.customer_revision)throw Error('所选修订的客户合同条件尚未确认，请先登记对应协议。');
+   const resolved={key,revisionId:revision.id,customerRevision:policy.customer_revision};
+   const latest=current.current;
+   // Read the live draft after I/O: receipt evidence typed during lookup stays.
+   // Avoid resetting an existing canonical retry when the resolved fields agree.
+   if(latest.value.revision_id!==resolved.revisionId||latest.value.customer_revision!==resolved.customerRevision){
+    latest.set(draft=>({...draft,revision_id:resolved.revisionId,customer_revision:resolved.customerRevision}));
+   }
+   onScope(resolved);
+  }).catch(e=>{if(active&&current.current.key===key)setError({key,message:String(e)});});
+  return()=>{active=false;};
+ },[p.api,key,v.kind]);
+ const matching=scope?.key===key;
+ return <>
+  <fieldset><legend>明确放行序列号</legend>{p.units.map(u=><label key={u.id}><input type="checkbox" checked={v.unit_ids.includes(u.id)} onChange={e=>{const unit_ids=e.target.checked?[...v.unit_ids,u.id]:v.unit_ids.filter(x=>x!==u.id);set({...v,unit_ids,...(v.kind==='customer'?{revision_id:'',customer_revision:''}:{})});}}/>{u.title}</label>)}</fieldset>
+  <Choice name="放行决定" value={v.decision} choices={{approved:'批准',rejected:'拒绝'}} onChange={x=>set({...v,decision:x as 'approved'|'rejected'})}/>
+  <Field name="独立签署依据" value={v.evidence} onChange={x=>set({...v,evidence:x})}/>
+  {v.kind==='customer'&&<>
+   <p>人工登记客户收据 · 客户 {v.customer_id} · 合同修订 {matching?scope.customerRevision:'待核对'}</p>
+   <p>{selected.reason||(matching?`放行固定修订：来自所选 ${v.unit_ids.length} 个序列号的同一固定修订。保存时由服务端核验当前合同与资格。`:'正在读取所选序列号的固定修订与客户协议。')}</p>
+   {error?.key===key&&<p role="alert">{error.message}</p>}
+   <Field name="实际客户签署人" value={v.external_signatory||''} onChange={x=>set({...v,external_signatory:x})}/>
+   <SourceFields value={v.source!} onChange={x=>set({...v,source:x})}/>
+  </>}
+  <p>制造、质量与客户决定分别保存；未测、失败、未结不合格和报废不能被批准。</p>
+ </>;
 }

@@ -16,7 +16,7 @@ beforeAll(async () => { http = await startHttpHost(); session = await http.login
 let preserveFailure=false;
 afterEach(context=>{if(context.task.result?.state==='fail')preserveFailure=true;});
 afterAll(async () => { if (root)
-    await act(async () => root.unmount()); host?.remove(); vi.unstubAllGlobals(); if(preserveFailure)console.error(`HTTP failure fixture retained at ${http?.root}`); await http?.close(preserveFailure); });
+    await act(async () => root.unmount()); host?.remove(); vi.unstubAllGlobals(); const retain=preserveFailure||process.env.WORKFLOW_TEST_KEEP_FIXTURE==='1'; if(retain)console.error(`HTTP ${preserveFailure?'failure':'success'} fixture retained at ${http?.root}`); await http?.close(retain); });
 async function field(name: string, value: string) { const e = host.querySelector(`input[aria-label="${name}"],select[aria-label="${name}"]`) as HTMLInputElement; expect(e, name).toBeTruthy(); await act(async () => { Object.getOwnPropertyDescriptor(e.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype, 'value')!.set!.call(e, value); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); }); }
 async function button(text: string) { const b = [...host.querySelectorAll('button')].find(b => b.textContent === text); expect(b, text).toBeTruthy(); await act(async () => b!.click()); }
 async function check(text: string) { const l = [...host.querySelectorAll('label')].find(l => l.textContent?.includes(text) && l.querySelector('input[type="checkbox"]')); expect(l, text).toBeTruthy(); await act(async () => (l!.querySelector('input') as HTMLInputElement).click()); }
@@ -309,3 +309,125 @@ it('rebases a real conflicted named draft only after reading and choosing curren
     expect(result, host.textContent || '').toBeDefined();
     expect((await session.api.objects(p.id, 'demand')).items[0].source?.external_id).toBe('CAS-DEMAND');
 });
+
+it('releases selected C2 through actual customer form while preserving and reusing C1 scope', async () => {
+    const { writeFile } = await import('node:fs/promises');
+    const { execFileSync } = await import('node:child_process');
+    const wires: {request:any;status:number;response:any}[] = [];
+    const proof:Record<string,unknown>={};
+    const input=projectInput('2');
+    const originalContract={...input.contract,customer_release_required:true};
+    const p=await session.api.createProject({...input,mode:'oem',contract:originalContract});
+    const requestTransport:typeof fetch=async(url,init)=>{
+        const response=await session.transport(url,init);
+        if(init?.body && String(url).endsWith('/commands')){
+            const body=JSON.parse(String(init.body));
+            if(body.action==='release.decide' && body.kind==='customer') wires.push({request:body,status:response.status,response:await response.clone().json()});
+        }
+        return response;
+    };
+    vi.stubGlobal('fetch',requestTransport);
+    const snapshot=(uid='',release='',operation='')=>JSON.parse(execFileSync(process.env.WORKFLOW_TEST_PYTHON||'/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python',['-c',`
+import json,sqlite3,sys
+path,pid,uid,rid,oid=sys.argv[1:]
+with sqlite3.connect('file:'+path+'?mode=ro',uri=True) as db:
+ db.execute('PRAGMA query_only=ON')
+ db.execute('BEGIN')
+ result={'contract':db.execute('SELECT contract_json FROM projects WHERE id=?',(pid,)).fetchone()[0]}
+ for name,sql,arg in [
+  ('release','SELECT * FROM quality_releases WHERE id=?',rid),
+  ('members','SELECT * FROM quality_release_units WHERE release_id=? ORDER BY unit_id',rid),
+  ('execution','SELECT * FROM execution_events WHERE unit_id=? ORDER BY accepted_seq',uid),
+  ('tests','SELECT * FROM quality_tests WHERE unit_id=? ORDER BY seq',uid),
+  ('audit','SELECT * FROM audit_events WHERE object_id=? ORDER BY id',rid),
+  ('operation','SELECT * FROM operations WHERE operation_id=?',oid)]:
+  result[name]=db.execute(sql,(arg,)).fetchall()
+ print(json.dumps(result))
+`,http.root+'/workflow.db',p.id,uid,release,operation],{encoding:'utf8'}));
+    const originalContractBytes=snapshot().contract;
+    try {
+        const cmd=async(fields:CommandFields)=>session.api.command(p.id,{...fields,expected_version:(await session.api.project(p.id)).version,operation_id:crypto.randomUUID()});
+        const src=(object_type:string)=>({system:'Scoped release fixture',object_type,external_id:crypto.randomUUID(),version:1,mode:'manual' as const,occurred_at:new Date().toISOString(),collected_at:new Date().toISOString(),cutoff:null,evidence:'Signed actual source'});
+        const value=async(kind:ObjectKind,id:string)=>(await session.api.object(p.id,kind,id)).value as any;
+        await session.api.grant(p.id,session.identity.user_id,{operation_id:crypto.randomUUID(),expected_version:p.version,scope:{kind:'project',project_id:p.id},roles:['project_owner','engineering','planner','supply','production','quality','warehouse'],qualifications:['inspection','disposition','quality_release','readiness_verification'],active:true,evidence:'Explicit fixture roles'});
+        const demand=(await cmd({action:'demand.record',kind:'firm',product:'Camera',quantity:'2',unit:'piece',due_date:'2026-12-01',source:src('demand')})).object_id;
+        for(const dimension of ['technical','material','capacity','commercial','quality'] as const)await cmd({action:'demand.review',demand_id:demand,dimension,decision:'approved',evidence:'Signed review'});
+        const order=(await cmd({action:'order.register',demand_id:demand,quantity:'2',unit:'piece',due_date:'2026-12-01',source:src('order_line')})).object_id;
+        const lot=(await cmd({action:'material.define',material_id:'steel',lot_id:'SCOPE-LOT',owner_id:'Customer 1',unit:'kg',scale:3,expiry:'2027-12-01',source:src('material_lot')})).object_id;
+        const scopes:{revision:string;wo:string;sn:string;uid:string;customerRevision:string}[]=[];
+        for(const n of [1,2]){
+            const revision=(await cmd({action:'engineering.revision',package_id:crypto.randomUUID(),revision:'M'+n,customer_revision:'C'+n,internal_revision:'M'+n,items:[{id:crypto.randomUUID(),kind:'drawing',title:'Drawing',revision:'M'+n,evidence:'Signed drawing',status:'verified',source_system_id:null,source_name:'',source_ref:'',owner:'Engineering',reason:''}],route_steps:[{station:'assembly',instruction_version:'S1'}],test_spec:{version:'T1',program_version:'P1',measurements:[{name:'voltage',unit:'V',lower:'4',upper:'6'}]},firmware_version:'F1'})).object_id;
+            if(n===2){
+                await cmd({action:'contract.agree',revision_id:revision,supersedes_agreement_id:null,contract:{...originalContract,customer_revision:'C2',internal_revision:'M2',customer_approval_required:true},customer_id:'Customer 1',external_signatory:'Customer contract owner',evidence:'Signed C2 successor agreement'});
+                await cmd({action:'engineering.customer_approval',revision_id:revision,method:'manual',customer_id:'Customer 1',external_signatory:'Customer QE',decision:'approved',evidence:'Independent C2 approval'});
+            }
+            await cmd({action:'engineering.handoff',revision_id:revision,to_system:'MES',received_revision:'M'+n,decision:'accepted',evidence:'MES fixed package receipt'});
+            const wo=(await cmd({action:'work_order.register',order_line_id:order,revision_id:revision,unit:'piece',purpose:'production',quantity:'1',trial_quantity:'1',planned_start:'2026-12-01T00:00:00Z',planned_end:'2026-12-02T00:00:00Z',source:src('work_order')})).object_id;
+            await cmd({action:'order.allocate',order_line_id:order,work_order_id:wo,quantity:'1',unit:'piece'});
+            for(const kind of ['equipment','people'] as const)await cmd({action:'readiness.record',work_order_id:wo,kind,reference:kind+'-'+n,evidence:'Qualified readiness',decision:'verified',valid_until:'2027-12-01T00:00:00Z'});
+            scopes.push({revision,wo,sn:'SCOPE-C'+n,uid:'',customerRevision:'C'+n});
+        }
+        const plan=(await cmd({action:'plan.receive',source:{...src('plan'),cutoff:new Date().toISOString()},input_revision_ids:scopes.map(s=>s.revision),input_order_versions:[{order_line_id:order,version:1}],requirements:scopes.map(s=>({work_order_id:s.wo,execution_scope:'trial',material_id:'steel',owner_id:'Customer 1',quantity:'1',unit:'kg'}))})).object_id;
+        expect((await value('plan',plan)).requirement_ids).toHaveLength(2);
+        for(let i=0;i<scopes.length;i++){
+            const scope=scopes[i];
+            const reqs=await Promise.all((await value('plan',plan)).requirement_ids.map(async(rid:string)=>({...await value('requirement',rid),id:rid})));
+            const req=reqs.find(r=>r.work_order_id===scope.wo)!;
+            expect(req.id).toBeTruthy();
+            const commitment=(await cmd({action:'supply.commit',requirement_id:req.id,type:'purchase',owner_id:'Customer 1',quantity:'1',original_due:'2026-12-01',current_due:'2026-12-01',unit:'kg',source:src('commitment')})).object_id;
+            const receipt=(await cmd({action:'supply.receive',commitment_id:commitment,material_lot_id:lot,quantity:'1',unit:'kg',source:src('receipt')})).object_id;
+            await cmd({action:'supply.inspect',receipt_id:receipt,accepted:'1',rejected:'0',evidence:'Qualified IQC'});
+            const external=async(action:string,fields:Record<string,unknown>)=>{const r=await session.transport('/fixture/authority',{method:'POST',headers:{'content-type':'application/json','x-csrf-token':session.options.csrfToken},body:JSON.stringify({action,fields})});expect(r.status,await r.text()).toBe(200);};
+            await external('receive',{project_id:p.id,external_id:'WMS-SCOPE-'+i,commitment_id:commitment,lot_id:lot,material_id:'steel',owner_id:'Customer 1',quantity:'1',unit:'kg',scale:3,expiry:'2027-12-01',external_actor:'WMS operator',signature:'Signed receipt'});
+            await external('inspect',{project_id:p.id,external_id:'QMS-SCOPE-'+i,receipt_external_id:'WMS-SCOPE-'+i,accepted:'1',rejected:'0',external_actor:'QMS inspector',signature:'Signed IQC'});
+            const reservation=await cmd({action:'reservation.request',work_order_id:scope.wo,requirement_id:req.id,lot_id:lot,quantity:'1',unit:'kg'});
+            await cmd({action:'exchange.dispatch',exchange_id:reservation.exchange_id!});
+            await cmd({action:'unit.register',work_order_id:scope.wo,sns:[scope.sn]});
+            scope.uid=(await session.api.objects(p.id,'unit')).items.find(u=>u.title===scope.sn)!.id;
+            const start=await cmd({action:'production.start',work_order_id:scope.wo,mode:'trial',unit_ids:[scope.uid],quantity:'1'});
+            await cmd({action:'exchange.dispatch',exchange_id:start.exchange_id!});
+            await cmd({action:'execution.record',source:src('execution'),work_order_id:scope.wo,sn:scope.sn,station:'assembly',route_version:'S1',program_version:'P1',firmware_version:'F1',material_uses:[{lot_id:lot,quantity:'0.001',unit:'kg'}],result:'pass',occurred_at:new Date().toISOString()});
+            await cmd({action:'test.record',unit_id:scope.uid,attempt:1,program_version:'P1',limit_version:'T1',firmware_version:'F1',measurements:[{name:'voltage',unit:'V',lower:'4',upper:'6',value:'5'}],source:src('test')});
+            expect((await value('unit',scope.uid)).final_good).toBe(true);
+        }
+        let result:CommandResult|undefined;
+        let releaseCount=0;
+        const releaseForm=async(scope:typeof scopes[number])=>{
+            result=undefined;
+            const project=await session.api.project(p.id),units=(await session.api.objects(p.id,'unit')).items;
+            await act(async()=>root.render(<QualityForms key={'scoped-release-'+releaseCount++} api={session.api} project={project} onChanged={r=>{if(!('operation_id' in r))throw Error('Expected command acknowledgement');result=r;}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} action="release.decide" releaseKind="customer" units={units} tests={[]} nonconformances={[]} reworks={[]} revision={await value('revision',scopes[0].revision)}/>));
+            await check(scope.sn);await field('独立签署依据','Signed '+scope.customerRevision+' measured receipt');await field('实际客户签署人','Customer QE');await field('来源业务编号',crypto.randomUUID());await field('来源凭据','Signed customer source');
+            await vi.waitFor(async()=>{await act(async()=>{await new Promise(r=>setTimeout(r,10));});expect([...host.querySelectorAll('button')].find(b=>b.textContent==='保存独立放行')?.disabled).toBe(false);},{timeout:2000});
+            await submit();
+            expect(result,host.textContent||'').toBeDefined();
+            expect(wires.at(-1)).toMatchObject({status:200,request:{revision_id:scope.revision,customer_revision:scope.customerRevision,unit_ids:[scope.uid],external_signatory:'Customer QE'}});
+            return value('release',result!.object_id);
+        };
+        const old=await releaseForm(scopes[0]);
+        const oldUnit=await value('unit',scopes[0].uid);
+        const oldOperation=wires.at(-1)!.request.operation_id;
+        const oldSnapshot=snapshot(scopes[0].uid,old.id,oldOperation);
+        proof.oldBefore=oldSnapshot;
+        const current=await releaseForm(scopes[1]);
+        expect(current).toMatchObject({revision_id:scopes[1].revision,customer_revision:'C2',release_kind:'customer'});
+        const accepted=wires.at(-1)!;
+        const acceptedSnapshot=snapshot(scopes[1].uid,current.id,accepted.request.operation_id);
+        proof.c2=acceptedSnapshot;
+        expect(acceptedSnapshot.operation).toHaveLength(1);
+        expect(JSON.parse(acceptedSnapshot.operation[0][4])).toEqual(accepted.response);
+        expect(JSON.parse(acceptedSnapshot.release[0][5])).toMatchObject({revision_id:scopes[1].revision,customer_revision:'C2',unit_ids:[scopes[1].uid]});
+        proof.oldAfter=snapshot(scopes[0].uid,old.id,oldOperation);
+        expect(proof.oldAfter).toEqual(oldSnapshot);
+        expect(await value('release',old.id)).toEqual(old);
+        expect((await value('unit',scopes[0].uid)).execution_events).toEqual(oldUnit.execution_events);
+        await releaseForm(scopes[0]);
+        expect(await value('release',old.id)).toEqual(old);
+        expect((await session.api.project(p.id)).contract).toEqual(originalContract);
+        expect(snapshot().contract).toBe(originalContractBytes);
+        expect(snapshot(scopes[0].uid,old.id,oldOperation)).toEqual(oldSnapshot);
+        proof.complete=true;
+    } finally {
+        await writeFile(http.root+'/r1-form-evidence.json',JSON.stringify({project_id:p.id,originalContract,originalContractBytes,wires,proof},null,2));
+        vi.stubGlobal('fetch',session.transport);
+    }
+},15000);

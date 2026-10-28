@@ -9,7 +9,7 @@ import type { ProjectDetail } from './types';
 const id='00000000-0000-4000-8000-000000000001';
 const project={id,version:7,customer_id:'Customer 1',contract:{customer_revision:'C1'},allowed_actions:['test.record','nonconformance.open','nonconformance.disposition','rework.complete','release.decide'],release_kinds:['quality'],quality_summary:{first_tested:100,first_passed:96,final_good:99,scrapped:1,open_nonconformances:0}} as ProjectDetail;
 const summary=(kind:string)=>({id,project_id:id,kind,title:kind==='unit'?'SN-001':kind+' evidence',state:'open',version:1,blocking_reasons:[],next_actions:[]});
-const revision={kind:'revision',id,test_spec:{version:'T1',program_version:'P1',measurements:[{name:'voltage',unit:'V',lower:'4',upper:'6'}]},firmware_version:'F1',route_steps:[]};
+const revision={kind:'revision',id,project_id:id,customer_revision:'C1',internal_revision:'M1',test_spec:{version:'T1',program_version:'P1',measurements:[{name:'voltage',unit:'V',lower:'4',upper:'6'}]},firmware_version:'F1',route_steps:[]};
 const api={objects:vi.fn(async(_p:string,k:string)=>({items:['unit','test','nonconformance','rework'].includes(k)?[summary(k)]:[],total:1,limit:50,offset:0})),object:vi.fn(async(_p:string,k:string)=>({value:k==='unit'?{kind:'unit',id,revision_id:id,tests:[{id,attempt:1,outcome:'fail'}],test_total:1,first_pass:false}:k==='revision'?revision:{kind:k,id,unit_id:id,route_steps:[{station:'repair',instruction_version:'RW1'}],execution_event_ids:[],test_ids:[]}})),command:vi.fn(async(_p:string,c:any)=>({operation_id:c.operation_id,project_id:id,project_version:8,object_type:'test',object_id:id}))} as any;
 let host:HTMLDivElement,root:Root;
 beforeEach(()=>{host=document.createElement('div');document.body.append(host);root=createRoot(host);api.command.mockClear();});
@@ -71,4 +71,44 @@ it('blocks mixed or missing customer revisions and preserves the same receipt pa
  const sent=(command.mock.calls as any)[0][1];expect(sent).toMatchObject({revision_id:id,unit_ids:[id],external_signatory:'External customer QE',customer_revision:'C1',source:{object_type:'customer_release',external_id:'CUSTOMER-RETRY'}});
  await click('保存独立放行');expect(command).toHaveBeenCalledTimes(2);expect((command.mock.calls as any)[1][1]).toEqual(sent);
  expect((host.querySelector('[aria-label="实际客户签署人"]') as HTMLInputElement).value).toBe('External customer QE');
+});
+
+const c2='00000000-0000-4000-8000-000000000022';
+const scopedUnits=[{...summary('unit'),revision_id:id},{...summary('unit'),id:c2,title:'SN-C2',revision_id:c2}];
+const scopedRevision=(revisionId:string, customerRevision:string)=>({value:{...revision,id:revisionId,project_id:id,customer_revision:customerRevision,internal_revision:customerRevision==='C1'?'M1':'M2',contract_agreement:customerRevision==='C2'?{id:'agreement-c2',revision_id:revisionId,customer_id:'Customer 1',contract:{...project.contract,customer_revision:'C2',internal_revision:'M2',customer_release_required:true}}:null}});
+async function receiptForm(customApi:any, p=project, units:any[]=scopedUnits){await act(async()=>root.render(<QualityForms api={customApi} project={p} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} readOnly={false} action="release.decide" releaseKind="customer" units={units} tests={[]} nonconformances={[]} reworks={[]} revision={revision as any}/>));}
+async function serial(title:string){const label=[...host.querySelectorAll('label')].find(e=>e.textContent===title)!;await act(async()=>{(label.querySelector('input') as HTMLInputElement).click();});}
+const receiptSave=()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='保存独立放行')!;
+async function receiptEvidence(){await field('独立签署依据','Retained signed evidence');await field('实际客户签署人','External QE');await field('来源业务编号','C2-RECEIPT');await field('来源凭据','Signed source');}
+it.each(['C1','unknown'])('resolves selected C2 receipt from scoped agreement when original revision is %s',async(original)=>{
+ const object=vi.fn(async()=>scopedRevision(c2,'C2')),command=vi.fn(async()=>{throw new WorkflowError(500);});
+ await receiptForm({...api,object,command},{...project,contract:{...project.contract,customer_revision:original}});
+ await serial('SN-C2');await receiptEvidence();await click('保存独立放行');
+ const sent=(command.mock.calls as any)[0]?.[1];expect(sent).toMatchObject({revision_id:c2,customer_revision:'C2',unit_ids:[c2],evidence:'Retained signed evidence',external_signatory:'External QE'});
+ expect(object).toHaveBeenCalledWith(id,'revision',c2);
+ await click('保存独立放行');expect((command.mock.calls as any)[1][1]).toEqual(sent);
+});
+it('blocks pending receipt scope and ignores late selections without erasing signatory evidence',async()=>{
+ const requests:{resolve:(v:any)=>void;reject:(e:Error)=>void}[]=[];
+ const object=vi.fn(()=>new Promise((resolve,reject)=>requests.push({resolve,reject}))),command=vi.fn();
+ await receiptForm({...api,object,command});await serial('SN-C2');await receiptEvidence();
+ expect(receiptSave().disabled).toBe(true);
+ await serial('SN-C2');await serial('SN-001');
+ await act(async()=>requests[0].resolve(scopedRevision(c2,'C2')));expect(receiptSave().disabled).toBe(true);
+ await act(async()=>requests[1].resolve(scopedRevision(id,'C1')));expect(receiptSave().disabled).toBe(false);
+ expect((host.querySelector('[aria-label="实际客户签署人"]') as HTMLInputElement).value).toBe('External QE');
+ expect((host.querySelector('[aria-label="独立签署依据"]') as HTMLInputElement).value).toBe('Retained signed evidence');
+ await serial('SN-C2');expect(receiptSave().disabled).toBe(true);expect(host.textContent).toContain('不同固定修订');
+ await serial('SN-001');await act(async()=>requests[2].reject(Error('revision unavailable')));
+ expect(receiptSave().disabled).toBe(true);expect(host.textContent).toContain('revision unavailable');expect(command).not.toHaveBeenCalled();
+});
+it('retires pending receipt scope and old drafts on project change',async()=>{
+ const requests:((v:any)=>void)[]=[],object=vi.fn(()=>new Promise(resolve=>requests.push(resolve)));
+ await receiptForm({...api,object});await serial('SN-C2');await receiptEvidence();
+ const other={...project,id:'00000000-0000-4000-8000-000000000099',customer_id:'Other customer'};
+ await receiptForm({...api,object},other,[]);
+ expect((host.querySelector('[aria-label="实际客户签署人"]') as HTMLInputElement).value).toBe('');
+ await act(async()=>requests[0](scopedRevision(c2,'C2')));
+ expect(receiptSave().disabled).toBe(true);
+ expect(host.textContent).not.toContain('合同修订 C2');
 });
