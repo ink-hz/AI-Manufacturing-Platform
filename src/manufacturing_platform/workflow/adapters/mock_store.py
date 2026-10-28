@@ -14,6 +14,7 @@ CREATE TABLE faults(name TEXT PRIMARY KEY,value TEXT);
 CREATE TABLE IF NOT EXISTS authority_work_orders(project_id TEXT NOT NULL,work_order_id TEXT NOT NULL,revision_id TEXT NOT NULL,total_units INTEGER NOT NULL,trial_units INTEGER NOT NULL,started_units INTEGER NOT NULL DEFAULT 0,started_trial INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'running',PRIMARY KEY(project_id,work_order_id));
 CREATE TABLE IF NOT EXISTS authority_start_units(project_id TEXT NOT NULL,work_order_id TEXT NOT NULL,unit_id TEXT NOT NULL UNIQUE,sn_key TEXT NOT NULL UNIQUE,mode TEXT NOT NULL,start_id TEXT NOT NULL,PRIMARY KEY(project_id,work_order_id,unit_id));
 CREATE TABLE IF NOT EXISTS authority_interruptions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,work_order_id TEXT NOT NULL,stopped INTEGER NOT NULL,resumed INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS authority_stop_lineage ON authority_operations(json_extract(request_json,'$.project_id'),json_extract(request_json,'$.typed_payload.work_order_id'),seq DESC) WHERE json_extract(request_json,'$.action')='production.interrupt' AND json_extract(receipt_json,'$.phase')='accepted';
 """
 
 

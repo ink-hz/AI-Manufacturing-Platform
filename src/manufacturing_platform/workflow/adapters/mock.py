@@ -326,8 +326,18 @@ class MockAuthorityAdapter:
                 "SELECT * FROM authority_work_orders WHERE project_id=? AND work_order_id=?",
                 (str(request.project_id), str(payload.work_order_id)),
             ).fetchone()
+            latest_stop = tx.execute(
+                """SELECT json_extract(request_json,'$.typed_payload.interruption_id') FROM authority_operations
+                   WHERE json_extract(request_json,'$.action')='production.interrupt'
+                   AND json_extract(request_json,'$.project_id')=?
+                   AND json_extract(request_json,'$.typed_payload.work_order_id')=?
+                   AND json_extract(receipt_json,'$.phase')='accepted' ORDER BY seq DESC LIMIT 1""",
+                (str(request.project_id), str(payload.work_order_id)),
+            ).fetchone()
             if (
                 stop
+                and latest_stop
+                and latest_stop[0] == str(payload.interruption_id)
                 and stop["stopped"]
                 and not stop["resumed"]
                 and wo

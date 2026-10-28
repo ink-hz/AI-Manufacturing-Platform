@@ -2491,6 +2491,7 @@ def test_review_v7_resume_envelope_survives_additive_migration(
         tx.execute("UPDATE schema_version SET version=7")
     with sqlite3.connect(workflow.paths.authority) as tx:
         tx.execute("ALTER TABLE authority_start_units DROP COLUMN state")
+        tx.execute("DROP INDEX authority_stop_lineage")
     workflow.reopen()
     workflow.command(
         p["id"],
@@ -2532,6 +2533,9 @@ def test_review_v7_resume_envelope_survives_additive_migration(
             assert after[key] == row[key]
         assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 8
     with authority.store.transaction() as tx:
+        assert tx.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='authority_stop_lineage'"
+        ).fetchone()
         assert (
             tx.execute(
                 "SELECT state FROM authority_start_units WHERE unit_id=?", (units[0],)
@@ -2641,3 +2645,263 @@ def test_review_foreign_rejected_source_claim_cannot_hide_admitted_evidence(work
     assert rejected["status"] == "rejected" and rejected["source"] is None
     original = workflow.object(p["id"], "unit", units[0])["execution_events"][-1]
     assert original["source"]["external_id"] == source["external_id"]
+
+
+def r7_partial_with_full_resume_intent(workflow):
+    p, wo, units, authority, _ = running_execution(workflow)
+    review_article(workflow, p, wo, units[0])
+    bulk = workflow.command(
+        p["id"],
+        "production.start",
+        actor_name="production",
+        work_order_id=wo["id"],
+        mode="bulk",
+        unit_ids=units[1:2],
+        quantity="1",
+    )
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=bulk["exchange_id"],
+    )
+    stop = workflow.command(
+        p["id"],
+        "production.interrupt",
+        actor_name="production",
+        work_order_id=wo["id"],
+        reason="initial mixed stop",
+    )
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=stop["exchange_id"],
+    )
+    plan = review_replan(workflow, p, wo)
+    args = {
+        "actor_name": "production",
+        "interruption_id": stop["object_id"],
+        "plan_id": plan,
+        "evidence": "same valid basis",
+    }
+    trial = workflow.command(p["id"], "production.resume", scope="trial", **args)
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=trial["exchange_id"],
+    )
+    full = workflow.command(p["id"], "production.resume", **args)
+    return p, wo, units, authority, stop, trial, full
+
+
+@pytest.mark.parametrize("attempt", ["pending", "rejected"])
+def test_r7_full_resume_attempt_does_not_remove_trial_safety_stop(workflow, attempt):
+    p, wo, units, authority, old, trial, full = r7_partial_with_full_resume_intent(
+        workflow
+    )
+    with workflow.db() as tx:
+        original_request = tx.execute(
+            "SELECT request_json FROM exchanges WHERE id=?", (full["exchange_id"],)
+        ).fetchone()[0]
+    if attempt == "rejected":
+        authority.configure_fault("reject")
+        workflow.command(
+            p["id"],
+            "exchange.dispatch",
+            actor_name="production",
+            exchange_id=full["exchange_id"],
+        )
+        authority.configure_fault("none")
+    with authority.store.transaction() as tx:
+        assert [
+            tuple(r)
+            for r in tx.execute(
+                "SELECT mode,state FROM authority_start_units WHERE work_order_id=? ORDER BY mode DESC",
+                (wo["id"],),
+            )
+        ] == [("trial", "running"), ("bulk", "stopped")]
+    new = workflow.command(
+        p["id"],
+        "production.interrupt",
+        actor_name="production",
+        work_order_id=wo["id"],
+        reason="safety stop while full recovery is uncertain",
+    )
+    previous = workflow.object(p["id"], "interruption", old["object_id"])
+    assert previous["superseded_by"] == new["object_id"]
+    assert previous["resolved_at"] is None
+    assert previous["resume_exchange_ids"] == [
+        trial["exchange_id"],
+        full["exchange_id"],
+    ]
+    # An old unsent intent must fail its fresh gate before an authority effect.
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=full["exchange_id"],
+    )
+    assert authority.operation_count(full["exchange_id"]) == (
+        1 if attempt == "rejected" else 0
+    )
+    workflow.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=new["exchange_id"],
+    )
+    assert [workflow.object(p["id"], "unit", u)["state"] for u in units[:2]] == [
+        "stopped",
+        "stopped",
+    ]
+    with authority.store.transaction() as tx:
+        assert tuple(
+            tx.execute(
+                "SELECT started_units,started_trial,state FROM authority_work_orders WHERE work_order_id=?",
+                (wo["id"],),
+            ).fetchone()
+        ) == (2, 1, "stopped")
+    assert authority.operation_count(new["exchange_id"]) == 1
+
+    with workflow.db() as tx:
+        assert (
+            tx.execute(
+                "SELECT request_json FROM exchanges WHERE id=?", (full["exchange_id"],)
+            ).fetchone()[0]
+            == original_request
+        )
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    ["stop_before_effect", "effect_before_stop_delivery_late", "request_before_effect"],
+)
+def test_r7_inflight_full_resume_obeys_newer_safety_stop(
+    workflow, monkeypatch, boundary
+):
+    p, wo, units, authority, old, _trial, full = r7_partial_with_full_resume_intent(
+        workflow
+    )
+    entered, release = Event(), Event()
+    original = MockAuthorityAdapter.submit
+
+    def paused(adapter, request):
+        if request.business_key != full["exchange_id"]:
+            return original(adapter, request)
+        receipt = (
+            original(adapter, request)
+            if boundary == "effect_before_stop_delivery_late"
+            else None
+        )
+        entered.set()
+        assert release.wait(5)
+        return receipt if receipt is not None else original(adapter, request)
+
+    monkeypatch.setattr(MockAuthorityAdapter, "submit", paused)
+    outcomes = []
+
+    def dispatch_inflight():
+        try:
+            outcomes.append(
+                workflow.command(
+                    p["id"],
+                    "exchange.dispatch",
+                    actor_name="production",
+                    expected_status=409,
+                    exchange_id=full["exchange_id"],
+                )
+            )
+        except AssertionError as exc:
+            outcomes.append(exc)
+
+    worker = Thread(target=dispatch_inflight)
+    worker.start()
+    assert entered.wait(5)
+    try:
+        new = workflow.command(
+            p["id"],
+            "production.interrupt",
+            actor_name="production",
+            work_order_id=wo["id"],
+            reason="inflight full resume safety stop",
+        )
+        if boundary != "request_before_effect":
+            workflow.command(
+                p["id"],
+                "exchange.dispatch",
+                actor_name="production",
+                exchange_id=new["exchange_id"],
+            )
+    finally:
+        release.set()
+        worker.join(5)
+    assert (
+        outcomes
+        and isinstance(outcomes[0], dict)
+        and outcomes[0]["code"] == "VERSION_CONFLICT"
+    ), outcomes
+    workflow.command(
+        p["id"],
+        "exchange.query",
+        actor_name="production",
+        exchange_id=full["exchange_id"],
+    )
+    full_view = workflow.object(p["id"], "exchange", full["exchange_id"])
+    assert full_view["phase"] == (
+        "rejected" if boundary == "stop_before_effect" else "accepted"
+    )
+    assert (
+        workflow.object(p["id"], "interruption", old["object_id"])["superseded_by"]
+        == new["object_id"]
+    )
+    if boundary == "request_before_effect":
+        assert [workflow.object(p["id"], "unit", u)["state"] for u in units[:2]] == [
+            "start_pending",
+            "start_pending",
+        ]
+        with authority.store.transaction() as tx:
+            assert (
+                tx.execute(
+                    "SELECT state FROM authority_work_orders WHERE work_order_id=?",
+                    (wo["id"],),
+                ).fetchone()[0]
+                == "running"
+            )
+        workflow.command(
+            p["id"],
+            "exchange.dispatch",
+            actor_name="production",
+            exchange_id=new["exchange_id"],
+        )
+    assert [workflow.object(p["id"], "unit", u)["state"] for u in units[:2]] == [
+        "stopped",
+        "stopped",
+    ]
+    with authority.store.transaction() as tx:
+        assert tuple(
+            tx.execute(
+                "SELECT started_units,started_trial,state FROM authority_work_orders WHERE work_order_id=?",
+                (wo["id"],),
+            ).fetchone()
+        ) == (2, 1, "stopped")
+        effect = tx.execute(
+            "SELECT seq FROM authority_operations WHERE business_key=?",
+            (full["exchange_id"],),
+        ).fetchone()[0]
+        stop_seq = tx.execute(
+            "SELECT seq FROM authority_operations WHERE business_key=?",
+            (new["exchange_id"],),
+        ).fetchone()[0]
+        assert (effect > stop_seq) == (boundary == "stop_before_effect")
+    assert authority.operation_count(full["exchange_id"]) == 1
+    assert authority.operation_count(new["exchange_id"]) == 1
+    workflow.command(
+        p["id"],
+        "production.interrupt",
+        actor_name="production",
+        expected_status=409,
+        work_order_id=wo["id"],
+        reason="already stopped; historical resume cannot reopen control",
+    )

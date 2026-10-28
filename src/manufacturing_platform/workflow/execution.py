@@ -143,10 +143,7 @@ def outbound_execution_ready(tx, project_id, payload, now):
             bool(request)
             and evaluate(tx, project_id, payload.work_order_id, payload.mode, now).ready
         )
-    interruption = tx.execute(
-        "SELECT * FROM interruptions WHERE id=? AND project_id=? AND work_order_id=?",
-        (str(payload.interruption_id), str(project_id), str(payload.work_order_id)),
-    ).fetchone()
+    interruption = current_resume_interruption(tx, project_id, payload)
     if (
         not interruption
         or not interruption["authority_stopped_at"]
@@ -263,13 +260,12 @@ def interrupt_production(tx, context, command: InterruptProduction):
     wo = own(tx, "work_orders", context.project_id, command.work_order_id)
     active = _active_interruption(tx, context.project_id, wo["id"])
     replaced = None
-    if active and active["trial_resumed_at"] and not command.interruption_id:
-        prior_resume = tx.execute(
-            "SELECT phase FROM exchanges WHERE id=? AND project_id=?",
-            (active["resume_exchange_id"], str(context.project_id)),
-        ).fetchone()
-        if prior_resume and prior_resume["phase"] == "accepted":
-            replaced, active = active, None
+    if (
+        active
+        and not command.interruption_id
+        and accepted_recovery_running(tx, context.project_id, wo["id"], active)
+    ):
+        replaced, active = active, None
     if active:
         prior = tx.execute(
             "SELECT phase,receipt_json FROM exchanges WHERE id=? AND project_id=?",
@@ -484,13 +480,49 @@ def resume_production(tx, context, command: ResumeProduction):
     )
 
 
+def current_production_control(tx, project_id, work_order_id, mode):
+    """Latest accepted physical control; pending/rejected attempts are not facts."""
+    return tx.execute(
+        "SELECT * FROM production_controls WHERE project_id=? AND work_order_id=? AND (scope='all' OR ?='trial') ORDER BY source_sequence DESC LIMIT 1",
+        (str(project_id), str(work_order_id), mode),
+    ).fetchone()
+
+
+def accepted_recovery_running(tx, project_id, work_order_id, interruption):
+    if not interruption["authority_stopped_at"]:
+        return False
+    stop = tx.execute(
+        "SELECT source_sequence FROM exchanges WHERE id=? AND project_id=?",
+        (interruption["stop_exchange_id"], str(project_id)),
+    ).fetchone()
+    for mode in ("trial", "bulk"):
+        control = current_production_control(tx, project_id, work_order_id, mode)
+        if (
+            control
+            and control["kind"] == "resume"
+            and stop
+            and control["source_sequence"] > stop[0]
+            and tx.execute(
+                """SELECT 1 FROM units u JOIN start_requests s ON s.id=u.accepted_start_id AND s.project_id=u.project_id
+               WHERE u.project_id=? AND u.work_order_id=? AND u.mode=? AND s.accepted_receipt_id IS NOT NULL AND s.accepted_seq<? LIMIT 1""",
+                (str(project_id), str(work_order_id), mode, control["source_sequence"]),
+            ).fetchone()
+        ):
+            return True
+    return False
+
+
+def current_resume_interruption(tx, project_id, payload):
+    return tx.execute(
+        "SELECT * FROM interruptions WHERE id=? AND project_id=? AND work_order_id=? AND resolved_at IS NULL AND superseded_by IS NULL",
+        (str(payload.interruption_id), str(project_id), str(payload.work_order_id)),
+    ).fetchone()
+
+
 def project_production_controls(tx, project_id, work_order_id):
     """Project accepted membership by source order, independent of receipt arrival."""
     for mode in ("trial", "bulk"):
-        control = tx.execute(
-            "SELECT * FROM production_controls WHERE project_id=? AND work_order_id=? AND (scope='all' OR ?='trial') ORDER BY source_sequence DESC LIMIT 1",
-            (str(project_id), str(work_order_id), mode),
-        ).fetchone()
+        control = current_production_control(tx, project_id, work_order_id, mode)
         if control:
             state = (
                 "stopped"
@@ -525,10 +557,13 @@ def unit_interrupted(tx, project_id, work_order_id, unit):
     ).fetchone()
     if not active["authority_stopped_at"] or not stop:
         return True
-    return not tx.execute(
-        "SELECT 1 FROM production_controls WHERE project_id=? AND work_order_id=? AND kind='resume' AND held=0 AND source_sequence>? AND (scope='all' OR ?='trial') LIMIT 1",
-        (str(project_id), str(work_order_id), stop[0], unit["mode"]),
-    ).fetchone()
+    control = current_production_control(tx, project_id, work_order_id, unit["mode"])
+    return not (
+        control
+        and control["kind"] == "resume"
+        and not control["held"]
+        and control["source_sequence"] > stop[0]
+    )
 
 
 def historical_use_changed(tx, project_id, wo, occurred_at):

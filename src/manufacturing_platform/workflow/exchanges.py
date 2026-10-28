@@ -854,7 +854,10 @@ class ExchangeService:
                     (json.dumps([str(uid) for uid, _ in payload.units]),),
                 )
         elif receipt.phase == "accepted":
-            from .execution import project_production_controls
+            from .execution import (
+                current_resume_interruption,
+                project_production_controls,
+            )
             from .readiness import evaluate
             from .supply import current_plan_id
 
@@ -882,7 +885,10 @@ class ExchangeService:
                     plan_matches = current_plan_id(
                         tx, context.project_id, payload.work_order_id
                     ) == str(payload.plan_id)
-                    safe_to_start = True
+                    safe_to_start = (
+                        current_resume_interruption(tx, context.project_id, payload)
+                        is not None
+                    )
                 held = (
                     not plan_matches
                     or not safe_to_start
