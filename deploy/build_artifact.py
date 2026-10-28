@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 
 DOCUMENTS=['docs/manufacturing-system-handbook.md','docs/workflows/manufacturing-process-overview.md']
-TOOLS=['release.py','release_support.py','release_guard.py','candidate_verify.py','sqlite_backup.py']
+TOOLS=['release.py','release_support.py','release_guard.py','candidate_verify.py','candidate_fixture.py','sqlite_backup.py']
 
 
 def require(condition,reason):
@@ -70,6 +70,30 @@ def build_frontend(repo,sha,target,log):
     return target/'webui/dist'
 
 
+def backend_overlay(repo, base, target, output, approved_files, added_files):
+    approved=set(approved_files);added=set(added_files)
+    require(len(approved)==len(approved_files) and added<=approved,'invalid_backend_inventory')
+    for name in approved:
+        require(isinstance(name,str) and re.fullmatch(r'[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*\.py',name),'invalid_backend_path')
+    statuses={}
+    for row in git(repo,'diff','--no-renames','--name-status',base,target,'--','backend/app').decode().splitlines():
+        status,name=row.split('\t');statuses[name.removeprefix('backend/app/')]=status
+    require(set(statuses)==approved,'unreviewed_backend_delta')
+    require({n for n,status in statuses.items() if status=='A'}==added,'unreviewed_backend_creation')
+    require(all(v in {'A','M'} for v in statuses.values()),'backend_deletion_or_type_change')
+    old={};new={};contents={}
+    for name in sorted(approved):
+        path='backend/app/'+name
+        for sha in ([target] if name in added else [base,target]):
+            entry=git(repo,'ls-tree',sha,'--',path).decode().split()
+            require(len(entry)>=3 and entry[0]=='100644' and entry[1]=='blob','backend_nonregular_file')
+        contents[name]=git(repo,'show',target+':'+path)
+        new[name]=digest(contents[name]);old[name]=None if name in added else digest(git(repo,'show',base+':'+path))
+    for name,value in contents.items():
+        destination=output/name;destination.parent.mkdir(parents=True,exist_ok=True);destination.write_bytes(value)
+    return old,new
+
+
 def assemble(manufacturing_repo,platform_repo,output,baseline,manufacturing_sha,platform_sha,platform_base_sha):
     require(output.is_absolute() and not output.exists(),'new_absolute_output_required')
     for value in [manufacturing_sha,platform_sha,platform_base_sha]:require(re.fullmatch('[0-9a-f]{40}',value) is not None,'invalid_source_commit')
@@ -84,16 +108,7 @@ def assemble(manufacturing_repo,platform_repo,output,baseline,manufacturing_sha,
     # A handbook-only release has no backend delta but keeps the COPY source.
     (payload/'build/backend').mkdir(parents=True)
     write_business_release(manufacturing_repo,manufacturing_sha,business_dist,payload/'business')
-    changed=git(platform_repo,'diff','--name-only',platform_base_sha,platform_sha,'--','backend/app').decode().splitlines()
-    approved={'backend/app/'+name for name in baseline['approved_backend_files']}
-    require(set(changed)==approved,'unreviewed_backend_delta')
-    base_hashes={};new_hashes={}
-    for full in sorted(approved):
-        name=full.removeprefix('backend/app/');require('..' not in Path(name).parts,'invalid_backend_path')
-        value=git(platform_repo,'show',platform_sha+':'+full)
-        destination=payload/'build/backend'/name;destination.parent.mkdir(parents=True,exist_ok=True);destination.write_bytes(value)
-        new_hashes[name]=digest(value)
-        base_hashes[name]=digest(git(platform_repo,'show',platform_base_sha+':'+full))
+    base_hashes,new_hashes=backend_overlay(platform_repo,platform_base_sha,platform_sha,payload/'build/backend',baseline['approved_backend_files'],baseline.get('approved_backend_additions',[]))
     static={}
     for source in sorted(platform_dist.rglob('*')):
         require(not source.is_symlink(),'static_symlink')
@@ -110,7 +125,11 @@ def assemble(manufacturing_repo,platform_repo,output,baseline,manufacturing_sha,
              'data_host':'/data/orbbec-agent-platform/manufacturing/data','nginx_path':'/etc/nginx/sites-available/agent-domain.conf',
              'previous_manifest':baseline['previous_manifest'],'lock_tool':baseline['lock_tool'],'lock_tool_sha256':baseline['lock_tool_sha256'],
              'resource_urls':['https://agent.orbbec.com.cn/office/','https://fae.orbbec.com.cn/partner/login'],
-             'backend_base_hashes':base_hashes,'backend_hashes':new_hashes,'static_hashes':static}
+             'backend_base_hashes':base_hashes,'backend_hashes':new_hashes,'backend_added_files':baseline.get('approved_backend_additions',[]),'static_hashes':static}
+    from release import workflow_configuration
+    for key in ['baseline_workflow','target_workflow']:
+        if key in baseline:request[key]=baseline[key]
+    workflow_configuration(request)
     (payload/'request-template.json').write_text(json.dumps(request,sort_keys=True,indent=2)+'\n')
     archive=output/'payload.tar.gz'
     def metadata(member):

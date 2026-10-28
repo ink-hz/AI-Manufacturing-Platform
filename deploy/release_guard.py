@@ -8,6 +8,33 @@ def _require(condition, reason):
         raise ValueError(reason)
 
 
+WORKFLOW_FIELDS = {
+    'database_path': 'PLATFORM_MANUFACTURING_WORKFLOW_DATABASE_PATH',
+    'authority_database_path': 'PLATFORM_MANUFACTURING_AUTHORITY_DATABASE_PATH',
+    'dataset_id': 'PLATFORM_MANUFACTURING_DATASET_ID',
+    'dataset_mode': 'PLATFORM_MANUFACTURING_DATASET_MODE',
+    'dataset_label': 'PLATFORM_MANUFACTURING_DATASET_LABEL',
+}
+
+
+def workflow_environment(config):
+    _require(isinstance(config,dict) and set(config)==set(WORKFLOW_FIELDS),'workflow_exact_fields_required')
+    _require(all(isinstance(v,str) and v==v.strip() and v and len(v)<=160 and not any(ord(c)<32 for c in v) for v in config.values()),'workflow_invalid_value')
+    for key in ['database_path','authority_database_path']:
+        _require(re.fullmatch(r'/app/data/manufacturing/[A-Za-z0-9][A-Za-z0-9_-]*\.sqlite3',config[key]) is not None,'workflow_database_path')
+    _require(len({config['database_path'],config['authority_database_path'],'/app/data/manufacturing/workbench.sqlite3'})==3,'workflow_database_alias')
+    _require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,95}',config['dataset_id']) is not None,'workflow_dataset_id')
+    _require(config['dataset_mode'] in {'demo','production'},'workflow_dataset_mode')
+    simulation=any(marker in config['dataset_label'].lower() for marker in ['demo','simulat','模拟'])
+    _require(simulation == (config['dataset_mode']=='demo'),'workflow_mode_label')
+    return {env:config[key] for key,env in WORKFLOW_FIELDS.items()}
+
+
+def validate_workflow_environment(env):
+    selected={key:env[value] for key,value in WORKFLOW_FIELDS.items() if value in env}
+    if selected:workflow_environment(selected)
+
+
 def _mount(value):
     result=copy.deepcopy(value)
     if result.get('type')=='bind':
@@ -49,10 +76,22 @@ def validate_upgrade_candidate(baseline, candidate, *, target_image, environment
     fixed={'PLATFORM_MANUFACTURING_ROOT':'/opt/manufacturing',
            'PLATFORM_MANUFACTURING_DATABASE_PATH':'/app/data/manufacturing/workbench.sqlite3'}
     releases={'PLATFORM_RELEASE_SHA','PLATFORM_MANUFACTURING_RELEASE'}
-    _require(set(baseline_environment)==set(environment_delta)==set(fixed)|releases,'upgrade_environment_keys')
+    workflow_keys=set(WORKFLOW_FIELDS.values())
+    for row in [baseline_environment,environment_delta]:
+        _require(set(fixed)|releases <= set(row) <= set(fixed)|releases|workflow_keys,'upgrade_environment_keys')
+        validate_workflow_environment(row)
+    old_workflow={k:v for k,v in baseline_environment.items() if k in workflow_keys}
+    new_workflow={k:v for k,v in environment_delta.items() if k in workflow_keys}
+    _require(not old_workflow or old_workflow==new_workflow,'existing_workflow_configuration_changed')
     for key in releases:
         _require(all(isinstance(row[key],str) and re.fullmatch('[0-9a-f]{40}',row[key]) for row in [baseline_environment,environment_delta]),'upgrade_release_pin')
     old_env,new_env=old.get('environment',{}),new.get('environment',{})
+    for key in workflow_keys-set(baseline_environment):
+        _require(key not in old_env,'upgrade_baseline_workflow_expected_absent')
+    for key,value in environment_delta.items():
+        if key not in baseline_environment:
+            _require(new_env.get(key)==value,'candidate_environment_mismatch')
+            new_env.pop(key)
     for key,value in baseline_environment.items():
         _require(old_env.get(key)==value,'upgrade_baseline_environment_drift')
         _require(new_env.get(key)==environment_delta[key],'candidate_environment_mismatch')

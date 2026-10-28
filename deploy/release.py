@@ -12,12 +12,12 @@ import stat
 import sys
 import time
 import uuid
-from release_guard import validate_candidate,validate_upgrade_candidate
+from release_guard import validate_candidate,validate_upgrade_candidate,workflow_environment,WORKFLOW_FIELDS
 import release_support as ops
 
 READINESS_CODE = '''import os,sys,json
 assert os.getuid()==10001
-sys.path.insert(0,'/opt/manufacturing/src')
+sys.path.insert(0,os.environ['PLATFORM_MANUFACTURING_ROOT']+'/src')
 from manufacturing_platform.repository import Repository
 from manufacturing_platform.project_repository import ProjectRepository
 from manufacturing_platform.catalog import load_catalog
@@ -26,8 +26,35 @@ Repository(database).health()
 projects=ProjectRepository(database,load_catalog())
 with projects._connection() as connection:
     connection.execute('SELECT 1').fetchone()
-assert os.statvfs('/opt/manufacturing').f_flag & os.ST_RDONLY
-print(json.dumps({'schema_ready':True,'source_read_only':True,'business_records_written':0}))
+assert os.statvfs(os.environ['PLATFORM_MANUFACTURING_ROOT']).f_flag & os.ST_RDONLY
+workflow=None
+keys=['WORKFLOW_DATABASE_PATH','AUTHORITY_DATABASE_PATH','DATASET_ID','DATASET_MODE','DATASET_LABEL']
+values=[os.environ.get('PLATFORM_MANUFACTURING_'+key) for key in keys]
+if any(v is not None for v in values):
+    assert all(values)
+    from pathlib import Path
+    from manufacturing_platform.workflow.store import WorkflowStore
+    from manufacturing_platform.workflow.schema import SCHEMA_VERSION
+    domain,authority,dataset_id,mode,label=values
+    paths=list(map(Path,[database,domain,authority]))
+    assert len({str(p.resolve()) for p in paths})==3
+    assert not any(p.is_symlink() for p in paths)
+    existing=[p for p in paths if p.exists()]
+    assert len({(p.stat().st_dev,p.stat().st_ino) for p in existing})==len(existing)
+    store=WorkflowStore(domain,authority,{'id':dataset_id,'mode':mode,'label':label})
+    with store.transaction() as connection:
+        assert connection.execute('SELECT version FROM schema_version').fetchone()[0]==SCHEMA_VERSION
+        assert tuple(connection.execute('SELECT id,mode,label FROM dataset_metadata').fetchone())==(dataset_id,mode,label)
+        assert connection.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+    workflow={'schema_ready':True,'dataset_id':dataset_id,'dataset_mode':mode,'dataset_label':label,'database_path':domain,'authority_database_path':authority,'authority_ready':False,'authority_status':'external_adapter_unverified'}
+    if mode=='demo':
+        from manufacturing_platform.workflow.adapters.mock_store import MockStore
+        with MockStore(authority,dataset_id).transaction() as connection:
+            assert connection.execute('SELECT dataset FROM metadata').fetchone()[0]==dataset_id
+            assert connection.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+        workflow.update(authority_ready=True,authority_status='independent_demo_store')
+    else:assert mode=='production'
+print(json.dumps({'schema_ready':True,'source_read_only':True,'business_records_written':0,'workflow':workflow}))
 '''
 
 
@@ -51,8 +78,30 @@ def request_data(stage):
     return value
 
 
+def workflow_configuration(e, *, baseline=False):
+    old=e.get('baseline_workflow')
+    if 'baseline_workflow' in e:workflow_environment(old)
+    target=e.get('target_workflow',old)
+    if 'target_workflow' in e:workflow_environment(target)
+    require(old is None or target==old,'existing_workflow_configuration_changed')
+    return old if baseline else target
+
+
+def validate_workflow_storage(e):
+    config=workflow_configuration(e)
+    if config is None:return
+    root=Path(e['data_host'])
+    paths=[root/'workbench.sqlite3',*(root/Path(config[k]).name for k in ['database_path','authority_database_path'])]
+    for path in paths:
+        require(not any(p.is_symlink() for p in [path,*path.parents]),'workflow_storage_symlink')
+        require(not path.exists() or path.is_file(),'workflow_storage_nonregular')
+    identities=[(p.stat().st_dev,p.stat().st_ino) for p in paths if p.exists()]
+    require(len(identities)==len(set(identities)),'workflow_storage_inode_alias')
+
+
 def environment_delta(e):
-    return {'PLATFORM_RELEASE_SHA':e['platform_commit'],
+    config=workflow_configuration(e)
+    return {**(workflow_environment(config) if config else {}),'PLATFORM_RELEASE_SHA':e['platform_commit'],
             'PLATFORM_MANUFACTURING_ROOT':'/opt/manufacturing',
             'PLATFORM_MANUFACTURING_DATABASE_PATH':'/app/data/manufacturing/workbench.sqlite3',
             'PLATFORM_MANUFACTURING_RELEASE':e['manufacturing_commit']}
@@ -68,7 +117,10 @@ def overlay_mounts(e):
 
 
 def baseline_environment(e):
-    return {**environment_delta(e),'PLATFORM_RELEASE_SHA':e['expected_old_platform_commit'],
+    old={k:v for k,v in e.items() if k not in {'target_workflow','baseline_workflow'}}
+    config=workflow_configuration(e,baseline=True)
+    if config is not None:old['target_workflow']=config
+    return {**environment_delta(old),'PLATFORM_RELEASE_SHA':e['expected_old_platform_commit'],
             'PLATFORM_MANUFACTURING_RELEASE':e['expected_old_manufacturing_commit']}
 
 
@@ -79,6 +131,8 @@ def previous_source(e):
 def validate_baseline(e,old):
     if e.get('mode')!='upgrade':return
     env=ops.actual_environment(old)
+    for key in set(WORKFLOW_FIELDS.values())-set(baseline_environment(e)):
+        require(key not in env,'upgrade_baseline_workflow_expected_absent')
     require(all(env.get(key)==value for key,value in baseline_environment(e).items()),'upgrade_baseline_environment_drift')
     require(len({m['Destination'] for m in old['Mounts']})==len(old['Mounts']),'baseline_duplicate_mount')
     mounts={m['Destination']:m for m in old['Mounts']}
@@ -97,7 +151,26 @@ def validate_configuration(e,baseline,candidate):
         validate_candidate(baseline,candidate,target_image=e['target_image'],environment_delta=environment_delta(e),new_mounts=added_mounts(e))
 
 
+def validate_backend_manifest(e):
+    old,new=e['backend_base_hashes'],e['backend_hashes']
+    added=e.get('backend_added_files',[])
+    require(isinstance(old,dict) and isinstance(new,dict) and set(old)==set(new),'backend_manifest_inventory')
+    require(isinstance(added,list) and len(added)==len(set(added)) and set(added)<=(set(new)),'backend_added_inventory')
+    require({k for k,v in old.items() if v is None}==set(added),'backend_expected_absence_review')
+    for name in new:
+        require(re.fullmatch(r'[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*\.py',name) is not None,'backend_manifest_path')
+        for value in [new[name],*([old[name]] if name not in added else [])]:
+            require(isinstance(value,str) and re.fullmatch('[0-9a-f]{64}',value),'backend_manifest_hash')
+
+
+def validate_backend_baseline(e,source):
+    validate_backend_manifest(e)
+    for path,expected in e['backend_base_hashes'].items():
+        require((path not in source) if expected is None else source.get(path)==expected,'baseline_source_drift:'+path)
+
+
 def validate_paths(e):
+    workflow_configuration(e)
     base='/data/orbbec-agent-platform/manufacturing'
     require(e['manufacturing_host']==base+'/releases/'+e['manufacturing_commit'] and e['data_host']==base+'/data','unapproved_manufacturing_path')
 
@@ -146,9 +219,14 @@ def publish_success(receipt,maintenance):
 
 
 def snapshot_files(e):
-    names=['request.json','release.py','release_support.py','release_guard.py','candidate_verify.py','sqlite_backup.py']
+    names=['request.json','release.py','release_support.py','release_guard.py','candidate_verify.py','candidate_fixture.py','sqlite_backup.py']
     result={name:ops.digest(ops.STAGE/name) for name in names}
+    if workflow_configuration(e) is not None:
+        require(re.fullmatch('[0-9a-f]{64}',e.get('candidate_fixture_sha256','')) is not None,'candidate_fixture_pin_required')
+        result['candidate_fixture']=ops.digest(ops.STAGE/'candidate-fixture/fixture.json')
+        require(result['candidate_fixture']==e['candidate_fixture_sha256'],'candidate_fixture_pin_mismatch')
     validate_paths(e)
+    validate_workflow_storage(e)
     release=ops.safe_path(e['manufacturing_host'],directory=True)
     validate_release_metadata(release)
     state=ops.safe_path(e['data_host'],directory=True)
@@ -286,8 +364,7 @@ def prepare(e):
         candidate=json.loads(ops.run(ops.compose(files,True)+['config','--format','json'],env=env))
         validate_configuration(e,baseline,candidate)
         current=ops.maps(ops.API)
-        for path,expected in e['backend_base_hashes'].items():
-            require(current['source'].get(path)==expected,'baseline_source_drift:'+path)
+        validate_backend_baseline(e,current['source'])
         expected_source={**current['source'],**e['backend_hashes']}
         expected_static={**current['static'],**e['static_hashes']}
         require(json.loads(ops.run(['docker','image','inspect',e['target_image']]))[0]['Id']==e['target_image_id'],'target_tag_drift')
@@ -321,8 +398,31 @@ def candidate(e):
             args+=['-e','PLATFORM_MANUFACTURING_PREVIOUS_ROOT=/opt/manufacturing-previous',
                    '-e','PLATFORM_MANUFACTURING_PREVIOUS_RELEASE='+e['expected_old_manufacturing_commit']]
         args+=['-e','PLATFORM_MANUFACTURING_ROOT=/opt/manufacturing','-e','PLATFORM_MANUFACTURING_DATABASE_PATH=/tmp/manufacturing-candidate.sqlite3','-e','PLATFORM_MANUFACTURING_RELEASE='+e['manufacturing_commit']]
+        workflow=workflow_configuration(e) is not None
+        payload={'expected_source':pre['expected_source'],'expected_static':pre['expected_static'],'business_commit':e['manufacturing_commit'],'workflow':workflow}
+        if workflow:
+            import candidate_fixture
+            spec=candidate_fixture.validate_fixture(ops.STAGE,e,pre)
+            candidate_name='manufacturing-private-'+uuid.uuid4().hex
+            args.remove('--rm');args+=['--name',candidate_name]
+            extra,private_env=candidate_fixture.candidate_arguments(ops.STAGE,e,spec)
+            args+=extra+['--mount',f'type=bind,source={ops.STAGE}/candidate_fixture.py,target=/candidate-controller.py,readonly']
+            private_env.update({'PLATFORM_MANUFACTURING_WORKFLOW_DATABASE_PATH':'/tmp/workflow-candidate.sqlite3',
+                                'PLATFORM_MANUFACTURING_AUTHORITY_DATABASE_PATH':'/tmp/authority-candidate.sqlite3',
+                                'PLATFORM_MANUFACTURING_DATASET_ID':'isolated-candidate-smoke',
+                                'PLATFORM_MANUFACTURING_DATASET_MODE':'test','PLATFORM_MANUFACTURING_DATASET_LABEL':'Synthetic candidate test'})
+            for key,value in private_env.items():args+=['-e',key+'='+value]
+            payload['source_manifest_sha256']=spec['source_manifest_sha256']
         args+=['--entrypoint','python',e['target_image_id'],'-c',(ops.STAGE/'candidate_verify.py').read_text()]
-        checked=json.loads(ops.run(args,data=ops.canonical({'expected_source':pre['expected_source'],'expected_static':pre['expected_static'],'business_commit':e['manufacturing_commit']}),timeout=180))
+        try:
+            checked=json.loads(ops.run(args,data=ops.canonical(payload),timeout=3900 if workflow else 180))
+        finally:
+            if workflow:
+                # Stop descendants before hashing/archive, including CLI timeout.
+                ops.run(['docker','rm','-f',candidate_name])
+                candidate_fixture.archive_evidence(ops.STAGE)
+        if workflow:
+            require(checked.get('workflow_acceptance',{}).get('cases')==36 and checked['workflow_acceptance'].get('passed') is True,'candidate_exact36_required')
         require(checked['passed'] is True,'candidate_not_passed')
         checked.update(preflight_sha256=ops.digest(ops.STAGE/'preflight.json'),request_sha256=ops.digest(ops.STAGE/'request.json'),image=e['target_image_id'])
         ops.write('candidate-validation.json',checked)
@@ -360,7 +460,9 @@ def cutover(e):
         validate_baseline(e,old)
         backup=None
         if e.get('mode')=='upgrade':
-            backup=json.loads(ops.run(['docker','exec','--user','10001:10001',ops.API,'python','-c',(ops.STAGE/'sqlite_backup.py').read_text()],timeout=45))
+            config=workflow_configuration(e)
+            backup_paths={} if config is None else {'workflow':config['database_path'],'authority':config['authority_database_path']}
+            backup=json.loads(ops.run(['docker','exec','-i','--user','10001:10001',ops.API,'python','-c',(ops.STAGE/'sqlite_backup.py').read_text()],data=ops.canonical(backup_paths),timeout=120))
             require(backup.get('verified') is True and backup.get('legacy_schema_present') is True,'sqlite_backup_not_verified')
             ops.write('sqlite-backup.private.json',backup)
         # Backup can take time. Recheck immutable rollback/target and live state

@@ -42,6 +42,10 @@ class Auth:
     route_prefix='/';cookie_name='manufacturing_candidate_session';csrf_cookie_name='manufacturing_candidate_csrf';public_base_url='https://manufacturing-candidate.invalid'
     app_key='candidate-public-id';corp_id='candidate-corp-id'
     role=Role.PLATFORM_OWNER;stale=False;revoked=False
+    @property
+    def repository(self):return self
+    def is_active_internal_user(self,uid):return uid==UUID('11111111-1111-4111-8111-111111111111') and not self.revoked
+    def active_internal_user_profiles(self,ids):return [{'user_id':str(uid),'display_name':'Synthetic candidate'} for uid in ids if self.is_active_internal_user(uid)]
     def authenticate(self,token):
         if token!='synthetic-candidate-session' or self.revoked:return None
         return AuthContext(UUID('11111111-1111-4111-8111-111111111111'),self.role,UUID('22222222-2222-4222-8222-222222222222'),self.stale),'synthetic-candidate-csrf'
@@ -54,10 +58,10 @@ scratch=Path(tempfile.mkdtemp(prefix='manufacturing-harness-',dir='/tmp'))
 os.environ['PLATFORM_AGENT_BRAIN_ENABLED']='0'
 os.environ['PLATFORM_STATIC_DIR']='/app/backend/app/static'
 auth=Auth()
-instance=create_app(registry_path=str(scratch/'registry.yaml'),cluster_contract_path=str(scratch/'contract.json'),start_poller=False,identity_auth=auth)
+instance=create_app(registry_path=str(scratch/'registry.yaml'),cluster_contract_path=str(scratch/'contract.json'),start_poller=False,identity_auth=auth,identity_authorization=AuthorizationService(NoGrants()))
 matched=[row for row in instance.user_middleware if row.cls is IdentitySecurityMiddleware]
 assert len(matched)==1
-matched[0].kwargs['authorization']=AuthorizationService(NoGrants())
+assert isinstance(matched[0].kwargs['authorization'],AuthorizationService)
 # Resolve the registered routing view used by the real security middleware.
 from app.manufacturing_paths import MANUFACTURING_PREFIX,MANUFACTURING_ROUTES
 registered={(method,route.path) for route in IdentitySecurityMiddleware._expand_included_routes(instance.routes) for method in getattr(route,'methods',[])}
@@ -77,6 +81,10 @@ for path in ['/catalog','/dashboard','/projects','/project-tasks','/handbook','/
 check(client.get(prefix+'/assets/manufacturing.js',params={'release':'stale-candidate-release'}),401)
 client.cookies.set(auth.cookie_name,'synthetic-candidate-session');client.cookies.set(auth.csrf_cookie_name,'synthetic-candidate-csrf')
 assert check(client.get(prefix+'/access'),200).json()['allowed']
+if expected.get('workflow'):
+    import runpy
+    private_checks=runpy.run_path('/candidate-controller.py')
+    private_checks['verify_workflow_bootstrap'](client,check)
 catalog=check(client.get(prefix+'/catalog'),200).json()
 assert {row['id'] for row in catalog['lines']}=={'cameras','3d-printers','oem'}
 assert check(client.get(stage),200).json()['record']['version']==0
@@ -273,4 +281,7 @@ assert subprocess.run([sys.executable,'-c',reopen],capture_output=True,check=Tru
 client=TestClient(instance,base_url=auth.public_base_url)
 client.cookies.set(auth.cookie_name,'synthetic-candidate-session')
 auth.revoked=True;check(client.get(stage),401)
-print(json.dumps({'passed':True,'authentication':'synthetic_ASGI_with_real_middleware_authorization_csrf','persistence':'disposable_SQLite_separate_process_restart','rollback_compatibility':rollback_compatibility,'application':'actual_app.main.create_app_routes','business_lines':3,'project_workflows':'create_phase_block_reopen_confirmation_archive_legacy_preservation','architecture_workflows':'systems_authority_frozen_versions_receipts_readiness_supersession_issue_audit','handbook':'exact_published_markdown_and_metadata','business_relationships':'registered_not_connected','production_business_writes':0,'network_calls':0,'browser_acceptance':'not_run'}))
+workflow_acceptance=None
+if expected.get('workflow'):
+    workflow_acceptance=private_checks['run_acceptance']()
+print(json.dumps({'workflow_acceptance':workflow_acceptance,'passed':True,'authentication':'synthetic_ASGI_with_real_middleware_authorization_csrf','persistence':'disposable_SQLite_separate_process_restart','rollback_compatibility':rollback_compatibility,'application':'actual_app.main.create_app_routes','business_lines':3,'project_workflows':'create_phase_block_reopen_confirmation_archive_legacy_preservation','architecture_workflows':'systems_authority_frozen_versions_receipts_readiness_supersession_issue_audit','handbook':'exact_published_markdown_and_metadata','business_relationships':'registered_not_connected','production_business_writes':0,'network_calls':0,'browser_acceptance':'not_run'}))

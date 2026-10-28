@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tarfile
 
-TOP={'business','build','release.py','release_support.py','release_guard.py','candidate_verify.py','sqlite_backup.py','request-template.json'}
+TOP={'business','build','release.py','release_support.py','release_guard.py','candidate_verify.py','candidate_fixture.py','sqlite_backup.py','request-template.json'}
 
 
 def require(condition,reason):
@@ -47,6 +47,9 @@ def install(stage,archive_sha256):
     sys.path.insert(0,str(stage))
     import release
     e=json.loads((stage/'request-template.json').read_text());release.validate_paths(e)
+    release.validate_backend_manifest(e)
+    require(release.tree_hashes(stage/'build/backend')==e['backend_hashes'],'backend_payload_mismatch')
+    require(not any(p.is_symlink() for p in (stage/'build/backend').rglob('*')),'backend_payload_symlink')
     require(e.get('mode')=='upgrade','upgrade_payload_required')
     for key in ['platform_commit','manufacturing_commit','expected_old_platform_commit','expected_old_manufacturing_commit']:
         require(isinstance(e.get(key),str) and re.fullmatch('[0-9a-f]{40}',e[key]),'invalid_release_commit')
@@ -54,6 +57,8 @@ def install(stage,archive_sha256):
     old=run_json(['docker','inspect',release.ops.API])
     require(old['Image']==e['expected_old_image'] and old['State']['Health']['Status']=='healthy','baseline_image_or_health_drift')
     release.validate_baseline(e,old)
+    release.validate_backend_baseline(e,release.ops.maps(release.ops.API)['source'])
+    release.validate_workflow_storage(e)
     require(len(release.ops.discover_files(old))==e['expected_chain_length'],'baseline_chain_length_drift')
     require(e['target_image']!=old['Config']['Image'],'candidate_tag_must_not_retag_rollback')
     require(run_json(['docker','image','inspect',old['Config']['Image']])['Id']==old['Image'],'baseline_tag_drift')
