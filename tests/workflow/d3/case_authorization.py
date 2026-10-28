@@ -7,7 +7,49 @@ from ..scenarios.base import ROOT, ScenarioContext
 from ..scenarios.fixtures import BASE
 from .pf_client import PlatformHTTP
 from .historical import historical_source
-from .proof_support import ui_proof
+from .proof_support import snapshot, ui_proof
+
+
+def scope_write_matrix(api, projects):
+    """Well-formed commands separate project visibility from role/schema denial."""
+    context = api.context
+    own = projects["own"]["id"]
+    api.grant(own, "planner", ["planner", "project_owner"])
+    fields = {"kind": "firm", "product": "Camera", "quantity": "1", "unit": "piece", "due_date": "2026-12-01"}
+    api.command(own, "demand.record", actor="planner", **fields, source=api.source("demand"))
+    positive_response = context.evidence.artifacts[-1]
+    denied = []
+    for label, target, actor, anonymous, status in (
+        ("anonymous", own, "planner", True, 401),
+        ("outsider", own, "outsider", False, 404),
+        ("other_same_customer", projects["same_customer"]["id"], "planner", False, 404),
+        ("other_customer", projects["other_customer"]["id"], "planner", False, 404),
+    ):
+        # Trusted fixture reads the actual version; the denied actor does not
+        # need a successful preliminary GET, malformed command or missing FK.
+        with api.db() as db:
+            versions = dict(db.execute("SELECT id,version FROM projects"))
+        body = {"action": "demand.record", "operation_id": context.identifier("scope-write-" + label), "expected_version": versions[target], **fields, "source": api.source("demand")}
+        paths = [context.directory / name for name in ("workflow.db", "authority.db", "legacy.db")]
+        before = {path.name: snapshot(path) for path in paths if path.exists()}
+        context.evidence.record("scope-write-before", {"case": label, "project_id": target, "project_versions": versions, "tables": before})
+        try:
+            reply = api.post(f"/projects/{target}/commands", body, actor=actor, anonymous=anonymous, expected=status)
+        finally:
+            after = {path.name: snapshot(path) for path in paths if path.exists()}
+            context.evidence.record("scope-write-after", {"case": label, "tables": after})
+        response_path = context.evidence.artifacts[-2]
+        response = json.loads(Path(response_path).read_text())["value"]
+        entry = {"case": label, "project_id": target, "status": response["status"], "request": response["request_artifact"], "response": response_path, "project_versions": versions, "before": before, "after": after}
+        context.evidence.record("scope-write-denied", entry)
+        assert before == after, "Denied scope write changed business state: " + label
+        if status == 404:
+            assert reply == {"blocking_reasons": [], "code": "NOT_FOUND", "fields": {}, "message": "Workflow resource not found"}
+        assert all(project["id"] not in json.dumps(reply) for project in projects.values())
+        denied.append(entry)
+    context.evidence.record("scope-write-matrix", {"projects": projects, "positive_response": positive_response, "denied": denied})
+    # Preserve the later planner-only role denial checks in this same E29 case.
+    api.grant(own, "planner", ["planner"])
 
 
 def run(context):
@@ -15,7 +57,13 @@ def run(context):
     context.client = api
     p = api.project("100")
     original = api.get("/projects/" + p)
-    q = api.post("/projects", {**{k: original[k] for k in ("name", "line_id", "product", "mode", "unit", "quantity", "contract")}, "operation_id": context.identifier("other-customer"), "customer_id": "Customer 2"})["id"]
+    projects = {"own": {"id": p, "customer_id": original["customer_id"]}}
+    for label, customer in (("same_customer", original["customer_id"]), ("other_customer", "Customer 2")):
+        created = api.post("/projects", {**{k: original[k] for k in ("name", "line_id", "product", "mode", "unit", "quantity", "contract")}, "operation_id": context.identifier(label), "customer_id": customer})
+        projects[label] = {"id": created["id"], "customer_id": created["customer_id"]}
+    q = projects["other_customer"]["id"]
+    scope_write_matrix(api, projects)
+    api.get("/projects/" + projects["same_customer"]["id"], actor="planner", expected=404)
     api.get("/projects/" + p, anonymous=True, expected=401)
     api.get("/projects/" + p, actor="outsider", expected=404)
     api.get("/projects/" + q, actor="planner", expected=404)

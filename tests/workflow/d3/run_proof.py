@@ -55,6 +55,12 @@ def main():
     manifest = json.loads((context.directory / "manifest.json").read_text())
     witnesses = [{"path": str(index.relative_to(context.directory)), "sha256": digest(index)}, {"path": str(fact_path.relative_to(context.directory)), "sha256": digest(fact_path)}]
     proof = {"case_id": args.case, "dataset_id": context.dataset_id, "seed": context.seed, "release_hash": manifest["source"]["release_hash"], "runner_files": runner_files, "artifact_index": witnesses[0], "assertions": {name: {"passed": True, "evidence": witnesses} for name in HOST_ASSERTIONS[args.case]}}
+    if args.case == "E29":
+        matrices = list(context.directory.glob("*-scope-write-matrix.json"))
+        assert len(matrices) == 1, "E29 requires concrete negative write matrix evidence"
+        proof["assertions"]["project-customer-action-acl"]["evidence"] = [
+            *witnesses, {"path": str(matrices[0].relative_to(context.directory)), "sha256": digest(matrices[0])}
+        ]
     args.output.write_text(json.dumps(proof, sort_keys=True))
     print(json.dumps({"case": args.case, "duration_seconds": time.monotonic() - start, "artifact_count": len(artifacts)}))
 
