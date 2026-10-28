@@ -1,0 +1,309 @@
+{
+  "acceptance_not_performed": [
+    "browser desktop/mobile visual acceptance",
+    "employee multi-role production operation",
+    "real ERP/MRP/APS/MES/PLM/WMS/QMS/customer/supplier integration",
+    "factory production business acceptance"
+  ],
+  "artifact": {
+    "fixture_manifest_sha256": "5f790cef842cd024dcd3a733621a407f475cef17cc5e1388193f439295aa7168",
+    "payload_sha256": "89fa6d069866bbcb7edd187ebbd8723b44ee09055852be4051730bfd59e184d0",
+    "runtime_manifest_sha256": "e2e9648d3e7b12a055e498dd6b838f7a3c614426043015ae803938f2bc0fdefc"
+  },
+  "compose_input_count": 43,
+  "container": "fa6df9de2359a62ef940438718ff54cdf4f28a8adbacd5d03504fcb890849c32",
+  "evidence_limits": [
+    "Earlier local D4 36 and correction impact16 reports are separately source-pinned composites, not fresh final-source runs. The final image run recorded here is one complete36 run.",
+    "Earlier first failed HTTP fixture DB was deleted by old teardown; its original log survives. Later actual C1/C2/C1 HTTP RED/GREEN DBs are retained.",
+    "Initial new OEM RED helper error and later frozen-base control are labeled separately; no missing original evidence was reconstructed.",
+    "First installer failed before image build/cutover; original stage/logs retained, cold-context fix independently reviewed and97 deployment tests passed before new-stage installation.",
+    "72 feature-owned style diagnostics are independently triaged nonblocking; existing PF cookie deprecations and chunk advisory are not suppressed. No repository-wide warning-free claim."
+  ],
+  "image": "sha256:56948ff4636881265af21718fcc2dffc4bd355c1d923e2d316acd79a2b75d98a",
+  "maintenance": {
+    "cutover_receipt_sha256": "3c34b2ac9701a2a8cbfd119787ee0f9912ff2256f452c46413040ea26feec0af",
+    "path": "/opt/orbbec-agent-platform/staging/manufacturing-full-workflow-20261029-r2/future-maintenance.json",
+    "rollback": "Source only using the retained previous full Compose chain/image/source; retain live databases/WAL and do not restore stale snapshots over later writes.",
+    "sha256": "2c9b769282c5b1f447db5a6e9ccb97839baaaa57121d432b401a5b64c591552c"
+  },
+  "mock_acceptance": {
+    "archive_file_mismatches": 0,
+    "archive_files_verified": 23490,
+    "archive_sha256": "2130d7c2b6d2427a33bccec57285b7eaf2ca9ffabbb027c0ff9ff8f4f9b96101",
+    "candidate_validation_sha256": "6027287c15545eade4079e20887e03a83eb9bd72e44cf47baabb4f5c98bea1d6",
+    "cases": [
+      {
+        "duration_ms": 26313,
+        "id": "F01",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 7991,
+        "id": "F02",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 4753,
+        "id": "F03",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 9533,
+        "id": "F04",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 1634,
+        "id": "E01",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2092,
+        "id": "E02",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2050,
+        "id": "E03",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2802,
+        "id": "E04",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 1732,
+        "id": "E05",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2071,
+        "id": "E06",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 3540,
+        "id": "E07",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2055,
+        "id": "E08",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 1751,
+        "id": "E09",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2038,
+        "id": "E10",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2862,
+        "id": "E11",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 1990,
+        "id": "E12",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2381,
+        "id": "E13",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2198,
+        "id": "E14",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2306,
+        "id": "E15",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 9881,
+        "id": "E16",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2302,
+        "id": "E17",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2101,
+        "id": "E18",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2286,
+        "id": "E19",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2487,
+        "id": "E20",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 10417,
+        "id": "E21",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2478,
+        "id": "E22",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2355,
+        "id": "E23",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 3591,
+        "id": "E24",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 1467,
+        "id": "E25",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 3129,
+        "id": "E26",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 2186,
+        "id": "E27",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 1904,
+        "id": "E28",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 16779,
+        "id": "E29",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 3063,
+        "id": "E30",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 42101,
+        "id": "E31",
+        "status": "passed"
+      },
+      {
+        "duration_ms": 20069,
+        "id": "E32",
+        "status": "passed"
+      }
+    ],
+    "counts": {
+      "blocked": 0,
+      "failed": 0,
+      "not_executed": 0,
+      "passed": 36
+    },
+    "linux_storage": {
+      "allocated_bytes": 236703744,
+      "capacity_bytes": 502484992,
+      "device": 1793,
+      "files": 23490,
+      "free_bytes": 255037440,
+      "free_inodes": 41897,
+      "logical_bytes": 169164135,
+      "root_inode": 2,
+      "total_inodes": 65536
+    },
+    "receipt_sha256": "09f34d2c29aaf87ba4762cb1d8a68ca37205914598b2a27541e104c24f233137",
+    "run_id": "run-20261028T214104-6fee19c8b7bc426db620f1470ac353d8",
+    "runtime": {
+      "cryptography": "50.0.0",
+      "fastapi": "0.141.1",
+      "httpx": "0.28.1",
+      "node": "v24.7.0",
+      "pydantic": "2.13.4",
+      "python": "3.11.13",
+      "sqlite": "3.40.1",
+      "starlette": "1.9.0",
+      "uvicorn": "0.52.1"
+    },
+    "scope": "Read-only complete archive rehash of immutable candidate mock acceptance; not real external business acceptance",
+    "summed_case_duration_ms": 210688
+  },
+  "postcutover": {
+    "business_files_verified": 66,
+    "database_business_rows_at_readiness": {
+      "authority": 0,
+      "workflow": 0
+    },
+    "dataset": {
+      "AUTHORITY_DATABASE_PATH": "/app/data/manufacturing/authority-demo.sqlite3",
+      "DATASET_ID": "manufacturing-full-flow-demo-20261028-v1",
+      "DATASET_LABEL": "全流程模拟环境",
+      "DATASET_MODE": "demo",
+      "WORKFLOW_DATABASE_PATH": "/app/data/manufacturing/workflow-demo.sqlite3"
+    },
+    "handbook_sha256": "8966c7d91be4387b67271449d1c25b3214a7587a149c26c40c3a39dd035e2dfd",
+    "http": {
+      "/api/v1/manufacturing/assets/manufacturing.js": {
+        "cache_control": "private, no-store",
+        "status": 401
+      },
+      "/api/v1/manufacturing/handbook": {
+        "cache_control": "private, no-store",
+        "status": 401
+      },
+      "/api/v1/manufacturing/workflow/access": {
+        "cache_control": "private, no-store",
+        "status": 401
+      },
+      "/api/v1/manufacturing/workflow/dashboard": {
+        "cache_control": "private, no-store",
+        "status": 401
+      },
+      "/api/v1/manufacturing/workflow/projects": {
+        "cache_control": "private, no-store",
+        "status": 401
+      },
+      "/manufacturing": {
+        "cache_control": "no-store",
+        "status": 200
+      }
+    },
+    "legacy_projects_preserved": 7,
+    "legacy_table_hashes_preserved": 13,
+    "nginx_unchanged": true,
+    "other_container_identities_preserved": 29,
+    "private_directory_mode": "0700",
+    "restart_count": 0,
+    "runner_environment_absent": true,
+    "source_files_verified": 513,
+    "static_files_verified": 352,
+    "workflow_schema_version": 17
+  },
+  "released_at_utc": "2026-10-28T21:47:57.843878+00:00",
+  "sources": {
+    "manufacturing": "c4773a0dd54000e0b9ce159f4b9b573085ef2db9",
+    "note": "These are the actual deployed source refs; later evidence-only documentation commits are not runtime upgrades.",
+    "platform": "74c7e6b4307946e77147039e42e3b6c38019bc12"
+  },
+  "status": "healthy",
+  "url": "https://agent.orbbec.com.cn/manufacturing",
+  "version": 1
+}
