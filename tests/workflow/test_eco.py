@@ -1602,3 +1602,204 @@ def test_i1_stock_basis_read_contract_uses_decimal_strings(workflow):
     stock = next(i for i in view["impacts"] if i["type"] == "stock")
     assert set(stock["stock_basis"].values()) == {"80"}
     assert stock["opening_consumption"] == "0"
+
+
+@pytest.mark.parametrize("boundary", ["cancel_remaining", "split_remaining"])
+def test_i4_later_eco_retains_current_old_scope_after_confirmed_boundary(
+    workflow, boundary
+):
+    from .test_execution import ready_for_trial
+
+    p, wo, units, authority = ready_for_trial(workflow, quantity="5")
+    pid, wid = p["id"], wo["id"]
+    start = workflow.command(
+        pid,
+        "production.start",
+        actor_name="production",
+        work_order_id=wid,
+        mode="trial",
+        unit_ids=units[:1],
+        quantity="1",
+    )
+    workflow.command(
+        pid,
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=start["exchange_id"],
+    )
+    original = workflow.object(pid, "work_order", wid)
+    target = {}
+    if boundary == "split_remaining":
+        new = workflow.revision(pid, internal_revision="M2")
+        workflow.command(
+            pid,
+            "engineering.handoff",
+            actor_name="engineering",
+            revision_id=new["id"],
+            to_system="MES",
+            received_revision="M2",
+            decision="accepted",
+            evidence="MES M2",
+        )
+        workflow.command(
+            pid,
+            "engineering.customer_approval",
+            revision_id=new["id"],
+            customer_id="Customer 1",
+            external_signatory="customer",
+            decision="approved",
+            evidence="M2 approval",
+        )
+        target = {"new_revision_id": new["id"]}
+    first = workflow.command(
+        pid,
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=original["revision_id"],
+        effective_work_order_ids=[wid],
+        reason="first actual boundary",
+        **target,
+    )["object_id"]
+    effect = workflow.command(
+        pid,
+        "eco.switch",
+        actor_name="engineering",
+        eco_id=first,
+        target_work_order_id=wid,
+        boundary=boundary,
+        evidence="retain started one",
+        **target,
+    )
+    authority.configure_fault("timeout_after_commit")
+    workflow.command(
+        pid,
+        "exchange.dispatch",
+        actor_name="engineering",
+        exchange_id=effect["exchange_id"],
+    )
+    later = workflow.command(
+        pid,
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=original["revision_id"],
+        effective_work_order_ids=[wid],
+        reason="later old scope review",
+    )["object_id"]
+    dispose_all(workflow, p, later)
+    # Actual source effect exists but local receipt is unknown: neither quantity may bypass the hold.
+    for quantity in ("1", "5"):
+        workflow.command(
+            pid,
+            "eco.switch",
+            actor_name="engineering",
+            eco_id=later,
+            target_work_order_id=wid,
+            boundary="retain_existing",
+            retained_quantity=quantity,
+            evidence="unknown effect cannot authorize retention",
+            expected_status=409,
+        )
+    assert workflow.object(pid, "work_order", wid)["remaining_obligation"] == "5"
+    workflow.command(
+        pid,
+        "exchange.query",
+        actor_name="engineering",
+        exchange_id=effect["exchange_id"],
+    )
+    dispose_all(workflow, p, first)
+    workflow.command(pid, "eco.close", actor_name="engineering", eco_id=first)
+    assert workflow.object(pid, "work_order", wid)["remaining_obligation"] == "1"
+    later = workflow.command(
+        pid,
+        "eco.open",
+        actor_name="engineering",
+        old_revision_id=original["revision_id"],
+        effective_work_order_ids=[wid],
+        reason="review confirmed residual old scope",
+    )["object_id"]
+    dispose_all(workflow, p, later)
+    later_value = workflow.object(pid, "eco", later)
+    assert (
+        next(
+            i["quantity"]
+            for i in later_value["impacts"]
+            if i["type"] == "work_order" and i["object_id"] == wid
+        )
+        == "1"
+    )
+    prior_eco = workflow.object(pid, "eco", first)
+    with workflow.db() as tx:
+        prior_switches = [
+            tuple(r)
+            for r in tx.execute("SELECT * FROM eco_switches WHERE project_id=?", (pid,))
+        ]
+        prior_units = [
+            tuple(r)
+            for r in tx.execute(
+                "SELECT * FROM units WHERE project_id=? ORDER BY id", (pid,)
+            )
+        ]
+    with authority.store.transaction() as tx:
+        prior_authority = [
+            tuple(r)
+            for r in tx.execute(
+                "SELECT * FROM authority_work_orders WHERE project_id=? ORDER BY work_order_id",
+                (pid,),
+            )
+        ]
+    before = authority.operation_count()
+    # Immutable original registration is no longer the current retention quantity.
+    workflow.command(
+        pid,
+        "eco.switch",
+        actor_name="engineering",
+        eco_id=later,
+        target_work_order_id=wid,
+        boundary="retain_existing",
+        retained_quantity="5",
+        evidence="wrong original quantity",
+        expected_status=409,
+    )
+    retained = workflow.command(
+        pid,
+        "eco.switch",
+        actor_name="engineering",
+        eco_id=later,
+        target_work_order_id=wid,
+        boundary="retain_existing",
+        retained_quantity="1",
+        evidence="current accepted old scope retained",
+    )
+    assert not retained["exchange_id"]
+    workflow.command(pid, "eco.close", actor_name="engineering", eco_id=later)
+    current = workflow.object(pid, "eco", later)
+    assert (
+        current["state"] == "closed" and current["implementation_outcome"] == "retained"
+    )
+    assert current["retentions"][0]["quantity"] == "1"
+    assert current["retentions"][0]["unit_ids"] == units[:1]
+    assert workflow.object(pid, "eco", first) == prior_eco
+    current_wo = workflow.object(pid, "work_order", wid)
+    assert current_wo["quantity"] == original["quantity"] == "5"
+    assert current_wo["revision_id"] == original["revision_id"]
+    assert current_wo["order_line_id"] == original["order_line_id"]
+    assert authority.operation_count() == before
+    with workflow.db() as tx:
+        assert [
+            tuple(r)
+            for r in tx.execute("SELECT * FROM eco_switches WHERE project_id=?", (pid,))
+        ] == prior_switches
+        assert [
+            tuple(r)
+            for r in tx.execute(
+                "SELECT * FROM units WHERE project_id=? ORDER BY id", (pid,)
+            )
+        ] == prior_units
+    with authority.store.transaction() as tx:
+        assert [
+            tuple(r)
+            for r in tx.execute(
+                "SELECT * FROM authority_work_orders WHERE project_id=? ORDER BY work_order_id",
+                (pid,),
+            )
+        ] == prior_authority

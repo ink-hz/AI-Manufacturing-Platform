@@ -405,17 +405,23 @@ def accepted_membership(tx, pid, wid):
 
 
 def verify_retention(tx, pid, row, wid, quantity, evidence_ids=None):
-    wo = own(tx, "work_orders", pid, wid)
+    wo = own(tx, "effective_work_orders", pid, wid)
     ids = accepted_membership(tx, pid, wid)
     scale = 10 ** project(tx, pid)["unit_scale"]
+    # Confirmed historical boundaries define this remaining obligation. Only
+    # unresolved effects hold a no-effect retention; mutation locks stay stricter.
+    uncertain_boundary = tx.execute(
+        "SELECT 1 FROM eco_switches s JOIN exchanges e ON e.id=s.exchange_id WHERE s.project_id=? AND s.work_order_id=? AND s.accepted_receipt_id IS NULL AND (e.phase!='rejected' OR e.receipt_json IS NULL) LIMIT 1",
+        (str(pid), str(wid)),
+    ).fetchone()
     if (
-        scope_locked(tx, pid, wid)
-        or quantity != wo["q_atoms"]
+        uncertain_boundary
+        or quantity != wo["obligation_atoms"]
         or len(ids) * scale != quantity
         or (evidence_ids is not None and ids != evidence_ids)
     ):
         fail(
-            "retained boundary must exactly cover current accepted original membership"
+            "retained boundary must exactly cover current obligation and accepted membership"
         )
     relevant = [
         i
