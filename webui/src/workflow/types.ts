@@ -23,6 +23,7 @@ export type WorkflowTarget = {
   id: string;
 };
 export type ObjectKind =
+  | "shipment" | "closure"
   | "nonconformance" | "rework" | "release"
   | "eco"
   | "demand"
@@ -96,13 +97,14 @@ export interface CommandResult {
   replayed: boolean;
 }
 export interface Grant {
+  display_name?:string|null;
   scope: { kind: "project"; project_id: string };
   user_id: string;
   roles: string[];
   qualifications: string[];
   active: boolean;
 }
-export type GrantChange = Omit<Grant, "user_id"> & {
+export type GrantChange = Omit<Grant, "user_id" | "display_name"> & {
   operation_id: string;
   expected_version: number;
   evidence: string;
@@ -138,18 +140,36 @@ export interface ControlReceiptDetail {key:string;work_order_id:string;scope:"al
 export interface UnitReceiptDetail {key:string;unit_id:string;sn:string;state:"running"|"stopped"}
 export interface SourceConfirmation {source:SourceRef;external_actor:string;signature:string;recorded_by:string;sequence:number}
 export interface ExchangeValue {
+  stock_basis_proof?:{mode:"mock"|"api";sources:{project_id:string;lot_id:string;owner_id:string;material_id:string;unit:string;quantity:string;source:SourceRef;sequence:number}[]}|null;
   kind:"exchange";action:string;policy_action:CommandFields["action"];system:string;business_key:string;
   mode:"mock"|"api"|"unavailable"|"file";phase:string;requested:string;accepted:string;rejected:string;unit:string;reason:string;
   discrepancies?:{sequence:number;owner_id:string;owner_name:string;reason:string;evidence:string;resolves_sequence:number|null}[];
   events:{sequence:number;phase:string;reason:string}[];reservation_id:string|null;
   source:SourceRef|null;source_object_type:InboundKind|null;
   receipt:{receipt_id:string;business_key:string;request_hash:string;source_object_id:string;source_version:number;sequence:number;
-    phase:string;accepted_quantity:string;rejected_quantity:string;details:(ReceiptDetail|UnitReceiptDetail|ControlReceiptDetail|EcoReceiptDetail)[];occurred_at:string;error:string|null}|null;
+    phase:string;accepted_quantity:string;rejected_quantity:string;details:(ReceiptDetail|UnitReceiptDetail|ControlReceiptDetail|EcoReceiptDetail|ShipmentReceiptDetail)[];occurred_at:string;error:string|null}|null;
 }
 export interface EcoImpact {stock_basis?:Record<string,string>|null;opening_consumption?:string;stock_basis_complete?:boolean;id:string;type:"purchase"|"stock"|"wip"|"work_order"|"unit";object_id:string;title:string;owner_id:string;quantity:string;unit:string;scale:number;state:string;resolved_quantity:string;dispositions:{id:string;decision:"use_old"|"rework"|"return"|"scrap";quantity:string;evidence:string}[]}
 export interface EcoValue {retentions?:{work_order_id:string;quantity:string;unit_ids:string[];evidence:string}[];implementation_outcome?:"pending"|"retained"|"cancelled"|"switched"|"mixed";unresolved_stock_basis_ids?:string[];kind:"eco";id:string;old_revision_id:string;new_revision_id:string|null;old_revision:string;new_revision:string|null;effective_work_order_ids:string[];effective_sn_ids:string[];reason:string;state:"open"|"closed";impacts:EcoImpact[];switches:{id:string;work_order_id:string;new_work_order_id:string|null;boundary:"split_remaining"|"cancel_remaining";quantity:string;retained_quantity:string;exchange_id:string;phase:string}[]}
 export interface EcoReceiptDetail {key:string;effect:"cancel_remaining"|"create_replacement";work_order_id:string;revision_id:string;quantity:string;retained_quantity:string}
+export interface ShipmentBox {box_id:string;unit_ids:string[]}
+export interface AcceptanceIssue {id:string;title:string;owner_id:string;owner_name:string;required:boolean;resolved:boolean;evidence:string|null}
+export interface DeliveryBalance {ordered:string;allocated:string;qualified:string;pending_shipment:string;shipped:string;signed:string;accepted:string;remaining_to_ship:string;remaining_to_accept:string;unit:string}
+export interface ShipmentValue {kind:"shipment";id:string;order_line_id:string;unit_ids:string[];boxes:ShipmentBox[];exchange_id:string;state:"pending"|"accepted"|"rejected"|"held";quantity:string;shipped:string;signed:string;accepted:string;unit:string;remaining:DeliveryBalance;blocking_reasons:string[];issues:AcceptanceIssue[];facts:{id:string;action:"sign"|"accept";quantity:string;source:SourceRef|null;external_signatory:string;recorded_by:string}[]}
+export interface OwnershipBalance {hold_reason?:string|null;received:string;consumed:string;scrapped:string;returned:string;balance:string;complete:boolean;unit:string;owner_id:string;material_id:string}
+export interface MaterialScope {material_lot_id:string;material_id:string;owner_id:string;unit:string}
+export type DeliveryCommand =
+ | {action:"shipment.request";order_line_id:string;unit_ids:string[];boxes:ShipmentBox[];quantity:string;unit:string}
+ | {action:"delivery.sign";shipment_id:string;quantity:string;source:SourceRef;external_signatory:string}
+ | {action:"delivery.accept";shipment_id:string;quantity:string;source:SourceRef;external_signatory:string;issues:{title:string;owner_id:string;required:boolean}[]}
+ | {action:"delivery.resolve_issue";issue_id:string;evidence:string}
+ | {action:"closure.record";kind:"fulfillment"|"quality"|"cost";source:SourceRef;evidence:string}
+ | ({action:"ownership.movement";movement:"return"|"raw_loss";quantity:string;supersedes_id?:string|null;source:SourceRef;external_signatory:string;evidence:string}&MaterialScope)
+ | ({action:"ownership.reconcile";received:string;consumed:string;scrapped:string;returned:string;balance:string;source:SourceRef}&MaterialScope)
+ | {action:"stock_basis.reconcile";eco_id:string;reservation_id:string};
+export interface ShipmentReceiptDetail {key:string;unit_id:string;sn:string;work_order_id:string;order_line_id:string;box_id:string|null}
 export type CommandFields =
+  | DeliveryCommand
   | {action:"test.record";source:SourceRef;unit_id:string;attempt:number;program_version:string;limit_version:string;firmware_version:string;measurements:Measurement[];rework_order_id?:string|null}
   | {action:"nonconformance.open";test_id:string;defect:string;evidence:string}
   | {action:"nonconformance.disposition";nonconformance_id:string;decision:"rework"|"scrap"|"concession";route_id?:string|null;route_steps:{station:string;instruction_version:string}[];evidence:string}
@@ -288,6 +308,7 @@ export interface ObjectSummary {
   material_balance?: MaterialBalance | null;
 }
 export interface MaterialBalance {
+  blocking_reasons?:string[];
   required: string;
   in_transit: string;
   received: string;
@@ -324,6 +345,8 @@ export interface WorkOrderImpactPreview {
   }[];
 }
 export type DomainValue =
+  | ShipmentValue
+  | {kind:"closure";id:string;closure_kind:"fulfillment"|"quality"|"cost";status:"closed"|"blocked";source:SourceRef|null;evidence:string;blocking_reasons:string[]}
   | {kind:"test";id:string;unit_id:string;revision_id:string;attempt:number;scope:TestScope;measurements:Measurement[];outcome:"pass"|"fail";rework_order_id:string|null;execution_event_ids:string[];source:SourceRef|null;actor_id:string;occurred_at:string;recorded_at:string}
   | {kind:"nonconformance";id:string;unit_id:string;test_id:string;defect:string;evidence:string;state:"open"|"rework"|"resolved"|"scrapped";rework_order_id:string|null;disposition:"rework"|"scrap"|null;disposition_evidence:string|null}
   | {kind:"rework";candidate_execution_events?:{id:string;station:string;route_version:string;occurred_at:string;result:"pass"|"fail";rework_order_id?:string|null}[];id:string;unit_id:string;nonconformance_id:string;revision_id:string;route_id:string;route_steps:{station:string;instruction_version:string}[];state:"open"|"complete";execution_event_ids:string[];test_ids:string[]}
@@ -425,7 +448,7 @@ export type DomainValue =
   | {kind:"plan";state:"confirmed"|"rejected";reason:string;source:SourceRef;input_revision_ids:string[];input_order_versions:{order_line_id:string;version:number}[];requirement_ids:string[];cutoff:string|null}
   | {kind:"requirement";plan_id:string;lineage_id:string;supersedes_requirement_id:string|null;work_order_id:string;execution_scope:"trial"|"bulk"|"common";material_id:string;owner_id:string;quantity:string;unit:string;balance:MaterialBalance;unqualified_quantity:string}
   | {kind:"commitment";requirement_id:string;type:"purchase"|"customer";owner_id:string;original_quantity:string;current_quantity:string;unit:string;original_due:string;current_due:string;source:SourceRef;promise_revisions:{source:SourceRef;quantity:string;current_due:string}[];material_lot_ids:string[];received:string;qualified:string;rejected:string}
-  | {kind:"material_lot";material_id:string;lot_id:string;owner_id:string;unit:string;scale:number;expiry:string;state:"active"|"frozen";source:SourceRef;received:string;qualified:string;rejected:string}
+  | {kind:"material_lot";ownership_balance?:OwnershipBalance;material_movements?:{id:string;movement:"return"|"raw_loss";quantity:string;supersedes_id:string|null;current:boolean;source:SourceRef|null;external_signatory:string;evidence:string}[];ownership_reconciliations?:{id:string;current:boolean;source:SourceRef|null;balance:OwnershipBalance}[];material_id:string;lot_id:string;owner_id:string;unit:string;scale:number;expiry:string;state:"active"|"frozen";source:SourceRef;received:string;qualified:string;rejected:string}
   | {kind:"receipt";original_quantity?:string;corrections?:{sequence:number;received_delta:string;accepted_delta:string;rejected_delta:string;evidence:string}[];confirmations?:SourceConfirmation[];commitment_id:string;material_lot_id:string;quantity:string;unit:string;source:SourceRef;accepted:string;rejected:string;uninspected:string};
 export interface ObjectDetail {
   summary: ObjectSummary;

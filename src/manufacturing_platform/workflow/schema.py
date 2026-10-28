@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -157,3 +157,22 @@ SELECT t.* FROM quality_tests t WHERE t.rework_order_id IS NULL OR EXISTS (
 );
 """
 SCHEMA += QUALITY_REVIEW_SCHEMA
+
+DELIVERY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS stock_basis_proofs(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),eco_id TEXT NOT NULL REFERENCES eco_changes(id),reservation_id TEXT NOT NULL REFERENCES reservations(id),exchange_id TEXT NOT NULL UNIQUE REFERENCES exchanges(id),proof_json TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS material_movements(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),material_lot_id TEXT NOT NULL REFERENCES material_lots(id),movement TEXT NOT NULL CHECK(movement IN ('return','raw_loss')),q_atoms INTEGER NOT NULL CHECK(q_atoms>0),supersedes_id TEXT UNIQUE REFERENCES material_movements(id),source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_json TEXT NOT NULL,external_signatory TEXT NOT NULL,evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id));
+CREATE VIEW IF NOT EXISTS effective_material_movements AS SELECT m.* FROM material_movements m WHERE NOT EXISTS(SELECT 1 FROM material_movements correction WHERE correction.supersedes_id=m.id);
+CREATE TABLE IF NOT EXISTS ownership_reconciliations(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),material_lot_id TEXT NOT NULL REFERENCES material_lots(id),balance_json TEXT NOT NULL,source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_json TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id));
+CREATE TABLE IF NOT EXISTS closures(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),kind TEXT NOT NULL CHECK(kind IN ('fulfillment','quality','cost')),source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_json TEXT NOT NULL,evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id));
+CREATE TABLE IF NOT EXISTS shipments(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),order_line_id TEXT NOT NULL REFERENCES order_lines(id),exchange_id TEXT NOT NULL REFERENCES exchanges(id),q_atoms INTEGER NOT NULL CHECK(q_atoms>0),unit TEXT NOT NULL,units_json TEXT NOT NULL,boxes_json TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('pending','accepted','rejected','held')),created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS shipments_page ON shipments(project_id,created_at,id);
+CREATE TABLE IF NOT EXISTS shipment_claims(unit_id TEXT PRIMARY KEY REFERENCES units(id),project_id TEXT NOT NULL REFERENCES projects(id),order_line_id TEXT NOT NULL REFERENCES order_lines(id),shipment_id TEXT NOT NULL REFERENCES shipments(id));
+CREATE TABLE IF NOT EXISTS shipment_items(unit_id TEXT PRIMARY KEY REFERENCES units(id),project_id TEXT NOT NULL REFERENCES projects(id),order_line_id TEXT NOT NULL REFERENCES order_lines(id),shipment_id TEXT NOT NULL REFERENCES shipments(id),receipt_id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS shipment_box_claims(box_id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),shipment_id TEXT NOT NULL REFERENCES shipments(id));
+CREATE TABLE IF NOT EXISTS shipment_freeze_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,project_id TEXT NOT NULL REFERENCES projects(id),unit_id TEXT NOT NULL REFERENCES units(id),state TEXT NOT NULL CHECK(state IN ('pending','frozen','released')),source_sequence INTEGER,reference TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS shipment_freeze_scope ON shipment_freeze_events(project_id,unit_id,seq DESC);
+CREATE TABLE IF NOT EXISTS delivery_facts(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),shipment_id TEXT NOT NULL REFERENCES shipments(id),action TEXT NOT NULL CHECK(action IN ('sign','accept')),q_atoms INTEGER NOT NULL CHECK(q_atoms>0),source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_json TEXT NOT NULL,external_signatory TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id));
+CREATE TABLE IF NOT EXISTS acceptance_issues(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),shipment_id TEXT NOT NULL REFERENCES shipments(id),fact_id TEXT NOT NULL REFERENCES delivery_facts(id),title TEXT NOT NULL,owner_id TEXT NOT NULL,owner_name TEXT NOT NULL,required INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS acceptance_resolutions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),issue_id TEXT NOT NULL UNIQUE REFERENCES acceptance_issues(id),evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL);
+"""
+SCHEMA += DELIVERY_SCHEMA

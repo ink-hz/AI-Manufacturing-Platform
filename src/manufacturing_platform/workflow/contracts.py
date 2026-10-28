@@ -138,6 +138,7 @@ class GrantChange(CommandBase):
 
 
 class GrantView(StrictModel):
+    display_name: str | None = None
     scope: GrantScope
     user_id: UUID
     roles: list[str]
@@ -254,6 +255,7 @@ class SourceRef(StrictModel):
 
 
 class MaterialBalance(StrictModel):
+    blocking_reasons: list[str] = Field(default_factory=list)
     required: NonnegativeQuantity
     in_transit: NonnegativeQuantity
     received: NonnegativeQuantity

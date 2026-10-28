@@ -762,6 +762,23 @@ def record_execution(tx, context, command: RecordExecution):
                 proposed_by_lot[lot["id"]] = (
                     proposed_by_lot.get(lot["id"], 0) + requested
                 )
+                if tx.execute(
+                    "SELECT 1 FROM material_movements WHERE project_id=? AND material_lot_id=? LIMIT 1",
+                    (str(context.project_id), lot["id"]),
+                ).fetchone():
+                    from .ownership import balance as ownership_balance, material_hold
+
+                    if material_hold(tx, context.project_id, lot):
+                        reason = "actual material movement conflicts with authority reservation; supply reconciliation required"
+                        break
+                    physical = ownership_balance(tx, context.project_id, lot)
+                    if not physical.complete or proposed_by_lot[
+                        lot["id"]
+                    ] > material_atoms(
+                        physical.balance, lot["unit"], lot["unit"], lot["scale"]
+                    ):
+                        reason = "material use exceeds actual unconsumed stock after return or raw loss"
+                        break
                 if (
                     proposed_by_lot[lot["id"]] > eligible - used
                     or proposed_by_lot[lot["id"]] > eligible_all - used_all

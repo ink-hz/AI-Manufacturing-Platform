@@ -680,9 +680,13 @@ def order_detail(tx, project_id, object_id):
         )
         for r in links
     ]
+    from .delivery import remaining, fulfillment_status
+
+    delivery_balance = remaining(tx, project_id, object_id)
     return ObjectDetail[OrderLineValue](
         summary=_summary(row, ObjectKind.order_line, p),
         value=OrderLineValue(
+            fulfillment_status=fulfillment_status(tx, project_id),
             work_order_impact=work_order_impact(tx, project_id, object_id, p),
             demand_id=row["demand_id"],
             original_quantity=amount(row["original_q_atoms"], p),
@@ -697,10 +701,10 @@ def order_detail(tx, project_id, object_id):
                 final_good_count(tx, project_id, object_id) * (10 ** p["unit_scale"]), p
             ),
             shipped=amount(shipped, p),
-            signed="0",
-            accepted="0",
+            signed=str(delivery_balance.signed),
+            accepted=str(delivery_balance.accepted),
             remaining_to_ship=amount(max(0, quantity - shipped), p),
-            remaining_to_accept=amount(quantity, p),
+            remaining_to_accept=str(delivery_balance.remaining_to_accept),
         ),
         relations=relations,
         evidence=[ObjectEvidence(reference=source["evidence"], source=source)],
@@ -771,6 +775,9 @@ def project_summary(tx, project_row):
     allocation = allocated(tx, pid)
     original, current = totals
     shipped = project_shipped_atoms(tx, project_row)
+    from .delivery import totals as delivery_totals
+
+    facts = delivery_totals(tx, pid)
     return ProjectQuantitySummary(
         original_order_quantity=amount(original, project_row),
         current_order_quantity=amount(current, project_row),
@@ -779,10 +786,12 @@ def project_summary(tx, project_row):
             final_good_count(tx, pid) * (10 ** project_row["unit_scale"]), project_row
         ),
         shipped=amount(shipped, project_row),
-        signed="0",
-        accepted="0",
+        signed=amount(facts.get("sign", 0), project_row),
+        accepted=amount(facts.get("accept", 0), project_row),
         remaining_to_ship=amount(max(0, current - shipped), project_row),
-        remaining_to_accept=amount(current, project_row),
+        remaining_to_accept=amount(
+            max(0, current - facts.get("accept", 0)), project_row
+        ),
     )
 
 

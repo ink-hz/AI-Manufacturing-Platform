@@ -104,6 +104,7 @@ class WorkOrderImpactPreview(StrictModel):
 
 
 class OrderLineValue(DomainValue):
+    fulfillment_status: Literal["open", "eligible", "closed"] = "open"
     kind: Literal["order_line"] = "order_line"
     work_order_impact: WorkOrderImpactPreview
     demand_id: UUID

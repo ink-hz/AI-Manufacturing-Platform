@@ -78,6 +78,7 @@ class WorkflowHarness:
                     uid in USERS.values()
                     and uid not in {USERS[n] for n in self.inactive}
                 ),
+                resolve_subject_profiles=lambda ids: [dict(user_id=str(uid), display_name="Quality Engineer" if name=="quality" else name.title()) for name,uid in USERS.items() if uid in ids and name not in self.inactive],
                 release="test",
                 dataset={
                     "id": "workflow-test",
@@ -255,8 +256,8 @@ def _revision(self, project_id, *, internal_revision="M1", customer_revision="C1
     return {"id": result["object_id"]}
 
 
-def _order_workorder(self, *, quantity="5", trial_quantity="1", contract=None):
-    p = self.create_project(**({"contract": contract} if contract else {}))
+def _order_workorder(self, *, quantity="5", trial_quantity="1", contract=None, mode="internal"):
+    p = self.create_project(mode=mode, **({"contract": contract} if contract else {}))
     demand = self.command(
         p["id"],
         "demand.record",
@@ -499,3 +500,158 @@ def _rework(self, project_id, test_id):
 WorkflowHarness.executed_unit = _executed_unit
 WorkflowHarness.test = _test
 WorkflowHarness.rework = _rework
+
+
+def _released_order(self, *, quantity="100", mode="internal"):
+    """C2 success factory: every platform fact passes the public API."""
+    from datetime import UTC, datetime
+    from .test_execution import ready_for_trial
+
+    p, wo, _, _ = ready_for_trial(
+        self,
+        quantity=quantity,
+        trial_quantity=quantity,
+        project_mode=mode,
+        contract_override={
+            "customer_release_required": False,
+            "acceptance_required": True,
+        },
+    )
+    units = []
+    for offset in range(0, int(quantity), 50):
+        units.extend(
+            self.client()
+            .get(f"{BASE}/projects/{p['id']}/objects/unit?limit=50&offset={offset}")
+            .json()["items"]
+        )
+    self.grant(
+        p["id"],
+        "quality",
+        ["quality"],
+        ["inspection", "disposition", "quality_release"],
+    )
+    self.grant(p["id"], "warehouse", ["warehouse"])
+    workorder = self.object(p["id"], "work_order", wo["id"])
+    order = {"id": workorder["order_line_id"]}
+    self.command(
+        p["id"],
+        "order.allocate",
+        actor_name="planner",
+        order_line_id=order["id"],
+        work_order_id=wo["id"],
+        quantity=quantity,
+        unit="piece",
+    )
+    start = self.command(
+        p["id"],
+        "production.start",
+        actor_name="production",
+        work_order_id=wo["id"],
+        mode="trial",
+        unit_ids=[u["id"] for u in units],
+        quantity=quantity,
+    )
+    self.command(
+        p["id"],
+        "exchange.dispatch",
+        actor_name="production",
+        exchange_id=start["exchange_id"],
+    )
+    lot = (
+        self.client()
+        .get(f"{BASE}/projects/{p['id']}/objects/material_lot?limit=1")
+        .json()["items"][0]["id"]
+    )
+    for unit in units:
+        detail = self.object(p["id"], "unit", unit["id"])
+        self.command(
+            p["id"],
+            "execution.record",
+            actor_name="production",
+            source=self.source(str(uuid4()), object_type="execution"),
+            work_order_id=wo["id"],
+            sn=detail["sn"],
+            station="assembly",
+            route_version="S1",
+            program_version="P1",
+            firmware_version="F1",
+            material_uses=[dict(lot_id=lot, quantity="0.001", unit="kg")],
+            result="pass",
+            occurred_at=datetime.now(UTC).isoformat(),
+        )
+        self.test(p["id"], unit["id"], measured="5")
+    for actor, kind in [("production", "manufacturing"), ("quality", "quality")]:
+        self.command(
+            p["id"],
+            "release.decide",
+            actor_name=actor,
+            kind=kind,
+            unit_ids=[u["id"] for u in units],
+            decision="approved",
+            evidence="independent measured release",
+        )
+    return p, order, units
+
+
+def _ship(
+    self,
+    project_id,
+    order_id,
+    unit_ids,
+    *,
+    expected_status=200,
+    dispatch=True,
+    **overrides,
+):
+    body = dict(
+        order_line_id=order_id,
+        unit_ids=unit_ids,
+        boxes=[],
+        quantity=str(len(unit_ids)),
+        unit="piece",
+    )
+    body.update(overrides)
+    result = self.command(
+        project_id,
+        "shipment.request",
+        actor_name="warehouse",
+        expected_status=expected_status,
+        **body,
+    )
+    if expected_status != 200:
+        return result
+    if dispatch:
+        self.command(
+            project_id,
+            "exchange.dispatch",
+            actor_name="warehouse",
+            exchange_id=result["exchange_id"],
+        )
+    return self.object(project_id, "shipment", result["object_id"])
+
+
+def _sign_and_accept(self, project_id, shipment_id, *, quantity):
+    from datetime import UTC, datetime
+
+    for action, kind in [
+        ("delivery.sign", "delivery_sign"),
+        ("delivery.accept", "delivery_accept"),
+    ]:
+        source = self.source(str(uuid4()), object_type=kind)
+        now = datetime.now(UTC).isoformat()
+        source.update(occurred_at=now, collected_at=now)
+        self.command(
+            project_id,
+            action,
+            actor_name="warehouse",
+            shipment_id=shipment_id,
+            quantity=quantity,
+            source=source,
+            external_signatory="Customer receiver Alice",
+            **({"issues": []} if kind == "delivery_accept" else {}),
+        )
+
+
+WorkflowHarness.released_order = _released_order
+WorkflowHarness.ship = _ship
+WorkflowHarness.sign_and_accept = _sign_and_accept

@@ -56,7 +56,13 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
     case "supply.receive":
       return [...target("commitment",draft.commitment_id),...target("material_lot",draft.material_lot_id)];
     case "eco.open":return [...target("revision",draft.old_revision_id),...target("revision",draft.new_revision_id||"")];
-    case "eco.disposition":
+    case "eco.disposition":return target("eco",draft.eco_id);
+    case "shipment.request":return target("order_line",draft.order_line_id);
+    case "delivery.sign":
+    case "delivery.accept":return target("shipment",draft.shipment_id);
+    case "ownership.movement":
+    case "ownership.reconcile":return target("material_lot",draft.material_lot_id);
+    case "stock_basis.reconcile":return target("eco",draft.eco_id);
     case "eco.switch":
     case "eco.close":return target("eco",draft.eco_id);
     case "exchange.dispatch":
@@ -73,6 +79,8 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
 }
 function facts(v: DomainValue): [string, string][] {
   switch (v.kind) {
+    case "shipment":return [["实发",v.shipped],["签收",v.signed],["验收",v.accepted],["状态",label(v.state)]];
+    case "closure":return [["类型",label(v.closure_kind)],["当前状态",label(v.status)],["证据",v.evidence]];
     case "test":return [["次数",String(v.attempt)],["测量判定",v.outcome],["规范",v.scope.test_version]];
     case "nonconformance":return [["缺陷",v.defect],["状态",v.state]];
     case "rework":return [["路线",v.route_id],["状态",v.state]];

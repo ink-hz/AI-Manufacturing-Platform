@@ -103,7 +103,7 @@ export function createWorkflowApi(
     project: (id: string) => request<ProjectDetail>(p(id)),
     createProject: (v: ProjectCreate) =>
       request<ProjectDetail>("/projects", "POST", v),
-    members: (id: string) => request<{ items: Grant[] }>(p(id) + "/members"),
+    members: (id: string, limit?:number, offset=0) => request<{ items: Grant[] }>(p(id) + "/members" + (limit===undefined?"":`?limit=${limit}&offset=${offset}`)),
     grant: (id: string, user: string, v: GrantChange) =>
       request<CommandResult>(
         p(id) + "/members/" + encodeURIComponent(user),

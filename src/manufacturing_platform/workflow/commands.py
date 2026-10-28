@@ -69,6 +69,8 @@ WorkflowAction = Literal[
     "delivery.resolve_issue",
     "closure.record",
     "ownership.reconcile",
+    "ownership.movement",
+    "stock_basis.reconcile",
     "freeze.request",
     "rma.open",
     "capa.update",
@@ -90,6 +92,7 @@ class CommandContext:
     dataset: Dataset
     # Prepare writes only; the orchestrator performs I/O after the transaction closes.
     exchange_service: "ExchangeService | None" = None
+    subject_profiles: dict[str, str] | None = None
 
 
 C = TypeVar("C", bound=WorkflowCommand)

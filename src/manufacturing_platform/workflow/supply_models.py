@@ -140,7 +140,19 @@ class CommitmentValue(DomainValue):
     rejected: NonnegativeQuantity
 
 
+from .delivery_models import (
+    OwnershipBalance,
+    MaterialMovementView,
+    OwnershipReconciliationView,
+)
+
+
 class MaterialLotValue(DomainValue):
+    ownership_balance: OwnershipBalance | None = None
+    material_movements: list[MaterialMovementView] = Field(default_factory=list)
+    ownership_reconciliations: list[OwnershipReconciliationView] = Field(
+        default_factory=list
+    )
     kind: Literal["material_lot"] = "material_lot"
     material_id: str
     lot_id: str

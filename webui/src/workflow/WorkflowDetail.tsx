@@ -97,7 +97,7 @@ export function DetailContent({
       </p>
       {v.kind === "eco" && <>
         <Facts items={[["旧固定版本",v.old_revision],["新固定版本",v.new_revision||"仅取消剩余范围"],["变更原因",v.reason]]}/>
-        {!!v.unresolved_stock_basis_ids?.length&&<p role="alert">库存来源覆盖尚未核清，关闭受阻；需权威来源对账。</p>}
+        {!!v.unresolved_stock_basis_ids?.length&&<p role="alert">库存来源覆盖尚未核清，关闭受阻。工程负责人需在交付工作区请求原始权威来源证明；缺少历史证明时保持阻断。</p>}
         <p>实施结果：{({pending:"尚未实施",retained:"保留旧版，未执行工程切换",cancelled:"实际取消剩余范围",switched:"已执行新版切换",mixed:"多种边界结果"} as Record<string,string>)[v.implementation_outcome||"pending"]}</p>
         {(v.retentions||[]).map(r=><p key={r.work_order_id}>保留旧版 {r.quantity} · 已接受序列号 {r.unit_ids.length} · {r.evidence}</p>)}
         <h4>旧版本受影响记录与处置</h4><table><thead><tr><th>类别 / 对象</th><th>所有者</th><th>数量</th><th>已处置</th><th>凭据</th></tr></thead><tbody>{v.impacts.map(i=><tr key={i.id}><td>{label(i.type)} · {i.title} · {label(i.state)}</td><td>{i.owner_id}</td><td>{i.quantity} {i.unit}</td><td>{i.resolved_quantity}</td><td>{i.dispositions.map(d=>`${label(d.decision)} ${d.quantity} · ${d.evidence}`).join("；")||"待处置"}</td></tr>)}</tbody></table>
@@ -284,6 +284,7 @@ export function DetailContent({
           ["计划需求",v.quantity+" "+v.unit],["来源截止",v.balance.cutoff||"未提供"],["来源版本",v.balance.source_version]]}/>
         <table><thead><tr><th>需求</th><th>在途</th><th>已接收</th><th>已检合格</th><th>拒收</th><th>确认预留</th><th>缺口</th><th>单位</th></tr></thead>
         <tbody><tr><td>{v.balance.required}</td><td>{v.balance.in_transit}</td><td>{v.balance.received}</td><td>{v.balance.qualified}</td><td>{v.balance.rejected}</td><td>{v.balance.reserved}</td><td>{v.balance.shortage}</td><td>{v.balance.unit}</td></tr></tbody></table>
+        {v.balance.blocking_reasons?.map(reason=><p role="alert" key={reason}>{reason}</p>)}
         <p>库存预留由权威系统原子接受。当前人工到货及检验数量不会增加确认预留。</p>
       </>}
       {v.kind === "commitment" && <>
@@ -311,8 +312,13 @@ export function DetailContent({
         <Facts items={[["权威系统",v.system],["阶段",label(v.phase)],["请求数量",v.requested+" "+v.unit],["已接受",v.accepted],["未接受",v.rejected],["原因",v.reason]]}/>
         {!!v.discrepancies?.length&&<><h4>对账异常与处理</h4><ol>{v.discrepancies.map(d=><li key={d.sequence}>负责人 {d.owner_name} · {d.reason} · {d.evidence}{d.resolves_sequence&&" · 已追加处理记录"}</li>)}</ol></>}
         <h4>阶段记录（最近 100 条）</h4><ol>{v.events.map(e=><li key={e.sequence}>{label(e.phase)} · {e.reason}</li>)}</ol>
-        {v.receipt&&<><h4>权威明细</h4><table><thead><tr><th>对象</th><th>接受数量或状态</th><th>单位</th></tr></thead><tbody>{v.receipt.details.map(d=><tr key={d.key}><td>{"effect" in d?(d.effect==="cancel_remaining"?"取消原工单未执行范围":"创建新版工单"):"lot_id" in d?d.owner_id:"sn" in d?d.sn:d.scope==="trial"?"试产范围（批量保持停机）":"全部已开工范围"}</td><td>{"effect" in d?`${d.quantity} · 保留 ${d.retained_quantity}`:"lot_id" in d?d.quantity:label(d.state)}</td><td>{"lot_id" in d?d.unit:"件"}</td></tr>)}</tbody></table></>}
+        {v.stock_basis_proof&&<><h4>已核验原始库存覆盖 · {label(v.stock_basis_proof.mode)}</h4>{v.stock_basis_proof.sources.map(s=><section key={s.source.external_id}><p>{s.material_id} · 所有者 {s.owner_id} · 原始实收 {s.quantity} {s.unit} · 来源顺序 {s.sequence}</p><Source value={s.source}/></section>)}</>}
+        {v.receipt&&<><h4>权威明细</h4><table><thead><tr><th>对象</th><th>接受数量或状态</th><th>单位</th></tr></thead><tbody>{v.receipt.details.map(d=><tr key={d.key}><td>{"effect" in d?(d.effect==="cancel_remaining"?"取消原工单未执行范围":"创建新版工单"):"lot_id" in d?d.owner_id:"sn" in d?d.sn:d.scope==="trial"?"试产范围（批量保持停机）":"全部已开工范围"}</td><td>{"effect" in d?`${d.quantity} · 保留 ${d.retained_quantity}`:"lot_id" in d?d.quantity:"order_line_id" in d?"实物已发出"+(d.box_id?` · 箱 ${d.box_id}`:""):label(d.state)}</td><td>{"lot_id" in d?d.unit:"件"}</td></tr>)}</tbody></table></>}
       </>}
+      {v.kind === "shipment" && <><Facts items={[["发货状态",label(v.state)],["实际发出",v.shipped+" "+v.unit],["已签收",v.signed],["已验收",v.accepted],["订单待发",v.remaining.remaining_to_ship],["订单待验收",v.remaining.remaining_to_accept]]}/>{v.blocking_reasons.map(reason=><p key={reason}>{reason}</p>)}<h4>箱与明确序列号</h4>{v.boxes.map(box=><p key={box.box_id}>箱 {box.box_id} · {box.unit_ids.length} 件</p>)}<h4>独立签收与验收事实</h4>{v.facts.map(f=><section key={f.id}><p>{f.action==="sign"?"签收":"验收"} {f.quantity} {v.unit} · 实际签署人 {f.external_signatory}</p>{f.source?<Source value={f.source}/>:<p>来源未通过准入</p>}</section>)}<h4>验收问题</h4>{v.issues.map(i=><p key={i.id}>{i.title} · 责任人 {i.owner_name} · {i.required?"必须解决":"一般"} · {i.resolved?"已解决":"未解决"} · {i.evidence}</p>)}</>}
+      {v.kind === "closure" && <><Facts items={[["独立关闭类型",label(v.closure_kind)],["当前条件",label(v.status)],["证据",v.evidence]]}/>{v.blocking_reasons.map(reason=><p key={reason}>{reason}</p>)}</>}
+      {v.kind === "material_lot" && v.ownership_balance && <><h4>实际所有权余额</h4><Facts items={[["所有者",v.ownership_balance.owner_id],["实收",v.ownership_balance.received],["已消耗",v.ownership_balance.consumed],["原料实际损耗",v.ownership_balance.scrapped],["实际退回",v.ownership_balance.returned],["余额",v.ownership_balance.balance+" "+v.unit],["来源完整",v.ownership_balance.complete?"是":"待权威核验"]]}/></>}
+      {v.kind === "material_lot" && <>{v.ownership_balance?.hold_reason&&<p role="alert">{v.ownership_balance.hold_reason}</p>}<h4>实际原料移动（最近 100 条）</h4>{v.material_movements?.map(m=><section key={m.id}><p>{m.movement==="return"?"实物退回":"原料实际损耗"} {m.quantity} {v.unit} · {m.external_signatory} · {m.current?"当前事实":"已追加纠正，保留原始记录"} · {m.evidence}</p>{m.source?<Source value={m.source}/>:<p>来源未通过准入</p>}</section>)}<h4>所有权核对（最近 20 条）</h4>{v.ownership_reconciliations?.map(r=><section key={r.id}><p>{r.current?"与当前实际事实一致":"核对后实际事实已变化"} · 原料余额 {r.balance.balance} {v.unit}</p>{r.source&&<Source value={r.source}/>}</section>)}</>}
       {v.kind === "receipt" && v.corrections?.map(c=><p key={c.sequence}>追加纠正 · 到货 {c.received_delta} · 合格 {c.accepted_delta} · 拒收 {c.rejected_delta} · {c.evidence}</p>)}
       {v.kind === "receipt" && v.confirmations?.map(c=><section key={c.sequence}><h4>来源确认 · {label(c.source.mode)}</h4><p>外部签署人：{c.external_actor} · {c.signature}</p><Source value={c.source}/></section>)}
       {"source" in v && v.source && <Source value={v.source} />}

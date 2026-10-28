@@ -30,10 +30,14 @@ def build_workflow_router(
     release,
     dataset,
     test_evidence_reader=None,
+    resolve_subject_profiles=None,
 ):
     store = WorkflowStore(database_path, authority_database_path, dataset)
     service = WorkflowService(
-        store, resolve_subject, test_evidence_reader=test_evidence_reader
+        store,
+        resolve_subject,
+        test_evidence_reader=test_evidence_reader,
+        resolve_subject_profiles=resolve_subject_profiles,
     )
 
     class PrivateRoute(APIRoute):
@@ -151,8 +155,12 @@ def build_workflow_router(
         return service.detail(actor(request), project_id)
 
     @router.get("/projects/{project_id}/members")
-    def members(project_id: UUID, request: Request):
-        return {"items": service.members(actor(request), project_id)}
+    def members(project_id: UUID, request: Request, limit: int = 50, offset: int = 0):
+        return {
+            "items": service.members(
+                actor(request), project_id, limit=limit, offset=offset
+            )
+        }
 
     @router.put("/projects/{project_id}/members/{user_id}")
     async def grant(project_id: UUID, user_id: UUID, request: Request):

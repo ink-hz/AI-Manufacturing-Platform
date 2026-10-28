@@ -137,10 +137,47 @@ class EcoReceiptDetail(StrictModel):
     retained_quantity: NonnegativeQuantity
 
 
+class ShipPayload(StrictModel):
+    kind: Literal["ship"] = "ship"
+    shipment_id: UUID
+    order_line_id: UUID
+    quantity: Quantity
+    unit: str
+    scale: int = Field(strict=True, ge=0, le=6)
+    order_quantity: Quantity
+    units: list[tuple[UUID, str, UUID]] = Field(min_length=1, max_length=500)
+    boxes: list["ShipmentBox"] = Field(max_length=500)
+
+
+from .delivery_models import ShipmentBox
+
+
+class ShipmentReceiptDetail(StrictModel):
+    key: str
+    unit_id: UUID
+    sn: str
+    work_order_id: UUID
+    order_line_id: UUID
+    box_id: str | None
+
+
+class StockProofPayload(StrictModel):
+    kind: Literal["stock_proof"] = "stock_proof"
+    eco_id: UUID
+    reservation_id: UUID
+    original_exchange_id: UUID
+    original_business_key: str
+    original_receipt_hash: str
+    original_opening_hash: str
+    original_accounted_atoms: int = Field(strict=True, ge=0)
+
+
 class ExternalRequest(StrictModel):
     id: UUID
     system: str = Field(min_length=1, max_length=200)
     action: Literal[
+        "stock_basis.reconcile",
+        "shipment.request",
         "eco.switch",
         "reservation.request",
         "production.start",
@@ -151,13 +188,21 @@ class ExternalRequest(StrictModel):
     source_version: int = Field(strict=True, ge=1)
     project_id: UUID
     typed_payload: Annotated[
-        ReservePayload | StartPayload | StopPayload | ResumePayload | EcoSwitchPayload,
+        ReservePayload
+        | StartPayload
+        | StopPayload
+        | ResumePayload
+        | EcoSwitchPayload
+        | ShipPayload
+        | StockProofPayload,
         Field(discriminator="kind"),
     ]
 
     @model_validator(mode="after")
     def matching_action(self):
         expected = {
+            "stock_basis.reconcile": "stock_proof",
+            "shipment.request": "ship",
             "eco.switch": "eco_switch",
             "reservation.request": "reserve",
             "production.start": "start",
@@ -224,7 +269,11 @@ class ExternalReceipt(StrictModel):
     accepted_quantity: NonnegativeQuantity
     rejected_quantity: NonnegativeQuantity
     details: list[
-        ReceiptDetail | UnitReceiptDetail | ControlReceiptDetail | EcoReceiptDetail
+        ReceiptDetail
+        | UnitReceiptDetail
+        | ControlReceiptDetail
+        | EcoReceiptDetail
+        | ShipmentReceiptDetail
     ] = Field(max_length=500)
     occurred_at: datetime
     error: str | None = Field(default=None, max_length=2000)
@@ -341,7 +390,26 @@ class ExchangeDiscrepancy(StrictModel):
     resolves_sequence: int | None
 
 
+class StockSourceEvent(StrictModel):
+    project_id: UUID
+    lot_id: UUID
+    owner_id: str
+    material_id: str
+    unit: str
+    quantity: Quantity
+    source: SourceRef
+    sequence: int = Field(strict=True, ge=1)
+
+
+class StockBasisProof(StrictModel):
+    request_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    mode: Literal["mock", "api"]
+    receipt: ExternalReceipt
+    sources: list[StockSourceEvent] = Field(min_length=1, max_length=500)
+
+
 class ExchangeValue(DomainValue):
+    stock_basis_proof: StockBasisProof | None = None
     discrepancies: list[ExchangeDiscrepancy] = Field(default_factory=list)
     kind: Literal["exchange"] = "exchange"
     action: str

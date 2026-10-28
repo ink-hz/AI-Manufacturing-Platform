@@ -89,6 +89,12 @@ class MockAuthorityAdapter:
                 result = self._reserve(
                     tx, request, h, sequence, fault_name, fault_value
                 )
+            elif request.action == "shipment.request":
+                result = self._ship(tx, request, h, sequence, fault_name)
+                tx.execute(
+                    "UPDATE authority_operations SET receipt_json=? WHERE seq=?",
+                    (result.model_dump_json(), sequence),
+                )
             elif request.action == "eco.switch":
                 result = self._switch(tx, request, h, sequence, fault_name)
                 tx.execute(
@@ -113,6 +119,99 @@ class MockAuthorityAdapter:
         if fault_name == "timeout_after_commit":
             raise TimeoutError("authority committed; reply lost")
         return result
+
+    def _ship(self, tx, request, h, sequence, fault_name):
+        from ..delivery import receipt_details
+
+        payload = request.typed_payload
+        ids = [str(uid) for uid, _, _ in payload.units]
+        boxes = {
+            str(uid): box.box_id.strip()
+            for box in payload.boxes
+            for uid in box.unit_ids
+        }
+        rejected = (
+            fault_name == "reject"
+            or len(set(ids)) != len(ids)
+            or payload.quantity != len(ids)
+        )
+        if payload.boxes and (
+            len(boxes) != len(ids)
+            or set(boxes) != set(ids)
+            or sum(len(b.unit_ids) for b in payload.boxes) != len(ids)
+        ):
+            rejected = True
+        for uid, sn, wid in payload.units:
+            started = tx.execute(
+                "SELECT * FROM authority_start_units WHERE project_id=? AND unit_id=? AND work_order_id=?",
+                (str(request.project_id), str(uid), str(wid)),
+            ).fetchone()
+            freeze = tx.execute(
+                "SELECT state FROM authority_shipment_freezes WHERE project_id=? AND unit_id=?",
+                (str(request.project_id), str(uid)),
+            ).fetchone()
+            if (
+                not started
+                or started["sn_key"] != sn_key(sn)
+                or tx.execute(
+                    "SELECT 1 FROM authority_shipments WHERE unit_id=? OR sn_key=?",
+                    (str(uid), sn_key(sn)),
+                ).fetchone()
+                or (freeze and freeze[0] == "frozen")
+            ):
+                rejected = True
+        used = tx.execute(
+            "SELECT COUNT(*) FROM authority_shipments WHERE project_id=? AND order_line_id=?",
+            (str(request.project_id), str(payload.order_line_id)),
+        ).fetchone()[0]
+        if Decimal(used) + payload.quantity > payload.order_quantity:
+            rejected = True
+        for box in payload.boxes:
+            if tx.execute(
+                "SELECT 1 FROM authority_shipment_boxes WHERE box_id=?",
+                (box.box_id.strip(),),
+            ).fetchone():
+                rejected = True
+        if not rejected:
+            tx.executemany(
+                "INSERT INTO authority_shipments VALUES (?,?,?,?,?,?,?)",
+                [
+                    (
+                        str(uid),
+                        str(request.project_id),
+                        str(payload.order_line_id),
+                        str(payload.shipment_id),
+                        str(wid),
+                        sn_key(sn),
+                        boxes.get(str(uid)),
+                    )
+                    for uid, sn, wid in payload.units
+                ],
+            )
+            tx.executemany(
+                "INSERT INTO authority_shipment_boxes VALUES (?,?,?)",
+                [
+                    (
+                        box.box_id.strip(),
+                        str(request.project_id),
+                        str(payload.shipment_id),
+                    )
+                    for box in payload.boxes
+                ],
+            )
+        return ExternalReceipt(
+            receipt_id=uuid4(),
+            business_key=request.business_key,
+            request_hash=h,
+            source_object_id=str(payload.shipment_id),
+            source_version=request.source_version,
+            sequence=sequence,
+            phase="rejected" if rejected else "accepted",
+            accepted_quantity="0" if rejected else str(payload.quantity),
+            rejected_quantity=str(payload.quantity) if rejected else "0",
+            details=receipt_details(payload),
+            occurred_at=datetime.now(UTC),
+        )
 
     def _reserve(self, tx, request, h, sequence, fault_name, fault_value):
         payload = request.typed_payload
@@ -588,6 +687,105 @@ class MockAuthorityAdapter:
         ):
             receipt.details[0].work_order_id = uuid4()
         return receipt
+
+    def stock_basis(self, request):
+        """Read original immutable authority coverage; never repair it by current net stock."""
+        from ..exchange_models import StockBasisProof, StockSourceEvent
+
+        payload = request.typed_payload
+        with self.store.transaction() as tx:
+            original = tx.execute(
+                "SELECT * FROM authority_operations WHERE system=? AND business_key=?",
+                (self._system(request.system), payload.original_business_key),
+            ).fetchone()
+            if not original or not original["receipt_json"]:
+                raise DomainError("SOURCE_UNAVAILABLE", 503, "Source is not connected")
+            receipt = ExternalReceipt.model_validate_json(original["receipt_json"])
+            original_request = ExternalRequest.model_validate_json(
+                original["request_json"]
+            )
+            reservation = original_request.typed_payload
+            if (
+                original_request.action != "reservation.request"
+                or original_request.project_id != request.project_id
+                or str(reservation.reservation_id) != str(payload.reservation_id)
+                or not receipt.details
+                or receipt.details[0].stock_basis is None
+            ):
+                raise DomainError(
+                    "SOURCE_DISCREPANCY",
+                    409,
+                    "Source has no original historical stock basis",
+                )
+            sources = []
+            for basis in receipt.details[0].stock_basis:
+                row = tx.execute(
+                    "SELECT * FROM source_events WHERE system=? AND object_type='receipt' AND external_id=? AND project_id=?",
+                    (
+                        self._system(request.system),
+                        basis.external_id,
+                        str(request.project_id),
+                    ),
+                ).fetchone()
+                if not row or row["payload_hash"] != digest(
+                    json.loads(row["payload_json"])
+                ):
+                    raise DomainError(
+                        "SOURCE_DISCREPANCY", 409, "Historical source proof unavailable"
+                    )
+                record = InboundReceipt.model_validate_json(row["payload_json"])
+                covered = tx.execute(
+                    "SELECT q_atoms FROM authority_stock_coverage WHERE reservation_id=? AND source_external_id=?",
+                    (str(reservation.reservation_id), basis.external_id),
+                ).fetchone()
+                total = tx.execute(
+                    "SELECT COALESCE(SUM(c.q_atoms),0) FROM authority_stock_coverage c JOIN authority_reservations r ON r.id=c.reservation_id WHERE r.project_id=? AND r.lot_id=? AND c.source_external_id=?",
+                    (
+                        str(request.project_id),
+                        str(reservation.lot_id),
+                        basis.external_id,
+                    ),
+                ).fetchone()[0]
+                if (
+                    not covered
+                    or covered[0]
+                    != atoms(
+                        basis.quantity,
+                        reservation.unit,
+                        reservation.unit,
+                        reservation.scale,
+                    )
+                    or total
+                    > atoms(
+                        record.quantity,
+                        record.unit,
+                        reservation.unit,
+                        reservation.scale,
+                    )
+                ):
+                    raise DomainError(
+                        "SOURCE_DISCREPANCY",
+                        409,
+                        "Historical disjoint coverage changed",
+                    )
+                sources.append(
+                    StockSourceEvent(
+                        project_id=record.project_id,
+                        lot_id=record.material_lot_id,
+                        owner_id=reservation.owner_id,
+                        material_id=reservation.material_id,
+                        unit=record.unit,
+                        quantity=str(record.quantity),
+                        source=record.source,
+                        sequence=row["seq"],
+                    )
+                )
+            return StockBasisProof(
+                request_hash=digest(request.model_dump(mode="json")),
+                mode=self.mode,
+                receipt=receipt,
+                sources=sources,
+            )
 
     def query(self, system, business_key):
         system = self._system(system)

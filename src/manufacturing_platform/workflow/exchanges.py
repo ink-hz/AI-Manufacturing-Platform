@@ -37,6 +37,7 @@ from .exchange_models import (
     ReservationValue,
     ReservePayload,
     ResumePayload,
+    ShipPayload,
     StartPayload,
     StopPayload,
 )
@@ -134,6 +135,10 @@ def public_reason(reason):
 
 def receipt_scope(tx, row, receipt):
     """Receipt evidence is visible only after binding all referenced identities to the request."""
+    if row["action"] == "shipment.request":
+        from .delivery import receipt_scope as shipment_receipt_scope
+
+        return shipment_receipt_scope(tx, row, receipt)
     if row["action"] == "eco.switch":
         from .eco import receipt_scope as eco_receipt_scope
 
@@ -441,14 +446,31 @@ class ExchangeService:
             authorize_policy(tx, actor, project_id, row["policy_action"])
         if row["phase"] in {"accepted", "posted"} and row["action"] != "source.pull":
             return result
-        receipt, records, problem = None, None, None
+        receipt, records, problem, stock_proof = None, None, None, None
         rejected_boundary = False
         try:
             if self.adapter is None:
                 raise DomainError(
                     "SOURCE_UNAVAILABLE", 503, "Configured authority is not connected"
                 )
-            if row["action"] == "source.pull":
+            if row["action"] == "stock_basis.reconcile":
+                from .exchange_models import StockBasisProof
+
+                query = getattr(self.adapter, "stock_basis", None)
+                if query is None:
+                    raise DomainError(
+                        "SOURCE_UNAVAILABLE",
+                        503,
+                        "Configured authority is not connected",
+                    )
+                request = ExternalRequest.model_validate_json(row["request_json"])
+                raw = query(request)
+                stock_proof = StockBasisProof.model_validate(
+                    raw.model_dump(mode="json")
+                    if isinstance(raw, StockBasisProof)
+                    else raw
+                )
+            elif row["action"] == "source.pull":
                 pull = PullSource.model_validate_json(row["request_json"])
                 snapshot = self.adapter.snapshot(pull.system, pull.object_type)
                 snapshot = AuthoritySnapshot.model_validate(
@@ -501,6 +523,19 @@ class ExchangeService:
                                 project_id,
                                 request.typed_payload,
                                 datetime.now(UTC),
+                            )
+                    elif request.action == "shipment.request":
+                        from .delivery import current_shipment_reasons
+
+                        with self.workflow.store.transaction() as live_tx:
+                            live_row = own(
+                                live_tx, "exchanges", project_id, result.exchange_id
+                            )
+                            authorize_policy(
+                                live_tx, actor, project_id, live_row["policy_action"]
+                            )
+                            ready = not current_shipment_reasons(
+                                live_tx, project_id, request.typed_payload.shipment_id
                             )
                     elif request.action == "eco.switch":
                         from .eco import revision_ready
@@ -568,7 +603,14 @@ class ExchangeService:
                 Dataset.model_validate(self.workflow.store.dataset),
                 self,
             )
-            if receipt is not None:
+            if stock_proof is not None:
+                from .stock_proofs import apply_proof
+
+                try:
+                    apply_proof(tx, context, row, stock_proof, self.adapter.mode)
+                except DomainError as exc:
+                    self._reject(tx, context, row, exc.message)
+            elif receipt is not None:
                 if not receipt_scope(tx, row, receipt):
                     self._reject(
                         tx,
@@ -715,6 +757,10 @@ class ExchangeService:
         receipt = public_receipt(receipt)
         request = ExternalRequest.model_validate_json(row["request_json"])
         payload = request.typed_payload
+        if request.action == "shipment.request":
+            from .delivery import apply_shipment
+
+            return apply_shipment(self, tx, context, row, request, receipt)
         if request.action == "eco.switch":
             from .eco import apply_switch
 
@@ -1176,6 +1222,8 @@ def prepare_io(tx, context, command):
     else:
         row = own(tx, "exchanges", context.project_id, command.exchange_id)
     if row["action"] not in {
+        "stock_basis.reconcile",
+        "shipment.request",
         "eco.switch",
         "reservation.request",
         "source.pull",
@@ -1374,6 +1422,8 @@ def summary(tx, pid, kind, row):
             if row["phase"] not in {"accepted", "posted"}
             and row["action"]
             in {
+                "stock_basis.reconcile",
+                "shipment.request",
                 "eco.switch",
                 "reservation.request",
                 "source.pull",
@@ -1425,6 +1475,8 @@ def detail(tx, pid, kind, ident):
             ExternalRequest.model_validate_json(row["request_json"])
             if row["action"]
             in {
+                "stock_basis.reconcile",
+                "shipment.request",
                 "eco.switch",
                 "reservation.request",
                 "production.start",
@@ -1458,7 +1510,24 @@ def detail(tx, pid, kind, ident):
                     inbound = stored.model_dump(mode="json")
             except (DomainError, ValidationError, ValueError, KeyError):
                 pass
+        proof_value = None
+        if row["action"] == "stock_basis.reconcile":
+            saved_proof = tx.execute(
+                "SELECT proof_json FROM stock_basis_proofs WHERE exchange_id=? AND project_id=?",
+                (row["id"], str(pid)),
+            ).fetchone()
+            if saved_proof:
+                from .exchange_models import StockBasisProof
+                from .stock_proofs import validate
+
+                try:
+                    candidate = StockBasisProof.model_validate_json(saved_proof[0])
+                    validate(tx, pid, row, candidate, row["mode"])
+                    proof_value = candidate
+                except (DomainError, ValidationError, ValueError):
+                    pass
         value = ExchangeValue(
+            stock_basis_proof=proof_value,
             discrepancies=[
                 {**dict(r), "reason": public_reason(r["reason"])}
                 for r in tx.execute(
@@ -1478,7 +1547,7 @@ def detail(tx, pid, kind, ident):
                 str(req.typed_payload.remaining_quantity)
                 if isinstance(req.typed_payload, EcoSwitchPayload)
                 else str(req.typed_payload.quantity)
-                if isinstance(req.typed_payload, ReservePayload)
+                if isinstance(req.typed_payload, (ReservePayload, ShipPayload))
                 else str(len(req.typed_payload.units))
                 if isinstance(req.typed_payload, StartPayload)
                 else "1"
@@ -1501,7 +1570,7 @@ def detail(tx, pid, kind, ident):
             else "0",
             rejected=str(receipt.rejected_quantity) if receipt else "0",
             unit=req.typed_payload.unit
-            if req and isinstance(req.typed_payload, ReservePayload)
+            if req and isinstance(req.typed_payload, (ReservePayload, ShipPayload))
             else "piece"
             if req
             else "",

@@ -25,6 +25,11 @@ from .supply import (
 from .supply_models import InspectSupply, ReceiveSupply
 
 SOURCE_POLICIES = {
+    "material_movement": "ownership.movement",
+    "ownership": "ownership.reconcile",
+    "closure": "closure.record",
+    "delivery_sign": "delivery.sign",
+    "delivery_accept": "delivery.accept",
     "execution": "execution.record",
     "test": "test.record",
     "customer_release": "release.decide",
@@ -159,6 +164,31 @@ def record_scope(
             own(tx, "material_lots", project_id, ident)
         if tx.execute(
             "SELECT 1 FROM execution_events e LEFT JOIN execution_admissions a ON a.event_id=e.id AND a.project_id=e.project_id WHERE e.source_system=? AND e.source_type=? AND e.source_external_id=? AND e.project_id<>? AND COALESCE(a.admitted,e.status='accepted')=1 LIMIT 1",
+            (*key, str(project_id)),
+        ).fetchone():
+            raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+    elif record.object_type in {"material_movement", "ownership"}:
+        own(tx, "material_lots", project_id, record.material_lot_id)
+        table = (
+            "material_movements"
+            if record.object_type == "material_movement"
+            else "ownership_reconciliations"
+        )
+        if tx.execute(
+            f"SELECT 1 FROM {table} WHERE source_system=? AND source_type=? AND source_external_id=? AND project_id<>?",
+            (*key, str(project_id)),
+        ).fetchone():
+            raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+    elif record.object_type == "closure":
+        if tx.execute(
+            "SELECT 1 FROM closures WHERE source_system=? AND source_type=? AND source_external_id=? AND project_id<>?",
+            (*key, str(project_id)),
+        ).fetchone():
+            raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+    elif record.object_type in {"delivery_sign", "delivery_accept"}:
+        own(tx, "shipments", project_id, record.shipment_id)
+        if tx.execute(
+            "SELECT 1 FROM delivery_facts WHERE source_system=? AND source_type=? AND source_external_id=? AND project_id<>?",
             (*key, str(project_id)),
         ).fetchone():
             raise DomainError("NOT_FOUND", 404, "Workflow resource not found")

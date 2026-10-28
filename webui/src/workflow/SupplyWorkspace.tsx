@@ -60,13 +60,13 @@ export function SupplyWorkspace(p:WorkspaceProps & {requestLeave(action:()=>void
     {kinds.map(k=><section key={k}>
       <h4>{label(k)}</h4>
       {k==="requirement"?<table><thead><tr>
-        <th>物料需求</th><th>需求</th><th>在途</th><th>已接收</th><th>已检合格</th><th>拒收</th><th>确认预留</th><th>缺口</th><th>单位</th><th>来源截止</th>
+        <th>物料需求</th><th>需求</th><th>在途</th><th>已接收</th><th>已检合格</th><th>拒收</th><th>确认预留</th><th>缺口</th><th>单位</th><th>来源截止</th><th>当前物料阻断</th>
       </tr></thead><tbody>{(items.requirement||[]).map(r=>{
         const b=r.material_balance;
         return <tr key={r.id}><td><button onClick={()=>p.onOpen({projectId:r.project_id,kind:r.kind,id:r.id})}>{r.title}</button></td>
           <td>{b?.required||"—"}</td><td>{b?.in_transit||"—"}</td><td>{b?.received||"—"}</td>
           <td>{b?.qualified||"—"}</td><td>{b?.rejected||"—"}</td><td>{b?.reserved||"—"}</td>
-          <td>{b?.shortage||"—"}</td><td>{b?.unit||r.unit||"—"}</td><td>{b?.cutoff||"未提供"}</td></tr>;
+          <td>{b?.shortage||"—"}</td><td>{b?.unit||r.unit||"—"}</td><td>{b?.cutoff||"未提供"}</td><td>{b?.blocking_reasons?.join("；")||"—"}</td></tr>;
       })}</tbody></table>:(items[k]||[]).length?<ObjectTable items={items[k]||[]} onOpen={p.onOpen}/>:<p>尚无{label(k)}记录</p>}
       {(items[k]||[]).length<(totals[k]||0)&&<button disabled={loading[k]} onClick={()=>void more(k)}>读取更多{label(k)}（已读取 {(items[k]||[]).length} / {totals[k]}）</button>}
     </section>)}

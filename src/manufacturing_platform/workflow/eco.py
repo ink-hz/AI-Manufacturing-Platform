@@ -58,11 +58,18 @@ def stock_evidence(tx, pid, lot):
     complete = True
     unknown = 0
     for r in tx.execute(
-        "SELECT e.*,v.confirmed_atoms FROM reservations v JOIN exchanges e ON e.id=v.exchange_id WHERE v.project_id=? AND v.material_lot_id=? AND v.authority_receipt_id IS NOT NULL",
+        "SELECT e.*,v.id proof_reservation_id,v.confirmed_atoms FROM reservations v JOIN exchanges e ON e.id=v.exchange_id WHERE v.project_id=? AND v.material_lot_id=? AND v.authority_receipt_id IS NOT NULL",
         (str(pid), lot["id"]),
     ):
         receipt = ExternalReceipt.model_validate_json(r["receipt_json"])
         basis = receipt.details[0].stock_basis
+        if basis is None:
+            from .stock_proofs import recovered_receipt
+
+            recovered = recovered_receipt(tx, pid, r["proof_reservation_id"])
+            if recovered is not None:
+                receipt = recovered
+                basis = receipt.details[0].stock_basis
         if basis is None or not admitted_receipt(tx, r, receipt):
             complete = False
             unknown += r["confirmed_atoms"]
@@ -191,9 +198,23 @@ def eco_impacts(tx, pid, row):
         "SELECT * FROM eco_stock_openings WHERE project_id=? AND eco_id=?",
         (str(pid), row["id"]),
     ):
-        for source, q in json.loads(opening["basis_json"]).items():
+        from .stock_proofs import opening_coverage
+
+        effective_basis, effective_complete = opening_coverage(tx, pid, opening)
+        for source, q in effective_basis.items():
             covered[(UUID(opening["lot_id"]), source)] = q
     for prior in saved:
+        if prior.type == "stock" and not prior.stock_basis_complete:
+            opening = tx.execute(
+                "SELECT * FROM eco_stock_openings WHERE eco_id=? AND lot_id=?",
+                (row["id"], str(prior.object_id)),
+            ).fetchone()
+            if opening:
+                from .stock_proofs import opening_coverage
+
+                _, repaired = opening_coverage(tx, pid, opening)
+                if repaired:
+                    prior.stock_basis_complete = True
         key = (prior.type, prior.object_id)
         totals[key] = totals.get(key, Decimal(0)) + prior.quantity
         if prior.type == "stock":
@@ -472,12 +493,15 @@ def uncertain_stock(tx, pid, row, values):
         for i in values
         if i.type == "stock" and (i.stock_basis is None or not i.stock_basis_complete)
     }
+    from .stock_proofs import opening_coverage
+
     ids.update(
-        r[0]
+        r["lot_id"]
         for r in tx.execute(
-            "SELECT lot_id FROM eco_stock_openings WHERE eco_id=? AND complete=0",
+            "SELECT * FROM eco_stock_openings WHERE eco_id=? AND complete=0",
             (row["id"],),
         )
+        if not opening_coverage(tx, pid, r)[1]
     )
     if row["state"] == "open":
         ids.update(

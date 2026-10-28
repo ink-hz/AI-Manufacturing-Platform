@@ -5,13 +5,16 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from . import (  # noqa: F401 - trusted domain registration
+    delivery,
     eco,
     engineering,
     exchanges,
     execution,
     orders,
+    ownership,
     quality,
     supply,
+    stock_proofs,
 )
 from .authorization import require_project
 from .commands import COMMAND_REGISTRY, CommandContext, WorkflowCommand
@@ -69,8 +72,10 @@ class WorkflowService:
         command_registry=None,
         object_registry=None,
         test_evidence_reader=None,
+        resolve_subject_profiles=None,
     ):
         self.store, self.resolve_subject = store, resolve_subject
+        self.resolve_subject_profiles = resolve_subject_profiles
         self.exchange_service = exchanges.ExchangeService(self)
         self.test_evidence_reader = test_evidence_reader or quality
         self.store.bind_test_evidence_reader(self.test_evidence_reader)
@@ -278,29 +283,83 @@ class WorkflowService:
             )
             if not value.release_kinds and "release.decide" in value.allowed_actions:
                 value.allowed_actions.remove("release.decide")
+            if (
+                "delivery.resolve_issue" in value.allowed_actions
+                and not delivery.can_resolve_issue(tx, actor, project_id)
+            ):
+                value.allowed_actions.remove("delivery.resolve_issue")
             value.quality_summary = ProjectQualitySummary.model_validate(
                 quality.quality_summary(tx, project_id).model_dump(mode="json")
             )
             return value
 
-    def members(self, actor, project_id):
+    def member_profiles(self, actor, project_id, ids):
+        if len(ids) > 50:
+            raise DomainError("INVALID_SUBJECT", 422, "Too many responsible members")
         with self.store.transaction() as tx:
             require_project(tx, actor, project_id)
-            return [
-                ScopeGrantView.model_validate(
-                    {
-                        "scope": {"kind": "project", "project_id": str(project_id)},
-                        "user_id": r["user_id"],
-                        "roles": json.loads(r["roles_json"]),
-                        "qualifications": json.loads(r["qualifications_json"]),
-                        "active": bool(r["active"]),
-                    }
+            for uid in ids:
+                if not tx.execute(
+                    "SELECT 1 FROM project_grants WHERE project_id=? AND user_id=? AND active=1 AND roles_json!='[]'",
+                    (str(project_id), str(uid)),
+                ).fetchone():
+                    raise DomainError(
+                        "INVALID_SUBJECT",
+                        422,
+                        "Responsible owner must be an active project member",
+                    )
+        if not self.resolve_subject_profiles:
+            return {}
+        # Trusted bounded host lookup, outside every workflow transaction.
+        profiles = self.resolve_subject_profiles([UUID(str(uid)) for uid in ids])
+        if not isinstance(profiles, list) or len(profiles) > len(ids):
+            raise DomainError(
+                "INVALID_SUBJECT", 422, "Invalid project member profile response"
+            )
+        result = {}
+        for raw in profiles:
+            from .delivery_models import MemberProfile
+
+            profile = MemberProfile.model_validate(raw)
+            if (
+                str(profile.user_id) not in set(map(str, ids))
+                or str(profile.user_id) in result
+            ):
+                raise DomainError(
+                    "INVALID_SUBJECT", 422, "Invalid project member profile scope"
                 )
+            result[str(profile.user_id)] = profile.display_name
+        return result
+
+    def members(self, actor, project_id, *, limit=50, offset=0):
+        if not 1 <= limit <= 50 or offset < 0:
+            raise DomainError("INVALID_PAGINATION", 422, "Invalid pagination")
+        with self.store.transaction() as tx:
+            require_project(tx, actor, project_id)
+            rows = [
+                dict(r)
                 for r in tx.execute(
-                    "SELECT * FROM project_grants WHERE project_id=?",
-                    (str(project_id),),
+                    "SELECT * FROM project_grants WHERE project_id=? ORDER BY user_id LIMIT ? OFFSET ?",
+                    (str(project_id), limit, offset),
                 )
             ]
+        ids = [
+            r["user_id"] for r in rows if r["active"] and json.loads(r["roles_json"])
+        ]
+        profiles = self.member_profiles(actor, project_id, ids) if ids else {}
+        return [
+            ScopeGrantView.model_validate(
+                {
+                    "scope": {"kind": "project", "project_id": str(project_id)},
+                    "user_id": r["user_id"],
+                    "roles": json.loads(r["roles_json"]),
+                    "qualifications": json.loads(r["qualifications_json"]),
+                    "active": bool(r["active"]),
+                    "display_name": profiles.get(r["user_id"]),
+                }
+            )
+            for r in rows
+        ]
 
     def objects(
         self,
@@ -377,6 +436,18 @@ class WorkflowService:
         self.detail(actor, project_id)
         command = self.command_registry.parse(command)
         entry = self.command_registry.registration(command.action)
+        profiles = None
+        if command.action == "delivery.accept" and command.issues:
+            # Policy before exposing even a scoped identity lookup.
+            with self.store.transaction() as tx:
+                from .authorization import require_action
+
+                require_action(tx, actor, project_id, command.action)
+            profiles = self.member_profiles(
+                actor,
+                project_id,
+                list(dict.fromkeys(i.owner_id for i in command.issues)),
+            )
         payload = {"project_id": str(project_id), **command.model_dump(mode="json")}
         with self.store.transaction(write=True) as tx:
             row = require_project(tx, actor, project_id)
@@ -390,6 +461,7 @@ class WorkflowService:
                 json.loads(grant["qualifications_json"]),
             ):
                 raise DomainError("FORBIDDEN", 403, "Action permission denied")
+            delivery.authorize(tx, actor, project_id, command)
             if command.action == "release.decide":
                 quality.authorize_release(tx, actor, project_id, command)
             self.exchange_service.authorize(tx, actor, project_id, command)
@@ -416,6 +488,7 @@ class WorkflowService:
                 datetime.now(UTC),
                 Dataset.model_validate(self.store.dataset),
                 self.exchange_service,
+                profiles,
             )
             mutation = entry.handler(tx, context, command)
             if not isinstance(mutation, MutationResult):

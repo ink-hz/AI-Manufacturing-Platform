@@ -165,12 +165,19 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         >= req["q_atoms"]
         for req in applicable
     )
+    movement_reasons = [
+        reason
+        for req in applicable
+        for reason in available(tx, project_id, req["id"], now).blocking_reasons
+    ]
     add(
         "material",
         True,
         plan_ok and material_ok,
         "accepted scoped authority reservations"
         if plan_ok and material_ok
+        else "; ".join(movement_reasons)
+        if movement_reasons
         else "accepted scoped material reservation missing or ineligible",
         [UUID(req["id"]) for req in applicable],
     )

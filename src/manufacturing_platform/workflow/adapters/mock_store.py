@@ -12,6 +12,9 @@ CREATE TABLE authority_operations(seq INTEGER PRIMARY KEY AUTOINCREMENT,system T
 CREATE TABLE authority_reservations(id TEXT PRIMARY KEY,lot_id TEXT NOT NULL REFERENCES inventory(lot_id),project_id TEXT NOT NULL,business_key TEXT NOT NULL UNIQUE,q_atoms INTEGER NOT NULL CHECK(q_atoms>0));
 CREATE TABLE faults(name TEXT PRIMARY KEY,value TEXT);
 CREATE TABLE IF NOT EXISTS authority_stock_coverage(reservation_id TEXT NOT NULL REFERENCES authority_reservations(id),source_external_id TEXT NOT NULL,q_atoms INTEGER NOT NULL CHECK(q_atoms>0),PRIMARY KEY(reservation_id,source_external_id));
+CREATE TABLE IF NOT EXISTS authority_shipments(unit_id TEXT PRIMARY KEY,project_id TEXT NOT NULL,order_line_id TEXT NOT NULL,shipment_id TEXT NOT NULL,work_order_id TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,box_id TEXT);
+CREATE TABLE IF NOT EXISTS authority_shipment_boxes(box_id TEXT PRIMARY KEY,project_id TEXT NOT NULL,shipment_id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS authority_shipment_freezes(project_id TEXT NOT NULL,unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('frozen','released')),sequence INTEGER NOT NULL,PRIMARY KEY(project_id,unit_id));
 CREATE TABLE IF NOT EXISTS authority_work_orders(project_id TEXT NOT NULL,work_order_id TEXT NOT NULL,revision_id TEXT NOT NULL,total_units INTEGER NOT NULL,trial_units INTEGER NOT NULL,started_units INTEGER NOT NULL DEFAULT 0,started_trial INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'running',PRIMARY KEY(project_id,work_order_id));
 CREATE TABLE IF NOT EXISTS authority_start_units(project_id TEXT NOT NULL,work_order_id TEXT NOT NULL,unit_id TEXT NOT NULL UNIQUE,sn_key TEXT NOT NULL UNIQUE,mode TEXT NOT NULL,start_id TEXT NOT NULL,PRIMARY KEY(project_id,work_order_id,unit_id));
 CREATE TABLE IF NOT EXISTS authority_interruptions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,work_order_id TEXT NOT NULL,stopped INTEGER NOT NULL,resumed INTEGER NOT NULL DEFAULT 0);

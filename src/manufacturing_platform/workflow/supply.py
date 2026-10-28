@@ -476,15 +476,28 @@ def available(tx, project_id, requirement_id, now) -> MaterialBalance:
              AND v.authority_receipt_id IS NOT NULL""",
         (str(project_id), req["lineage_id"], req["work_order_id"]),
     ).fetchone()[0]
+    from .ownership import material_hold
+
+    usable, movement_holds = 0, []
+    for row in tx.execute(
+        "SELECT l.*,SUM(v.confirmed_atoms) confirmed FROM reservations v JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id WHERE v.project_id=? AND prior.lineage_id=? AND v.work_order_id=? AND v.authority_receipt_id IS NOT NULL GROUP BY l.id",
+        (str(project_id), req["lineage_id"], req["work_order_id"]),
+    ):
+        hold = material_hold(tx, project_id, row)
+        if hold:
+            movement_holds.append(hold)
+        else:
+            usable += row["confirmed"]
     scale = req["scale"]
     return MaterialBalance(
+        blocking_reasons=movement_holds if usable < req["q_atoms"] else [],
         required=amount(req["q_atoms"], scale),
         in_transit=amount(totals["in_transit"], scale),
         received=amount(totals["received"], scale),
         qualified=amount(qualified[0], scale),
         rejected=amount(qualified[1], scale),
         reserved=amount(reserved, scale),
-        shortage=amount(max(0, req["q_atoms"] - reserved), scale),
+        shortage=amount(max(0, req["q_atoms"] - usable), scale),
         unit=req["unit"],
         cutoff=plan["cutoff"],
         source_version=plan["source_version"],
@@ -692,7 +705,15 @@ def _detail(tx, project_id, kind, object_id):
         totals = _totals(
             tx, "r.project_id=? AND r.material_lot_id=?", (str(project_id), row["id"])
         )
+        from .ownership import balance, material_hold, history as ownership_history
+
+        movements, reconciliations = ownership_history(tx, project_id, row)
+        ownership = balance(tx, project_id, row)
+        ownership.hold_reason = material_hold(tx, project_id, row)
         value = MaterialLotValue(
+            ownership_balance=ownership,
+            material_movements=movements,
+            ownership_reconciliations=reconciliations,
             material_id=row["material_id"],
             lot_id=row["lot_id"],
             owner_id=row["owner_id"],
@@ -855,6 +876,25 @@ def _page_balances(tx, project_id, rows):
             (str(project_id), *lineages),
         )
     }
+    from .ownership import material_hold
+
+    held_atoms, hold_reasons, hold_cache = {}, {}, {}
+    for claim in tx.execute(
+        f"""SELECT l.*,prior.lineage_id,SUM(v.confirmed_atoms) confirmed FROM reservations v
+            JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id
+            JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id
+            WHERE v.project_id=? AND prior.lineage_id IN ({slots}) AND v.authority_receipt_id IS NOT NULL
+              AND EXISTS(SELECT 1 FROM material_movements m WHERE m.project_id=l.project_id AND m.material_lot_id=l.id)
+            GROUP BY l.id,prior.lineage_id""",
+        (str(project_id), *lineages),
+    ):
+        if claim["id"] not in hold_cache:
+            hold_cache[claim["id"]] = material_hold(tx, project_id, claim)
+        reason = hold_cache[claim["id"]]
+        if reason:
+            lineage = claim["lineage_id"]
+            held_atoms[lineage] = held_atoms.get(lineage, 0) + claim["confirmed"]
+            hold_reasons.setdefault(lineage, []).append(reason)
     balances = {}
     for row in rows:
         lineage = row["lineage_id"]
@@ -863,14 +903,18 @@ def _page_balances(tx, project_id, rows):
         qualified, rejected = (i["qualified"], i["rejected"]) if i else (0, 0)
         reserved = reservations.get(lineage, 0)
         scale = row["scale"]
+        usable = max(0, reserved - held_atoms.get(lineage, 0))
         balances[row["id"]] = MaterialBalance(
+            blocking_reasons=hold_reasons.get(lineage, [])
+            if usable < row["q_atoms"]
+            else [],
             required=amount(row["q_atoms"], scale),
             in_transit=amount(in_transit, scale),
             received=amount(received, scale),
             qualified=amount(qualified, scale),
             rejected=amount(rejected, scale),
             reserved=amount(reserved, scale),
-            shortage=amount(max(0, row["q_atoms"] - reserved), scale),
+            shortage=amount(max(0, row["q_atoms"] - usable), scale),
             unit=row["unit"],
             cutoff=row["cutoff"],
             source_version=row["source_version"],

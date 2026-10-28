@@ -1,3 +1,4 @@
+import { DeliveryWorkspace } from "./DeliveryWorkspace";
 import { QualityWorkspace } from "./QualityWorkspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MountOptions } from "../types";
@@ -35,7 +36,7 @@ export function WorkflowApp({
     [project, setProject] = useState<ProjectDetail | null>(null),
     [view, setView] = useState<ConsoleView>("home"),
     [creating, setCreating] = useState(false),
-    [workspace, setWorkspace] = useState<"orders" | "engineering" | "supply" | "execution" | "quality" | "exchange" | "members">(
+    [workspace, setWorkspace] = useState<"orders" | "engineering" | "supply" | "execution" | "quality" | "delivery" | "exchange" | "members">(
       "orders",
     ),
     [target, setTarget] = useState<WorkflowTarget | null>(null),
@@ -388,6 +389,7 @@ export function WorkflowApp({
                       ["supply", "供应与物料"],
                       ["execution", "生产执行"],
                       ["quality", "质量与放行"],
+                      ["delivery", "交付与关闭"],
                       ["exchange", "同步与回执"],
                       ...(b.configuration_admin
                         ? [["members", "成员授权"]]
@@ -464,6 +466,8 @@ export function WorkflowApp({
                     requestLeave={requestLeave}
                     onReload={() => setRefresh((r) => r + 1)}
                   />
+                ) : workspace === "delivery" ? (
+                  <DeliveryWorkspace {...props} requestLeave={requestLeave} />
                 ) : workspace === "quality" ? (
                   <QualityWorkspace {...props} requestLeave={requestLeave} />
                 ) : workspace === "execution" ? (
