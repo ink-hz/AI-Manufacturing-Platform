@@ -92,6 +92,7 @@ def test_project_and_grant_operations_are_atomic_cas_and_audited(workflow):
     stale = {
         "operation_id": str(uuid4()),
         "expected_version": 1,
+        "scope": {"kind": "project", "project_id": project["id"]},
         "roles": ["quality"],
         "qualifications": ["quality_release"],
         "active": True,

@@ -2,10 +2,26 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .authorization import require_project
-from .contracts import Dashboard, DomainError, ObjectPage, ProjectDetail
+from .commands import COMMAND_REGISTRY, CommandContext, WorkflowCommand
+from .contracts import (
+    Actor,
+    CommandResult,
+    Dashboard,
+    Dataset,
+    DomainError,
+    GrantChange,
+    MutationResult,
+    ObjectDetail,
+    ObjectKind,
+    ObjectPage,
+    ProjectCreate,
+    ProjectDetail,
+    ScopeGrantView,
+)
+from .queries import OBJECT_REGISTRY
 
 
 def canonical(value):
@@ -33,8 +49,16 @@ def project(row):
 
 
 class WorkflowService:
-    def __init__(self, store, resolve_subject):
+    def __init__(
+        self, store, resolve_subject, *, command_registry=None, object_registry=None
+    ):
         self.store, self.resolve_subject = store, resolve_subject
+        self.command_registry = (
+            COMMAND_REGISTRY if command_registry is None else command_registry
+        )
+        self.object_registry = (
+            OBJECT_REGISTRY if object_registry is None else object_registry
+        )
 
     def _replay(self, tx, actor, operation, payload):
         row = tx.execute(
@@ -76,7 +100,7 @@ class WorkflowService:
             ),
         )
 
-    def create_project(self, actor, value):
+    def create_project(self, actor: Actor, value: ProjectCreate) -> ProjectDetail:
         if actor.read_only or not actor.configuration_admin:
             raise DomainError("FORBIDDEN", 403, "Permission denied")
         if value.legacy_project_id is not None and not actor.configuration_admin:
@@ -131,9 +155,15 @@ class WorkflowService:
             )
             return ProjectDetail.model_validate(result)
 
-    def change_grant(self, actor, project_id, user_id, value):
+    def change_grant(
+        self, actor: Actor, project_id: UUID, user_id: UUID, value: GrantChange
+    ):
         if actor.read_only or not actor.configuration_admin:
             raise DomainError("FORBIDDEN", 403, "Permission denied")
+        if value.scope.project_id != project_id:
+            raise DomainError(
+                "SCOPE_MISMATCH", 422, "Grant scope must match project path"
+            )
         if not self.resolve_subject(user_id):
             raise DomainError("INVALID_SUBJECT", 422, "Unknown or inactive subject")
         payload = {
@@ -173,6 +203,7 @@ class WorkflowService:
                 "UPDATE projects SET version=version+1 WHERE id=?", (str(project_id),)
             )
             result = {
+                "scope": value.scope.model_dump(mode="json"),
                 "user_id": str(user_id),
                 "roles": value.roles,
                 "qualifications": value.qualifications,
@@ -201,7 +232,7 @@ class WorkflowService:
                 )
             ]
 
-    def detail(self, actor, project_id):
+    def detail(self, actor: Actor, project_id: UUID) -> ProjectDetail:
         with self.store.transaction() as tx:
             return project(require_project(tx, actor, project_id))
 
@@ -209,34 +240,140 @@ class WorkflowService:
         with self.store.transaction() as tx:
             require_project(tx, actor, project_id)
             return [
-                {
-                    "user_id": r["user_id"],
-                    "roles": json.loads(r["roles_json"]),
-                    "qualifications": json.loads(r["qualifications_json"]),
-                    "active": bool(r["active"]),
-                }
+                ScopeGrantView.model_validate(
+                    {
+                        "scope": {"kind": "project", "project_id": str(project_id)},
+                        "user_id": r["user_id"],
+                        "roles": json.loads(r["roles_json"]),
+                        "qualifications": json.loads(r["qualifications_json"]),
+                        "active": bool(r["active"]),
+                    }
+                )
                 for r in tx.execute(
                     "SELECT * FROM project_grants WHERE project_id=?",
                     (str(project_id),),
                 )
             ]
 
-    def objects(self, actor, project_id, kind, *, limit=50, offset=0):
-        self.detail(actor, project_id)
-        return ObjectPage(items=[], total=0, limit=limit, offset=offset)
+    def objects(
+        self,
+        actor: Actor,
+        project_id: UUID,
+        kind: ObjectKind,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ObjectPage:
+        if not 1 <= limit <= 200 or offset < 0:
+            raise DomainError("INVALID_PAGINATION", 422, "Invalid pagination")
+        project_id = UUID(str(project_id))
+        with self.store.transaction() as tx:
+            require_project(tx, actor, project_id)
+            values = self.object_registry.summaries(tx, project_id, kind)
+            return ObjectPage(
+                items=values[offset : offset + limit],
+                total=len(values),
+                limit=limit,
+                offset=offset,
+            )
 
-    def object_detail(self, actor, project_id, kind, object_id):
-        self.detail(actor, project_id)
-        raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+    def object_detail(
+        self, actor: Actor, project_id: UUID, kind: ObjectKind, object_id: UUID
+    ) -> ObjectDetail:
+        project_id, object_id = UUID(str(project_id)), UUID(str(object_id))
+        with self.store.transaction() as tx:
+            require_project(tx, actor, project_id)
+            result = self.object_registry.detail(tx, project_id, kind, object_id)
+            if result is None:
+                raise DomainError("NOT_FOUND", 404, "Workflow resource not found")
+            return result
 
-    def dashboard(self, actor, project_id=None):
-        if project_id is not None:
-            self.detail(actor, project_id)
-        return Dashboard(
-            cards=[],
-            project_ids=[project_id] if project_id else self.project_ids(actor),
-        )
+    def dashboard(self, actor: Actor, project_id: UUID | None = None) -> Dashboard:
+        with self.store.transaction() as tx:
+            if project_id is not None:
+                require_project(tx, actor, project_id)
+                ids = [UUID(str(project_id))]
+            else:
+                ids = [
+                    UUID(r[0])
+                    for r in tx.execute(
+                        "SELECT project_id FROM project_grants WHERE user_id=? AND active=1 AND roles_json!='[]' ORDER BY project_id",
+                        (str(actor.user_id),),
+                    )
+                ]
+            counts = {kind: 0 for kind in self.object_registry.kinds}
+            cards = []
+            for pid in ids:
+                for kind in self.object_registry.kinds:
+                    values = self.object_registry.summaries(tx, pid, kind)
+                    counts[kind] += len(values)
+                    cards.extend(values[: max(0, 100 - len(cards))])
+            return Dashboard(
+                cards=cards, project_ids=ids, project_count=len(ids), counts=counts
+            )
 
-    def execute(self, actor, project_id, command):
+    def execute(
+        self, actor: Actor, project_id: UUID, command: WorkflowCommand
+    ) -> CommandResult:
+        if actor.read_only:
+            raise DomainError("FORBIDDEN", 403, "Workflow is read-only")
+        project_id = UUID(str(project_id))
+        # Visibility precedes schema errors; permissions are checked again in the write transaction.
         self.detail(actor, project_id)
-        raise DomainError("UNSUPPORTED_ACTION", 422, "Unsupported action")
+        command = self.command_registry.parse(command)
+        entry = self.command_registry.registration(command.action)
+        payload = {"project_id": str(project_id), **command.model_dump(mode="json")}
+        with self.store.transaction(write=True) as tx:
+            row = require_project(tx, actor, project_id)
+            grant = tx.execute(
+                "SELECT roles_json, qualifications_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
+                (str(project_id), str(actor.user_id)),
+            ).fetchone()
+            if not entry.roles.intersection(
+                json.loads(grant["roles_json"])
+            ) or not entry.qualifications.issubset(
+                json.loads(grant["qualifications_json"])
+            ):
+                raise DomainError("FORBIDDEN", 403, "Action permission denied")
+            replay = self._replay(tx, actor, command.operation_id, payload)
+            if replay is not None:
+                return CommandResult.model_validate({**replay, "replayed": True})
+            if row["version"] != command.expected_version:
+                raise DomainError(
+                    "VERSION_CONFLICT",
+                    409,
+                    "Project version changed",
+                    {"current_version": row["version"]},
+                )
+            context = CommandContext(
+                actor,
+                project_id,
+                row["version"],
+                datetime.now(UTC),
+                Dataset.model_validate(self.store.dataset),
+            )
+            mutation = entry.handler(tx, context, command)
+            if not isinstance(mutation, MutationResult):
+                raise TypeError("domain handler must return MutationResult")
+            result = CommandResult(
+                operation_id=command.operation_id,
+                project_id=project_id,
+                project_version=row["version"] + 1,
+                object_type=mutation.model_dump(mode="json")["object_type"],
+                object_id=mutation.object_id,
+                exchange_id=mutation.exchange_id,
+            )
+            tx.execute(
+                "UPDATE projects SET version=version+1 WHERE id=?", (str(project_id),)
+            )
+            self._save(
+                tx,
+                actor,
+                command.operation_id,
+                payload,
+                result.model_dump(mode="json"),
+                project_id,
+                command.action,
+                mutation.object_id,
+            )
+            return result

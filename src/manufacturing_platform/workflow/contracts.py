@@ -3,7 +3,7 @@
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, Generic, Literal, TypeVar
 from uuid import UUID
 
 from pydantic import (
@@ -13,6 +13,7 @@ from pydantic import (
     Field,
     StrictBool,
     field_validator,
+    model_validator,
 )
 
 
@@ -94,7 +95,13 @@ class CommandResult(StrictModel):
     replayed: bool = False
 
 
+class GrantScope(StrictModel):
+    kind: Literal["project"]
+    project_id: UUID
+
+
 class GrantChange(CommandBase):
+    scope: GrantScope
     roles: list[
         Literal[
             "project_owner",
@@ -114,10 +121,15 @@ class GrantChange(CommandBase):
 
 
 class GrantView(StrictModel):
+    scope: GrantScope
     user_id: UUID
     roles: list[str]
     qualifications: list[str]
     active: bool
+
+
+class ScopeGrantView(GrantView):
+    """A grant always carries its explicit project boundary."""
 
 
 class ProjectDetail(StrictModel):
@@ -199,13 +211,69 @@ class ObjectPage(StrictModel):
     offset: int
 
 
-class ObjectDetail(StrictModel):
+class DomainValue(StrictModel):
+    """Domains override kind with a single Literal and add their strict fields."""
+
+    kind: ObjectKind
+
+
+DomainT = TypeVar("DomainT", bound=DomainValue)
+
+
+class ObjectRelation(StrictModel):
+    relation: str = Field(min_length=1, max_length=80)
+    project_id: UUID
+    kind: ObjectKind
+    id: UUID
+
+
+class ObjectEvidence(StrictModel):
+    reference: str = Field(min_length=1, max_length=2000)
+    source: SourceRef | None = None
+
+
+class ObjectHistory(StrictModel):
+    event_id: int = Field(ge=1)
+    actor_id: UUID
+    action: str = Field(min_length=1, max_length=80)
+    occurred_at: datetime
+    recorded_at: datetime
+    evidence: list[ObjectEvidence] = Field(default_factory=list)
+
+
+class ObjectDetail(StrictModel, Generic[DomainT]):
     summary: ObjectSummary
+    value: DomainT
+    relations: list[ObjectRelation]
+    evidence: list[ObjectEvidence]
+    history: list[ObjectHistory]
+
+    @model_validator(mode="after")
+    def matching_kind(self):
+        if self.summary.kind != self.value.kind:
+            raise ValueError("detail kind mismatch")
+        if any(r.project_id != self.summary.project_id for r in self.relations):
+            raise ValueError("cross-project relation")
+        return self
 
 
 class Dashboard(StrictModel):
     cards: list[ObjectSummary]
     project_ids: list[UUID]
+    project_count: int = Field(ge=0)
+    counts: dict[ObjectKind, int]
+
+
+class Dataset(StrictModel):
+    id: str = Field(min_length=1, max_length=200)
+    mode: Literal["production", "demo", "test"]
+    label: str = Field(min_length=1, max_length=200)
+
+
+class MutationResult(StrictModel):
+    object_type: ObjectKind | Literal["project"]
+    object_id: UUID
+    exchange_id: UUID | None = None
 
 
 class DomainError(Exception):

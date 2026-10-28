@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse, Response
 
 from .contracts import Actor, DomainError, GrantChange, ObjectKind, ProjectCreate
+from .security import log_denial
 from .service import WorkflowService
 from .store import WorkflowStore
 
@@ -36,17 +37,21 @@ def build_workflow_router(
             handler = super().get_route_handler()
 
             async def private(request):
+                denial_code = "PROTOCOL_DENIED"
+                authenticated_actor = None
                 try:
                     write = request.method not in {"GET", "HEAD", "OPTIONS"}
                     identity = authenticate(request, write=write)
                     if inspect.isawaitable(identity):
                         identity = await identity
                     actor = Actor.model_validate(identity)
+                    authenticated_actor = actor
                     if write and actor.read_only:
                         raise HTTPException(403, "Workflow is read-only")
                     request.state.workflow_actor = actor
                     response = await handler(request)
                 except DomainError as exc:
+                    denial_code = exc.code
                     response = JSONResponse(
                         {
                             "code": exc.code,
@@ -69,6 +74,17 @@ def build_workflow_router(
                 except (sqlite3.Error, OSError, ValueError):
                     response = JSONResponse(
                         {"detail": "Workflow storage unavailable"}, status_code=503
+                    )
+                if response.status_code >= 400:
+                    request.state.workflow_denial_logged = True
+                    log_denial(
+                        status=response.status_code,
+                        code=denial_code,
+                        method=request.method,
+                        route=self.path,
+                        actor_id=authenticated_actor.user_id
+                        if authenticated_actor
+                        else None,
                     )
                 response.headers["Cache-Control"] = "private, no-store"
                 return response
@@ -170,7 +186,11 @@ def build_workflow_router(
     @router.post("/projects/{project_id}/commands")
     async def command(project_id: UUID, request: Request):
         service.detail(actor(request), project_id)
-        raise HTTPException(422, "Unsupported action")
+        try:
+            payload = await request.json()
+        except ValueError:
+            raise HTTPException(422, "Invalid request")
+        return service.execute(actor(request), project_id, payload)
 
     @router.get("/projects/{project_id}/trace")
     @router.get("/projects/{project_id}/exchanges")

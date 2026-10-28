@@ -59,6 +59,7 @@ def test_project_grant_revocation_and_persistence(tmp_path):
     change = {
         "operation_id": str(uuid4()),
         "expected_version": 1,
+        "scope": {"kind": "project", "project_id": project["id"]},
         "roles": ["planner"],
         "qualifications": [],
         "active": True,

@@ -62,15 +62,21 @@ class CommandBase(BaseModel):
     operation_id: UUID
     expected_version: Annotated[int, Field(strict=True, ge=1)]  # project CAS
 
-class AllocateOrder(CommandBase):
+class WorkflowCommand(CommandBase):
+    action: WorkflowAction  # finite Literal names in commands.py
+
+class AllocateOrder(WorkflowCommand):
     action: Literal['order.allocate']
     order_line_id: UUID
     work_order_id: UUID
     quantity: Quantity
     unit: str
 
-WorkflowCommand = Annotated[Union[...all action classes below...], Field(discriminator='action')]
-# Union is compiled in commands.py from explicit domain classes; no arbitrary dict payload.
+# Domain DTOs extend WorkflowCommand, overriding action with one Literal.
+# CommandRegistry.register(Model, roles=set(...), qualifications=set(...), handler=dispatch)
+# compiles Annotated[Union[registered models], Field(discriminator='action')].
+# parse(payload) returns the concrete strict DTO; unregistered actions remain unsupported.
+# Registration is trusted Python composition at startup, never exposed over HTTP.
 
 class CommandResult(BaseModel):
     operation_id: UUID
@@ -97,13 +103,19 @@ class WorkflowStore:
     def transaction(self, *, write:bool=False) -> ContextManager[sqlite3.Connection]: ...
 
 # Domains expose dispatch(tx, context:CommandContext, command:their union)->MutationResult.
-# CommandContext = actor, project_id, project_version, now, dataset, exchange_service.
-# MutationResult = object_type, object_id, exchange_id=None; central service creates result.
+# CommandContext is a frozen dataclass:
+# actor:Actor, project_id:UUID, project_version:int, now:datetime (UTC),
+# dataset:Dataset(id,mode:production|demo|test,label), exchange_service:None in A1.
+# B2 supplies its typed exchange capability when implemented; A1 performs no external I/O.
+# MutationResult(object_type:ObjectKind|Literal['project'], object_id:UUID, exchange_id:UUID|None=None).
+# Central service owns result, project version increment, operation hash and audit in one transaction.
+# Per-registration roles are any-of; qualifications are all-of, read live before replay and mutation.
+# configuration_admin never bypasses that policy; additional business/source conditions belong to handler.
 ```
 
 `Actor(user_id,display_name,read_only,configuration_admin)` 是可信后端值。`ProjectCreate(operation_id,name,line_id,product,customer_id,mode:'internal'|'oem',unit,quantity,contract,legacy_project_id=None)`；contract 是严格 `ContractPolicy(customer_approval_required,customer_release_required,acceptance_required,customer_revision,internal_revision,material_ownership_rules)`，不明值为 unknown，不能当 false。创建项目 CAS 1，创建者只有 project_owner grant（不自动质量）；configuration_admin 只创建配置不自动读其业务项目以外数据，legacy_admin 可读旧域与手册仍无新域签批。
 
-权限最小矩阵：project_owner 需求/评审/承诺/履约关闭；engineering 资料/校准依据/ECO；planner 计划/工单/分配/准备/开工请求；supply 供应与到货协同；production 执行登记、异常、制造放行；quality 严格资格 inspection+disposition+quality_release；warehouse 发运及签收登记；customer_confirmation、external_receipt 只允许经配置的来源适配器或明确人工证据登记动作，不能用 production/IT 身份冒充外部主体。所有角色可读其项目，外部客户维度按 project.customer_id 与关联 customer_id 同时检查。GrantChange = operation_id,expected_version,roles[],qualifications[],active,evidence；配置 revocation 递增 project.version 并审计；每次 read/write重新检查。
+权限最小矩阵：project_owner 需求/评审/承诺/履约关闭；engineering 资料/校准依据/ECO；planner 计划/工单/分配/准备/开工请求；supply 供应与到货协同；production 执行登记、异常、制造放行；quality 严格资格 inspection+disposition+quality_release；warehouse 发运及签收登记；customer_confirmation、external_receipt 只允许经配置的来源适配器或明确人工证据登记动作，不能用 production/IT 身份冒充外部主体。所有角色可读其项目，外部客户维度按 project.customer_id 与关联 customer_id 同时检查。GrantScope = {kind:'project',project_id:UUID}，必须匹配 URL project_id，禁止 wildcard/global。GrantChange = operation_id,expected_version,scope:GrantScope,roles[],qualifications[],active,evidence；GrantView/ScopeGrantView 包含 scope,user_id,roles[],qualifications[],active；配置 revocation 递增 project.version 并审计；每次 read/write重新检查。
 
 事务顺序：先身份/项目可见性→校验 schema→BEGIN IMMEDIATE→实时 ACL→按 dataset+actor+operation_id 查 canonical payload SHA256→相同输入返回原结果（仍需当前授权），不同内容409 IDEMPOTENCY_CONFLICT→project CAS→域规则和所有数量链接→写业务/事件/outbox/操作结果与项目 version+1→commit。跨项目不可见返回404，已知无角色403；无登录401；schema422；业务前置409 PRECONDITION_FAILED（含字段和阻断项）；CAS409 VERSION_CONFLICT（current_version）；外部未确认202 pending可由CommandResult.exchange_id查询；真实 I/O 503。失败必须没有业务成功事件；授权/协议拒绝进入独立有界安全日志，校验拒绝不创建成功操作结果。审计 append-only，不截断旧事实。
 
@@ -179,7 +191,7 @@ All commands include operation_id/expected_version; fields below are in addition
 | C3 | capa.close | capa_id; successful effectiveness verification; when corrective action requires engineering change, linked ECO must be executed/closed; supplier/training/process actions use their own verified implementation evidence; failed verification remains open |
 | D1 | project.stage | stage S1..S9,status,reason; collaboration hint only, cannot waive business predicates |
 
-ObjectKind enum: demand,order_line,commitment_change,work_order,revision,plan,requirement,commitment,material_lot,reservation,unit,interruption,eco,test,nonconformance,rework,release,shipment,closure,rma,capa,exception. Domain models define typed detail unions using kind discriminator; list `ObjectPage(items:[ObjectSummary],total,limit,offset)` summaries contain id,kind,project_id,title,state,quantity?,unit?,source?,version,blocking_reasons[],next_actions[]. `ObjectDetail` includes the corresponding domain model plus relations/evidence/history; no user-editable raw JSON. `Dashboard` counts and cards are queries of these same tables, each card has project_id,kind,id destination.
+ObjectKind enum: demand,order_line,commitment_change,work_order,revision,plan,requirement,commitment,material_lot,reservation,unit,interruption,eco,test,nonconformance,rework,release,shipment,closure,rma,capa,exception. Domain models define typed detail unions using kind discriminator; list `ObjectPage(items:[ObjectSummary],total,limit,offset)` summaries contain id,kind,project_id,title,state,quantity?,unit?,source?,version,blocking_reasons[],next_actions[]. `ObjectDetail[V]` = summary:ObjectSummary,value:V,relations:[ObjectRelation],evidence:[ObjectEvidence],history:[ObjectHistory]. V extends strict DomainValue and declares kind:Literal of its registered ObjectKind; the registry compiles the kind-discriminated union and revalidates the concrete DTO before returning it. ObjectRelation = relation,project_id,kind,id (same-project only); ObjectEvidence = reference,source:SourceRef|None; ObjectHistory = event_id,actor_id,action,occurred_at,recorded_at,evidence[]. No user-editable raw JSON. `OBJECT_REGISTRY.register(kind, Model, summaries=reader, detail=reader)` is trusted Python composition. summaries(tx,project_id)->list[ObjectSummary]; detail(tx,project_id,object_id)->ObjectDetail[Model]|None. Services verify reader scope and object identity. `Dashboard` = project_ids,project_count,counts:dict[ObjectKind,int],cards:[ObjectSummary]. Counts and cards query the same registered readers in a consistent authorized read transaction; counts include only implemented kinds, empty registries produce counts:{} (no invented future metrics), cards are capped at 100 and each has project_id,kind,id destination. List pagination retains total from those same rows.
 
 ## 5. Physical and external invariants
 

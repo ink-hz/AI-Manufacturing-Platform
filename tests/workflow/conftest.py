@@ -152,6 +152,7 @@ class WorkflowHarness:
         body = {
             "operation_id": str(uuid4()),
             "expected_version": version,
+            "scope": {"kind": "project", "project_id": str(project_id)},
             "roles": list(roles),
             "qualifications": list(qualifications),
             "active": active,
