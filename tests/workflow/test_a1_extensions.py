@@ -27,6 +27,11 @@ def test_extension_contracts_exist_and_production_registry_contains_only_real_ac
         "order.change",
         "order.resolve_change",
         "order.allocate",
+        "engineering.revision",
+        "engineering.handoff",
+        "engineering.customer_approval",
+        "work_order.register",
+        "readiness.record",
     }
 
 

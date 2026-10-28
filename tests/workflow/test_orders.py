@@ -12,7 +12,6 @@ from manufacturing_platform.workflow.contracts import (
     ProjectStageView,
 )
 from manufacturing_platform.workflow.order_models import ChangeImpact, OrderLineValue
-from manufacturing_platform.workflow.store import WorkflowStore
 
 from .conftest import BASE
 
@@ -334,34 +333,40 @@ def test_replay_content_conflict_readonly_revocation_and_cas(workflow):
     )
 
 
-def _isolated_work_order_row(workflow, project_id, quantity, unit="piece"):
-    """A3 will replace this narrow SQL fixture with work_order.register in integration tests."""
-    store = WorkflowStore(
-        str(workflow.paths.domain),
-        str(workflow.paths.authority),
-        {"id": "workflow-test", "mode": "test", "label": "Workflow test"},
+def _registered_work_order(workflow, project_id, order_id, quantity, unit="piece"):
+    """Create a fixed revision and work order through reviewed public APIs."""
+    count = (
+        workflow.client()
+        .get(f"{BASE}/projects/{project_id}/objects/revision")
+        .json()["total"]
     )
-    ident = str(uuid4())
-    with store.transaction(write=True) as tx:
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS work_orders(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, q_atoms INTEGER NOT NULL, unit TEXT NOT NULL)"
-        )
-        tx.execute(
-            "INSERT INTO work_orders VALUES (?,?,?,?)",
-            (ident, project_id, quantity, unit),
-        )
-    return ident
+    revision = workflow.revision(project_id, internal_revision=f"M{count + 1}")
+    workflow.grant(project_id, "planner", ["planner"])
+    return workflow.command(
+        project_id,
+        "work_order.register",
+        actor_name="planner",
+        order_line_id=order_id,
+        revision_id=revision["id"],
+        source=workflow.source(f"wo-{uuid4()}", object_type="work_order"),
+        quantity=str(quantity),
+        unit=unit,
+        purpose="trial",
+        trial_quantity="1",
+        planned_start="2026-12-01T00:00:00+00:00",
+        planned_end="2026-12-02T00:00:00+00:00",
+    )["object_id"]
 
 
 def test_allocations_conserve_both_order_and_work_order_with_pending_change(workflow):
     p = workflow.create_project()
-    other = workflow.create_project()
     demand = record(workflow, p["id"])
     approve(workflow, p["id"], demand)
     order = register(workflow, p["id"], demand)
-    wo = _isolated_work_order_row(workflow, p["id"], 60)
-    second_wo = _isolated_work_order_row(workflow, p["id"], 50)
-    other_wo = _isolated_work_order_row(workflow, other["id"], 40)
+    wo = _registered_work_order(workflow, p["id"], order, 60)
+    second_wo = _registered_work_order(workflow, p["id"], order, 40)
+    _, _, other_work_order, _ = workflow.order_workorder(quantity="40")
+    other_wo = other_work_order["id"]
     workflow.grant(p["id"], "planner", ["planner"])
     assert (
         workflow.command(
@@ -568,7 +573,7 @@ def test_cancel_with_allocation_remains_pending(workflow):
     demand = record(workflow, p["id"])
     approve(workflow, p["id"], demand)
     order = register(workflow, p["id"], demand)
-    wo = _isolated_work_order_row(workflow, p["id"], 20)
+    wo = _registered_work_order(workflow, p["id"], order, 20)
     workflow.grant(p["id"], "planner", ["planner"])
     workflow.command(
         p["id"],

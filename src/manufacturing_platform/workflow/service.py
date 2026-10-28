@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from . import orders
+from . import engineering, orders  # noqa: F401 - trusted domain registration
 from .authorization import require_project
 from .commands import COMMAND_REGISTRY, CommandContext, WorkflowCommand
 from .contracts import (

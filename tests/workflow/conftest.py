@@ -217,3 +217,110 @@ def workflow(tmp_path):
     harness = WorkflowHarness(tmp_path)
     yield harness
     harness._client.close()
+
+
+def _revision(self, project_id, *, internal_revision="M1", customer_revision="C1"):
+    self.grant(project_id, "engineering", ["engineering"])
+    result = self.command(
+        project_id,
+        "engineering.revision",
+        actor_name="engineering",
+        package_id="package-camera",
+        revision=internal_revision,
+        customer_revision=customer_revision,
+        internal_revision=internal_revision,
+        items=[
+            {
+                "id": "drawing",
+                "kind": "drawing",
+                "title": "Camera drawing",
+                "revision": internal_revision,
+                "status": "verified",
+                "evidence": "signed design",
+            }
+        ],
+        route_steps=[{"station": "assembly", "instruction_version": "S1"}],
+        test_spec={
+            "version": "T1",
+            "program_version": "P1",
+            "measurements": [
+                {"name": "voltage", "unit": "V", "lower": "4", "upper": "6"}
+            ],
+        },
+        firmware_version="F1",
+    )
+    return {"id": result["object_id"]}
+
+
+def _order_workorder(self, *, quantity="5", contract=None):
+    p = self.create_project(**({"contract": contract} if contract else {}))
+    demand = self.command(
+        p["id"],
+        "demand.record",
+        kind="firm",
+        product="Camera",
+        quantity=quantity,
+        unit="piece",
+        due_date="2026-12-01",
+        source=self.source(f"demand-{uuid4()}"),
+    )["object_id"]
+    for dimension in ("technical", "material", "capacity", "commercial", "quality"):
+        self.command(
+            p["id"],
+            "demand.review",
+            demand_id=demand,
+            dimension=dimension,
+            decision="approved",
+            evidence=f"{dimension} reviewed",
+        )
+    order = self.command(
+        p["id"],
+        "order.register",
+        demand_id=demand,
+        source=self.source(f"order-{uuid4()}", object_type="order_line"),
+        quantity=quantity,
+        unit="piece",
+        due_date="2026-12-01",
+    )
+    rev = self.revision(
+        p["id"], customer_revision=contract["customer_revision"] if contract else "C1"
+    )
+    self.command(
+        p["id"],
+        "engineering.handoff",
+        actor_name="engineering",
+        revision_id=rev["id"],
+        to_system="MES",
+        received_revision="M1",
+        decision="accepted",
+        evidence="MES package acknowledgement",
+    )
+    self.grant(p["id"], "planner", ["planner"])
+    wo = self.command(
+        p["id"],
+        "work_order.register",
+        actor_name="planner",
+        order_line_id=order["object_id"],
+        revision_id=rev["id"],
+        source=self.source(f"wo-{uuid4()}", object_type="work_order"),
+        quantity=quantity,
+        unit="piece",
+        purpose="trial",
+        trial_quantity="1",
+        planned_start="2026-12-01T00:00:00+00:00",
+        planned_end="2026-12-02T00:00:00+00:00",
+    )
+    return p, {"id": order["object_id"]}, {"id": wo["object_id"]}, rev
+
+
+def _object(self, project_id, kind, object_id):
+    response = self.client().get(
+        f"{BASE}/projects/{project_id}/objects/{kind}/{object_id}"
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["value"]
+
+
+WorkflowHarness.revision = _revision
+WorkflowHarness.order_workorder = _order_workorder
+WorkflowHarness.object = _object
