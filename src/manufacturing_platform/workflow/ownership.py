@@ -295,7 +295,9 @@ def audit_evidence(tx, pid, object_id, audit, payload):
         or source_type in {"material_movement", "ownership"}
     )
     if not owned:
-        return _audit_evidence(payload)
+        from .source_history import evidence
+
+        return evidence(tx, pid, audit, payload)
     models = {
         "ownership.movement": MaterialMovement,
         "ownership.reconcile": OwnershipReconcile,

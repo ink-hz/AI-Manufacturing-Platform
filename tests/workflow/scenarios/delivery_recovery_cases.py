@@ -477,7 +477,12 @@ def host_proof(context):
             "required_assertions": HOST_ASSERTIONS[context.case_id],
         },
     )
-    result = subprocess.run(args, capture_output=True, text=True, timeout=60)
+    from ..d3.process import run_owned, ProofTimeout
+    try:
+        result = run_owned(args)
+    except ProofTimeout as exc:
+        context.evidence.record("d3-timeout", {"command": args, **exc.details})
+        raise
     context.evidence.record(
         "d3-process",
         {
@@ -523,6 +528,8 @@ def host_proof(context):
                 path.is_file()
                 and hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
             ), "D3 evidence digest mismatch"
+    from ..d3.validate import verify
+    verify(context, proof)
     context.actual["d3_host_assertions"] = list(assertions)
 
 

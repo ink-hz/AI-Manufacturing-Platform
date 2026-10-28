@@ -196,8 +196,12 @@ def e14(context):
         {"sn": context.identifier("unknown-SN")},
     ):
         execution(flow, uid, flow.lots[0], **invalid)
-    execution(flow, uid, flow.lots[0])
-    execution(flow, uid, flow.lots[0])
+    duplicate_source = api.source("execution")
+    execution(flow, uid, flow.lots[0], source=duplicate_source)
+    with api.db() as db:
+        original = dict(db.execute("SELECT * FROM execution_events WHERE project_id=? AND status='accepted'", (p,)).fetchone())
+        consumption = [tuple(r) for r in db.execute("SELECT * FROM material_consumption WHERE project_id=?", (p,))]
+    execution(flow, uid, flow.lots[0], source=duplicate_source)
     api.command(
         p,
         "unit.register",
@@ -212,6 +216,11 @@ def e14(context):
         ).fetchall()
         assert sum(r["status"] == "accepted" for r in rows) == 1
         assert sum(r["status"] == "rejected" for r in rows) == 4
+        assert sum(r["reason"] == "duplicate execution source event" for r in rows) == 1
+        assert dict(db.execute("SELECT * FROM execution_events WHERE id=?", (original["id"],)).fetchone()) == original
+        assert [tuple(r) for r in db.execute("SELECT * FROM material_consumption WHERE project_id=?", (p,))] == consumption
+        duplicate = db.execute("SELECT source_json FROM execution_events WHERE project_id=? AND reason='duplicate execution source event'", (p,)).fetchone()[0]
+        assert duplicate == original["source_json"]
     assert api.get("/projects/" + p)["quality_summary"]["final_good"] == 0
     context.actual.update(
         accepted_events=1, rejected_events=4, overreport_rejected=True, good_count=0

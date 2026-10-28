@@ -1,6 +1,6 @@
 # Isolated manufacturing workflow acceptance
 
-This runbook describes the reproducible harness for the original [36 business cases](manufacturing-full-workflow-acceptance.md). It is not a full acceptance report. D2 authored the exact registry and verified a complete F01 smoke and E30 component/HTTP case; D4 must run a fresh `--cases all` after the required D3 proof runner is available. Browser, employee-account, real external-system and production acceptance remain separate.
+This runbook describes the reproducible harness for the original [36 business cases](manufacturing-full-workflow-acceptance.md). It is not a full acceptance report. D2 authored the exact registry and verified a complete F01 smoke and E30 component/HTTP case; D4 must run a fresh `--cases all` with the D3 proof runner configured. Browser, employee-account, real external-system and production acceptance remain separate.
 
 ## Run a selected scope
 
@@ -66,7 +66,7 @@ The manifest records the command, Node binary digest/version and package-lock di
 
 ## Mandatory D3 proof handoff in the same registry
 
-E29, E31 and E32 first perform their local real-HTTP actions, then require `WORKFLOW_D3_PROOF_COMMAND`, a JSON array naming a reviewed absolute private runner. Its absence makes the aggregate case **blocked**. It is not a passed subset. D3 must implement/configure a working pytest-independent runner before D4's all36 run; it may not substitute a second shortened suite.
+E29, E31 and E32 first perform their local real-HTTP actions, then require `WORKFLOW_D3_PROOF_COMMAND`, a JSON array naming a reviewed absolute private runner. Its absence makes the aggregate case **blocked**. It is not a passed subset. The pytest-independent runner is `tests/workflow/d3/run_proof.py`; configure it for D4's all36 run. It extends these exact registered cases and does not substitute a second acceptance suite.
 
 The harness invokes the command with `--case ID --case-directory <owned-dir> --output <owned-dir>/d3-proof.json`. It records the exact command and hashes of regular absolute runner files. The runner must return case_id, dataset_id, seed, release_hash and runner_files matching this run, plus `assertions` keyed by every required assertion below. Each assertion must have `passed: true` and a nonempty `evidence` list of `{path: "case-relative-path", sha256: "..."}` referencing actual owned request/response/restart/DB evidence. Missing files, foreign paths, symlinks and mismatched digests/provenance are rejected. A status checklist without evidence cannot pass. R1 additionally reviews/pins the actual private runner/dependencies rather than trusting arbitrary self-declared proof.
 
@@ -77,6 +77,37 @@ The harness invokes the command with `--case ID --case-directory <owned-dir> --o
 | E32 | `seven-legacy-created-by-real-api`, `all-legacy-table-hashes-unchanged`, `owned-demo-reset-only`, `seeded-mock-state-replay`, `persistent-simulation-labels` |
 
 E31 locally restarts through reviewed order, reserved readiness, measured/released production, shipment, accepted feedback and independent closures, comparing logical SQL facts and API state with fresh sessions. D3 adds the actual host/migration matrix, including the actual A1-source project-create replay (not SQL-fabricated historical success), live authorization on replay and immutable operation history. E32 runs two alternate-seed registered E14 scenarios and changes mock fault state through the boundary; the seven-record legacy/reset proof remains mandatory. Those seven synthetic legacy records must be created through actual legacy APIs; they are not the production seven. Root's production baseline/cutover checks remain separate.
+
+## Actual PF process and historical compatibility proof
+
+Configure the private runner with the same Python runtime used by PF. Paths below are examples and must resolve to the reviewed private exports:
+
+```sh
+export WORKFLOW_D3_PROOF_COMMAND='["/private/python/bin/python","/private/manufacturing/tests/workflow/d3/run_proof.py"]'
+PYTHONPATH=src /private/python/bin/python scripts/run_workflow_acceptance.py \
+  --cases E29,E31,E32 --seed 73 --output /private/evidence/d3
+```
+
+E29 and E32 also use the exact-lock Node/Vitest runtime configured by `WORKFLOW_E30_COMMAND`. They execute the real MF API retirement/order component tests and persistent simulation-label tests. Owned Vitest JSON must contain the exact required assertions with `passed` status; skipped/todo tests and source text searches cannot satisfy proof. PF frontend dependencies are not required.
+
+`d3/pf_host.py` starts actual PF `create_app` with its identity middleware, route policy registry and real `AuthorizationService`. Only the external identity provider and its read-only synthetic grant repository are fixtures. Sessions use the real login endpoint and fresh real-UTC security timestamps; HTTPS uses an ephemeral loopback SAN certificate verified by the client. Certificate generation uses the existing `cryptography` runtime, without new production dependencies or CLI tools. Synthetic principals, private fixture configuration and the temporary login secret are confined to an owned test dataset. No employee session, caller role header, HTTP flag or production environment setting enables this fixture.
+
+PF's optional trusted constructor dependencies `identity_authorization` and `manufacturing_business_clock` retain the default production behavior when omitted. The business clock is forwarded only to a factory explicitly declaring `business_clock`; an older factory remains compatible with the default path, and a requested clock on an unsupported factory makes the workflow unavailable. Security/JWT/provider/certificate/artifact time remains actual UTC. Fresh child processes reuse only the owned databases, then obtain new sessions. An old session must fail after restart. The parent checks scoped dashboard counts against SQL, immutable domain/API state, and authority database hashes before and after each critical checkpoint. Owned proof process groups have a 60-second deadline and bounded termination/kill cleanup; unrelated processes are outside that group.
+
+The parent rehashes the transitive owned JSON evidence and actual proof helper/scenario files. It independently rehashes every recorded executed PF module and the private MF release files, and reopens the final domain, authority and legacy databases to check every recorded table count/hash. The actual E31 proof produces100 units, restarts after first article and after shipment60 before acceptance, then accepts all100; the separate reservation checkpoint confirms80 with one authority business operation despite concurrent retries. E32 creates seven real legacy API projects with task/package controls, runs a released/shipped/accepted workflow, and proves every legacy table unchanged through an independently owned test-dataset reset.
+
+Two historical exports are required in a Git-less candidate:
+
+| Prefix | Exact source commit | Purpose |
+| --- | --- | --- |
+| `WORKFLOW_A1_SOURCE` | `b7397b4c0acd2bb9d32cafade8e885e4b9e7c732` | Original A1 router creates schema1 project and original replay bytes |
+| `WORKFLOW_LEGACY_SOURCE` | `ec41b39bdf8c0b5cc6b0193ed646a44050106ca3` | Genuine pre-workflow source bootstrap compatibility |
+
+For each prefix supply `_ROOT`, `_MANIFEST` and `_MANIFEST_SHA256`. Each separately externally pinned manifest has exactly `{version: 1, commit: "...", files: {"src/...": "sha256..."}}`. It covers the entire original `src` export. The runner validates the expected commit, manifest hash, safe paths, all file hashes and exact source inventory, refusing extra injected source files. Without main candidate provenance, local development may export these exact commits with `git ls-tree`/`git show`; candidate execution does not require Git history. R1 prepares and pins both private read-only assets outside the candidate. The legacy export has no matching historical compiled UI artifact: its case proves old-source/API bootstrap, using separately verified current assets only as loader prerequisites. It makes no historical asset compatibility claim. Actual current-source shell/assets/handbook bytes and CSP are positively checked.
+
+Schema16 canonicalizes only indexed source identity columns across demands/order lines/work orders, using the same system/type case-folding and external-ID case-preserving helper as current writers, lookups and amendments. All three domains preflight their existing uniqueness scopes before any update. A collision aborts the whole migration; raw source JSON, operations and audits remain immutable.
+
+A1 creation replay uses an explicit untagged v1 adapter with an exact old field set, original action/version, original request hash and audit/object binding. Both original and normalized stored quantity must satisfy the same positive, finite, exact-scale quantity validation. Only creation-time empty stages and zero child quantities are derived; a later real order100 remains visible in current reads while the original creation replay stays zero. Current DTOs stay strict. Live original-project authorization precedes caller hash comparison, including changed payloads and cross-action UUID conflicts; active changed payloads return409 and revoked scope returns404. Historical A2/A3/B3 source projections bind original typed command, operation hash, object and physical source facts without consulting a writer's current qualification. Unverified source references are omitted from public evidence while private audit bytes are retained.
 
 ## Verification scope and capacity
 

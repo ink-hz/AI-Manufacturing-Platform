@@ -257,6 +257,12 @@ class WorkflowStore:
                     conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {table}_acceptance_order ON {table}(project_id,accepted_seq)")
                 conn.execute("UPDATE schema_version SET version=15")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 15:
+                from .source_identity_migration import migrate_source_identities
+
+                migrate_source_identities(conn)
+                conn.execute("UPDATE schema_version SET version=16")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1
                 or version[0][0] != SCHEMA_VERSION

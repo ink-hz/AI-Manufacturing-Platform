@@ -72,7 +72,7 @@ def amount(q_atoms, project_row):
 
 
 def source_ok(source, object_type):
-    if source.object_type != object_type or source.mode not in {"manual", "file"}:
+    if source_key(source)[1] != object_type or source.mode not in {"manual", "file"}:
         fail("Source type or mode is not an authorized A2 registration")
     if source.collected_at < source.occurred_at:
         fail("Source collection precedes occurrence")
@@ -95,7 +95,7 @@ def source_key(source):
 
 
 def source_conflict(tx, source):
-    key = (source.system, source.object_type, source.external_id)
+    key = source_key(source)
     for table in ("demands", "order_lines"):
         if tx.execute(
             f"SELECT 1 FROM {table} WHERE source_system=? AND source_type=? AND source_external_id=?",
@@ -133,9 +133,7 @@ def dispatch_record_demand(tx, context, command: RecordDemand):
             command.unit,
             command.due_date.isoformat(),
             str(command.supersedes_demand_id) if command.supersedes_demand_id else None,
-            command.source.system,
-            command.source.object_type,
-            command.source.external_id,
+            *source_key(command.source),
             command.source.version,
             command.source.model_dump_json(),
             context.now.isoformat(),
@@ -207,9 +205,7 @@ def dispatch_register_order(tx, context, command: RegisterOrder):
             command.due_date.isoformat(),
             command.due_date.isoformat(),
             "active",
-            command.source.system,
-            command.source.object_type,
-            command.source.external_id,
+            *source_key(command.source),
             command.source.version,
             command.source.model_dump_json(),
             context.now.isoformat(),
@@ -269,9 +265,8 @@ def dispatch_change_order(tx, context, command: ChangeOrder):
     if order["state"] != "active":
         fail("Order is not active")
     source_ok(command.source, "order_line")
-    if (command.source.system, command.source.external_id) != (
-        order["source_system"],
-        order["source_external_id"],
+    if source_key(command.source) != (
+        order["source_system"], order["source_type"], order["source_external_id"],
     ):
         fail("Change source must revise the same formal order")
     if command.source.version <= order["source_version"]:
@@ -489,7 +484,9 @@ def _history(tx, project_id, object_id):
         "SELECT * FROM audit_events WHERE project_id=? AND object_id=? ORDER BY id",
         (str(project_id), str(object_id)),
     ).fetchall()
-    return _history_rows(rows)
+    from .source_history import evidence
+
+    return _history_rows(rows, evidence_projector=lambda row, payload: evidence(tx, project_id, row, payload))
 
 
 def _audit_evidence(payload):
@@ -534,7 +531,9 @@ def _order_history(tx, project_id, order_id):
         "ORDER BY id",
         (str(project_id), str(order_id), str(project_id), str(order_id)),
     ).fetchall()
-    return _history_rows(rows)
+    from .source_history import evidence
+
+    return _history_rows(rows, evidence_projector=lambda row, payload: evidence(tx, project_id, row, payload))
 
 
 def _summary(row, kind, project_row):

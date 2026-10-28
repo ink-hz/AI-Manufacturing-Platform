@@ -40,3 +40,38 @@ def test_owned_run_rejects_unowned_production_and_symlink(tmp_path):
     with pytest.raises(ValueError):
         owned_run(link)
     assert owned_run(c.directory)["dataset_mode"] == "test"
+
+
+def test_private_host_rejects_production_or_foreign_fixture_before_database_io(tmp_path):
+    from .http_fixture import build_app
+    context = ScenarioContext.isolated(tmp_path, case_id="E32", seed=88)
+    fixture = context.directory / "fixture.json"
+    fixture.write_text(json.dumps({"secret": "synthetic-only", "seed": 88, "dataset_mode": "production", "dataset_id": context.dataset_id}))
+    fixture.chmod(0o600)
+    with pytest.raises(ValueError, match="test dataset"):
+        build_app(context.directory)
+    fixture.write_text(json.dumps({"secret": "synthetic-only", "seed": 88, "dataset_mode": "test", "dataset_id": "foreign"}))
+    with pytest.raises(ValueError, match="test dataset"):
+        build_app(context.directory)
+    assert not context.paths.domain.exists() and not context.paths.authority.exists()
+
+
+def test_owned_dataset_reset_refuses_symlink_without_touching_sentinel(tmp_path):
+    from .d3.proof_support import reset_dataset
+    context = ScenarioContext.isolated(tmp_path, case_id="E32", seed=89)
+    sentinel = tmp_path / "outside.txt"
+    sentinel.write_text("untouched")
+    context.paths.domain.symlink_to(sentinel)
+    with pytest.raises(ValueError, match="symlink"):
+        reset_dataset(context.directory)
+    assert sentinel.read_text() == "untouched"
+
+
+def test_manifest_symlink_cannot_authorize_a_process_or_reset(tmp_path):
+    context = ScenarioContext.isolated(tmp_path, case_id="E32", seed=90)
+    manifest = context.directory / "manifest.json"
+    external = tmp_path / "borrowed-manifest.json"
+    manifest.rename(external)
+    manifest.symlink_to(external)
+    with pytest.raises(ValueError):
+        owned_run(context.directory)

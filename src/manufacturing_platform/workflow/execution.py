@@ -1103,7 +1103,8 @@ def unit_detail(tx, pid, ident):
             tx.execute(
                 "SELECT * FROM audit_events WHERE project_id=? AND object_id=? ORDER BY id LIMIT 500",
                 (str(pid), str(ident)),
-            ).fetchall()
+            ).fetchall(),
+            evidence_projector=lambda row, payload: history_evidence(tx, pid, row, payload),
         ),
     )
 
@@ -1194,7 +1195,8 @@ def interruption_detail(tx, pid, ident):
             tx.execute(
                 "SELECT * FROM audit_events WHERE project_id=? AND object_id=? ORDER BY id LIMIT 500",
                 (str(pid), str(ident)),
-            ).fetchall()
+            ).fetchall(),
+            evidence_projector=lambda row, payload: history_evidence(tx, pid, row, payload),
         ),
     )
 
@@ -1237,3 +1239,9 @@ for kind, table, model, summary, detail in (
         ],
         detail=detail,
     )
+
+
+def history_evidence(tx, pid, row, payload):
+    from .source_history import evidence
+
+    return evidence(tx, pid, row, payload)

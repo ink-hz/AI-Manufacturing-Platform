@@ -42,6 +42,7 @@ class BusinessHTTP:
                     "assets_dir": getattr(self.context, "ui_assets", None),
                     "business_clock": self.context.clock.isoformat(),
                     "dataset_id": self.context.dataset_id,
+                    "dataset_mode": "test",
                     "dataset_label": "Simulated workflow acceptance",
                 }
             )

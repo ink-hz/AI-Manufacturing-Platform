@@ -211,7 +211,7 @@ def test_v14_order_migration_preserves_all_original_fact_and_audit_bytes(workflo
                     f"SELECT {','.join(columns)} FROM {table} ORDER BY rowid"
                 )
             ] == rows
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 15
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 16
 
 
 def test_clock_binding_resets_after_nested_error(tmp_path):

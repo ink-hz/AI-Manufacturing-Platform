@@ -28,7 +28,7 @@ from .engineering_models import (
     RegisterWorkOrder,
     WorkOrder,
 )
-from .orders import _history_rows, amount, atoms, own, project, source_ok
+from .orders import _history_rows, amount, atoms, own, project, source_ok, source_key
 from .queries import OBJECT_REGISTRY
 
 
@@ -193,7 +193,7 @@ def register_work_order(tx, context, command: RegisterWorkOrder):
         fail("work orders exceed formal order")
     if tx.execute(
         "SELECT 1 FROM work_orders WHERE source_system=? AND source_type=? AND source_external_id=?",
-        (command.source.system, command.source.object_type, command.source.external_id),
+        source_key(command.source),
     ).fetchone():
         fail("external work order number already registered", "SOURCE_CONFLICT")
     ident = str(uuid4())
@@ -208,9 +208,7 @@ def register_work_order(tx, context, command: RegisterWorkOrder):
             command.unit,
             command.purpose,
             trial,
-            command.source.system,
-            command.source.object_type,
-            command.source.external_id,
+            *source_key(command.source),
             command.source.version,
             command.source.model_dump_json(),
             command.planned_start.isoformat(),
@@ -310,7 +308,9 @@ def _history(tx, project_id, object_id):
         "SELECT * FROM audit_events WHERE project_id=? AND object_id=? ORDER BY id",
         (str(project_id), str(object_id)),
     ).fetchall()
-    return _history_rows(rows)
+    from .source_history import evidence
+
+    return _history_rows(rows, evidence_projector=lambda row, payload: evidence(tx, project_id, row, payload))
 
 
 def revision_summary(row):

@@ -43,6 +43,7 @@ from .contracts import (
     ScopeGrantView,
 )
 from .queries import OBJECT_REGISTRY
+from .result_versions import authorize_creation_replay, project_creation_result
 
 
 def canonical(value):
@@ -94,17 +95,20 @@ class WorkflowService:
             OBJECT_REGISTRY if object_registry is None else object_registry
         )
 
-    def _replay(self, tx, actor, operation, payload):
+    def _replay(self, tx, actor, operation, payload, *, authorize_result=None):
         row = tx.execute(
             "SELECT payload_hash,result_json FROM operations WHERE dataset=? AND actor_id=? AND operation_id=?",
             (self.store.dataset["id"], str(actor.user_id), str(operation)),
         ).fetchone()
         if row:
+            if authorize_result is not None:
+                result = json.loads(row["result_json"])
+                authorize_result(row, result)
             if row["payload_hash"] != digest(payload):
                 raise DomainError(
                     "IDEMPOTENCY_CONFLICT", 409, "Operation ID already used"
                 )
-            return json.loads(row["result_json"])
+            return result if authorize_result is not None else json.loads(row["result_json"])
         return None
 
     def _save(
@@ -141,10 +145,14 @@ class WorkflowService:
             raise DomainError("FORBIDDEN", 403, "Permission denied")
         payload = {"action": "project.create", **value.model_dump(mode="json")}
         with self.store.transaction(write=True) as tx:
-            replay = self._replay(tx, actor, value.operation_id, payload)
+            replay = self._replay(
+                tx, actor, value.operation_id, payload,
+                authorize_result=lambda saved, result: authorize_creation_replay(
+                    tx, actor, value.operation_id, saved, result
+                ),
+            )
             if replay is not None:
-                require_project(tx, actor, replay["id"])
-                return ProjectDetail.model_validate(replay)
+                return project_creation_result(tx, actor, payload, replay)
             pid = str(uuid4())
             tx.execute(
                 "INSERT INTO projects VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",

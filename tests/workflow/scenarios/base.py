@@ -268,7 +268,7 @@ ScenarioStep = Callable[[ScenarioContext], None]
 
 def owned_run(directory):
     path = Path(directory)
-    if path.is_symlink() or not path.is_absolute():
+    if path.is_symlink() or not path.is_absolute() or (path / "manifest.json").is_symlink():
         raise ValueError("Not an owned run directory")
     try:
         manifest = json.loads((path / "manifest.json").read_text())

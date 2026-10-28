@@ -12,10 +12,22 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 
 from manufacturing_platform import build_workflow_router
+if __package__:
+    from .scenarios.base import owned_run
+else:
+    from scenarios.base import owned_run
 
 
 def build_app(root: Path):
-    config = json.loads((root / "fixture.json").read_text())
+    manifest = owned_run(root)
+    path = root / "fixture.json"
+    if path.is_symlink() or path.stat().st_mode & 0o077:
+        raise ValueError("Private test dataset secret required")
+    config = json.loads(path.read_text())
+    if config.get("dataset_mode") != "test" or config.get("dataset_id") != manifest["dataset_id"] or manifest["dataset_mode"] != "test":
+        raise ValueError("Only the explicit owned test dataset is allowed")
+    if any((root / name).is_symlink() for name in ("workflow.db", "authority.db")):
+        raise ValueError("Symlink test dataset refused")
     identities = {
         name: {
             "user_id": str(uuid5(NAMESPACE_URL, f"fixture:{config.get('seed', root.name)}:{name}")),
@@ -131,4 +143,4 @@ def serve(root: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("root", type=Path)
-    serve(parser.parse_args().root.resolve())
+    serve(parser.parse_args().root)
