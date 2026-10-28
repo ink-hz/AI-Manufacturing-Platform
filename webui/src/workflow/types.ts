@@ -27,7 +27,8 @@ export type ObjectKind =
   | "order_line"
   | "commitment_change"
   | "revision"
-  | "work_order";
+  | "work_order"
+  | "plan" | "requirement" | "commitment" | "material_lot" | "receipt";
 export interface SourceRef {
   system: string;
   object_type: string;
@@ -208,7 +209,12 @@ export type CommandFields =
       evidence: string;
       valid_until: string;
       decision: "verified" | "rejected";
-    };
+    }
+  | { action: "material.define"; material_id: string; lot_id: string; owner_id: string; unit: string; scale: number; expiry: string; source: SourceRef }
+  | { action: "plan.receive"; source: SourceRef; input_revision_ids: string[]; input_order_versions: {order_line_id:string;version:number}[]; requirements: {work_order_id:string;execution_scope:"trial"|"bulk"|"common";material_id:string;owner_id:string;quantity:string;unit:string}[] }
+  | { action: "supply.commit"; commitment_id?: string | null; requirement_id: string; type:"purchase"|"customer"; owner_id:string; quantity:string; unit:string; original_due:string; current_due:string; source:SourceRef }
+  | { action: "supply.receive"; commitment_id:string; material_lot_id:string; quantity:string; unit:string; source:SourceRef }
+  | { action: "supply.inspect"; receipt_id:string; accepted:string; rejected:string; evidence:string };
 export type WorkflowCommand = CommandFields & {
   operation_id: string;
   expected_version: number;
@@ -225,6 +231,19 @@ export interface ObjectSummary {
   version: number;
   blocking_reasons: string[];
   next_actions: string[];
+  material_balance?: MaterialBalance | null;
+}
+export interface MaterialBalance {
+  required: string;
+  in_transit: string;
+  received: string;
+  qualified: string;
+  rejected: string;
+  reserved: string;
+  shortage: string;
+  unit: string;
+  cutoff: string | null;
+  source_version: number;
 }
 export interface Readiness {
   ready: boolean;
@@ -334,7 +353,12 @@ export type DomainValue =
       state: string;
       trial_readiness: Readiness;
       bulk_readiness: Readiness;
-    };
+    }
+  | {kind:"plan";state:"confirmed"|"rejected";reason:string;source:SourceRef;input_revision_ids:string[];input_order_versions:{order_line_id:string;version:number}[];requirement_ids:string[];cutoff:string|null}
+  | {kind:"requirement";plan_id:string;lineage_id:string;supersedes_requirement_id:string|null;work_order_id:string;execution_scope:"trial"|"bulk"|"common";material_id:string;owner_id:string;quantity:string;unit:string;balance:MaterialBalance;unqualified_quantity:string}
+  | {kind:"commitment";requirement_id:string;type:"purchase"|"customer";owner_id:string;original_quantity:string;current_quantity:string;unit:string;original_due:string;current_due:string;source:SourceRef;promise_revisions:{source:SourceRef;quantity:string;current_due:string}[];material_lot_ids:string[];received:string;qualified:string;rejected:string}
+  | {kind:"material_lot";material_id:string;lot_id:string;owner_id:string;unit:string;scale:number;expiry:string;state:"active"|"frozen";source:SourceRef;received:string;qualified:string;rejected:string}
+  | {kind:"receipt";commitment_id:string;material_lot_id:string;quantity:string;unit:string;source:SourceRef;accepted:string;rejected:string;uninspected:string};
 export interface ObjectDetail {
   summary: ObjectSummary;
   value: DomainValue;

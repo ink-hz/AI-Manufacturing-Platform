@@ -4,7 +4,13 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from .schema import ENGINEERING_SCHEMA, ORDER_SCHEMA, SCHEMA, SCHEMA_VERSION
+from .schema import (
+    ENGINEERING_SCHEMA,
+    ORDER_SCHEMA,
+    SCHEMA,
+    SCHEMA_VERSION,
+    SUPPLY_SCHEMA,
+)
 
 
 class WorkflowStore:
@@ -67,6 +73,12 @@ class WorkflowStore:
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             if len(version) == 1 and version[0][0] == 2:
                 for statement in ENGINEERING_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=3")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 3:
+                for statement in SUPPLY_SCHEMA.split(";"):
                     if statement.strip():
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=?", (SCHEMA_VERSION,))

@@ -1,4 +1,25 @@
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+SUPPLY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS material_lots(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),material_id TEXT NOT NULL,lot_id TEXT NOT NULL,owner_id TEXT NOT NULL,unit TEXT NOT NULL,scale INTEGER NOT NULL,expiry TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('active','frozen')),source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_version INTEGER NOT NULL,source_json TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(project_id,lot_id),UNIQUE(source_system,source_type,source_external_id));
+CREATE INDEX IF NOT EXISTS material_lots_page ON material_lots(project_id,created_at,id);
+CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),state TEXT NOT NULL CHECK(state IN ('confirmed','rejected')),reason TEXT NOT NULL,source_json TEXT NOT NULL,source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_version INTEGER NOT NULL,cutoff TEXT,inputs_json TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id,source_version));
+CREATE INDEX IF NOT EXISTS plans_page ON plans(project_id,created_at,id);
+CREATE TABLE IF NOT EXISTS requirements(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),plan_id TEXT NOT NULL REFERENCES plans(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),execution_scope TEXT NOT NULL CHECK(execution_scope IN ('trial','bulk','common')),material_id TEXT NOT NULL,owner_id TEXT NOT NULL,q_atoms INTEGER NOT NULL CHECK(q_atoms>0),unit TEXT NOT NULL,scale INTEGER NOT NULL,lineage_id TEXT NOT NULL,supersedes_requirement_id TEXT REFERENCES requirements(id),created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS requirements_page ON requirements(project_id,plan_id,created_at,id);
+CREATE INDEX IF NOT EXISTS requirements_work_order ON requirements(project_id,work_order_id,execution_scope,plan_id);
+CREATE INDEX IF NOT EXISTS requirements_lineage ON requirements(project_id,lineage_id,created_at,id);
+CREATE TABLE IF NOT EXISTS supply_commitments(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),requirement_id TEXT NOT NULL REFERENCES requirements(id),type TEXT NOT NULL CHECK(type IN ('purchase','customer')),owner_id TEXT NOT NULL,original_q_atoms INTEGER NOT NULL,current_q_atoms INTEGER NOT NULL,unit TEXT NOT NULL,original_due TEXT NOT NULL,current_due TEXT NOT NULL,source_json TEXT NOT NULL,source_version INTEGER NOT NULL,created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS commitments_page ON supply_commitments(project_id,created_at,id);
+CREATE INDEX IF NOT EXISTS commitments_requirement ON supply_commitments(project_id,requirement_id);
+CREATE TABLE IF NOT EXISTS supply_promise_revisions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),commitment_id TEXT NOT NULL REFERENCES supply_commitments(id),q_atoms INTEGER NOT NULL,current_due TEXT NOT NULL,source_json TEXT NOT NULL,source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_version INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id,source_version));
+CREATE INDEX IF NOT EXISTS promise_revisions ON supply_promise_revisions(project_id,commitment_id,created_at,id);
+CREATE TABLE IF NOT EXISTS supply_receipts(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),commitment_id TEXT NOT NULL REFERENCES supply_commitments(id),material_lot_id TEXT NOT NULL REFERENCES material_lots(id),q_atoms INTEGER NOT NULL CHECK(q_atoms>0),unit TEXT NOT NULL,source_json TEXT NOT NULL,source_system TEXT NOT NULL,source_type TEXT NOT NULL,source_external_id TEXT NOT NULL,source_version INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(source_system,source_type,source_external_id));
+CREATE INDEX IF NOT EXISTS receipts_commitment ON supply_receipts(project_id,commitment_id,created_at,id);
+CREATE TABLE IF NOT EXISTS iqc_results(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),receipt_id TEXT NOT NULL REFERENCES supply_receipts(id),accepted_atoms INTEGER NOT NULL CHECK(accepted_atoms>=0),rejected_atoms INTEGER NOT NULL CHECK(rejected_atoms>=0),evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,CHECK(accepted_atoms+rejected_atoms>0));
+CREATE INDEX IF NOT EXISTS iqc_receipt ON iqc_results(project_id,receipt_id,created_at,id);
+CREATE TABLE IF NOT EXISTS reservations(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),requirement_id TEXT NOT NULL REFERENCES requirements(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),material_lot_id TEXT NOT NULL REFERENCES material_lots(id),requested_atoms INTEGER NOT NULL CHECK(requested_atoms>0),confirmed_atoms INTEGER NOT NULL DEFAULT 0 CHECK(confirmed_atoms>=0 AND confirmed_atoms<=requested_atoms),unit TEXT NOT NULL,source_version INTEGER NOT NULL,authority_receipt_id TEXT,created_at TEXT NOT NULL,UNIQUE(authority_receipt_id));
+CREATE INDEX IF NOT EXISTS reservations_requirement ON reservations(project_id,requirement_id,work_order_id);
+"""
 ENGINEERING_SCHEMA = """
 CREATE TABLE engineering_revisions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),package_id TEXT NOT NULL,revision TEXT NOT NULL,customer_revision TEXT NOT NULL,internal_revision TEXT NOT NULL,firmware_version TEXT NOT NULL,test_spec_json TEXT NOT NULL,content_hash TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(project_id,package_id,revision));
 CREATE INDEX revisions_project_page ON engineering_revisions(project_id,created_at,id);
@@ -38,4 +59,5 @@ CREATE TABLE audit_events(id INTEGER PRIMARY KEY, project_id TEXT NOT NULL REFER
 """
     + ORDER_SCHEMA
     + ENGINEERING_SCHEMA
+    + SUPPLY_SCHEMA
 )

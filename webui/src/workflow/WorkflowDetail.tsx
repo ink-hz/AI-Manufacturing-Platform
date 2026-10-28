@@ -39,6 +39,7 @@ export function Source({ value: v }: { value: SourceRef }) {
           ],
           ["发生时间", v.occurred_at],
           ["采集时间", v.collected_at],
+          ["来源截止", v.cutoff || "未提供"],
           ["凭据", v.evidence],
         ]}
       />
@@ -69,8 +70,13 @@ function ReadinessView({ title, value }: { title: string; value: Readiness }) {
           ))}
         </tbody>
       </table>
+      <Facts items={Object.entries(value.input_versions).filter(([key])=>key!=="plan_id").map(([key,version])=>[
+        ({project:"项目版本",revision:"固定修订",work_order:"工单来源版本",plan:"计划来源版本",
+          plan_source:"计划业务编号",plan_cutoff:"计划来源截止"} as Record<string,string>)[key]||key,
+        version || "未提供",
+      ])}/>
       <p>
-        计划与物料需后续权威事实；量产首件需实际试产检验，当前不提供开工操作。
+        库存预留由权威系统原子接受。开工分为首件试做与批量执行；量产首件需实际检验。
       </p>
     </section>
   );
@@ -256,6 +262,30 @@ export function DetailContent({
           <ReadinessView title="量产准备" value={v.bulk_readiness} />
         </>
       )}
+      {v.kind === "plan" && <>
+        <Facts items={[["计划状态",label(v.state)],["来源截止",v.cutoff||"未提供"],["拒绝原因",v.reason||"无"],
+          ["计划固定修订数",v.input_revision_ids.length],["计划订单版本数",v.input_order_versions.length],
+          ["已确认需求数",v.requirement_ids.length]]}/>
+        {v.state==="rejected"&&<p>此计划未确认，不可作为开工物料依据。请提交新的来源版本。</p>}
+      </>}
+      {v.kind === "requirement" && <>
+        <Facts items={[["物料业务编号",v.material_id],["物料所有者",v.owner_id],["执行范围",label(v.execution_scope)],
+          ["计划需求",v.quantity+" "+v.unit],["来源截止",v.balance.cutoff||"未提供"],["来源版本",v.balance.source_version]]}/>
+        <table><thead><tr><th>需求</th><th>在途</th><th>已接收</th><th>已检合格</th><th>拒收</th><th>确认预留</th><th>缺口</th><th>单位</th></tr></thead>
+        <tbody><tr><td>{v.balance.required}</td><td>{v.balance.in_transit}</td><td>{v.balance.received}</td><td>{v.balance.qualified}</td><td>{v.balance.rejected}</td><td>{v.balance.reserved}</td><td>{v.balance.shortage}</td><td>{v.balance.unit}</td></tr></tbody></table>
+        <p>库存预留由权威系统原子接受。当前人工到货及检验数量不会增加确认预留。</p>
+      </>}
+      {v.kind === "commitment" && <>
+        <Facts items={[["供应类型",label(v.type)],["所有者",v.owner_id],["原始承诺数量",v.original_quantity+" "+v.unit],
+          ["当前承诺数量",v.current_quantity+" "+v.unit],["原始承诺交期",v.original_due],["当前承诺交期",v.current_due],
+          ["累计到货",v.received],["检验合格",v.qualified],["拒收",v.rejected]]}/>
+        <h4>承诺版本</h4><ol>{v.promise_revisions.map((r,i)=><li key={i}>{r.current_due} · {r.quantity} {v.unit} · {r.source.external_id} · 版本 {r.source.version}</li>)}</ol>
+      </>}
+      {v.kind === "material_lot" && <Facts items={[["物料业务编号",v.material_id],["批次业务编号",v.lot_id],
+        ["所有者",v.owner_id],["单位",v.unit],["计量精度",v.scale],["有效期",v.expiry],["状态",label(v.state)],
+        ["累计到货",v.received],["检验合格",v.qualified],["拒收",v.rejected]]}/>}
+      {v.kind === "receipt" && <Facts items={[["本次到货",v.quantity+" "+v.unit],["检验合格",v.accepted],
+        ["拒收",v.rejected],["待检",v.uninspected]]}/>}
       {"source" in v && <Source value={v.source} />}
       <h4>关联记录</h4>
       {data.relations.map((r, i) => (

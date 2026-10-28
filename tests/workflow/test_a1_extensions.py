@@ -32,6 +32,11 @@ def test_extension_contracts_exist_and_production_registry_contains_only_real_ac
         "engineering.customer_approval",
         "work_order.register",
         "readiness.record",
+        "material.define",
+        "plan.receive",
+        "supply.commit",
+        "supply.receive",
+        "supply.inspect",
     }
 
 

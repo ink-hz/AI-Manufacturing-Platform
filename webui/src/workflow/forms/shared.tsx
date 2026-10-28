@@ -162,7 +162,7 @@ export function CommandForm<T extends CommandFields>({
   canSubmit?: (value: T) => boolean;
   title: string;
   save: string;
-  children: (v: T, set: (v: T) => void) => ReactNode;
+  children: (v: T, set: (v: T | ((current: T) => T)) => void) => ReactNode;
 }) {
   const [value, setValue] = useState(initial),
     [version] = useState(props.project.version),
@@ -170,7 +170,8 @@ export function CommandForm<T extends CommandFields>({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [conflict, setConflict] = useState<WorkflowError | null>(null);
-  const pending = useRef<WorkflowCommand | null>(null),
+  const currentValue = useRef(value),
+    pending = useRef<WorkflowCommand | null>(null),
     alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -179,11 +180,13 @@ export function CommandForm<T extends CommandFields>({
       props.onDirty(title, false);
     };
   }, []);
-  function set(v: T) {
+  function set(v: T | ((current: T) => T)) {
     if (!alive.current) return;
+    const next = typeof v === "function" ? v(currentValue.current) : v;
+    currentValue.current = next;
     pending.current = null;
     setConflict(null);
-    setValue(v);
+    setValue(next);
     setDirty(true);
     props.onDirty(title, true);
   }
@@ -207,6 +210,9 @@ export function CommandForm<T extends CommandFields>({
                   ? new Date(fields.source.occurred_at).toISOString()
                   : now,
                 collected_at: now,
+                cutoff: fields.source.cutoff
+                  ? new Date(fields.source.cutoff).toISOString()
+                  : null,
               };
             }
             if (fields.action === "work_order.register") {

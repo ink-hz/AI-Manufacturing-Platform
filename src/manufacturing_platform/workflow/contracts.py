@@ -191,6 +191,7 @@ class ObjectKind(str, Enum):
     plan = "plan"
     requirement = "requirement"
     commitment = "commitment"
+    receipt = "receipt"
     material_lot = "material_lot"
     reservation = "reservation"
     unit = "unit"
@@ -230,6 +231,19 @@ class SourceRef(StrictModel):
         return require_timezone(value)
 
 
+class MaterialBalance(StrictModel):
+    required: NonnegativeQuantity
+    in_transit: NonnegativeQuantity
+    received: NonnegativeQuantity
+    qualified: NonnegativeQuantity
+    rejected: NonnegativeQuantity
+    reserved: NonnegativeQuantity
+    shortage: NonnegativeQuantity
+    unit: str
+    cutoff: str | None
+    source_version: int
+
+
 class ObjectSummary(StrictModel):
     id: UUID
     kind: ObjectKind
@@ -242,6 +256,7 @@ class ObjectSummary(StrictModel):
     version: int
     blocking_reasons: list[str] = []
     next_actions: list[str] = []
+    material_balance: MaterialBalance | None = None
 
 
 class ObjectPage(StrictModel):

@@ -14,6 +14,7 @@ import type {
 import { WorkflowHome } from "./WorkflowHome";
 import { WorkflowProjects, ProjectForm, Members } from "./WorkflowProjects";
 import { OrdersWorkspace } from "./OrdersWorkspace";
+import { SupplyWorkspace } from "./SupplyWorkspace";
 import { WorkflowDetail } from "./WorkflowDetail";
 import { OrdersForms } from "./forms/OrdersForms";
 import "./workflow.css";
@@ -31,7 +32,7 @@ export function WorkflowApp({
     [project, setProject] = useState<ProjectDetail | null>(null),
     [view, setView] = useState<ConsoleView>("home"),
     [creating, setCreating] = useState(false),
-    [workspace, setWorkspace] = useState<"orders" | "engineering" | "members">(
+    [workspace, setWorkspace] = useState<"orders" | "engineering" | "supply" | "members">(
       "orders",
     ),
     [target, setTarget] = useState<WorkflowTarget | null>(null),
@@ -200,6 +201,7 @@ export function WorkflowApp({
         "commitment_change",
         "revision",
         "work_order",
+        "plan", "requirement", "commitment", "material_lot", "receipt",
       ].includes(result.object_type)
     ) {
       setTarget({
@@ -373,6 +375,7 @@ export function WorkflowApp({
                     [
                       ["orders", "订单与需求"],
                       ["engineering", "工程与工单"],
+                      ["supply", "供应与物料"],
                       ...(b.configuration_admin
                         ? [["members", "成员授权"]]
                         : []),
@@ -440,6 +443,12 @@ export function WorkflowApp({
                   </>
                 ) : workspace === "members" ? (
                   <Members {...props} findSubjects={options.findSubjects} />
+                ) : workspace === "supply" ? (
+                  <SupplyWorkspace
+                    {...props}
+                    requestLeave={requestLeave}
+                    onReload={() => setRefresh((r) => r + 1)}
+                  />
                 ) : (
                   <OrdersWorkspace
                     {...props}

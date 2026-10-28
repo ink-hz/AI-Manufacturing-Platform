@@ -324,3 +324,75 @@ def _object(self, project_id, kind, object_id):
 WorkflowHarness.revision = _revision
 WorkflowHarness.order_workorder = _order_workorder
 WorkflowHarness.object = _object
+
+
+def _material_requirement(self, *, required="100", qualified="80", unit="kg", scale=3, scope="trial"):
+    from datetime import UTC, datetime, timedelta
+
+    p, order, wo, rev = self.order_workorder(quantity="5")
+    self.grant(p["id"], "supply", ["supply"])
+    self.grant(p["id"], "quality", ["quality"], ["inspection"])
+    now = datetime.now(UTC)
+    source = self.source(f"material-{uuid4()}", object_type="material_lot")
+    lot = self.command(
+        p["id"], "material.define", actor_name="supply",
+        material_id="steel-1", lot_id="lot-1", owner_id="Customer 1",
+        unit=unit, scale=scale, expiry=(now + timedelta(days=90)).date().isoformat(), source=source,
+    )
+    plan_source = self.source(f"plan-{uuid4()}", object_type="plan")
+    plan_source.update(
+        occurred_at=(now - timedelta(minutes=2)).isoformat(),
+        collected_at=(now - timedelta(minutes=1)).isoformat(),
+        cutoff=(now - timedelta(minutes=2)).isoformat(),
+    )
+    with self.db() as db:
+        order_version = db.execute("SELECT source_version FROM order_lines WHERE id=?", (order["id"],)).fetchone()[0]
+    plan = self.command(
+        p["id"], "plan.receive", actor_name="planner", source=plan_source,
+        input_revision_ids=[rev["id"]],
+        input_order_versions=[{"order_line_id": order["id"], "version": order_version}],
+        requirements=[{
+            "work_order_id": wo["id"], "execution_scope": scope,
+            "material_id": "steel-1", "owner_id": "Customer 1", "quantity": required, "unit": unit,
+        }],
+    )
+    plan_detail = self.object(p["id"], "plan", plan["object_id"])
+    requirement = {"id": plan_detail["requirement_ids"][0]}
+    commitment = self.command(
+        p["id"], "supply.commit", actor_name="supply", requirement_id=requirement["id"],
+        type="customer", owner_id="Customer 1", quantity=required, unit=unit,
+        original_due=(now + timedelta(days=1)).date().isoformat(),
+        current_due=(now + timedelta(days=1)).date().isoformat(),
+        source=self.source(f"promise-{uuid4()}", object_type="commitment"),
+    )
+    if qualified != "0":
+        receipt = self.receive(p["id"], commitment["object_id"], quantity=qualified, lot_id=lot["object_id"])
+        self.inspect(p["id"], receipt["object_id"], accepted=qualified, rejected="0")
+    return p, requirement, {"id": commitment["object_id"], "lot_id": lot["object_id"], "work_order_id": wo["id"], "order_id": order["id"], "revision_id": rev["id"]}
+
+
+def _receive(self, project_id, commitment_id, *, quantity, lot_id=None, source=None):
+    if lot_id is None:
+        lot_id = self.object(project_id, "commitment", commitment_id)["material_lot_ids"][0]
+    return self.command(
+        project_id, "supply.receive", actor_name="supply", commitment_id=commitment_id,
+        material_lot_id=lot_id, quantity=quantity, unit="kg",
+        source=source or self.source(f"receipt-{uuid4()}", object_type="receipt"),
+    )
+
+
+def _inspect(self, project_id, receipt_id, *, accepted, rejected):
+    return self.command(
+        project_id, "supply.inspect", actor_name="quality", receipt_id=receipt_id,
+        accepted=accepted, rejected=rejected, evidence="IQC signed result",
+    )
+
+
+def _balance(self, project_id, requirement_id):
+    return self.object(project_id, "requirement", requirement_id)["balance"]
+
+
+WorkflowHarness.material_requirement = _material_requirement
+WorkflowHarness.receive = _receive
+WorkflowHarness.inspect = _inspect
+WorkflowHarness.balance = _balance

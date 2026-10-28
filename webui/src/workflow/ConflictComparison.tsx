@@ -37,6 +37,14 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
       ];
     case "readiness.record":
       return target("work_order", draft.work_order_id);
+    case "plan.receive":
+      return draft.requirements.flatMap(r=>target("work_order",r.work_order_id));
+    case "supply.commit":
+      return [...target("requirement",draft.requirement_id),...target("commitment",draft.commitment_id||"")];
+    case "supply.receive":
+      return [...target("commitment",draft.commitment_id),...target("material_lot",draft.material_lot_id)];
+    case "supply.inspect":
+      return target("receipt",draft.receipt_id);
     default:
       return [];
   }
@@ -92,6 +100,16 @@ function facts(v: DomainValue): [string, string][] {
         ["试产准备", v.trial_readiness.ready ? "就绪" : "阻断"],
         ["量产准备", v.bulk_readiness.ready ? "就绪" : "阻断"],
       ];
+    case "plan":
+      return [["计划状态",label(v.state)],["来源截止",v.cutoff||"未提供"],["拒绝原因",v.reason]];
+    case "requirement":
+      return [["需求数量",v.quantity+" "+v.unit],["在途",v.balance.in_transit],["已检合格",v.balance.qualified],["确认预留",v.balance.reserved],["缺口",v.balance.shortage]];
+    case "commitment":
+      return [["原始承诺",v.original_quantity+" "+v.unit],["当前承诺",v.current_quantity+" "+v.unit],["原始交期",v.original_due],["当前交期",v.current_due]];
+    case "material_lot":
+      return [["批次",v.lot_id],["所有者",v.owner_id],["单位",v.unit],["有效期",v.expiry],["状态",label(v.state)]];
+    case "receipt":
+      return [["本次到货",v.quantity+" "+v.unit],["检验合格",v.accepted],["拒收",v.rejected],["待检",v.uninspected]];
   }
 }
 const grantLabels: Record<string, string> = {

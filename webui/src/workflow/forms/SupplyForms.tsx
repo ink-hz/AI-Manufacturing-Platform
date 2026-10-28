@@ -1,0 +1,132 @@
+import { useState } from "react";
+import type { CommandFields, ObjectSummary, WorkspaceProps } from "../types";
+import { Choice, CommandForm, Field, ObjectChoice, SourceFields, source } from "./shared";
+
+type Props=WorkspaceProps & {action:CommandFields["action"];workOrders:ObjectSummary[];orders:ObjectSummary[];
+  revisions:ObjectSummary[];lots:ObjectSummary[];requirements:ObjectSummary[];
+  commitments:ObjectSummary[];receipts:ObjectSummary[]};
+type Define=Extract<CommandFields,{action:"material.define"}>;
+type Plan=Extract<CommandFields,{action:"plan.receive"}>;
+type Commit=Extract<CommandFields,{action:"supply.commit"}>;
+type Receive=Extract<CommandFields,{action:"supply.receive"}>;
+type Inspect=Extract<CommandFields,{action:"supply.inspect"}>;
+
+export function SupplyForms(p:Props){
+  const [selectedLots,setSelectedLots]=useState<Record<number,string>>({});
+  switch(p.action){
+    case "material.define": return <CommandForm<Define> {...p} title="定义物料批次" save="保存物料批次"
+      initial={()=>({action:"material.define",material_id:"",lot_id:"",owner_id:p.project.customer_id,unit:"kg",scale:3,expiry:"",source:source("material_lot")})}>
+      {(v,set)=><>
+        <Field name="物料业务编号" value={v.material_id} onChange={x=>set({...v,material_id:x})}/>
+        <Field name="批次业务编号" value={v.lot_id} onChange={x=>set({...v,lot_id:x})}/>
+        <Field name="物料所有者" value={v.owner_id} onChange={x=>set({...v,owner_id:x})}/>
+        <Field name="物料单位" value={v.unit} onChange={x=>set({...v,unit:x})}/>
+        <Field name="物料计量精度" type="number" value={String(v.scale)} onChange={x=>set({...v,scale:Number(x)})}/>
+        <Field name="批次有效期" type="date" value={v.expiry} onChange={x=>set({...v,expiry:x})}/>
+        <SourceFields value={v.source} onChange={x=>set({...v,source:x})}/>
+      </>}
+    </CommandForm>;
+    case "plan.receive": return <CommandForm<Plan> {...p} title="接收供应计划" save="保存计划"
+      initial={()=>({action:"plan.receive",source:source("plan"),input_revision_ids:[],input_order_versions:[],
+        requirements:[{work_order_id:"",execution_scope:"trial",material_id:"",owner_id:p.project.customer_id,quantity:"",unit:"kg"}]})}
+      canSubmit={v=>!!v.source.cutoff && v.input_revision_ids.length>0 && v.input_order_versions.length>0}>
+      {(v,set)=><>
+        <p>计划逐行指定工单、试做／批量／通用范围和物料数量；使用固定工程版本及当前订单来源版本。</p>
+        {v.requirements.map((r,i)=><fieldset key={i}>
+          <legend>物料需求 {i+1}</legend>
+          <ObjectChoice name={`计划依据工单 ${i+1}`} items={p.workOrders} value={r.work_order_id}
+            onChange={x=>{
+              set(old=>({...old,requirements:old.requirements.map((e,n)=>n===i?{...e,work_order_id:x}:e)}));
+              if(x)void p.api.object(p.project.id,"work_order",x).then(d=>{
+                if(d.value.kind!=="work_order")return;
+                const wo=d.value;
+                const order=p.orders.find(o=>o.id===wo.order_line_id);
+                const apply=(version:number)=>set(old=>({
+                  ...old,input_revision_ids:[...new Set([...old.input_revision_ids,wo.revision_id])],
+                  input_order_versions:[...old.input_order_versions.filter(o=>o.order_line_id!==wo.order_line_id),
+                    {order_line_id:wo.order_line_id,version}],
+                }));
+                if(order)apply(order.version);
+                else void p.api.object(p.project.id,"order_line",wo.order_line_id).then(o=>apply(o.summary.version));
+              });
+            }}/>
+          <ObjectChoice name={`计划物料批次 ${i+1}`} items={p.lots}
+            value={selectedLots[i]||""}
+            onChange={x=>{setSelectedLots(old=>({...old,[i]:x}));if(!x)return;void p.api.object(p.project.id,"material_lot",x).then(d=>{
+              const lot=d.value;
+              if(lot.kind==="material_lot")set(old=>({...old,requirements:old.requirements.map((e,n)=>n===i?{
+                ...e,material_id:lot.material_id,owner_id:lot.owner_id,unit:lot.unit}:e)}));
+            });}}/>
+          <Choice name={`执行范围 ${i+1}`} value={r.execution_scope}
+            choices={{trial:"首件试做",bulk:"批量执行",common:"试做与批量通用"}}
+            onChange={x=>set(old=>({...old,requirements:old.requirements.map((e,n)=>n===i?{
+              ...e,execution_scope:x as "trial"|"bulk"|"common"}:e)}))}/>
+          <Field name={`计划物料数量 ${i+1}`} value={r.quantity}
+            onChange={x=>set(old=>({...old,requirements:old.requirements.map((e,n)=>n===i?{...e,quantity:x}:e)}))}/>
+          <p>物料 {r.material_id||"待选"} · 所有者 {r.owner_id} · 单位 {r.unit}</p>
+          <button type="button" disabled={v.requirements.length===1} onClick={()=>{
+            setSelectedLots(old=>Object.fromEntries(Object.entries(old).filter(([n])=>Number(n)!==i)
+              .map(([n,x])=>[Number(n)>i?Number(n)-1:Number(n),x])));
+            set(old=>({...old,requirements:old.requirements.filter((_,n)=>n!==i)}));
+          }}>移除物料需求 {i+1}</button>
+        </fieldset>)}
+        <button type="button" onClick={()=>set(old=>({...old,requirements:[...old.requirements,
+          {work_order_id:"",execution_scope:"trial",material_id:"",owner_id:p.project.customer_id,quantity:"",unit:"kg"}]}))}>添加物料需求</button>
+        <Field name="计划来源截止时间" type="datetime-local" value={v.source.cutoff||""}
+          onChange={x=>set({...v,source:{...v.source,cutoff:x}})}/>
+        <SourceFields value={v.source} onChange={x=>set({...v,source:x})}/>
+      </>}
+    </CommandForm>;
+    case "supply.commit": return <CommandForm<Commit> {...p} title="登记供应承诺" save="保存供应承诺"
+      initial={()=>({action:"supply.commit",commitment_id:null,requirement_id:"",type:"purchase",owner_id:p.project.customer_id,
+        quantity:"",unit:"kg",original_due:"",current_due:"",source:source("commitment")})}>
+      {(v,set)=><>
+        <ObjectChoice name="承诺对应需求" items={p.requirements} value={v.requirement_id}
+          onChange={x=>{set({...v,requirement_id:x});if(x)void p.api.object(p.project.id,"requirement",x).then(d=>{
+            if(d.value.kind==="requirement")set({...v,requirement_id:x,owner_id:d.value.owner_id,unit:d.value.unit});
+          });}}/>
+        <ObjectChoice name="修订既有承诺" items={p.commitments} value={v.commitment_id||""} required={false}
+          onChange={x=>{set({...v,commitment_id:x||null});if(x)void p.api.object(p.project.id,"commitment",x).then(d=>{
+            if(d.value.kind==="commitment")set({...v,commitment_id:x,requirement_id:d.value.requirement_id,type:d.value.type,
+              owner_id:d.value.owner_id,quantity:d.value.current_quantity,unit:d.value.unit,
+              original_due:d.value.original_due,current_due:d.value.current_due,
+              source:{...v.source,system:d.value.source.system,external_id:d.value.source.external_id,
+                version:d.value.source.version+1}});
+          });}}/>
+        <Choice name="供应类型" value={v.type} choices={{purchase:"采购",customer:"客户供料"}}
+          onChange={x=>set({...v,type:x as "purchase"|"customer"})}/>
+        <Field name="供应所有者" value={v.owner_id} onChange={x=>set({...v,owner_id:x})}/>
+        <Field name="供应承诺数量" value={v.quantity} onChange={x=>set({...v,quantity:x})}/>
+        <Field name="物料单位" value={v.unit} onChange={x=>set({...v,unit:x})}/>
+        <Field name="原始承诺交期" type="date" value={v.original_due} onChange={x=>set({...v,original_due:x})}/>
+        <Field name="当前承诺交期" type="date" value={v.current_due} onChange={x=>set({...v,current_due:x})}/>
+        <SourceFields value={v.source} onChange={x=>set({...v,source:x})}/>
+      </>}
+    </CommandForm>;
+    case "supply.receive": return <CommandForm<Receive> {...p} title="登记到货" save="保存到货证据"
+      initial={()=>({action:"supply.receive",commitment_id:"",material_lot_id:"",quantity:"",unit:"kg",source:source("receipt")})}>
+      {(v,set)=><>
+        <p>人工登记到货不改变权威库存；来料检验另行登记。</p>
+        <ObjectChoice name="到货对应承诺" items={p.commitments} value={v.commitment_id} onChange={x=>set({...v,commitment_id:x})}/>
+        <ObjectChoice name="到货物料批次" items={p.lots} value={v.material_lot_id}
+          onChange={x=>{set({...v,material_lot_id:x});if(x)void p.api.object(p.project.id,"material_lot",x).then(d=>{
+            if(d.value.kind==="material_lot")set({...v,material_lot_id:x,unit:d.value.unit});
+          });}}/>
+        <Field name="本次到货数量" value={v.quantity} onChange={x=>set({...v,quantity:x})}/>
+        <p>计量单位：{v.unit}</p>
+        <SourceFields value={v.source} onChange={x=>set({...v,source:x})}/>
+      </>}
+    </CommandForm>;
+    case "supply.inspect": return <CommandForm<Inspect> {...p} title="登记来料检验" save="保存检验结果"
+      initial={()=>({action:"supply.inspect",receipt_id:"",accepted:"",rejected:"",evidence:""})}>
+      {(v,set)=><>
+        <p>每次检验追加不可变数量事实。已接收、合格和拒收分别计算；检验结果不会确认库存预留。</p>
+        <ObjectChoice name="检验到货记录" items={p.receipts} value={v.receipt_id} onChange={x=>set({...v,receipt_id:x})}/>
+        <Field name="本次合格数量" value={v.accepted} onChange={x=>set({...v,accepted:x})}/>
+        <Field name="本次拒收数量" value={v.rejected} onChange={x=>set({...v,rejected:x})}/>
+        <Field name="检验凭据" value={v.evidence} onChange={x=>set({...v,evidence:x})}/>
+      </>}
+    </CommandForm>;
+    default:return null;
+  }
+}

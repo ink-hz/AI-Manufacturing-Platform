@@ -20,6 +20,7 @@ const actions: Record<string, string> = {
   "work_order.register": "登记固定版本工单",
   "readiness.record": "登记准备核验",
 };
+type OrdersKind = "demand" | "order_line" | "commitment_change" | "revision" | "work_order";
 export function ObjectTable({
   items,
   onOpen,
@@ -73,7 +74,7 @@ export function OrdersWorkspace(
     onReload?(): void;
   },
 ) {
-  const [items, setItems] = useState<Record<ObjectKind, ObjectSummary[]>>({
+  const [items, setItems] = useState<Record<OrdersKind, ObjectSummary[]>>({
       demand: [],
       order_line: [],
       commitment_change: [],
@@ -83,8 +84,8 @@ export function OrdersWorkspace(
     [error, setError] = useState(""),
     [action, setAction] = useState<CommandFields["action"] | null>(null),
     [epoch, setEpoch] = useState(0);
-  const [totals, setTotals] = useState<Partial<Record<ObjectKind, number>>>({});
-  const [loading, setLoading] = useState<Partial<Record<ObjectKind, boolean>>>(
+  const [totals, setTotals] = useState<Partial<Record<OrdersKind, number>>>({});
+  const [loading, setLoading] = useState<Partial<Record<OrdersKind, boolean>>>(
     {},
   );
   const generation = useRef(0);
@@ -92,7 +93,7 @@ export function OrdersWorkspace(
     const current = ++generation.current;
     setError("");
     Promise.all(
-      (Object.keys(items) as ObjectKind[]).map(
+      (Object.keys(items) as OrdersKind[]).map(
         async (k) => [k, await p.api.objects(p.project.id, k, 50, 0)] as const,
       ),
     )
@@ -115,7 +116,7 @@ export function OrdersWorkspace(
       generation.current++;
     };
   }, [p.api, p.project.id, p.project.version]);
-  async function more(kind: ObjectKind) {
+  async function more(kind: OrdersKind) {
     if (loading[kind]) return;
     const current = generation.current;
     setLoading((old) => ({ ...old, [kind]: true }));
@@ -178,7 +179,7 @@ export function OrdersWorkspace(
           ))}
       </div>
       <div className="mf-actions">
-        {(Object.keys(items) as ObjectKind[])
+        {(Object.keys(items) as OrdersKind[])
           .filter((k) => items[k].length < (totals[k] || 0))
           .map((k) => (
             <button key={k} disabled={loading[k]} onClick={() => void more(k)}>
@@ -217,8 +218,8 @@ export function OrdersWorkspace(
       ).map((k) => (
         <section key={k}>
           <h4>{label(k)}</h4>
-          {items[k as ObjectKind].length ? (
-            <ObjectTable items={items[k as ObjectKind]} onOpen={p.onOpen} />
+          {items[k as OrdersKind].length ? (
+            <ObjectTable items={items[k as OrdersKind]} onOpen={p.onOpen} />
           ) : (
             <p>尚无{label(k)}记录</p>
           )}
