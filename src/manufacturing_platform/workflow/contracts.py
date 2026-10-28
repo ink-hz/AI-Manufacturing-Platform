@@ -225,6 +225,13 @@ class SourceRef(StrictModel):
     cutoff: datetime | None = None
     evidence: str = Field(min_length=1, max_length=2000)
 
+    @field_validator("system", "object_type", "external_id")
+    @classmethod
+    def source_identity_required(cls, value):
+        if not value.strip():
+            raise ValueError("source identity must not be blank")
+        return value
+
     @field_validator("occurred_at", "collected_at", "cutoff")
     @classmethod
     def timezone_required(cls, value):

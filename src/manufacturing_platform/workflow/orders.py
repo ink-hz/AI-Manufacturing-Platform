@@ -83,11 +83,14 @@ def source_key(source):
     def part(name):
         return source[name] if isinstance(source, dict) else getattr(source, name)
 
-    return (
+    key = (
         part("system").strip().casefold(),
         part("object_type").strip().casefold(),
         part("external_id").strip(),
     )
+    if not all(key):
+        raise ValueError("source identity must not be blank")
+    return key
 
 
 def source_conflict(tx, source):

@@ -3,6 +3,8 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
+
 from .conftest import BASE
 
 
@@ -44,6 +46,44 @@ def test_material_scale_is_independent_of_finished_piece_scale(workflow):
     assert workflow.balance(p["id"], req["id"])["required"] == "1.25"
     assert workflow.balance(p["id"], req["id"])["qualified"] == "0.125"
     assert workflow.balance(p["id"], req["id"])["in_transit"] == "1.125"
+
+
+@pytest.mark.parametrize("field", ["system", "object_type", "external_id"])
+@pytest.mark.parametrize("action,table,source_type", [
+    ("material.define", "material_lots", "material_lot"),
+    ("plan.receive", "plans", "plan"),
+    ("supply.commit", "supply_commitments", "commitment"),
+    ("supply.receive", "supply_receipts", "receipt"),
+])
+def test_blank_normalized_supply_source_is_rejected_without_any_fact(
+    workflow, field, action, table, source_type
+):
+    p, req, commit = workflow.material_requirement(qualified="0")
+    source = workflow.source(f"blank-{uuid4()}", object_type=source_type)
+    source[field] = " \t "
+    fields = {
+        "material.define": {"material_id": "steel-2", "lot_id": f"lot-{uuid4()}",
+                            "owner_id": "Customer 1", "unit": "kg", "scale": 3,
+                            "expiry": "2027-12-01"},
+        "plan.receive": {"input_revision_ids": [commit["revision_id"]],
+                         "input_order_versions": [{"order_line_id": commit["order_id"], "version": 1}],
+                         "requirements": [{"work_order_id": commit["work_order_id"],
+                                           "execution_scope": "trial", "material_id": "steel-1",
+                                           "owner_id": "Customer 1", "quantity": "1", "unit": "kg"}]},
+        "supply.commit": {"requirement_id": req["id"], "type": "purchase",
+                          "owner_id": "Customer 1", "quantity": "1", "unit": "kg",
+                          "original_due": "2026-12-01", "current_due": "2026-12-01"},
+        "supply.receive": {"commitment_id": commit["id"],
+                           "material_lot_id": commit["lot_id"], "quantity": "1", "unit": "kg"},
+    }
+    version = workflow.client().get(f"{BASE}/projects/{p['id']}").json()["version"]
+    with workflow.db() as db:
+        count = db.execute(f"SELECT COUNT(*) FROM {table} WHERE project_id=?", (p["id"],)).fetchone()[0]
+    workflow.command(p["id"], action, actor_name="planner" if action == "plan.receive" else "supply",
+                     source=source, expected_status=422, **fields[action])
+    assert workflow.client().get(f"{BASE}/projects/{p['id']}").json()["version"] == version
+    with workflow.db() as db:
+        assert db.execute(f"SELECT COUNT(*) FROM {table} WHERE project_id=?", (p["id"],)).fetchone()[0] == count
 
 
 def test_duplicate_receipt_source_and_overinspection_cannot_increment(workflow):
@@ -676,6 +716,33 @@ def test_v4_migration_orders_audited_plans_and_normalizes_supply_keys(workflow):
                                              "quantity": "100", "unit": "kg"}])
     with workflow.db() as db:
         assert db.execute("SELECT accepted_seq FROM plans WHERE id=?", (result["object_id"],)).fetchone()[0] == 2
+
+
+def test_v4_migration_fails_closed_on_historical_blank_source_key(workflow):
+    import json
+    import sqlite3
+
+    from manufacturing_platform.workflow.orders import source_key
+    from manufacturing_platform.workflow.store import WorkflowStore
+
+    with pytest.raises(ValueError, match="source identity"):
+        source_key({"system": " \t ", "object_type": "plan", "external_id": "legacy"})
+    p, req, _ = workflow.material_requirement(qualified="0")
+    plan_id = workflow.object(p["id"], "requirement", req["id"])["plan_id"]
+    with sqlite3.connect(workflow.paths.domain) as db:
+        source = json.loads(db.execute("SELECT source_json FROM plans WHERE id=?", (plan_id,)).fetchone()[0])
+        source["system"] = " \t "
+        db.execute("UPDATE plans SET source_json=? WHERE id=?", (json.dumps(source), plan_id))
+        db.execute("DROP INDEX plans_acceptance_order")
+        db.execute("ALTER TABLE plans DROP COLUMN accepted_seq")
+        db.execute("UPDATE schema_version SET version=4")
+    store = WorkflowStore(str(workflow.paths.domain), str(workflow.paths.authority),
+                          {"id": "workflow-test", "mode": "test", "label": "Workflow test"})
+    with pytest.raises(ValueError, match="source identity"), store.transaction():
+        pass
+    with workflow.db() as db:
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 4
+        assert "accepted_seq" not in {row[1] for row in db.execute("PRAGMA table_info(plans)")}
 
 
 def test_requirement_page_exposes_bounded_balance_columns(workflow):
