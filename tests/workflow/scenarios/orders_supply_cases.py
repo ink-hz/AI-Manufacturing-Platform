@@ -6,6 +6,7 @@ from decimal import Decimal
 import json
 
 from .business import (
+    Flow,
     order,
     revision,
     work_order,
@@ -337,17 +338,80 @@ def e06(context):
 
 
 def e07(context):
+    # Admit real stock before expiry, then restart at the requested business clock.
+    # Only the trusted constructor clock changes; security/wall clocks are untouched.
+    acceptance_clock = context.clock
+    context.clock = acceptance_clock - timedelta(days=2)
     flow, req, lid, commit = material_case(context, second=True)
     api, p = flow.api, flow.project
-    foreign = lot(flow, owner="Other customer", unit="piece", scale=0)
     expired = lot(
         flow,
         unit="piece",
         scale=0,
-        expiry=(context.clock - timedelta(days=1)).date().isoformat(),
+        expiry=(acceptance_clock - timedelta(days=1)).date().isoformat(),
     )
-    for bad in (foreign, expired):
-        reserve(flow, req, bad, "1", expected=409)
+    receive_authority(flow, expired, "1")
+    foreign_project = api.post(
+        "/projects",
+        {
+            "operation_id": context.identifier("foreign-project"),
+            "name": "Other customer owned stock",
+            "line_id": "foreign-line",
+            "product": "Camera",
+            "customer_id": "Other customer",
+            "mode": "oem",
+            "unit": {"code": "piece", "scale": 0},
+            "quantity": "1",
+            "contract": api.get("/projects/" + p)["contract"],
+        },
+    )["id"]
+    api.grant(foreign_project, "supply", ["supply"])
+    foreign_flow = Flow(api, foreign_project, "", 1, "Camera")
+    foreign = lot(foreign_flow, owner="Other customer", unit="piece", scale=0)
+    receive_authority(foreign_flow, foreign, "1")
+    context.evidence.record(
+        "business-clock-transition",
+        {
+            "from": context.clock.isoformat(),
+            "to": acceptance_clock.isoformat(),
+            "reason": "Real previously qualified stock expires before reservation",
+            "expired_lot": expired,
+        },
+    )
+    context.clock = acceptance_clock
+    api.restart()
+    plan(
+        flow,
+        [(w, "trial", "100", "Customer 1", "steel") for w in flow.work_orders],
+        unit="piece",
+    )
+    req = flow.requirements[0]
+
+    def balances():
+        with api.db() as db:
+            reservation_count = db.execute(
+                "SELECT COUNT(*) FROM reservations"
+            ).fetchone()[0]
+        return {
+            "requirement": api.object(p, "requirement", req)["balance"],
+            "eligible": api.authority("balance", lot_id=lid),
+            "foreign": api.authority("balance", lot_id=foreign),
+            "expired": api.authority("balance", lot_id=expired),
+            "reservation_count": reservation_count,
+        }
+
+    before = balances()
+    assert before["eligible"] == "80" and before["foreign"] == before["expired"] == "1"
+    assert (
+        api.object(foreign_flow.project, "material_lot", foreign)["owner_id"]
+        == "Other customer"
+    )
+    denied = reserve(flow, req, foreign, "1", expected=404)
+    assert denied["code"] == "NOT_FOUND"
+    assert balances() == before
+    denied = reserve(flow, req, expired, "1", expected=409)
+    assert denied["message"] == "Reservation lot is ineligible"
+    assert balances() == before
     hold = api.command(
         p,
         "freeze.request",
@@ -358,7 +422,10 @@ def e07(context):
         reason="Incoming lot hold",
     )
     dispatch_exchange(flow, hold, actor="quality")
-    reserve(flow, req, lid, "1", expected=409)
+    frozen_before = balances()
+    denied = reserve(flow, req, lid, "1", expected=409)
+    assert "ineligible" in denied["message"] or "containment" in denied["message"]
+    assert balances() == frozen_before
     unhold = api.command(
         p,
         "freeze.request",
@@ -370,12 +437,19 @@ def e07(context):
     )
     dispatch_exchange(flow, unhold, actor="quality")
     reserve(flow, flow.requirements[1], lid, "80")
+    allocated_before = balances()
     pending = reserve(flow, req, lid, "80", dispatch=False)
-    dispatch_exchange(flow, pending, actor="planner", phase="rejected")
+    rejected = dispatch_exchange(flow, pending, actor="planner", phase="rejected")
+    assert rejected["receipt"]["accepted_quantity"] == "0"
+    after = balances()
+    assert after["requirement"] == allocated_before["requirement"]
+    assert after["eligible"] == "0" and after["foreign"] == after["expired"] == "1"
     assert api.object(p, "requirement", req)["balance"]["reserved"] == "0"
     assert api.authority("balance", lot_id=lid) == "0"
     context.actual.update(
         foreign_expired_frozen_rejected=True,
+        unchanged_denial_balances=before,
+        final_balances=after,
         other_work_order_reserved="80",
         new_reserved="0",
     )

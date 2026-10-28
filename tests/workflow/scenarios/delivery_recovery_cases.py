@@ -362,17 +362,51 @@ def e27(context):
         reason="Newer material issue",
     )
     dispatch_exchange(flow, newer, actor="quality")
+    with api.db() as db:
+        before_confirmation = dict(
+            db.execute(
+                "SELECT * FROM freeze_confirmations WHERE object_id=?", (flow.units[0],)
+            ).fetchone()
+        )
     dispatch_exchange(flow, old, actor="quality", phase="rejected")
     assert api.object(p, "unit", flow.units[0])["freeze_confirmed"] == "frozen"
     ship(flow, flow.units, expected=409)
     rejected = api.object(p, "exchange", old["exchange_id"])
-    assert (
-        rejected["receipt"]["source_version"]
-        < api.object(p, "exchange", newer["exchange_id"])["receipt"]["source_version"]
+    assert rejected["receipt"] is None
+    assert rejected["phase"] == "rejected"
+    assert any(
+        e["reason"] == "Stale freeze source version or sequence"
+        for e in rejected["events"]
     )
+    assert any(
+        d["reason"] == "Stale freeze source version or sequence" and d["owner_id"]
+        for d in rejected["discrepancies"]
+    )
+    with api.db() as db:
+        old_request = json.loads(
+            db.execute(
+                "SELECT request_json FROM exchanges WHERE id=?", (old["exchange_id"],)
+            ).fetchone()[0]
+        )
+        new_request = json.loads(
+            db.execute(
+                "SELECT request_json FROM exchanges WHERE id=?", (newer["exchange_id"],)
+            ).fetchone()[0]
+        )
+        confirmation = dict(
+            db.execute(
+                "SELECT * FROM freeze_confirmations WHERE object_id=?", (flow.units[0],)
+            ).fetchone()
+        )
+    assert confirmation == before_confirmation
+    assert old_request["source_version"] < new_request["source_version"]
+    assert confirmation["source_version"] == new_request["source_version"]
     context.actual.update(
         new_state="frozen",
-        old_rejected_receipt=rejected["receipt"],
+        old_source_version=old_request["source_version"],
+        new_source_version=new_request["source_version"],
+        confirmation=confirmation,
+        rejected_without_accepted_receipt=True,
         rejection_history=rejected["events"],
     )
 
@@ -381,7 +415,8 @@ def e28(context):
     flow, req, lid, _ = material_case(context, qualified="100")
     api, p = flow.api, flow.project
     intent = reserve(flow, req, lid, "80")
-    receipt = api.object(p, "exchange", intent["exchange_id"])["receipt"]
+    exchange = api.object(p, "exchange", intent["exchange_id"])
+    receipt = exchange["receipt"]
     details = [{**d} for d in receipt["details"]]
     details[0]["key"] = context.identifier("wrong-detail")
     api.command(
@@ -389,7 +424,9 @@ def e28(context):
         "exchange.reconcile",
         actor="planner",
         exchange_id=intent["exchange_id"],
-        source=api.source("reservation"),
+        source=api.source(
+            "reservation", exchange["business_key"], system=exchange["system"]
+        ),
         object_type="reservation",
         source_version=receipt["source_version"],
         details=details,
@@ -397,6 +434,11 @@ def e28(context):
     )
     conflict = api.object(p, "exchange", intent["exchange_id"])
     assert conflict["discrepancies"] and conflict["discrepancies"][0]["owner_id"]
+    assert (
+        "equal totals do not prove equality" in conflict["discrepancies"][0]["reason"]
+    )
+    assert conflict["receipt"] == receipt
+    assert api.object(p, "requirement", req)["balance"]["reserved"] == "80"
     rejected = reserve(flow, req, lid, "20", dispatch=False)
     api.authority("configure_fault", name="reject")
     dispatch_exchange(flow, rejected, actor="planner", phase="rejected")

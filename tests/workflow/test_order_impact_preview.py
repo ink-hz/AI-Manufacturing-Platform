@@ -65,9 +65,13 @@ def test_order_impact_totals_scope_and_bounded_reference_query(workflow):
         f"TARGET-{i:03}" for i in range(50)
     ]
     assert all(
-        i["source_system"] == "MES" and i["quantity"] == "0.100001"
+        i["source_system"] == "mes" and i["quantity"] == "0.100001"
         for i in impact["items"]
     )
+    # Indexed identity is canonical; immutable source evidence keeps the submitted spelling.
+    for item in impact["items"]:
+        source = workflow.object(p["id"], "work_order", item["id"])["source"]
+        assert source["system"] == "MES" and source["external_id"] == item["external_id"]
     assert (
         workflow.object(p["id"], "order_line", other_order)["work_order_impact"][
             "registered_quantity"

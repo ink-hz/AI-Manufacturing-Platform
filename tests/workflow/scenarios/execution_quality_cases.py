@@ -233,6 +233,15 @@ def e15(context):
     wid = flow.work_orders[0]
     start(flow, wid, flow.units[:1])
     old_plan = api.object(p, "requirement", flow.requirements[0])["plan_id"]
+    with api.db() as db:
+        original_starts = [
+            dict(r)
+            for r in db.execute(
+                "SELECT * FROM start_requests WHERE work_order_id=?", (wid,)
+            )
+        ]
+    assert len(original_starts) == 1 and original_starts[0]["mode"] == "trial"
+    original_unit = api.object(p, "unit", flow.units[0])
     stop = api.command(
         p,
         "production.interrupt",
@@ -242,7 +251,7 @@ def e15(context):
         reason="Physical material shortage observed at use",
     )
     dispatch_exchange(flow, stop, actor="production")
-    api.command(
+    old_denial = api.command(
         p,
         "production.resume",
         actor="production",
@@ -250,7 +259,11 @@ def e15(context):
         interruption_id=stop["object_id"],
         plan_id=old_plan,
         evidence="Old plan cannot erase interruption",
-        scope="trial",
+        scope="all",
+    )
+    assert (
+        old_denial["message"]
+        == "resume requires a new accepted plan after interruption"
     )
     plan(
         flow,
@@ -259,8 +272,18 @@ def e15(context):
             (wid, "bulk", "1", "Customer 1", "steel"),
         ],
     )
-    newplan = api.object(p, "requirement", flow.requirements[0])["plan_id"]
-    api.command(
+    trial_id, trial_requirement = next(
+        (ident, value)
+        for ident in flow.requirements
+        for value in [api.object(p, "requirement", ident)]
+        if value["execution_scope"] == "trial"
+        and value["work_order_id"] == wid and value["material_id"] == "steel"
+    )
+    newplan = trial_requirement["plan_id"]
+    assert trial_requirement["balance"]["required"] == "2"
+    assert trial_requirement["balance"]["reserved"] == "1"
+    assert trial_requirement["balance"]["shortage"] == "1"
+    shortage_denial = api.command(
         p,
         "production.resume",
         actor="production",
@@ -268,10 +291,12 @@ def e15(context):
         interruption_id=stop["object_id"],
         plan_id=newplan,
         evidence="Replan still short",
-        scope="trial",
+        scope="all",
     )
+    assert shortage_denial["message"] == "Resume readiness blocked"
+    assert any("material" in reason for reason in shortage_denial["blocking_reasons"])
     receive_authority(flow, flow.lots[0], "1")
-    reserve(flow, flow.requirements[0], flow.lots[0], "1")
+    reserve(flow, trial_id, flow.lots[0], "1")
     resumed = api.command(
         p,
         "production.resume",
@@ -279,7 +304,7 @@ def e15(context):
         interruption_id=stop["object_id"],
         plan_id=newplan,
         evidence="New qualified supply and revised plan confirmed",
-        scope="trial",
+        scope="all",
     )
     dispatch_exchange(flow, resumed, actor="production")
     interruption = api.object(p, "interruption", stop["object_id"])
@@ -288,8 +313,37 @@ def e15(context):
         and interruption["authority_stopped_at"]
         and (interruption.get("trial_resumed_at") or interruption.get("resolved_at"))
     )
+    assert (
+        api.object(p, "exchange", resumed["exchange_id"])["receipt"]["phase"]
+        == "accepted"
+    )
+    assert interruption["plan_id"] == newplan
+    assert interruption["exception_kind"] == "S3"
+    with api.db() as db:
+        assert db.execute("SELECT interrupted_plan_id FROM interruptions WHERE id=?", (stop["object_id"],)).fetchone()[0] == old_plan
+    assert interruption["resolved_at"]
     assert api.object(p, "unit", flow.units[0])["state"] == "running"
-    context.actual.update(interruption=interruption, history_retained=True)
+    with api.db() as db:
+        assert [
+            dict(r)
+            for r in db.execute(
+                "SELECT * FROM start_requests WHERE work_order_id=?", (wid,)
+            )
+        ] == original_starts
+    unit = api.object(p, "unit", flow.units[0])
+    assert (
+        unit["sn"] == original_unit["sn"]
+        and unit["revision_id"] == original_unit["revision_id"]
+    )
+    context.actual.update(
+        interruption=interruption,
+        history_retained=True,
+        resumed_scope="all",
+        original_accepted_modes=[r["mode"] for r in original_starts],
+        restored_trial_balance=api.object(p, "requirement", trial_id)[
+            "balance"
+        ],
+    )
 
 
 def e16(context):
@@ -357,8 +411,10 @@ def e17(context):
     uid = flow.units[0]
     start(flow, flow.work_orders[0], flow.units)
     execution(flow, uid, flow.lots[0])
+    original_unit = api.object(p, "unit", uid)
+    original_revision = api.object(p, "revision", original_unit["revision_id"])
     full = {"name": "voltage", "value": "5", "unit": "V", "lower": "4", "upper": "6"}
-    for missing in ("value", "unit"):
+    for missing in ("value", "unit", "lower", "upper"):
         measure(
             flow,
             uid,
@@ -367,7 +423,21 @@ def e17(context):
         )
     measure(flow, uid, expected=422, limit_version="")
     for override in ({"limit_version": "T2"}, {"program_version": "P2"}):
-        measure(flow, uid, expected=409, **override)
+        denied = measure(flow, uid, expected=422, **override)
+        assert denied["code"] == "INVALID_COMMAND"
+        assert (
+            denied["fields"]["measurements"]
+            == "measurements and versions must match the complete frozen specification"
+        )
+    weakened = measure(
+        flow, uid, expected=422, measurements=[{**full, "lower": "0", "upper": "100"}]
+    )
+    assert (
+        weakened["code"] == "INVALID_COMMAND"
+        and "frozen specification" in weakened["fields"]["measurements"]
+    )
+    assert api.object(p, "unit", uid) == original_unit
+    assert api.object(p, "revision", original_unit["revision_id"]) == original_revision
     assert api.object(p, "unit", uid)["test_total"] == 0
     assert api.get("/projects/" + p)["quality_summary"]["final_good"] == 0
     context.actual.update(

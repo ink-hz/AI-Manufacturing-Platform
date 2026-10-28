@@ -1,15 +1,22 @@
 // Test-only real HTTP transport. Business request bodies pass through unchanged.
 import { spawn } from 'node:child_process';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createWorkflowApi } from './api';
 import type { CommandFields, ProjectCreate, WorkflowCommand } from './types';
 export async function startHttpHost() {
-    const root = await mkdtemp(join(tmpdir(), 'workflow-http-'));
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'workflow-http-')));
     const secret = randomUUID();
-    await writeFile(join(root, 'fixture.json'), JSON.stringify({ secret }), { mode: 0o600 });
+    const dataset_id = `http-form-${randomUUID()}`;
+    await writeFile(join(root, 'manifest.json'), JSON.stringify({
+        owner: 'manufacturing-workflow-acceptance-v1', directory: root,
+        dataset_id, dataset_mode: 'test', purpose: 'real HTTP component regression',
+    }), { flag: 'wx' });
+    await writeFile(join(root, 'fixture.json'), JSON.stringify({
+        secret, dataset_id, dataset_mode: 'test', dataset_label: 'Simulated component fixture',
+    }), { mode: 0o600, flag: 'wx' });
     const cwd = resolve(process.cwd(), '..');
     const python = process.env.WORKFLOW_TEST_PYTHON || '/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python';
     const child = spawn(python, ['tests/workflow/http_fixture.py', root], { cwd, env: { ...process.env, PYTHONPATH: resolve(cwd, 'src') }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -17,10 +24,13 @@ export async function startHttpHost() {
     child.stderr.on('data', b => errors += String(b));
     const nativeFetch = globalThis.fetch;
     let base = '';
-    async function close() { if (child.exitCode === null) {
+    async function close(preserve = false) { if (child.exitCode === null) {
         child.kill('SIGTERM');
         await Promise.race([new Promise<void>(r => child.once('exit', () => r())), new Promise<void>(r => setTimeout(() => { child.kill('SIGKILL'); r(); }, 2000))]);
-    } await rm(root, { recursive: true, force: true }); }
+    } if (preserve) {
+        await rm(join(root, 'fixture.json'), { force: true });
+        await writeFile(join(root, 'startup-error.log'), errors);
+    } else await rm(root, { recursive: true, force: true }); }
     try {
         const port = await new Promise<number>((ok, no) => { let out = ''; const timer = setTimeout(() => no(Error('HTTP fixture startup timeout: ' + errors)), 10000); child.once('error', e => { clearTimeout(timer); no(e); }); child.once('exit', () => { clearTimeout(timer); no(Error('HTTP fixture exited: ' + errors)); }); child.stdout.on('data', b => { out += String(b); if (out.includes('\n')) {
             clearTimeout(timer);
@@ -55,8 +65,8 @@ export async function startHttpHost() {
         return { login, close, base, root };
     }
     catch (e) {
-        await close();
-        throw e;
+        await close(true);
+        throw Error(`HTTP fixture failed; evidence retained at ${root}`, { cause: e });
     }
 }
 export const projectInput = (quantity = '2'): ProjectCreate => ({ operation_id: randomUUID(), name: 'HTTP Camera', line_id: 'Line 1', product: 'Camera', customer_id: 'Customer 1', mode: 'internal', unit: { code: 'piece', scale: 0 }, quantity, contract: { customer_approval_required: false, customer_release_required: false, acceptance_required: true, customer_revision: 'C1', internal_revision: 'M1', material_ownership_rules: 'owned' } });
