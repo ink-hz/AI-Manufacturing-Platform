@@ -28,7 +28,12 @@ def f01(context):
     assert final["original_quantity"] == original == "100"
     assert final["accepted"] == "100"
     for uid in flow.units:
-        assert_trace(flow, uid)
+        assert_trace(
+            flow,
+            uid,
+            completed=True,
+            feedback_ids=(rma, capa) if uid == flow.units[0] else None,
+        )
     with api.db() as db:
         assert (
             db.execute(
@@ -150,7 +155,12 @@ def f02(context):
     assert balance["allocated"] == "20" and balance["accepted"] == "20"
     assert api.object(p, "nonconformance", nc)["state"] == "resolved"
     for uid in flow.units:
-        assert_trace(flow, uid)
+        assert_trace(
+            flow,
+            uid,
+            completed=True,
+            feedback_ids=(rma, capa) if uid == flow.units[0] else None,
+        )
     context.actual.update(
         quantity=20,
         trial_quantity=5,
@@ -175,17 +185,26 @@ def f03(context):
     flow = released(context, 10, [6, 4], product="3D Printer")
     api, p = flow.api, flow.project
     uid = flow.units[0]
-    measure(
+    original_unit = api.object(p, "unit", uid)
+    rejected = measure(
         flow,
         uid,
-        expected=409,
+        expected=422,
         program_version="P1",
         limit_version="T1",
         measurements=[
             {"name": "voltage", "value": "5", "unit": "V", "lower": "4", "upper": "6"}
         ],
     )
-    assert api.object(p, "unit", uid)["test_total"] == 1
+    assert (
+        rejected["code"] == "INVALID_COMMAND"
+        and "complete frozen specification" in rejected["fields"]["measurements"]
+    ), rejected
+    unchanged_unit = api.object(p, "unit", uid)
+    assert unchanged_unit["test_total"] == original_unit["test_total"] == 1
+    assert unchanged_unit["tests"] == original_unit["tests"]
+    assert unchanged_unit["final_good"] is original_unit["final_good"] is True
+    assert len(flow.units) == 10 and len(api.objects(p, "unit")) == 10
     for group in (flow.units[:6], flow.units[6:]):
         result = ship(flow, group)
         accept(flow, result["object_id"], len(group))
@@ -193,7 +212,12 @@ def f03(context):
     for kind in ("fulfillment", "cost", "quality"):
         closure(flow, kind)
     for uid in flow.units:
-        assert_trace(flow, uid)
+        assert_trace(
+            flow,
+            uid,
+            completed=True,
+            feedback_ids=(rma, capa) if uid == flow.units[0] else None,
+        )
     context.actual.update(
         quantity=10,
         work_order_quantities=[6, 4],
@@ -303,7 +327,12 @@ def f04(context):
     assert api.object(p, "material_lot", customer)["owner_id"] == "Customer 1"
     assert api.object(p, "material_lot", purchased)["owner_id"] == "Manufacturer"
     for uid in flow.units:
-        assert_trace(flow, uid)
+        assert_trace(
+            flow,
+            uid,
+            completed=True,
+            feedback_ids=(rma, capa) if uid == flow.units[0] else None,
+        )
     context.actual.update(
         quantity=30,
         accepted=api.object(p, "order_line", flow.order)["accepted"],

@@ -1,6 +1,6 @@
 """E11–E19: bound execution, measured quality and independent authority."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from .business import (
     order,
     revision,
@@ -65,17 +65,75 @@ def e11(context):
 
 
 def e12(context):
-    flow = ready(context)
+    planned = context.clock + timedelta(days=2)
+    expires = context.clock + timedelta(days=1)
+    flow = order(context, 2)
+    rid = revision(flow)
+    wid = work_order(flow, 2, rid, planned_start=planned)
+    prepare(flow)
     api, p = flow.api, flow.project
-    wid = flow.work_orders[0]
-    readiness(flow, wid, validity=(context.clock - timedelta(days=1)).isoformat())
-    before = api.object(p, "work_order", wid)["trial_readiness"]
-    assert not before["ready"]
+    readiness(flow, wid, validity=expires.isoformat(), kinds=("equipment",))
+    before_value = api.object(p, "work_order", wid)
+    assert (
+        context.clock < expires < datetime.fromisoformat(before_value["planned_start"])
+    ), "Equipment must expire strictly between now and planned use"
+    before = before_value["trial_readiness"]
+    blocked = [
+        c["kind"] for c in before["checks"] if c["required"] and c["status"] != "ready"
+    ]
+    assert blocked == ["equipment"], f"Only future-use equipment may block: {before}"
+    equipment = next(c for c in before["checks"] if c["kind"] == "equipment")
+    assert "planned use" in equipment["reason"] and equipment["evidence_ids"], equipment
+    assert not before["ready"], "Expired-at-use equipment must block readiness"
     start(flow, wid, flow.units[:1], expected=409)
-    readiness(flow, wid)
-    assert api.object(p, "work_order", wid)["trial_readiness"]["ready"]
+    with api.db() as db:
+        original = [
+            dict(r)
+            for r in db.execute(
+                "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? ORDER BY accepted_seq",
+                (p, wid),
+            )
+        ]
+    readiness(
+        flow,
+        wid,
+        validity=(planned + timedelta(days=1)).isoformat(),
+        kinds=("equipment",),
+    )
+    after = api.object(p, "work_order", wid)["trial_readiness"]
+    assert after["ready"], after
+    assert [c for c in before["checks"] if c["kind"] != "equipment"] == [
+        c for c in after["checks"] if c["kind"] != "equipment"
+    ], "Correction must not change other prerequisites"
+    with api.db() as db:
+        corrected = [
+            dict(r)
+            for r in db.execute(
+                "SELECT * FROM readiness_checks WHERE project_id=? AND work_order_id=? ORDER BY accepted_seq",
+                (p, wid),
+            )
+        ]
+    assert corrected[:-1] == original and corrected[-1]["kind"] == "equipment", (
+        "Only one equipment fact may be appended"
+    )
     start(flow, wid, flow.units[:1])
-    context.actual.update(calibration_blocked=True, corrected_and_reevaluated=True)
+    context.evidence.record(
+        "planned-use-equipment-proof",
+        {
+            "before": before_value,
+            "after": after,
+            "equipment_expiry": expires.isoformat(),
+            "original_facts": original,
+            "corrected_facts": corrected,
+        },
+    )
+    context.actual.update(
+        calibration_blocked=True,
+        corrected_and_reevaluated=True,
+        planned_use_after_equipment_expiry=True,
+        only_equipment_changed=True,
+        blocked_kinds=blocked,
+    )
 
 
 def e13(context):

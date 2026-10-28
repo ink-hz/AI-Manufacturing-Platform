@@ -8,9 +8,9 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from decimal import Decimal
 import hashlib
-from urllib.parse import quote
 
 from .fixtures import connect
+from .genealogy import assert_trace as assert_trace
 
 
 @dataclass
@@ -26,6 +26,8 @@ class Flow:
     lots: list = field(default_factory=list)
     requirements: list = field(default_factory=list)
     tests: dict = field(default_factory=dict)
+    test_history: dict = field(default_factory=dict)
+    executions: dict = field(default_factory=dict)
     shipments: list = field(default_factory=list)
 
 
@@ -129,10 +131,12 @@ def revision(flow, version="M1", *, customer="C1"):
     return rid
 
 
-def work_order(flow, quantity, rid=None, *, trial_quantity=1, allocate=True):
+def work_order(
+    flow, quantity, rid=None, *, trial_quantity=1, allocate=True, planned_start=None
+):
     api, p = flow.api, flow.project
     rid = rid or flow.revisions[-1]
-    clock = api.context.clock
+    clock = planned_start or api.context.clock
     wid = api.command(
         p,
         "work_order.register",
@@ -161,9 +165,11 @@ def work_order(flow, quantity, rid=None, *, trial_quantity=1, allocate=True):
     return wid
 
 
-def readiness(flow, wid, *, validity=None, decision="verified"):
+def readiness(
+    flow, wid, *, validity=None, decision="verified", kinds=("equipment", "people")
+):
     api = flow.api
-    for kind in ("equipment", "people"):
+    for kind in kinds:
         api.command(
             flow.project,
             "readiness.record",
@@ -362,6 +368,7 @@ def execution(flow, uid, lid, *, rework=None, **overrides):
         **overrides,
     }
     result = api.command(flow.project, "execution.record", actor="production", **body)
+    flow.executions.setdefault(uid, []).append((body["source"]["external_id"], body))
     return result
 
 
@@ -395,6 +402,7 @@ def measure(flow, uid, *, value=None, rework=None, expected=200, **overrides):
     )
     if expected == 200:
         flow.tests[uid] = result["object_id"]
+        flow.test_history.setdefault(uid, []).append(result["object_id"])
     return result
 
 
@@ -598,18 +606,6 @@ def feedback(flow, uid=None, shipment=None, *, close=True):
     if close:
         api.command(flow.project, "capa.close", actor="quality", capa_id=capa)
     return rma, capa
-
-
-def assert_trace(flow, uid):
-    api = flow.api
-    detail = api.object(flow.project, "unit", uid)
-    trace = api.get("/projects/" + flow.project + "/trace?sn=" + quote(detail["sn"]))
-    assert (
-        detail["revision_id"] in str(trace)
-        and uid in str(trace)
-        and flow.order in str(trace)
-    )
-    return trace
 
 
 def repair(flow, uid, lid):

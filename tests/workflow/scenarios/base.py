@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import sqlite3
 import time
+import traceback
 from threading import Lock
 from typing import Literal
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -282,6 +283,18 @@ def owned_run(directory):
     return manifest
 
 
+def exception_location(exc):
+    # Frame metadata only: no locals, source lines, exception repr or chained payloads.
+    return {
+        "type": type(exc).__name__,
+        "message": str(exc),
+        "frames": [
+            {"file": frame.filename, "line": frame.lineno, "function": frame.name}
+            for frame in traceback.extract_tb(exc.__traceback__)
+        ],
+    }
+
+
 def run_case(
     context: ScenarioContext, steps: Sequence[ScenarioStep] | None = None
 ) -> CaseResult:
@@ -301,9 +314,7 @@ def run_case(
         status, error = "blocked", str(exc)
     except Exception as exc:
         status, error = "failed", str(exc)
-        context.evidence.record(
-            "failure", {"type": type(exc).__name__, "message": str(exc)}
-        )
+        context.evidence.record("failure", exception_location(exc))
     finally:
         cleanup = ([context.client.close] if context.client is not None else []) + [
             lambda: context.evidence.record_db_snapshot(context.paths.domain),
@@ -315,7 +326,7 @@ def run_case(
             except Exception as exc:
                 context.evidence.record(
                     "teardown-failure",
-                    {"type": type(exc).__name__, "message": str(exc)},
+                    exception_location(exc),
                 )
                 if error is None:
                     status, error = "failed", str(exc)
