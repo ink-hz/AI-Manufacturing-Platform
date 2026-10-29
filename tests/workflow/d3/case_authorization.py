@@ -52,7 +52,26 @@ def scope_write_matrix(api, projects):
     api.grant(own, "planner", ["planner"])
 
 
-def admin_full_access(api, projects, initial):
+def admin_project_read(api, project_id):
+    detail = api.get("/projects/" + project_id, actor="admin")
+    assert detail["id"] == project_id
+    assert {
+        "demand.record",
+        "readiness.record",
+        "first_article.record",
+        "release.decide",
+        "shipment.request",
+        "closure.record",
+    } <= set(detail["allowed_actions"])
+    assert detail["release_kinds"] == ["manufacturing", "quality", "customer"]
+    return {
+        "id": detail["id"],
+        "allowed_actions": detail["allowed_actions"],
+        "release_kinds": detail["release_kinds"],
+    }
+
+
+def admin_full_access(api, projects, initial, *, initial_project_ids, initial_reads):
     """Actual trusted host admin, before any explicit grant, reads and writes."""
     actor_id = api.login("admin")["user_id"]
     with api.db() as db:
@@ -66,26 +85,14 @@ def admin_full_access(api, projects, initial):
             )
         )
     assert counts == {"total": 0, "active": 0}
-    ids = {project["id"] for project in projects.values()}
+    ids = set(initial_project_ids) | {project["id"] for project in projects.values()}
     access = api.get("/access", actor="admin")
+    assert len(access["project_ids"]) == len(ids)
     assert set(access["project_ids"]) == ids
-    reads = {}
-    for label, project in projects.items():
-        detail = api.get("/projects/" + project["id"], actor="admin")
-        assert {
-            "demand.record",
-            "readiness.record",
-            "first_article.record",
-            "release.decide",
-            "shipment.request",
-            "closure.record",
-        } <= set(detail["allowed_actions"])
-        assert detail["release_kinds"] == ["manufacturing", "quality", "customer"]
-        reads[label] = {
-            "id": detail["id"],
-            "allowed_actions": detail["allowed_actions"],
-            "release_kinds": detail["release_kinds"],
-        }
+    reads = {
+        label: admin_project_read(api, project["id"])
+        for label, project in projects.items()
+    }
     result = api.command(
         projects["other_customer"]["id"],
         "demand.record",
@@ -120,10 +127,12 @@ def admin_full_access(api, projects, initial):
         {
             "actor_id": actor_id,
             "initial_grants": counts,
+            "initial_project_ids": initial_project_ids,
+            "initial_reads": initial_reads,
             "initial_access": initial,
             "later_access": access,
             "existing_project_id": projects["own"]["id"],
-            "later_project_ids": sorted(ids - {projects["own"]["id"]}),
+            "later_project_ids": sorted(ids - set(initial_project_ids)),
             "reads": reads,
             "valid_command_response": response_path,
             "result": result,
@@ -138,15 +147,24 @@ def run(context):
     context.client = api
     p = api.project("100")
     original = api.get("/projects/" + p)
+    with api.db() as db:
+        initial_project_ids = [row[0] for row in db.execute("SELECT id FROM projects ORDER BY id")]
     initial_admin_access = api.get("/access", actor="admin")
-    assert initial_admin_access["project_ids"] == [p]
-    assert api.get("/projects/" + p, actor="admin")["id"] == p
+    assert len(initial_admin_access["project_ids"]) == len(initial_project_ids)
+    assert set(initial_admin_access["project_ids"]) == set(initial_project_ids)
+    initial_reads = {
+        project_id: admin_project_read(api, project_id)
+        for project_id in initial_project_ids
+    }
     projects = {"own": {"id": p, "customer_id": original["customer_id"]}}
     for label, customer in (("same_customer", original["customer_id"]), ("other_customer", "Customer 2")):
         created = api.post("/projects", {**{k: original[k] for k in ("name", "line_id", "product", "mode", "unit", "quantity", "contract")}, "operation_id": context.identifier(label), "customer_id": customer})
         projects[label] = {"id": created["id"], "customer_id": created["customer_id"]}
     q = projects["other_customer"]["id"]
-    admin_full_access(api, projects, initial_admin_access)
+    admin_full_access(
+        api, projects, initial_admin_access,
+        initial_project_ids=initial_project_ids, initial_reads=initial_reads,
+    )
     scope_write_matrix(api, projects)
     api.get("/projects/" + projects["same_customer"]["id"], actor="planner", expected=404)
     api.get("/projects/" + p, anonymous=True, expected=401)
