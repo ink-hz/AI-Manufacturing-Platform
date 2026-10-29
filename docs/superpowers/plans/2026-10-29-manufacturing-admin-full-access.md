@@ -25,8 +25,8 @@ Files: authorization.py (shared effective permissions), service.py (scope, capab
 
 Interfaces: Actor(user_id,display_name,read_only,configuration_admin) remains server-owned. `require_project(tx,actor,project_id)` must require a realproject. Introduce one shared effective-permissions helper returningroles/qualifications from actualgrant or the trustedglobaladmin policy. Registry allowed_actions/permits consume the same values. If constants are extracted, registry registration validation and effectiveadmin must consume the same vocabulary. Preserve service APIs and response schemas when possible.
 
-- [ ] Read all direct project_grants actor checks, describe actor vs target checks in taskreport beforeediting.
-- [ ] Add second privileged `admin` fixture identity without changing existing deterministic IDs (append new identity). Alltrustedtestfixture configs useowner/admin only; ordinaryoutsider staysnonadmin. Example API regression:
+- [x] Read all direct project_grants actor checks, describe actor vs target checks in taskreport beforeediting.
+- [x] Add second privileged `admin` fixture identity without changing existing deterministic IDs (append new identity). Alltrustedtestfixture configs useowner/admin only; ordinaryoutsider staysnonadmin. Example API regression:
 
 ```python
 def test_admin_sees_existing_and_new_projects_without_grants(workflow):
@@ -39,17 +39,19 @@ def test_admin_sees_existing_and_new_projects_without_grants(workflow):
         assert db.execute("SELECT COUNT(*) FROM project_grants WHERE user_id=?", (str(USERS["admin"]),)).fetchone()[0] == 0
 ```
 
-- [ ] Run this/newmeaningful casesRED with `PYTHONPATH=src <PFvenv>/python -m pytest tests/workflow/test_admin_full_access.py -q` into unique .superpowers/admin-access/*red*.log. Assert actual allowedcommand audit, quality variants, deliveryother-owner resolution, adminreadonly/CAS/idempotency andnonadmin isolation. No tests that mirror constants without behavior.
-- [ ] Implement centralized effective roles/qualifications and project enumeration; use it in projectdetails, objects, tasks, commands, qualitysigning and deliveryissue authorization. Make nonexistent resources fail404evenforadmins. Keep actual business blockers after permission passes; avoid broadfake success.
-- [ ] Update previously intentional adminnoquality/adminnoscope assertions to the new rule, retaining real member/noqualification denial. E29 must now positively prove actual hostadmin with no projectgrant can read and execute a valid action, then retain ordinary negative scope/CSRF/revocation matrices. Unknownmissingbusinessobjects should still fail as business validation, not403permission.
-- [ ] GREEN targetedtests and related workflow regressions; actual local E29 with TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform. Build currentMFwebui if fixture requires dist; root-owned node_modules symlink must never be staged/deleted by implementer. No unrelated PF fullsuites or browser.
-- [ ] Update current product architecture text to new explicit adminpolicy. Selfreview allraw project_grants actor predicates for inconsistent bypasses. Commit source/tests/doc only; report alltestcounts/firstfailures/capabilityscope/remaininglimits to .superpowers/admin-access/task-report.md.
+- [x] Run this/newmeaningful casesRED with `PYTHONPATH=src <PFvenv>/python -m pytest tests/workflow/test_admin_full_access.py -q` into unique .superpowers/admin-access/*red*.log. Assert actual allowedcommand audit, quality variants, deliveryother-owner resolution, adminreadonly/CAS/idempotency andnonadmin isolation. No tests that mirror constants without behavior.
+- [x] Implement centralized effective roles/qualifications and project enumeration; use it in projectdetails, objects, tasks, commands, qualitysigning and deliveryissue authorization. Make nonexistent resources fail404evenforadmins. Keep actual business blockers after permission passes; avoid broadfake success.
+- [x] Update previously intentional adminnoquality/adminnoscope assertions to the new rule, retaining real member/noqualification denial. E29 must now positively prove actual hostadmin with no projectgrant can read and execute a valid action, then retain ordinary negative scope/CSRF/revocation matrices. Unknownmissingbusinessobjects should still fail as business validation, not403permission.
+- [x] GREEN targetedtests and related workflow regressions; actual local E29 with TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform. Build currentMFwebui if fixture requires dist; root-owned node_modules symlink must never be staged/deleted by implementer. No unrelated PF fullsuites or browser.
+- [x] Update current product architecture text to new explicit adminpolicy. Selfreview allraw project_grants actor predicates for inconsistent bypasses. Commit source/tests/doc only; report alltestcounts/firstfailures/capabilityscope/remaininglimits to .superpowers/admin-access/task-report.md.
 
 ### Controller gates
 
-- [ ] Independent task BOTH spec/quality review, fix/review then wholebranch authorization/rollout review.
-- [ ] Capture actualproductionimage/source/currentreceipt/chain/all3DBmaps/workflowconfig/protectedcontainers; do not assume localPFmasterequalsruntime.
-- [ ] Merge exact reviewedMFsource, build immutableactualcurrentPFsource with zerooverlay if unchanged. RetainlatestFAE/securityoverlays, currentNode runtime and fullscope36 including updatedE29.
-- [ ] VerifiedthreeDB backups then guardedsource/imagecutover. Allcurrenttables/config/importmanifest andothercontainers/Nginx preserve.
-- [ ] Read-only production XuLiang actualrole->globalproject/capability check; normaloutsider denies, readonly stripswrites. Verifyexactdeployedsource/staticmaps andsource-onlyrollback.
-- [ ] Archive failures, candidate36, receipts andaccuratepublicrelease record; cleanup onlyownedcandidatefilesystem/worktree/link/mergedbranch, preserveuserdrafts.
+- [x] Independent task BOTH spec/quality review, fix/review then wholebranch authorization/rollout review.
+- [x] Capture actualproductionimage/source/currentreceipt/chain/all3DBmaps/workflowconfig/protectedcontainers; do not assume localPFmasterequalsruntime.
+- [x] Merge exact reviewedMFsource, build immutableactualcurrentPFsource with zerooverlay if unchanged. RetainlatestFAE/securityoverlays, currentNode runtime and fullscope36 including updatedE29.
+- [x] VerifiedthreeDB backups then guardedsource/imagecutover. Allcurrenttables/config/importmanifest andothercontainers/Nginx preserve.
+- [x] Read-only production XuLiang actualrole->globalproject/capability check; normaloutsider denies, readonly stripswrites. Verifyexactdeployedsource/staticmaps andsource-onlyrollback.
+- [x] Archive failures, candidate36, receipts andaccuratepublicrelease record; cleanup onlyownedcandidatefilesystem/worktree/link/mergedbranch, preserveuserdrafts.
+
+执行结果及边界见[实际发布记录](../../release-admin-full-access-2026-10-29.md)。运行源码与后续文档收尾提交分开记录。

@@ -1,0 +1,260 @@
+{
+  "verified_at_utc": "2026-10-29T04:34:10.892809+00:00",
+  "url": "https://agent.orbbec.com.cn/manufacturing",
+  "manufacturing_commit": "f324cca22574638b598ea174b0ccf585ccf60d3b",
+  "platform_commit": "28272ec4cd1c15ae165a11ecaaed28e166e70405",
+  "image": "sha256:b0ac861143ec2c86a5c3608bc43698a0a99d16abcfbac0cd1af130267b86ed2d",
+  "policy": {
+    "trusted_roles": [
+      "platform_owner",
+      "platform_admin"
+    ],
+    "all_existing_and_future_manufacturing_projects": true,
+    "all_business_roles": 7,
+    "implicit_qualifications": 4,
+    "registered_business_actions": 52,
+    "no_per_user_or_bulk_grant_seeding": true,
+    "ordinary_member_permissions_retained": true,
+    "authentication_readonly_CSRF_business_guards_CAS_idempotency_audit_retained": true
+  },
+  "candidate": {
+    "passed": true,
+    "cases": 36,
+    "failed": 0,
+    "not_executed": 0,
+    "run_id": "run-20261029T042526-0b85464d4c3c4e8e93138cbff7899cd2",
+    "image": "sha256:b0ac861143ec2c86a5c3608bc43698a0a99d16abcfbac0cd1af130267b86ed2d",
+    "manufacturing_commit": "f324cca22574638b598ea174b0ccf585ccf60d3b",
+    "platform_commit": "28272ec4cd1c15ae165a11ecaaed28e166e70405",
+    "e30_global_navigation": [
+      "fresh-cross-project-order-records",
+      "real-server-filter-and-total",
+      "exact-project-object-detail",
+      "same-module-filter-return"
+    ],
+    "e29_admin_full_access": {
+      "grant_free": true,
+      "existing_and_later_projects": 4,
+      "all_release_variants": true,
+      "real_business_write_and_actor_audit": true
+    },
+    "e31_historical_admin_policy": {
+      "global_admin_frozen_replay": true,
+      "ordinary_role_demotion_denied": true,
+      "no_duplicate_or_denied_writes": true
+    },
+    "all_evidence_files_rehashed": 23516,
+    "archive_sha256": "99c8e95c8758bd3aa910e8f1841b3456c7a5eeb7e8bade8a8b8ab4e3d64289ba",
+    "receipt_sha256": "b8de07dfebe8494b5b717444df1f828274bbf51261a176cdb40edde0f68765d3"
+  },
+  "production": {
+    "passed": true,
+    "image": "sha256:b0ac861143ec2c86a5c3608bc43698a0a99d16abcfbac0cd1af130267b86ed2d",
+    "container": "fb7bc97b69f68d0eac0df75a9e81e3f0720bdd9e96e92e3cde0f2a56e904638b",
+    "manufacturing_commit": "f324cca22574638b598ea174b0ccf585ccf60d3b",
+    "platform_commit": "28272ec4cd1c15ae165a11ecaaed28e166e70405",
+    "healthy": true,
+    "restart_count": 0,
+    "business_rows_unchanged_all3DB": true,
+    "workflow_configuration_preserved": true,
+    "import_manifest_preserved": true,
+    "deployed_source_files": 514,
+    "deployed_static_files": 409,
+    "protected_other_containers_unchanged": 33,
+    "additional_observed_containers": {},
+    "mounts": 15,
+    "compose_inputs": 47,
+    "nginx_unchanged": true,
+    "http_probes": [
+      {
+        "path": "/manufacturing",
+        "status": 200,
+        "cache_control": "no-store"
+      },
+      {
+        "path": "/api/v1/manufacturing/workflow/objects/order_line",
+        "status": 401,
+        "cache_control": "private, no-store"
+      },
+      {
+        "path": "/api/v1/manufacturing/workflow/tasks",
+        "status": 401,
+        "cache_control": "private, no-store"
+      }
+    ],
+    "readback": {
+      "visible_projects": 6,
+      "counts": {
+        "demand": 6,
+        "order_line": 6,
+        "commitment_change": 0,
+        "revision": 6,
+        "work_order": 6,
+        "test": 12,
+        "nonconformance": 1,
+        "rework": 1,
+        "release": 4,
+        "plan": 6,
+        "requirement": 16,
+        "commitment": 16,
+        "material_lot": 8,
+        "receipt": 12,
+        "shipment": 2,
+        "closure": 0,
+        "eco": 0,
+        "exchange": 44,
+        "reservation": 12,
+        "unit": 45,
+        "interruption": 0,
+        "rma": 1,
+        "capa": 1
+      },
+      "typed_object_details_verified": 205,
+      "ledger_pages_verified": 43,
+      "tasks_available": 13,
+      "tasks_truncated": false,
+      "ungranted_member_policy_denied": true,
+      "platform_admin_full_access": {
+        "name": "徐良",
+        "role": "platform_admin",
+        "status": "active",
+        "directory_freshness": "fresh",
+        "explicit_project_grants": 0,
+        "all_project_count": 6,
+        "all_business_actions": 52,
+        "implicit_roles": [
+          "engineering",
+          "planner",
+          "production",
+          "project_owner",
+          "quality",
+          "supply",
+          "warehouse"
+        ],
+        "implicit_qualifications": [
+          "disposition",
+          "inspection",
+          "quality_release",
+          "readiness_verification"
+        ],
+        "release_kinds": [
+          "manufacturing",
+          "quality",
+          "customer"
+        ],
+        "source": "actual directory role plus read-only service verification; no employee login or production business write"
+      },
+      "read_only_action_stripping": true,
+      "dataset": {
+        "id": "manufacturing-full-flow-demo-20261028-v1",
+        "mode": "demo",
+        "label": "全流程模拟环境"
+      },
+      "home_expected": {
+        "pending_delivery_projects": 5,
+        "available_tasks": 13,
+        "tasks_truncated": false,
+        "open_nonconformances": 1,
+        "work_orders": 6
+      }
+    },
+    "backup": {
+      "verified": true,
+      "databases": 3,
+      "cross_file_atomic": false,
+      "consistency": "Each SQLite online backup is individually consistent; writes may occur between files."
+    },
+    "maintenance": "/opt/orbbec-agent-platform/staging/manufacturing-admin-full-access-20261029-r2/future-maintenance.json",
+    "maintenance_sha256": "b6562038e7c78d8765e9af99690bde2e731acbea39de125d1525b26d9c8455a7",
+    "cutover_sha256": "0b4f5b605690aa08d1d0f8ba165b74df9b9132843234a70dee9addde6880bf56"
+  },
+  "local_tests": {
+    "workflow_passed": 487,
+    "managed_selection_skipped": 35,
+    "implementation_commit": "4e8e69ff66ef0a2953c24b92cf68775ad1ded74c",
+    "business_src_scripts_webui_docs_unchanged_during_proof_fixes": true,
+    "admin_cases_included": 9,
+    "seed_cases_included": 16,
+    "actual_E18_E30_separately_passed": 2,
+    "actual_E29_separately_passed": 1,
+    "proof_fix_E29_direct_passed": 2,
+    "proof_fix_E29_complete_wrapper_passed": 1,
+    "proof_fix_E31_direct_passed": 1,
+    "proof_fix_E31_complete_wrapper_passed": 1,
+    "MF_typescript_build": "passed"
+  },
+  "retained_failures": {
+    "first_same_image_matrix": {
+      "passed": 34,
+      "failed": 2,
+      "not_executed": 0,
+      "failed_cases": [
+        "E29",
+        "E31"
+      ],
+      "source": "18ec71e7f9be9d6f9d669e12143577d940e27d6a",
+      "archive": {
+        "passed": true,
+        "archives": {
+          "controller-before-proof-fix.tar.gz": {
+            "sha256": "035e1786a3c152d8493da4c051548275a55fc69ec586ca1667ed770ad3711699",
+            "files": 223
+          },
+          "candidate-evidence.tar.gz": {
+            "sha256": "7199eed09311b90c7df9a4f04d6bc41bd0e5951956f9fcd0840656eb35ae4732",
+            "files": 23100
+          }
+        },
+        "receipt_sha256": "838717da6eb67bb0b5008398fd599e6b943783f890ace231874a0773c3c8a098",
+        "original_failed_run": "run-20261029T040715-c251af61d5c94e0d9275f45466e19d19",
+        "statuses": {
+          "passed": 34,
+          "failed": 2
+        },
+        "failed_cases": [
+          "E29",
+          "E31"
+        ]
+      }
+    },
+    "causes": [
+      "New E29 proof incorrectly assumed no earlier wrapper projects; now exact full DB initial scope/all reads + later projects",
+      "Current E31 proof retained former administrator project-grant revocation expectation; now privileged frozen replay plus actual global-role demotion denials"
+    ],
+    "old_results_receipts_frozen_source_and_payloads_unmodified": true,
+    "root_controller_first_collector_partial_count_assertion_retained": true,
+    "other_local_first_failures": "Retained raw RED, deleted PFworktree fixture prerequisite failures, and independently reproduced fe5 contract.agree stale inventory expectation; see private task/fix reports"
+  },
+  "archives": {
+    "passed": true,
+    "archives": {
+      "server-controller-evidence.tar.gz": {
+        "sha256": "1962ba59c2716ac430ac22addc3bc7346fd48b32fef4c0fe17f7d02424f54618",
+        "verified_files": 720,
+        "bytes": 3707127
+      },
+      "candidate-evidence.tar.gz": {
+        "sha256": "99c8e95c8758bd3aa910e8f1841b3456c7a5eeb7e8bade8a8b8ab4e3d64289ba",
+        "verified_files": 23516,
+        "bytes": 17318659
+      }
+    },
+    "candidate_receipt_sha256": "b8de07dfebe8494b5b717444df1f828274bbf51261a176cdb40edde0f68765d3",
+    "path": "/Users/neo/Developer/work/AI-Manufacturing-Platform/.superpowers/releases/manufacturing-admin-full-access-20261029"
+  },
+  "owned_candidate_filesystem_cleanup": {
+    "archive_verified_files": 23516,
+    "owned_evidence_contents_removed": true,
+    "exact_owned_mount_unmounted": true,
+    "owned_loop_auto_detached": true,
+    "owned_backing_removed": true,
+    "production_data_or_source_modified": false,
+    "retained": "complete candidate archive/receipt and published source/maintenance/private inputs"
+  },
+  "limits": [
+    "Real XuLiang directory role and read-only domain verification; no employee login session created or borrowed",
+    "Authenticated employee browser operation acceptance not run",
+    "Real ERP/MRP/MES/QMS/factory integration acceptance not run"
+  ],
+  "rollback": "Source/image and complete prior ordered inputs only; retain current databases/WAL and subsequent business edits"
+}
