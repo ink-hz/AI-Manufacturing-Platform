@@ -33,6 +33,10 @@ BUSINESS_QUALIFICATIONS = frozenset(
 
 
 WorkflowAction = Literal[
+    "authority.register",
+    "authority.verify",
+    "arrival.record",
+    "arrival.match",
     "test_plan.publish",
     "test_run.start",
     "test_run.finish",

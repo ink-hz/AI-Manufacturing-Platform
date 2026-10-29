@@ -1,7 +1,9 @@
 from .introduction_schema import INTRODUCTION_SCHEMA, ISSUE_RESOLUTION_SCHEMA
 from .laboratory_schema import LABORATORY_SCHEMA
+from .authority_schema import AUTHORITY_SCHEMA
+from .arrival_schema import ARRIVAL_SCHEMA
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -209,3 +211,5 @@ SCHEMA += INTRODUCTION_SCHEMA
 SCHEMA += ISSUE_RESOLUTION_SCHEMA
 
 SCHEMA += LABORATORY_SCHEMA
+
+SCHEMA += AUTHORITY_SCHEMA + ARRIVAL_SCHEMA

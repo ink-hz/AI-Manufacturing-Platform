@@ -182,6 +182,12 @@ class SourceQuantityCorrection(StrictModel):
 
 
 class ReceiptValue(DomainValue):
+    quantity_state: Literal[
+        "pending_inspection", "partially_inspected", "accepted", "rejected", "mixed"
+    ]
+    next_step: Literal[
+        "inspect_remaining", "review_rejected", "await_authority_reservation"
+    ]
     original_quantity: Quantity
     corrections: list[SourceQuantityCorrection] = Field(default_factory=list)
     confirmations: list[SourceConfirmation] = Field(default_factory=list)

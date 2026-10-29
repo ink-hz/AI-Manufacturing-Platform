@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 
 from . import (  # noqa: F401 - trusted domain registration
     agreements,
+    authority,
+    arrival,
     delivery,
     eco,
     engineering,
@@ -394,7 +396,6 @@ class WorkflowService:
             "work_order": ["readiness.record", "production.start", "unit.register"],
             "requirement": ["supply.commit", "reservation.request"],
             "commitment": ["supply.receive"],
-            "receipt": ["supply.inspect"],
             "material_lot": [
                 "ownership.movement",
                 "ownership.reconcile",
@@ -589,6 +590,13 @@ class WorkflowService:
             )
             for r in rows
         ]
+
+    def assistance(self, actor: Actor, project_id: UUID, kind):
+        from .assistance import analyze
+
+        with self.store.transaction() as tx:
+            require_project(tx, actor, project_id)
+            return analyze(tx, project_id, kind)
 
     def reusable_assets(self, actor: Actor, *, limit=50, offset=0):
         self._pagination(limit, offset)

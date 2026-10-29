@@ -517,6 +517,20 @@ def _totals(tx, where, args):
     return row["received"], row["qualified"], row["rejected"]
 
 
+def receipt_presentation(received, accepted, rejected):
+    pending = received - accepted - rejected
+    if pending:
+        state = "partially_inspected" if accepted or rejected else "pending_inspection"
+    else:
+        state = "mixed" if accepted and rejected else "rejected" if rejected else "accepted"
+    next_step = (
+        "inspect_remaining" if pending
+        else "review_rejected" if rejected
+        else "await_authority_reservation"
+    )
+    return dict(quantity_state=state, next_step=next_step)
+
+
 def _summary(
     kind,
     row,
@@ -540,6 +554,11 @@ def _summary(
         version=1 if kind == ObjectKind.requirement else row["source_version"],
         blocking_reasons=list(reasons),
         material_balance=material_balance,
+        next_actions=(
+            ["supply.inspect"]
+            if kind == ObjectKind.receipt and state in {"pending_inspection", "partially_inspected"}
+            else []
+        ),
     )
 
 
@@ -782,7 +801,9 @@ def _detail(tx, project_id, kind, object_id):
                 (str(project_id), row["id"]),
             )
         ]
+        presentation = receipt_presentation(row["q_atoms"], iqc[0], iqc[1])
         value = ReceiptValue(
+            **presentation,
             original_quantity=amount(original["q_atoms"], lot["scale"]),
             corrections=corrections,
             confirmations=confirmations,
@@ -799,7 +820,7 @@ def _detail(tx, project_id, kind, object_id):
             ObjectKind.receipt,
             row,
             row["source_external_id"],
-            "received",
+            value.quantity_state,
             amount(row["q_atoms"], lot["scale"]),
             row["unit"],
             row["source_json"],
@@ -1020,7 +1041,14 @@ def _page(kind, table):
                         ObjectKind.receipt,
                         row,
                         row["source_external_id"],
-                        "received",
+                        receipt_presentation(
+                            row["q_atoms"],
+                            *tx.execute(
+                                "SELECT COALESCE(SUM(accepted_atoms),0),COALESCE(SUM(rejected_atoms),0) "
+                                "FROM effective_iqc_results WHERE project_id=? AND receipt_id=?",
+                                (str(project_id), row["id"]),
+                            ).fetchone(),
+                        )["quantity_state"],
                         amount(row["q_atoms"], row["scale"]),
                         row["unit"],
                         row["source_json"],

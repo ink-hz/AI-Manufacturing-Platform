@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse, Response
 
+from .assistance import AssistanceKind, AssistanceResult
 from .contracts import Actor, DomainError, GrantChange, ObjectKind, ProjectCreate
 from .security import log_denial
 from .service import WorkflowService
@@ -176,6 +177,10 @@ def build_workflow_router(
             raise HTTPException(403, "Permission denied")
         value = await parse(request, GrantChange)
         return await run_in_threadpool(service.change_grant, a, project_id, user_id, value)
+
+    @router.get("/projects/{project_id}/assistance", response_model=AssistanceResult)
+    def assistance(project_id: UUID, request: Request, kind: AssistanceKind):
+        return service.assistance(actor(request), project_id, kind)
 
     @router.get("/reusable-assets")
     def reusable_assets(request: Request, limit: int = 50, offset: int = 0):
