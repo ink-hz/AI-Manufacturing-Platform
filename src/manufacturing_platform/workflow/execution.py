@@ -1078,6 +1078,7 @@ def unit_detail(tx, pid, ident):
     ).fetchall()
     event_views = [event_view(tx, pid, e) for e in reversed(events)]
     from .quality import unit_tests
+    from .laboratory_readers import unit_history
     from .freeze import projection
 
     return ObjectDetail[UnitValue](
@@ -1096,6 +1097,7 @@ def unit_detail(tx, pid, ident):
             execution_event_total=event_total,
             execution_events=event_views,
             **unit_tests(tx, pid, ident),
+            **unit_history(tx, pid, ident),
             **projection(tx, pid, "unit", ident).model_dump(),
         ),
         relations=[

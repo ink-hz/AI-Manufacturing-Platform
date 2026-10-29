@@ -235,6 +235,10 @@ class ProjectQuantitySummary(StrictModel):
 
 
 class ObjectKind(str, Enum):
+    test_plan = "test_plan"
+    test_run = "test_run"
+    calibration = "calibration"
+    component_link = "component_link"
     npi = "npi"
     npi_issue = "npi_issue"
     reusable_asset = "reusable_asset"

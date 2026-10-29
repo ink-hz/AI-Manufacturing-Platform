@@ -295,7 +295,6 @@ def test_schema18_upgrade_preserves_resolutions_operations_and_audit(workflow):
         assert (
             tx.execute("SELECT version FROM schema_version").fetchone()[0]
             == SCHEMA_VERSION
-            == 19
         )
         assert {
             t: [tuple(r) for r in tx.execute(f"SELECT * FROM {t} ORDER BY rowid")]

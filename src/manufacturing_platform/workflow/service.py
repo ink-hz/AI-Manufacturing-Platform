@@ -14,6 +14,7 @@ from . import (  # noqa: F401 - trusted domain registration
     feedback,
     freeze,
     introduction,
+    laboratory,
     orders,
     ownership,
     progress,
@@ -377,7 +378,10 @@ class WorkflowService:
             "npi": ["npi.review", "npi.trial", "npi.issue", "npi.approve", "asset.apply"],
             "npi_issue": ["npi.resolve", "asset.publish"],
             "asset_use": ["asset.verify"],
-            "unit": ["test.record", "release.decide", "freeze.request"],
+            "unit": [
+                "test.record", "test_run.start", "component.install",
+                "unit.alias", "release.decide", "freeze.request",
+            ],
             "demand": ["demand.review", "order.register"],
             "order_line": ["order.change", "order.allocate", "shipment.request"],
             "revision": [
@@ -385,6 +389,7 @@ class WorkflowService:
                 "engineering.customer_approval",
                 "work_order.register",
                 "npi.open",
+                "test_plan.publish",
             ],
             "work_order": ["readiness.record", "production.start", "unit.register"],
             "requirement": ["supply.commit", "reservation.request"],

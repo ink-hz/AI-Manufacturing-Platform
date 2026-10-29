@@ -9,6 +9,7 @@ from pydantic import Field, field_validator, model_serializer, model_validator
 
 from .commands import WorkflowCommand
 from .contracts import DomainValue, Quantity, SourceRef, StrictModel, require_timezone
+from .genealogy_models import ComponentHistory, UnitAlias
 
 
 def sn_key(sn: str) -> str:
@@ -130,6 +131,8 @@ class UnitTestView(StrictModel):
 
 
 class UnitValue(DomainValue):
+    aliases: list[UnitAlias] = Field(default_factory=list)
+    components: list[ComponentHistory] = Field(default_factory=list)
     freeze_requested: Literal["frozen", "unfrozen"] | None = None
     freeze_confirmed: Literal["frozen", "unfrozen"] | None = None
     freeze_pending: bool = False

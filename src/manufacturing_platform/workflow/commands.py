@@ -33,6 +33,14 @@ BUSINESS_QUALIFICATIONS = frozenset(
 
 
 WorkflowAction = Literal[
+    "test_plan.publish",
+    "test_run.start",
+    "test_run.finish",
+    "calibration.record",
+    "calibration.confirm",
+    "component.install",
+    "component.remove",
+    "unit.alias",
     "npi.open",
     "npi.review",
     "npi.trial",
