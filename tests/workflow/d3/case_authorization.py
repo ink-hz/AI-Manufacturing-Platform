@@ -52,16 +52,101 @@ def scope_write_matrix(api, projects):
     api.grant(own, "planner", ["planner"])
 
 
+def admin_full_access(api, projects, initial):
+    """Actual trusted host admin, before any explicit grant, reads and writes."""
+    actor_id = api.login("admin")["user_id"]
+    with api.db() as db:
+        counts = dict(
+            zip(
+                ("total", "active"),
+                db.execute(
+                    "SELECT COUNT(*),COALESCE(SUM(active),0) FROM project_grants WHERE user_id=?",
+                    (actor_id,),
+                ).fetchone(),
+            )
+        )
+    assert counts == {"total": 0, "active": 0}
+    ids = {project["id"] for project in projects.values()}
+    access = api.get("/access", actor="admin")
+    assert set(access["project_ids"]) == ids
+    reads = {}
+    for label, project in projects.items():
+        detail = api.get("/projects/" + project["id"], actor="admin")
+        assert {
+            "demand.record",
+            "readiness.record",
+            "first_article.record",
+            "release.decide",
+            "shipment.request",
+            "closure.record",
+        } <= set(detail["allowed_actions"])
+        assert detail["release_kinds"] == ["manufacturing", "quality", "customer"]
+        reads[label] = {
+            "id": detail["id"],
+            "allowed_actions": detail["allowed_actions"],
+            "release_kinds": detail["release_kinds"],
+        }
+    result = api.command(
+        projects["other_customer"]["id"],
+        "demand.record",
+        actor="admin",
+        kind="firm",
+        product="Camera",
+        quantity="1",
+        unit="piece",
+        due_date="2026-12-01",
+        source=api.source("demand"),
+    )
+    response_path = api.context.evidence.artifacts[-1]
+    with api.db() as db:
+        audit = dict(
+            db.execute(
+                "SELECT actor_id,action,object_id,project_id FROM audit_events WHERE object_id=?",
+                (result["object_id"],),
+            ).fetchone()
+        )
+        after_count = db.execute(
+            "SELECT COUNT(*) FROM project_grants WHERE user_id=?", (actor_id,)
+        ).fetchone()[0]
+    assert audit == {
+        "actor_id": actor_id,
+        "action": "demand.record",
+        "object_id": result["object_id"],
+        "project_id": projects["other_customer"]["id"],
+    }
+    assert after_count == 0
+    api.context.evidence.record(
+        "admin-full-access",
+        {
+            "actor_id": actor_id,
+            "initial_grants": counts,
+            "initial_access": initial,
+            "later_access": access,
+            "existing_project_id": projects["own"]["id"],
+            "later_project_ids": sorted(ids - {projects["own"]["id"]}),
+            "reads": reads,
+            "valid_command_response": response_path,
+            "result": result,
+            "audit": audit,
+            "final_grant_count": after_count,
+        },
+    )
+
+
 def run(context):
     api = PlatformHTTP(context)
     context.client = api
     p = api.project("100")
     original = api.get("/projects/" + p)
+    initial_admin_access = api.get("/access", actor="admin")
+    assert initial_admin_access["project_ids"] == [p]
+    assert api.get("/projects/" + p, actor="admin")["id"] == p
     projects = {"own": {"id": p, "customer_id": original["customer_id"]}}
     for label, customer in (("same_customer", original["customer_id"]), ("other_customer", "Customer 2")):
         created = api.post("/projects", {**{k: original[k] for k in ("name", "line_id", "product", "mode", "unit", "quantity", "contract")}, "operation_id": context.identifier(label), "customer_id": customer})
         projects[label] = {"id": created["id"], "customer_id": created["customer_id"]}
     q = projects["other_customer"]["id"]
+    admin_full_access(api, projects, initial_admin_access)
     scope_write_matrix(api, projects)
     api.get("/projects/" + projects["same_customer"]["id"], actor="planner", expected=404)
     api.get("/projects/" + p, anonymous=True, expected=401)
@@ -94,11 +179,12 @@ def run(context):
         api.post(f"/projects/{p}/commands", stage, headers=headers, expected=403)
     api.post(f"/projects/{p}/commands", stage, actor="planner", headers={"X-Role": "platform_owner"}, expected=403)
     api.post(f"/projects/{p}/commands", {**stage, "user_id": api.login("owner")["user_id"]}, expected=422)
-    # Admin/manufacturing permission never implies quality qualification.
-    api.grant(p, "admin", ["quality"])
+    # Trusted admins pass permission; missing business facts still fail404.
+    # Ordinary production and unqualified quality members remain denied.
     quality = {"action": "first_article.record", "work_order_id": context.identifier("missing-wo"), "unit_ids": [context.identifier("unit")], "test_ids": [context.identifier("test")], "inspection_id": "Synthetic FAI"}
-    for actor in ("admin", "production", "owner"):
-        api.command(p, actor=actor, expected=403, **quality)
+    api.command(p, actor="production", expected=403, **quality)
+    for actor in ("admin", "owner"):
+        api.command(p, actor=actor, expected=404, **quality)
     api.command(p, actor="quality", expected=404, **quality)
     api.grant(p, "quality", ["quality"])
     api.command(p, actor="quality", expected=403, **quality)

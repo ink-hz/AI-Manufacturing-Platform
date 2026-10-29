@@ -23,6 +23,7 @@ USERS = {
             "quality",
             "warehouse",
             "outsider",
+            "admin",
         ),
         1,
     )
@@ -43,6 +44,7 @@ class WorkflowHarness:
             root / "legacy.db", root / "domain.db", root / "authority.db"
         )
         self.paths.legacy.write_bytes(b"untouched legacy sentinel")
+        self.configuration_admins = {"owner", "admin"}
         self.read_only = set()
         self.hard_stale = set()
         self.inactive = set()
@@ -64,7 +66,7 @@ class WorkflowHarness:
                 "user_id": USERS[name],
                 "display_name": name,
                 "read_only": name in self.read_only,
-                "configuration_admin": name == "owner",
+                "configuration_admin": name in self.configuration_admins,
             }
 
         app = FastAPI()

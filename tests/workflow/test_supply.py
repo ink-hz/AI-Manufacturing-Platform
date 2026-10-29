@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from .conftest import BASE
+from .conftest import BASE, USERS
 
 
 def test_received_is_not_qualified_and_rejected_is_immutable(workflow):
@@ -605,19 +605,13 @@ def test_iqc_requires_live_quality_inspection_grant(workflow):
         )["code"]
         == "FORBIDDEN"
     )
-    assert (
-        workflow.command(
-            p["id"],
-            "supply.inspect",
-            actor_name="owner",
-            receipt_id=receipt["object_id"],
-            accepted="1",
-            rejected="0",
-            evidence="admin check",
-            expected_status=403,
-        )["code"]
-        == "FORBIDDEN"
+    workflow.command(
+        p["id"], "supply.inspect", actor_name="owner",
+        receipt_id=receipt["object_id"], accepted="1", rejected="0",
+        evidence="Trusted administrator inspection",
     )
+    with workflow.db() as db:
+        assert db.execute("SELECT actor_id FROM audit_events WHERE action='supply.inspect'").fetchone()[0] == str(USERS["owner"])
 
 
 def test_supply_pages_are_bounded_and_empty_plan_never_ready(workflow):

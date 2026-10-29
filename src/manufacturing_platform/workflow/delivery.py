@@ -3,6 +3,7 @@
 import json
 from uuid import UUID, uuid4
 
+from .authorization import effective_permissions, responsible_member
 from .commands import COMMAND_REGISTRY
 from .contracts import (
     DomainError,
@@ -407,12 +408,11 @@ def record_fact(tx, context, command):
     owners = {}
     if kind == "accept":
         for issue in command.issues:
-            grant = tx.execute(
-                "SELECT 1 FROM project_grants WHERE project_id=? AND user_id=? AND active=1 AND roles_json!='[]'",
-                (str(context.project_id), str(issue.owner_id)),
-            ).fetchone()
+            member = responsible_member(
+                tx, context.actor, context.project_id, issue.owner_id
+            )
             name = (context.subject_profiles or {}).get(str(issue.owner_id))
-            if not grant or not name:
+            if not member or not name:
                 fail(
                     "Active named project member profile unavailable for responsible owner"
                 )
@@ -657,12 +657,10 @@ OBJECT_REGISTRY.register(
 def authorize(tx, actor, pid, command):
     if command.action == "delivery.resolve_issue":
         issue = own(tx, "acceptance_issues", pid, command.issue_id)
-        grant = tx.execute(
-            "SELECT roles_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
-            (str(pid), str(actor.user_id)),
-        ).fetchone()
-        if str(actor.user_id) != issue["owner_id"] and (
-            not grant or "project_owner" not in json.loads(grant[0])
+        permissions = effective_permissions(tx, actor, pid)
+        if (
+            str(actor.user_id) != issue["owner_id"]
+            and "project_owner" not in permissions.roles
         ):
             raise DomainError(
                 "FORBIDDEN",
@@ -933,10 +931,8 @@ def fulfillment_status(tx, pid):
 
 
 def can_resolve_issue(tx, actor, pid):
-    return (
-        tx.execute(
-            "SELECT 1 FROM acceptance_issues i WHERE i.project_id=? AND NOT EXISTS(SELECT 1 FROM acceptance_resolutions r WHERE r.issue_id=i.id) AND (i.owner_id=? OR EXISTS(SELECT 1 FROM project_grants g,json_each(g.roles_json) role WHERE g.project_id=i.project_id AND g.user_id=? AND g.active=1 AND role.value='project_owner')) LIMIT 1",
-            (str(pid), str(actor.user_id), str(actor.user_id)),
-        ).fetchone()
-        is not None
-    )
+    permissions = effective_permissions(tx, actor, pid)
+    return tx.execute(
+        "SELECT 1 FROM acceptance_issues i WHERE i.project_id=? AND NOT EXISTS(SELECT 1 FROM acceptance_resolutions r WHERE r.issue_id=i.id) AND (i.owner_id=? OR ?) LIMIT 1",
+        (str(pid), str(actor.user_id), "project_owner" in permissions.roles),
+    ).fetchone() is not None

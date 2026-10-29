@@ -227,7 +227,14 @@ class Importer:
                 with self.store.transaction():
                     pass
                 self.service.exchange_service.adapter.snapshot('erp', 'receipt')
-                if self.service.project_ids(self.actors['maintenance']):
+                # Global admin visibility is not importer ownership. Preserve even
+                # revoked namespace responsibility as evidence of a lost manifest.
+                with self.store.transaction() as db:
+                    namespace_exists = db.execute(
+                        'SELECT 1 FROM project_grants WHERE user_id=? LIMIT 1',
+                        (str(self.actors['maintenance'].user_id),),
+                    ).fetchone() is not None
+                if namespace_exists:
                     raise ValueError('Existing demo namespace requires its original manifest')
                 self.manifest = dict(config=self.config, started_at=datetime.now(UTC).isoformat(), steps={}, project_versions={}, projects=[], complete=False)
                 self.checkpoint()

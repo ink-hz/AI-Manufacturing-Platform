@@ -76,8 +76,12 @@ def test_global_objects_visible_scopes_boundary_and_real_source(workflow):
     )
     workflow.grant(projects[0], "planner", [], active=False)
     assert client.get(BASE + "/objects/demand").json()["total"] == 3
-    # An administrator's explicit membership can be revoked without affecting others.
+    # Responsibility revocation does not shrink global administrator scope.
     workflow.grant(projects[2], "owner", [], active=False)
+    assert workflow.client().get(BASE + "/objects/demand").json()["total"] == 9
+    assert workflow.client().get(BASE + "/objects/demand", params={"project_id": projects[2]}).status_code == 200
+    # Demotion immediately restores ordinary member/grant scope.
+    workflow.configuration_admins.remove("owner")
     assert workflow.client().get(BASE + "/objects/demand").json()["total"] == 6
     assert (
         workflow.client()
@@ -149,7 +153,7 @@ def test_registry_only_materializes_selected_cross_project_page(workflow, monkey
     actor = contracts.Actor(
         user_id=USERS["planner"],
         display_name="Planner",
-        configuration_admin=True,
+        configuration_admin=False,
         read_only=False,
     )
     page = svc.ledger(actor, contracts.ObjectKind.demand, limit=3, offset=2)

@@ -2,7 +2,7 @@
 
 import pytest
 
-from .conftest import WorkflowHarness
+from .conftest import BASE, WorkflowHarness
 
 
 def open_eco_with_stock(self):
@@ -835,11 +835,11 @@ def test_eco_scoped_permissions_and_cross_project_boundary_are_enforced(workflow
         reason="foreign",
     )
     workflow.grant(p["id"], "engineering", ["engineering"], active=False)
+    assert workflow.client("engineering").get(f"{BASE}/projects/{p['id']}").status_code == 404
     workflow.command(
         p["id"],
         "exchange.dispatch",
         actor_name="owner",
-        expected_status=403,
         exchange_id=switch["exchange_id"],
     )
 

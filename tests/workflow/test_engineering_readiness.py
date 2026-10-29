@@ -421,16 +421,6 @@ def test_readiness_record_needs_live_project_verification_qualification(workflow
         == "FORBIDDEN"
     )
     assert (
-        workflow.command(
-            p["id"],
-            "readiness.record",
-            actor_name="owner",
-            **fields,
-            expected_status=403,
-        )["code"]
-        == "FORBIDDEN"
-    )
-    assert (
         _check(_evaluate(workflow, p["id"], wo["id"], "trial"), "equipment").status
         == "blocked"
     )
@@ -455,6 +445,10 @@ def test_readiness_record_needs_live_project_verification_qualification(workflow
         _check(_evaluate(workflow, p["id"], wo["id"], "trial"), "people").status
         == "blocked"
     )
+
+    # Global admin qualification is implicit even with an empty explicit grant.
+    workflow.command(p["id"], "readiness.record", actor_name="owner", **{**fields, "kind": "people"})
+    assert _check(_evaluate(workflow, p["id"], wo["id"], "trial"), "people").status == "ready"
 
 
 def test_forecast_demand_cannot_authorize_formal_work_order(workflow):

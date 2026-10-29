@@ -45,3 +45,19 @@ def test_actual_host_e29_records_scope_write_matrix(tmp_path):
         assert row["before"] == row["after"]
         assert {"operations", "audit_events", "projects", "demands"} <= set(row["before"]["workflow.db"])
     assert len(operations) == len(sources) == 5
+
+    admin_artifacts = list(context.directory.glob("*-admin-full-access.json"))
+    assert len(admin_artifacts) == 1
+    admin = json.loads(admin_artifacts[0].read_text())["value"]
+    assert admin["initial_grants"] == {"active": 0, "total": 0}
+    assert admin["final_grant_count"] == 0
+    assert admin["initial_access"]["project_ids"] == [admin["existing_project_id"]]
+    assert len(admin["later_project_ids"]) == 2
+    assert set(admin["later_access"]["project_ids"]) == {admin["existing_project_id"], *admin["later_project_ids"]}
+    assert admin["audit"]["actor_id"] == admin["actor_id"]
+    assert admin["audit"]["object_id"] == admin["result"]["object_id"]
+    assert admin["audit"]["action"] == "demand.record"
+    response = json.loads(Path(admin["valid_command_response"]).read_text())["value"]
+    assert response["status"] == 200
+    assert response["body"]["object_id"] == admin["audit"]["object_id"]
+    assert set(admin["reads"]) == {"own", "same_customer", "other_customer"}

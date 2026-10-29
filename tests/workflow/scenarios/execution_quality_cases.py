@@ -449,7 +449,7 @@ def e18(context):
     flow = measured(context)
     api, p = flow.api, flow.project
     uid = flow.units[0]
-    for actor in ("production", "owner"):
+    for actor in ("production", "planner"):
         api.command(
             p,
             "release.decide",
@@ -460,24 +460,31 @@ def e18(context):
             decision="approved",
             evidence="Unqualified quality claim",
         )
-    api.command(
-        p,
-        "release.decide",
-        actor="quality",
-        kind="quality",
-        unit_ids=[uid],
-        decision="approved",
-        evidence="Qualified scoped quality signoff",
-    )
+    for actor, evidence in (
+        ("owner", "Trusted global administrator quality signoff"),
+        ("quality", "Qualified scoped quality signoff"),
+    ):
+        api.command(
+            p,
+            "release.decide",
+            actor=actor,
+            kind="quality",
+            unit_ids=[uid],
+            decision="approved",
+            evidence=evidence,
+        )
     with api.db() as db:
         rows = db.execute(
             "SELECT actor_id FROM audit_events WHERE project_id=? AND action='release.decide'",
             (p,),
         ).fetchall()
-        assert [r[0] for r in rows] == [api.sessions["quality"][2]["user_id"]]
+        assert [r[0] for r in rows] == [
+            api.sessions[name][2]["user_id"] for name in ("owner", "quality")
+        ]
     context.actual.update(
         production_forbidden=True,
-        bare_admin_forbidden=True,
+        trusted_admin_quality_approved=True,
+        ordinary_unqualified_forbidden=True,
         qualified_audit_actor=api.sessions["quality"][2]["user_id"],
     )
 

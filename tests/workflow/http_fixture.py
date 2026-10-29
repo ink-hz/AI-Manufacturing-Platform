@@ -33,7 +33,7 @@ def build_app(root: Path):
             "user_id": str(uuid5(NAMESPACE_URL, f"fixture:{config.get('seed', root.name)}:{name}")),
             "display_name": name,
             "read_only": False,
-            "configuration_admin": name == "owner",
+            "configuration_admin": name in {"owner", "admin"},
         }
         for name in (
             "owner",
@@ -44,6 +44,7 @@ def build_app(root: Path):
             "quality",
             "warehouse",
             "outsider",
+            "admin",
         )
     }
     sessions = {}

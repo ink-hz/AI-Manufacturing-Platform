@@ -10,7 +10,7 @@ def test_actions_follow_live_roles_qualification_and_read_only(workflow):
         )
 
     assert "demand.record" in actions("owner")
-    assert "readiness.record" not in actions("owner")
+    assert "readiness.record" in actions("owner")
     workflow.grant(p, "engineering", ["engineering"])
     assert "engineering.revision" in actions("engineering")
     assert "readiness.record" not in actions("engineering")

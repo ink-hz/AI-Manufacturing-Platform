@@ -32,6 +32,7 @@ def test_extension_contracts_exist_and_production_registry_contains_only_real_ac
         "order.resolve_change",
         "order.allocate",
         "engineering.revision",
+        "contract.agree",
         "engineering.handoff",
         "engineering.customer_approval",
         "work_order.register",
@@ -310,21 +311,21 @@ def test_http_uses_trusted_registry_and_unregistered_actions_remain_unsupported(
         )["code"]
         == "UNSUPPORTED_ACTION"
     )
-    assert (
-        workflow.command(
-            p["id"],
-            "demand.record",
-            title="Admin cannot bypass planner policy",
-            expected_status=403,
-        )["code"]
-        == "FORBIDDEN"
+    workflow.grant(p["id"], "engineering", ["planner"])
+    assert workflow.command(
+        p["id"], "demand.record", actor_name="engineering",
+        title="Unqualified ordinary member", expected_status=403,
+    )["code"] == "FORBIDDEN"
+    workflow.command(
+        p["id"], "demand.record",
+        title="Trusted administrator has all registered action qualifications",
     )
     response = workflow.client("outsider").post(
         f"{BASE}/projects/{p['id']}/commands", content="broken json"
     )
     assert response.status_code == 404
     with workflow.db() as db:
-        assert db.execute("SELECT COUNT(*) FROM operations").fetchone()[0] == 3
+        assert db.execute("SELECT COUNT(*) FROM operations").fetchone()[0] == 5
 
 
 def test_atomic_rollback_when_success_audit_storage_fails(workflow, monkeypatch):

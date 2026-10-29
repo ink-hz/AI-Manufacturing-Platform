@@ -42,9 +42,12 @@ def test_grant_replay_inactive_target_revocation_and_actor_authorization(
     assert workflow.client().put(url, json=invalid).status_code == 422
     workflow.inactive.clear()
     assert workflow.client("planner").get(f"{BASE}/projects/{pid}").status_code == 404
-    # Live actor project grant must precede historical replay.
+    # Global administration survives explicit responsibility revocation, but
+    # trusted role demotion must still precede historical replay.
     workflow.grant(pid, "owner", [], active=False)
-    assert workflow.client().put(url, json=body).status_code == 404
+    assert workflow.client().put(url, json=body).json() == accepted.json()
+    workflow.configuration_admins.remove("owner")
+    assert workflow.client().put(url, json=body).status_code == 403
 
 
 def test_grant_canonical_replay_does_not_query_unavailable_directory(

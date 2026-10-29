@@ -163,7 +163,7 @@ def test_release_variants_use_live_qualification_and_customer_scope(workflow):
         expected_status=403,
         **fields,
     )
-    workflow.command(p["id"], "release.decide", expected_status=403, **fields)
+    workflow.command(p["id"], "release.decide", **fields)
     workflow.command(p["id"], "release.decide", actor_name="quality", **fields)
     project = workflow.client("production").get(f"{BASE}/projects/{p['id']}").json()
     assert project["release_kinds"] == ["manufacturing"]

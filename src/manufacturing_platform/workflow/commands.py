@@ -24,6 +24,14 @@ if TYPE_CHECKING:
     from .exchanges import ExchangeService
 
 
+BUSINESS_ROLES = frozenset(
+    {"project_owner", "engineering", "planner", "supply", "production", "quality", "warehouse"}
+)
+BUSINESS_QUALIFICATIONS = frozenset(
+    {"inspection", "disposition", "quality_release", "readiness_verification"}
+)
+
+
 WorkflowAction = Literal[
     "demand.record",
     "demand.review",
@@ -142,21 +150,7 @@ class CommandRegistry:
         action = literal_tag(model, "action", get_args(WorkflowAction))
         if action in self._entries or not roles:
             raise ValueError("duplicate action or empty role policy")
-        allowed_roles = {
-            "project_owner",
-            "engineering",
-            "planner",
-            "supply",
-            "production",
-            "quality",
-            "warehouse",
-        }
-        if not roles <= allowed_roles or not qualifications <= {
-            "inspection",
-            "disposition",
-            "quality_release",
-            "readiness_verification",
-        }:
+        if not roles <= BUSINESS_ROLES or not qualifications <= BUSINESS_QUALIFICATIONS:
             raise ValueError("invalid action policy")
         self._entries[action] = CommandRegistration(
             model, frozenset(roles), frozenset(qualifications), handler

@@ -8,7 +8,7 @@ import sys
 from uuid import UUID, uuid4
 
 import pytest
-from manufacturing_platform.workflow.contracts import Actor, ObjectKind
+from manufacturing_platform.workflow.contracts import Actor, GrantChange, ObjectKind, ProjectCreate
 from manufacturing_platform.workflow.store import WorkflowStore
 
 SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'seed_workflow_demo.py'
@@ -139,7 +139,11 @@ def test_existing_sentinel_and_other_members_are_unchanged(tmp_path):
     receipt = mod.run(**cfg)
     assert seed.service.detail(outsider, sentinel.id).model_dump(mode='json') == before
     assert [g.model_dump(mode='json') for g in seed.service.members(outsider, sentinel.id)] == grants
-    assert seed.service.project_ids(outsider) == [str(sentinel.id)]
+    # The creator's global privilege sees all projects; ordinary responsibility
+    # remains confined to the unchanged sentinel grant.
+    assert len(seed.service.project_ids(outsider)) == 7
+    ordinary_owner = outsider.model_copy(update={'configuration_admin': False})
+    assert seed.service.project_ids(ordinary_owner) == [str(sentinel.id)]
     with seed.store.transaction() as db:
         assert db.execute('SELECT COUNT(*) FROM projects').fetchone()[0] == 7
         assert {r[0] for r in db.execute('SELECT DISTINCT project_id FROM project_grants WHERE user_id=?', (cfg['owner_ids'][0],))} == {p['id'] for p in receipt['projects']}
@@ -222,3 +226,32 @@ def test_recovered_command_does_not_adopt_concurrent_user_version(tmp_path, monk
     with pytest.raises(ValueError, match='Incomplete recovery conflict'):
         mod.run(**cfg)
     assert snapshot(cfg['workflow_db']) == before
+
+
+@pytest.mark.parametrize('active', [True, False])
+def test_namespace_provenance_survives_maintenance_grant_revocation(tmp_path, active):
+    mod = importer()
+    cfg = config(tmp_path)
+    seed = mod.Importer(**cfg)
+    actor = seed.actors['maintenance']
+    project = seed.service.create_project(actor, ProjectCreate.model_validate(dict(
+        operation_id=str(uuid4()), name='Interrupted namespace', line_id='demo',
+        product='Camera', customer_id='Customer', mode='internal',
+        unit=dict(code='piece', scale=0), quantity='1',
+        contract={key: 'unknown' for key in (
+            'customer_approval_required', 'customer_release_required', 'acceptance_required',
+            'customer_revision', 'internal_revision', 'material_ownership_rules')},
+    )))
+    if not active:
+        seed.service.change_grant(actor, project.id, actor.user_id, GrantChange.model_validate(dict(
+            operation_id=str(uuid4()), expected_version=project.version,
+            scope=dict(kind='project', project_id=str(project.id)),
+            roles=[], qualifications=[], active=False, evidence='Revoked responsibility',
+        )))
+    seed.service.exchange_service.adapter.snapshot('erp', 'receipt')
+    before = snapshot(cfg['workflow_db']), snapshot(cfg['authority_db'])
+    assert not Path(cfg['manifest']).exists()
+    with pytest.raises(ValueError, match='original manifest'):
+        mod.run(**cfg)
+    assert before == (snapshot(cfg['workflow_db']), snapshot(cfg['authority_db']))
+    assert not Path(cfg['manifest']).exists()

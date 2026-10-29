@@ -61,9 +61,13 @@ def test_actual_a1_api_create_upgrade_replays_original_snapshot(tmp_path, quanti
     assert again.json() == replay.json()
     assert client.post(BASE + "/projects", json={**body, "name": "Changed"}).json()["code"] == "IDEMPOTENCY_CONFLICT"
     fixture.grant(old["id"], "owner", ["project_owner"], active=False)
-    assert client.post(BASE + "/projects", json=body).status_code == 404
-    assert client.post(BASE + "/projects", json={**body, "operation_id": other_operation}).status_code == 404
-    assert client.post(BASE + "/projects", json={**body, "name": "Changed after revocation"}).status_code == 404
+    assert client.post(BASE + "/projects", json=body).json() == replay.json()
+    # Current role demotion blocks replay; the frozen A1 source is unchanged.
+    fixture.configuration_admins.remove("owner")
+    assert client.get(BASE + "/projects/" + old["id"]).status_code == 404
+    assert client.post(BASE + "/projects", json=body).status_code == 403
+    assert client.post(BASE + "/projects", json={**body, "operation_id": other_operation}).status_code == 403
+    assert client.post(BASE + "/projects", json={**body, "name": "Changed after revocation"}).status_code == 403
     with sqlite3.connect(fixture.paths.domain) as db:
         assert db.execute("SELECT * FROM operations WHERE operation_id=?", (body["operation_id"],)).fetchall() == operations
         assert db.execute("SELECT * FROM audit_events WHERE action='project.create'").fetchall() == audits

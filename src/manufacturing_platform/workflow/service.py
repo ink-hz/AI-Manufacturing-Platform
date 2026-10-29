@@ -20,8 +20,13 @@ from . import (  # noqa: F401 - trusted domain registration
     stock_proofs,
     supply,
 )
+from .authorization import (
+    effective_permissions,
+    project_ids,
+    require_project,
+    responsible_member,
+)
 from .clock import business_time
-from .authorization import require_project
 from .commands import COMMAND_REGISTRY, CommandContext, WorkflowCommand
 from .contracts import (
     ActionCapability,
@@ -293,13 +298,7 @@ class WorkflowService:
         if project_id is not None:
             require_project(tx, actor, project_id)
             return [UUID(str(project_id))]
-        return [
-            UUID(r[0])
-            for r in tx.execute(
-                "SELECT project_id FROM project_grants WHERE user_id=? AND active=1 AND roles_json!='[]' ORDER BY project_id",
-                (str(actor.user_id),),
-            )
-        ]
+        return [UUID(pid) for pid in project_ids(tx, actor)]
 
     def project_ids(self, actor):
         with self.store.transaction() as tx:
@@ -317,24 +316,19 @@ class WorkflowService:
     ) -> ProjectDetail:
         with self.store.transaction() as tx:
             value = project(require_project(tx, actor, project_id), tx)
-            grant = tx.execute(
-                "SELECT roles_json, qualifications_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
-                (str(project_id), str(actor.user_id)),
-            ).fetchone()
+            permissions = effective_permissions(tx, actor, project_id)
             value.allowed_actions = (
                 []
                 if actor.read_only
                 else self.command_registry.allowed_actions(
-                    json.loads(grant["roles_json"]),
-                    json.loads(grant["qualifications_json"]),
+                    permissions.roles, permissions.qualifications,
                 )
             )
             value.release_kinds = (
                 []
                 if actor.read_only
                 else quality.release_kinds(
-                    json.loads(grant["roles_json"]),
-                    json.loads(grant["qualifications_json"]),
+                    permissions.roles, permissions.qualifications,
                 )
             )
             if not value.release_kinds and "release.decide" in value.allowed_actions:
@@ -356,24 +350,19 @@ class WorkflowService:
 
     def _actions(self, tx, actor, item, detail=None):
         """Read capabilities use the same live registry and variant authorization."""
-        grant = tx.execute(
-            "SELECT roles_json,qualifications_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
-            (str(item.project_id), str(actor.user_id)),
-        ).fetchone()
+        permissions = effective_permissions(tx, actor, item.project_id)
         allowed = (
             set()
-            if actor.read_only or not grant
+            if actor.read_only
             else set(
                 self.command_registry.allowed_actions(
-                    json.loads(grant["roles_json"]),
-                    json.loads(grant["qualifications_json"]),
+                    permissions.roles, permissions.qualifications,
                 )
             )
         )
         release_variants = (
             quality.release_kinds(
-                json.loads(grant["roles_json"]),
-                json.loads(grant["qualifications_json"]),
+                permissions.roles, permissions.qualifications,
             )
             if "release.decide" in allowed
             else []
@@ -525,10 +514,7 @@ class WorkflowService:
         with self.store.transaction() as tx:
             require_project(tx, actor, project_id)
             for uid in ids:
-                if not tx.execute(
-                    "SELECT 1 FROM project_grants WHERE project_id=? AND user_id=? AND active=1 AND roles_json!='[]'",
-                    (str(project_id), str(uid)),
-                ).fetchone():
+                if not responsible_member(tx, actor, project_id, uid):
                     raise DomainError(
                         "INVALID_SUBJECT",
                         422,
@@ -761,14 +747,10 @@ class WorkflowService:
                 profile_error = exc
         with self.store.transaction(write=True) as tx:
             row = require_project(tx, actor, project_id)
-            grant = tx.execute(
-                "SELECT roles_json, qualifications_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
-                (str(project_id), str(actor.user_id)),
-            ).fetchone()
+            permissions = effective_permissions(tx, actor, project_id)
             if not self.command_registry.permits(
                 entry,
-                json.loads(grant["roles_json"]),
-                json.loads(grant["qualifications_json"]),
+                permissions.roles, permissions.qualifications,
             ):
                 raise DomainError("FORBIDDEN", 403, "Action permission denied")
             delivery.authorize(tx, actor, project_id, command)

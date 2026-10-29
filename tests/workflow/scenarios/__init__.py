@@ -21,7 +21,7 @@ class ScenarioRegistry:
         return getattr(module, case_id.lower())
 
 
-# Verbatim required end states from the approved exact36 D plan table.
+# Required end states; E18 reflects the approved administrator full-access policy.
 EXPECTATIONS = {
     "F01": "Camera100; orders→WO60+40; fixed versions; each SN/lot/test/release; two shipments/acceptances; remaining40 after first; cost/quality close; feedback link retained",
     "F02": "Camera20; trial5 M1 issues; approved ECO M2 subsequent15; both histories; real first article and calibration; deliver/accept/review",
@@ -44,7 +44,7 @@ EXPECTATIONS = {
     "E15": "Shortage interruption links supply exception; restored stock+plan+resume receipt; timeline retained",
     "E16": "First96/final99/scrap1; four first failures retained; ship100 rejected",
     "E17": "Missing measurement/unit/limit/version not PASS; cannot weaken frozen limits",
-    "E18": "Production and bare admin quality403; qualified scoped quality actor approved/audited",
+    "E18": "Ordinary production/planner quality403; trusted global admin and qualified scoped quality actor approved/audited",
     "E19": "Manufacturing+quality do not replace contractual customer release; shipment blocked until correct receipt",
     "E20": "Lot forward and shippedSN reverse exact links; pending vs accepted freeze, no source impersonation",
     "E21": "60 shipped→40 remaining; duplicateSN/41 rejected; valid40 and acceptance close",

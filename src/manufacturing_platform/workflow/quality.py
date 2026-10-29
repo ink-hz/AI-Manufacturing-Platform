@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from .authorization import effective_permissions
 from .commands import COMMAND_REGISTRY
 from .contracts import (
     DomainError,
@@ -57,17 +58,9 @@ def release_kinds(roles, qualifications):
 
 
 def authorize_release(tx, actor, pid, command):
-    grant = tx.execute(
-        "SELECT roles_json,qualifications_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1",
-        (str(pid), str(actor.user_id)),
-    ).fetchone()
-    if (
-        not grant
-        or actor.read_only
-        or command.kind
-        not in release_kinds(
-            json.loads(grant["roles_json"]), json.loads(grant["qualifications_json"])
-        )
+    permissions = effective_permissions(tx, actor, pid)
+    if actor.read_only or command.kind not in release_kinds(
+        permissions.roles, permissions.qualifications
     ):
         raise DomainError("FORBIDDEN", 403, "Release signatory permission denied")
 
