@@ -176,8 +176,10 @@ class NPIIssue(DomainValue):
     phenomenon: Text
     risk: Text
     containment: Text
-    state: Literal["open", "resolved"]
+    state: Literal["open", "resolved", "unverified"]
+    verified: StrictBool
     resolution: IssueResolution | None
+    resolutions: list[IssueResolution]
 
 
 class ReusableAsset(DomainValue):

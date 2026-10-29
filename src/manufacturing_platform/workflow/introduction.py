@@ -258,11 +258,30 @@ def resolution_valid(tx, pid, npi, test_ids):
     )
 
 
+def issue_resolutions(tx, pid, issue):
+    # Original v18 resolution stays byte-for-byte intact; only refreshes append.
+    original = (
+        [json.loads(issue["resolution_json"])] if issue["resolution_json"] else []
+    )
+    return original + [
+        json.loads(r[0])
+        for r in tx.execute(
+            "SELECT payload_json FROM npi_issue_resolutions WHERE project_id=? AND issue_id=? ORDER BY seq",
+            (str(pid), issue["id"]),
+        )
+    ]
+
+
+def issue_verified(tx, pid, npi, issue):
+    resolutions = issue_resolutions(tx, pid, issue)
+    return bool(resolutions) and resolution_valid(
+        tx, pid, npi, resolutions[-1]["test_ids"]
+    )
+
+
 def resolve_npi(tx, context, command):
     issue = own(tx, "npi_issues", context.project_id, command.issue_id)
     npi = own(tx, "npis", context.project_id, issue["npi_id"])
-    if issue["resolution_json"]:
-        fail("NPI issue resolution is immutable")
     if not resolution_valid(tx, context.project_id, npi, command.test_ids):
         fail("NPI resolution requires current verified trial measurements")
     payload = command.model_dump(
@@ -271,10 +290,16 @@ def resolve_npi(tx, context, command):
     payload.update(
         actor_id=str(context.actor.user_id), recorded_at=context.now.isoformat()
     )
-    tx.execute(
-        "UPDATE npi_issues SET resolution_json=? WHERE project_id=? AND id=?",
-        (dump(payload), str(context.project_id), issue["id"]),
-    )
+    if issue["resolution_json"]:
+        tx.execute(
+            "INSERT INTO npi_issue_resolutions(id,project_id,issue_id,payload_json) VALUES (?,?,?,?)",
+            (str(uuid4()), str(context.project_id), issue["id"], dump(payload)),
+        )
+    else:
+        tx.execute(
+            "UPDATE npi_issues SET resolution_json=? WHERE project_id=? AND id=?",
+            (dump(payload), str(context.project_id), issue["id"]),
+        )
     bump(tx, context.project_id, npi["id"])
     return result("npi_issue", issue["id"])
 
@@ -312,9 +337,7 @@ def blockers(tx, pid, npi):
         "SELECT * FROM npi_issues WHERE project_id=? AND npi_id=?",
         (str(pid), npi["id"]),
     ):
-        if not issue["resolution_json"] or not resolution_valid(
-            tx, pid, npi, json.loads(issue["resolution_json"])["test_ids"]
-        ):
+        if not issue_verified(tx, pid, npi, issue):
             reasons.append("NPI has unresolved or unverified issues")
             break
     for use in tx.execute(
@@ -386,9 +409,7 @@ def publish_asset(tx, context, command):
     authorize(context.actor, command)
     issue = own(tx, "npi_issues", context.project_id, command.issue_id)
     npi = own(tx, "npis", context.project_id, issue["npi_id"])
-    if not issue["resolution_json"] or not resolution_valid(
-        tx, context.project_id, npi, json.loads(issue["resolution_json"])["test_ids"]
-    ):
+    if not issue_verified(tx, context.project_id, npi, issue):
         fail("Asset publication requires a resolved verified NPI issue")
     if npi["product_family"] not in command.content.product_families:
         fail("Asset applicability must include its validated source product family")
@@ -526,13 +547,16 @@ def value(tx, pid, kind, row):
             approvals=approvals,
         )
     if kind == "npi_issue":
+        resolutions = issue_resolutions(tx, pid, row)
+        npi = own(tx, "npis", pid, row["npi_id"])
+        verified = issue_verified(tx, pid, npi, row)
         return NPIIssue(
             npi_id=row["npi_id"],
             **json.loads(row["payload_json"]),
-            state="resolved" if row["resolution_json"] else "open",
-            resolution=json.loads(row["resolution_json"])
-            if row["resolution_json"]
-            else None,
+            state="resolved" if verified else "unverified" if resolutions else "open",
+            verified=verified,
+            resolution=resolutions[-1] if resolutions else None,
+            resolutions=resolutions,
         )
     if kind == "reusable_asset":
         return ReusableAsset(
@@ -583,7 +607,13 @@ def summary(tx, pid, kind, row):
         title=title,
         state=state,
         version=data.revision if kind in {"reusable_asset", "asset_use"} else 1,
-        blocking_reasons=data.blocking_reasons if kind == "npi" else [],
+        blocking_reasons=(
+            data.blocking_reasons
+            if kind == "npi"
+            else ["NPI issue requires current verified resolution evidence"]
+            if kind == "npi_issue" and not data.verified
+            else []
+        ),
     )
 
 

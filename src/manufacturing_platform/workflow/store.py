@@ -278,6 +278,14 @@ class WorkflowStore:
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=18")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 18:
+                from .introduction_schema import ISSUE_RESOLUTION_SCHEMA
+
+                for statement in ISSUE_RESOLUTION_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=19")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1
                 or version[0][0] != SCHEMA_VERSION

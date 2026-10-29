@@ -17,3 +17,9 @@ CREATE INDEX IF NOT EXISTS asset_uses_scope ON asset_uses(project_id,npi_id,crea
 CREATE TABLE IF NOT EXISTS asset_verifications(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),asset_use_id TEXT NOT NULL REFERENCES asset_uses(id),payload_json TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS asset_verifications_scope ON asset_verifications(project_id,asset_use_id,seq);
 """
+
+# v19 supplements the original immutable resolution_json without rewriting it.
+ISSUE_RESOLUTION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS npi_issue_resolutions(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,project_id TEXT NOT NULL REFERENCES projects(id),issue_id TEXT NOT NULL REFERENCES npi_issues(id),payload_json TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS npi_issue_resolutions_scope ON npi_issue_resolutions(project_id,issue_id,seq);
+"""

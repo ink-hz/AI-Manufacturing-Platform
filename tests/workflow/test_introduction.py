@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from .conftest import BASE
+from .conftest import BASE, USERS
 from .test_quality import executed, measure
 
 
@@ -97,6 +97,221 @@ def publish(w, p, issue, **overrides):
         content={**CONTENT, "title": "PRIVATE PROJECT METHOD"},
         **overrides,
     )["object_id"]
+
+
+def test_issue_resolution_refresh_preserves_history_and_restores_current_gates(
+    workflow,
+):
+    w = workflow
+    p, npi, issue = resolved_issue(w)
+    original = w.object(p["id"], "npi_issue", issue)["resolution"]
+    initial_asset = publish(w, p, issue)
+    review(w, p, npi)
+    w.command(p["id"], "npi.approve", npi_id=npi, evidence="original approval")
+    with w.db() as tx:
+        original_row = tuple(
+            tx.execute("SELECT * FROM npi_issues WHERE id=?", (issue,)).fetchone()
+        )
+        original_audit = [
+            tuple(r) for r in tx.execute("SELECT * FROM audit_events ORDER BY rowid")
+        ]
+        uid = tx.execute(
+            "SELECT unit_id FROM quality_tests WHERE id=?", (original["test_ids"][0],)
+        ).fetchone()[0]
+    wo = w.object(p["id"], "npi", npi)["trials"][0]["work_order_id"]
+    fresh = measure(w, p, uid, attempt=2)["object_id"]
+    w.command(
+        p["id"],
+        "npi.trial",
+        npi_id=npi,
+        work_order_id=wo,
+        test_ids=[fresh],
+        evidence="fresh passing trial",
+    )
+    assert w.object(p["id"], "npi", npi)["trials"][-1]["qualified"]
+    w.command(
+        p["id"],
+        "npi.approve",
+        npi_id=npi,
+        evidence="stale resolution",
+        expected_status=409,
+    )
+    w.command(
+        p["id"], "asset.publish", issue_id=issue, content=CONTENT, expected_status=409
+    )
+    stale = w.object(p["id"], "npi_issue", issue)
+    assert stale["state"] == "unverified" and not stale["verified"]
+    assert stale["resolution"] == original and stale["resolutions"] == [original]
+
+    refresh = {
+        "issue_id": issue,
+        "verified_cause": "reconfirmed connector force",
+        "countermeasure": "renewed controlled fixture",
+        "verification_evidence": "signed retest T2",
+        "test_ids": [fresh],
+    }
+    # The regression must reach the previously unconditional immutable-resolution guard.
+    w.command(p["id"], "npi.resolve", actor_name="quality", **refresh)
+    current = w.object(p["id"], "npi_issue", issue)
+    assert current["state"] == "resolved" and current["verified"]
+    assert current["resolutions"][0] == original
+    assert current["resolution"] == current["resolutions"][-1]
+    assert len(current["resolutions"]) == 2
+    assert current["resolution"]["actor_id"] == str(USERS["quality"])
+    assert current["resolution"]["verification_evidence"] == "signed retest T2"
+    assert not w.object(p["id"], "npi", npi)["bulk_eligible"]
+    w.command(p["id"], "npi.approve", npi_id=npi, evidence="fresh approval")
+    assert w.object(p["id"], "npi", npi)["bulk_eligible"]
+    successor = publish(w, p, issue, supersedes_id=initial_asset)
+    assert w.object(p["id"], "reusable_asset", successor)["revision"] == 2
+
+    # Latest failures must invalidate even a previously refreshed resolution.
+    failed = measure(w, p, uid, value="12", attempt=3)["object_id"]
+    w.command(
+        p["id"],
+        "npi.trial",
+        npi_id=npi,
+        work_order_id=wo,
+        test_ids=[failed],
+        evidence="later failed trial",
+    )
+    stale = w.object(p["id"], "npi_issue", issue)
+    assert stale["state"] == "unverified" and not stale["verified"]
+    assert stale["resolutions"] == current["resolutions"]
+    assert stale["resolution"] == current["resolution"]
+    detail = (
+        w.client().get(f"{BASE}/projects/{p['id']}/objects/npi_issue/{issue}").json()
+    )
+    assert detail["summary"]["state"] == "unverified"
+    assert detail["summary"]["blocking_reasons"]
+    for invalid in ([failed], [fresh], [str(uuid4())]):
+        w.command(
+            p["id"],
+            "npi.resolve",
+            **{**refresh, "test_ids": invalid},
+            expected_status=409,
+        )
+    w.command(
+        p["id"],
+        "npi.approve",
+        npi_id=npi,
+        evidence="failure blocks",
+        expected_status=409,
+    )
+    w.command(
+        p["id"], "asset.publish", issue_id=issue, content=CONTENT, expected_status=409
+    )
+    assert not w.object(p["id"], "npi", npi)["bulk_eligible"]
+    readiness = w.object(p["id"], "work_order", wo)["bulk_readiness"]
+    assert (
+        next(c for c in readiness["checks"] if c["kind"] == "npi")["status"]
+        == "blocked"
+    )
+
+    repair = w.rework(p["id"], failed)
+    passed = w.test(p["id"], uid, measured="5", rework_order_id=repair["id"])
+    w.command(
+        p["id"],
+        "rework.complete",
+        actor_name="quality",
+        rework_order_id=repair["id"],
+        execution_event_ids=passed["execution_event_ids"],
+        test_ids=[passed["id"]],
+    )
+    w.command(
+        p["id"],
+        "npi.trial",
+        npi_id=npi,
+        work_order_id=wo,
+        test_ids=[passed["id"]],
+        evidence="verified repaired trial",
+    )
+    w.command(
+        p["id"],
+        "npi.resolve",
+        actor_name="engineering",
+        **{
+            **refresh,
+            "test_ids": [passed["id"]],
+            "verification_evidence": "signed repair verification",
+        },
+    )
+    w.command(p["id"], "npi.approve", npi_id=npi, evidence="recovered approval")
+    assert w.object(p["id"], "npi", npi)["bulk_eligible"]
+    final = w.object(p["id"], "npi_issue", issue)
+    assert final["resolutions"][:2] == current["resolutions"]
+    assert len(final["resolutions"]) == 3
+    assert final["resolution"]["actor_id"] == str(USERS["engineering"])
+    history = (
+        w.client()
+        .get(f"{BASE}/projects/{p['id']}/objects/npi_issue/{issue}")
+        .json()["history"]
+    )
+    assert len([h for h in history if h["action"] == "npi.resolve"]) == 3
+    with w.db() as tx:
+        assert (
+            tuple(
+                tx.execute("SELECT * FROM npi_issues WHERE id=?", (issue,)).fetchone()
+            )
+            == original_row
+        )
+        assert [
+            tuple(r) for r in tx.execute("SELECT * FROM audit_events ORDER BY rowid")
+        ][: len(original_audit)] == original_audit
+
+
+def test_schema18_upgrade_preserves_resolutions_operations_and_audit(workflow):
+    import sqlite3
+
+    from manufacturing_platform.workflow.schema import SCHEMA_VERSION
+
+    w = workflow
+    p, _npi, issue = resolved_issue(w)
+    original = w.object(p["id"], "npi_issue", issue)["resolution"]
+    asset = publish(w, p, issue)
+    tables = [
+        "npi_issues",
+        "npis",
+        "npi_records",
+        "reusable_assets",
+        "operations",
+        "audit_events",
+    ]
+    with w.db() as tx:
+        before = {
+            t: [tuple(r) for r in tx.execute(f"SELECT * FROM {t} ORDER BY rowid")]
+            for t in tables
+        }
+    w._client.close()
+    with sqlite3.connect(w.paths.domain) as tx:
+        tx.execute("DROP TABLE IF EXISTS npi_issue_resolutions")
+        tx.execute("UPDATE schema_version SET version=18")
+    w.reopen()
+    migrated = w.object(p["id"], "npi_issue", issue)
+    assert migrated["resolutions"] == [original]
+    assert migrated["resolution"] == original and migrated["verified"]
+    assert w.object(p["id"], "reusable_asset", asset)["issue_id"] == issue
+    with w.db() as tx:
+        assert (
+            tx.execute("SELECT version FROM schema_version").fetchone()[0]
+            == SCHEMA_VERSION
+            == 19
+        )
+        assert {
+            t: [tuple(r) for r in tx.execute(f"SELECT * FROM {t} ORDER BY rowid")]
+            for t in tables
+        } == before
+    w.command(
+        p["id"],
+        "npi.resolve",
+        actor_name="quality",
+        issue_id=issue,
+        verified_cause="reconfirmed cause",
+        countermeasure="reconfirmed control",
+        verification_evidence="new signed verification after migration",
+        test_ids=original["test_ids"],
+    )
+    assert w.object(p["id"], "npi_issue", issue)["resolutions"][0] == original
 
 
 def test_npi_fixed_scope_review_trial_issues_and_live_bulk_gate(workflow):
@@ -525,6 +740,8 @@ def test_approved_npi_allows_real_bulk_and_trial_retains_existing_rules(
 def test_schema17_upgrade_is_additive_and_preserves_existing_facts(workflow):
     import sqlite3
 
+    from manufacturing_platform.workflow.schema import SCHEMA_VERSION
+
     w = workflow
     p, _order, wo, rev = w.order_workorder()
     tables = [
@@ -542,6 +759,7 @@ def test_schema17_upgrade_is_additive_and_preserves_existing_facts(workflow):
     w._client.close()
     with sqlite3.connect(w.paths.domain) as tx:
         for t in [
+            "npi_issue_resolutions",
             "asset_verifications",
             "asset_uses",
             "reusable_assets",
@@ -555,7 +773,10 @@ def test_schema17_upgrade_is_additive_and_preserves_existing_facts(workflow):
     w.reopen()
     assert w.object(p["id"], "work_order", wo["id"])["revision_id"] == rev["id"]
     with w.db() as tx:
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 18
+        assert (
+            tx.execute("SELECT version FROM schema_version").fetchone()[0]
+            == SCHEMA_VERSION
+        )
         assert {
             t: [tuple(r) for r in tx.execute(f"SELECT * FROM {t} ORDER BY rowid")]
             for t in tables
