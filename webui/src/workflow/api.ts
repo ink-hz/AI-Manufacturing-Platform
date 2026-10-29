@@ -11,6 +11,7 @@ import type {
   CommandResult,
   ObjectKind,
   ObjectPage,
+  ActorTaskPage,
   ObjectDetail,
   Dashboard,
   TraceResult,
@@ -99,7 +100,14 @@ export function createWorkflowApi(
     }
   }
   const p = (id: string) => "/projects/" + encodeURIComponent(id);
+  const pageQuery = (limit: number, offset: number, projectId?: string) =>
+    `?limit=${limit}&offset=${offset}` +
+    (projectId === undefined ? "" : "&project_id=" + encodeURIComponent(projectId));
   return {
+    ledger: (kind: ObjectKind, limit = 50, offset = 0, projectId?: string) =>
+      request<ObjectPage>("/objects/" + kind + pageQuery(limit, offset, projectId)),
+    tasks: (limit = 50, offset = 0, projectId?: string) =>
+      request<ActorTaskPage>("/tasks" + pageQuery(limit, offset, projectId)),
     bootstrap: () => request<WorkflowBootstrap>("/access"),
     projects: () => request<{ items: ProjectDetail[] }>("/projects"),
     project: (id: string) => request<ProjectDetail>(p(id)),

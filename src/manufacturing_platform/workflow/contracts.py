@@ -187,6 +187,16 @@ class OwnedTask(StrictModel):
     owner_name: str
 
 
+class ActorTaskPage(StrictModel):
+    """Total counts available tasks within each project's existing bounded scope."""
+
+    items: list[OwnedTask]
+    total: int
+    limit: int
+    offset: int
+    truncated: bool
+
+
 class ProjectDetail(StrictModel):
     tasks: list[OwnedTask] = Field(default_factory=list)
     tasks_truncated: bool = False

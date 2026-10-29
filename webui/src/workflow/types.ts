@@ -80,8 +80,23 @@ export type TestScope={route_fingerprint:string;test_version:string;program_vers
 export type UnitTest={id:string;attempt:number;outcome:"pass"|"fail";rework_order_id:string|null;occurred_at:string};
 export type ClosureProgress={status:"blocked"|"ready"|"closed";recorded_count:number;blocking_reasons:string[]};
 export type ProgressSummary={stages:ProjectDetail["stages"];blocking_objects:ObjectSummary[];blockers_truncated:boolean;fulfillment:ClosureProgress;quality:ClosureProgress;cost:ClosureProgress};
+export interface OwnedTask {
+  category: "readiness" | "source" | "acceptance" | "business";
+  title: string;
+  target: ObjectSummary;
+  owner_id: string | null;
+  owner_name: string;
+}
+export interface ActorTaskPage {
+  items: OwnedTask[];
+  /** Available count within existing per-project task bounds. */
+  total: number;
+  limit: number;
+  offset: number;
+  truncated: boolean;
+}
 export interface ProjectDetail extends Omit<ProjectCreate, "operation_id"> {
-  tasks?:{category:"readiness"|"source"|"acceptance"|"business";title:string;target:ObjectSummary;owner_id:string|null;owner_name:string}[];
+  tasks?: OwnedTask[];
   tasks_truncated?:boolean;
   progress?:ProgressSummary|null;
   release_kinds?:ReleaseKind[];

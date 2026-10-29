@@ -27,6 +27,7 @@ from .contracts import (
     ActionCapability,
     ActionVariant,
     Actor,
+    ActorTaskPage,
     CommandResult,
     Dashboard,
     Dataset,
@@ -282,15 +283,34 @@ class WorkflowService:
             )
             return result
 
+    @staticmethod
+    def _pagination(limit, offset):
+        if not 1 <= limit <= 200 or offset < 0:
+            raise DomainError("INVALID_PAGINATION", 422, "Invalid pagination")
+
+    @staticmethod
+    def _project_ids(tx, actor, project_id=None):
+        if project_id is not None:
+            require_project(tx, actor, project_id)
+            return [UUID(str(project_id))]
+        return [
+            UUID(r[0])
+            for r in tx.execute(
+                "SELECT project_id FROM project_grants WHERE user_id=? AND active=1 AND roles_json!='[]' ORDER BY project_id",
+                (str(actor.user_id),),
+            )
+        ]
+
     def project_ids(self, actor):
         with self.store.transaction() as tx:
-            return [
-                r[0]
-                for r in tx.execute(
-                    "SELECT project_id FROM project_grants WHERE user_id=? AND active=1 AND roles_json!='[]' ORDER BY project_id",
-                    (str(actor.user_id),),
-                )
-            ]
+            return [str(pid) for pid in self._project_ids(tx, actor)]
+
+    def _progress(self, tx, actor, project_id):
+        value = progress.aggregate(tx, project_id)
+        value.blocking_objects = [
+            self._actions(tx, actor, item) for item in value.blocking_objects
+        ]
+        return value
 
     def detail(
         self, actor: Actor, project_id: UUID, *, include_progress=True
@@ -325,12 +345,10 @@ class WorkflowService:
             ):
                 value.allowed_actions.remove("delivery.resolve_issue")
             if include_progress:
-                value.progress = progress.aggregate(tx, project_id)
-                value.progress.blocking_objects = [
-                    self._actions(tx, actor, item)
-                    for item in value.progress.blocking_objects
-                ]
-                value.tasks, value.tasks_truncated = self._tasks(tx, actor, value)
+                value.progress = self._progress(tx, actor, project_id)
+                value.tasks, value.tasks_truncated = self._tasks(
+                    tx, actor, value.id, value.version, value.progress
+                )
             value.quality_summary = ProjectQualitySummary.model_validate(
                 quality.quality_summary(tx, project_id).model_dump(mode="json")
             )
@@ -449,10 +467,10 @@ class WorkflowService:
                 }
         return item
 
-    def _tasks(self, tx, actor, value):
+    def _tasks(self, tx, actor, project_id, version, project_progress):
         if actor.read_only:
             return [], False
-        pid = str(value.id)
+        pid = str(project_id)
         tasks = []
         # Explicit responsibility rows are selected in SQL before materialization.
         for r in tx.execute(
@@ -472,7 +490,7 @@ class WorkflowService:
                     project_id=pid,
                     title=r["title"],
                     state="blocked",
-                    version=value.version,
+                    version=version,
                     blocking_reasons=[r["title"]],
                 ),
             )
@@ -486,7 +504,7 @@ class WorkflowService:
                 )
             )
         existing = {(t.target.kind, t.target.id) for t in tasks}
-        for item in value.progress.blocking_objects:
+        for item in project_progress.blocking_objects:
             if item.next_actions and (item.kind, item.id) not in existing:
                 tasks.append(
                     OwnedTask(
@@ -499,7 +517,7 @@ class WorkflowService:
                         owner_name="Current authorized responsibility",
                     )
                 )
-        return tasks[:50], len(tasks) > 50 or value.progress.blockers_truncated
+        return tasks[:50], len(tasks) > 50 or project_progress.blockers_truncated
 
     def member_profiles(self, actor, project_id, ids):
         if len(ids) > 50:
@@ -585,8 +603,7 @@ class WorkflowService:
         limit: int = 50,
         offset: int = 0,
     ) -> ObjectPage:
-        if not 1 <= limit <= 200 or offset < 0:
-            raise DomainError("INVALID_PAGINATION", 422, "Invalid pagination")
+        self._pagination(limit, offset)
         project_id = UUID(str(project_id))
         with self.store.transaction() as tx:
             require_project(tx, actor, project_id)
@@ -599,6 +616,58 @@ class WorkflowService:
                 total=total,
                 limit=limit,
                 offset=offset,
+            )
+
+    def ledger(
+        self, actor: Actor, kind: ObjectKind, *, limit: int = 50,
+        offset: int = 0, project_id: UUID | None = None,
+    ) -> ObjectPage:
+        """Stable project-ID groups, preserving each registry reader's SQL order."""
+        self._pagination(limit, offset)
+        with self.store.transaction() as tx:
+            scopes = [
+                (pid, self.object_registry.count(tx, pid, kind))
+                for pid in self._project_ids(tx, actor, project_id)
+            ]
+            items, skip = [], offset
+            for pid, count in scopes:
+                if skip >= count:
+                    skip -= count
+                    continue
+                remaining = limit - len(items)
+                if not remaining:
+                    break
+                items.extend(self.object_registry.summaries(
+                    tx, pid, kind, limit=min(remaining, count - skip), offset=skip
+                ))
+                skip = 0
+            return ObjectPage(
+                items=[self._actions(tx, actor, item) for item in items],
+                total=sum(count for _, count in scopes), limit=limit, offset=offset,
+            )
+
+    def tasks(
+        self, actor: Actor, *, limit: int = 50, offset: int = 0,
+        project_id: UUID | None = None,
+    ) -> ActorTaskPage:
+        """Page the available task scope; truncation describes underlying bounds."""
+        self._pagination(limit, offset)
+        with self.store.transaction() as tx:
+            ids = self._project_ids(tx, actor, project_id)
+            items, total, truncated = [], 0, False
+            if not actor.read_only:
+                for pid in ids:
+                    row = require_project(tx, actor, pid)
+                    available, incomplete = self._tasks(
+                        tx, actor, pid, row["version"], self._progress(tx, actor, pid)
+                    )
+                    start = max(0, offset - total)
+                    items.extend(available[start:start + limit - len(items)])
+                    total += len(available)
+                    truncated = truncated or incomplete
+            return ActorTaskPage(
+                items=items, total=total, limit=limit, offset=offset,
+                truncated=truncated,
             )
 
     def object_detail(
@@ -624,17 +693,7 @@ class WorkflowService:
 
     def dashboard(self, actor: Actor, project_id: UUID | None = None) -> Dashboard:
         with self.store.transaction() as tx:
-            if project_id is not None:
-                require_project(tx, actor, project_id)
-                ids = [UUID(str(project_id))]
-            else:
-                ids = [
-                    UUID(r[0])
-                    for r in tx.execute(
-                        "SELECT project_id FROM project_grants WHERE user_id=? AND active=1 AND roles_json!='[]' ORDER BY project_id",
-                        (str(actor.user_id),),
-                    )
-                ]
+            ids = self._project_ids(tx, actor, project_id)
             counts = {kind: 0 for kind in self.object_registry.kinds}
             cards = []
             for pid in ids:

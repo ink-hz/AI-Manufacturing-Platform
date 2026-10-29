@@ -181,6 +181,24 @@ def build_workflow_router(
     def dashboard(request: Request, project_id: UUID | None = None):
         return service.dashboard(actor(request), project_id)
 
+    @router.get("/objects/{kind}")
+    def ledger(
+        kind: ObjectKind, request: Request, limit: int = 50, offset: int = 0,
+        project_id: UUID | None = None,
+    ):
+        return service.ledger(
+            actor(request), kind, limit=limit, offset=offset, project_id=project_id
+        )
+
+    @router.get("/tasks")
+    def tasks(
+        request: Request, limit: int = 50, offset: int = 0,
+        project_id: UUID | None = None,
+    ):
+        return service.tasks(
+            actor(request), limit=limit, offset=offset, project_id=project_id
+        )
+
     @router.get("/projects/{project_id}/objects/{kind}")
     def objects(
         project_id: UUID,
