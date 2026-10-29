@@ -1,0 +1,116 @@
+{
+  "verified_at_utc": "2026-10-29T02:39:28.962310+00:00",
+  "online_url": "https://agent.orbbec.com.cn/manufacturing",
+  "manufacturing_commit": "c5367d44316e6078f80419d126330b02d9358077",
+  "platform_commit": "cd041f307a5d0111640e48e158d3942649b16fea",
+  "image": "sha256:9a190e14613678110cccd7e291f6a65860737112f3eab854aeedd332235d5ad8",
+  "candidate": {
+    "passed": true,
+    "cases": 36,
+    "failed": 0,
+    "not_executed": 0,
+    "run_id": "run-20261029T023022-f827d3d16e44415ebd09b6be025866a0",
+    "image": "sha256:9a190e14613678110cccd7e291f6a65860737112f3eab854aeedd332235d5ad8",
+    "manufacturing_commit": "c5367d44316e6078f80419d126330b02d9358077",
+    "platform_commit": "cd041f307a5d0111640e48e158d3942649b16fea",
+    "e30_global_navigation": [
+      "fresh-cross-project-order-records",
+      "real-server-filter-and-total",
+      "exact-project-object-detail",
+      "same-module-filter-return"
+    ],
+    "all_evidence_files_rehashed": 23479,
+    "archive_sha256": "2de7b955f2f8980bd60c24cbd39b715ce3e43a8696c8bf27d6a323fc626cfe23",
+    "receipt_sha256": "74b357edc859b0ee155e9923bcbd1a0bec381487ee55378968e90f8557a4bcd0"
+  },
+  "local_tests": {
+    "backend_relevant_passed": 37,
+    "host_relevant_passing_evidence": 177,
+    "host_scope_note": "Initial run plus targeted recovery after building missing worktree assets; not a single full-repository suite",
+    "frontend_passed": 216,
+    "focused_async_passed": 66,
+    "react_http_E30_passed": 1,
+    "typescript_build_bundle": "passed"
+  },
+  "production": {
+    "healthy": true,
+    "restart_count": 0,
+    "business_rows_unchanged_all3DB": true,
+    "workflow_configuration_preserved": true,
+    "deployed_source_files": 513,
+    "deployed_static_files": 352,
+    "original_other_containers_unchanged": 29,
+    "additional_observed_containers": {
+      "/sdk-php81-security-build-20261029": {
+        "id": "5dcdad1036e39873727ec44f461b5e128550fd56752671f0c48ddfea8c32df26",
+        "image": "sha256:1deeb004b41a691ef45fd8670a4794ef446bb3c0362e402a2e87a705cf26d5ce"
+      }
+    },
+    "mounts": 15,
+    "compose_inputs": 44,
+    "nginx_unchanged": true,
+    "readback": {
+      "visible_projects": 6,
+      "counts": {
+        "demand": 6,
+        "order_line": 6,
+        "commitment_change": 0,
+        "revision": 6,
+        "work_order": 6,
+        "test": 12,
+        "nonconformance": 1,
+        "rework": 1,
+        "release": 4,
+        "plan": 6,
+        "requirement": 16,
+        "commitment": 16,
+        "material_lot": 8,
+        "receipt": 12,
+        "shipment": 2,
+        "closure": 0,
+        "eco": 0,
+        "exchange": 44,
+        "reservation": 12,
+        "unit": 45,
+        "interruption": 0,
+        "rma": 1,
+        "capa": 1
+      },
+      "typed_object_details_verified": 205,
+      "ledger_pages_verified": 43,
+      "tasks_available": 10,
+      "tasks_truncated": false,
+      "private_scope_denied": true,
+      "read_only_action_stripping": true,
+      "dataset": {
+        "id": "manufacturing-full-flow-demo-20261028-v1",
+        "mode": "demo",
+        "label": "全流程模拟环境"
+      }
+    },
+    "http_probes": [
+      {
+        "path": "/manufacturing",
+        "status": 200,
+        "cache_control": "no-store"
+      },
+      {
+        "path": "/api/v1/manufacturing/workflow/objects/order_line",
+        "status": 401,
+        "cache_control": "private, no-store"
+      },
+      {
+        "path": "/api/v1/manufacturing/workflow/tasks",
+        "status": 401,
+        "cache_control": "private, no-store"
+      }
+    ],
+    "image": "sha256:9a190e14613678110cccd7e291f6a65860737112f3eab854aeedd332235d5ad8",
+    "manufacturing_commit": "c5367d44316e6078f80419d126330b02d9358077",
+    "platform_commit": "cd041f307a5d0111640e48e158d3942649b16fea"
+  },
+  "database_backup_verified": true,
+  "browser_visual_acceptance": "not executed; user owned per repository instructions",
+  "real_ERP_factory_acceptance": "not executed; existing demo data retained",
+  "visual_hierarchy_redesign": "proposed in conversation, not included in this navigation release"
+}
