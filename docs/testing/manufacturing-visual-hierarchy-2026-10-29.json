@@ -1,0 +1,190 @@
+{
+  "verified_at_utc": "2026-10-29T03:33:34.240602+00:00",
+  "online_url": "https://agent.orbbec.com.cn/manufacturing",
+  "manufacturing_commit": "dc4f2dc26098adf1606cafe5d1b8e130a534646f",
+  "platform_source_commit": "28272ec4cd1c15ae165a11ecaaed28e166e70405",
+  "image": "sha256:cd3fb491ca9a99cc11154a747b48ca821f7f4adfee963586cd329a4d41acdac6",
+  "candidate": {
+    "passed": true,
+    "cases": 36,
+    "failed": 0,
+    "not_executed": 0,
+    "run_id": "run-20261029T032652-63fb2d8a9ef2448e9c3674b01b5c3f41",
+    "image": "sha256:cd3fb491ca9a99cc11154a747b48ca821f7f4adfee963586cd329a4d41acdac6",
+    "manufacturing_commit": "dc4f2dc26098adf1606cafe5d1b8e130a534646f",
+    "platform_commit": "28272ec4cd1c15ae165a11ecaaed28e166e70405",
+    "e30_global_navigation": [
+      "fresh-cross-project-order-records",
+      "real-server-filter-and-total",
+      "exact-project-object-detail",
+      "same-module-filter-return"
+    ],
+    "all_evidence_files_rehashed": 23483,
+    "archive_sha256": "e526f03a222c369e7e9ca4cbe1ffa7c6123d95af2ac40d3142e3e131546460a9",
+    "receipt_sha256": "fb8106f65672f60b4b11f7860b57ad75aec97383963fba85422d208ef02b5539"
+  },
+  "local_tests": {
+    "unit_passed": 234,
+    "focused_passed": 102,
+    "focused_is_subset_of_unit": true,
+    "actual_react_http_E30": "passed separately",
+    "typescript_build_bundle": "passed",
+    "contrast": "semantic source palette ratios6.04–6.85:1; not rendered/browser acceptance"
+  },
+  "production": {
+    "passed": true,
+    "image": "sha256:cd3fb491ca9a99cc11154a747b48ca821f7f4adfee963586cd329a4d41acdac6",
+    "container": "a95da88456840af72de6565ad46e5a292e59ad8174b07c36b6e9567351c1fa9e",
+    "manufacturing_commit": "dc4f2dc26098adf1606cafe5d1b8e130a534646f",
+    "platform_commit": "28272ec4cd1c15ae165a11ecaaed28e166e70405",
+    "healthy": true,
+    "restart_count": 0,
+    "business_rows_unchanged_all3DB": true,
+    "workflow_configuration_preserved": true,
+    "import_manifest_preserved": true,
+    "deployed_source_files": 514,
+    "deployed_static_files": 409,
+    "protected_other_containers_unchanged": 31,
+    "additional_observed_containers": {},
+    "mounts": 15,
+    "compose_inputs": 46,
+    "nginx_unchanged": true,
+    "http_probes": [
+      {
+        "path": "/manufacturing",
+        "status": 200,
+        "cache_control": "no-store"
+      },
+      {
+        "path": "/api/v1/manufacturing/workflow/objects/order_line",
+        "status": 401,
+        "cache_control": "private, no-store"
+      },
+      {
+        "path": "/api/v1/manufacturing/workflow/tasks",
+        "status": 401,
+        "cache_control": "private, no-store"
+      }
+    ],
+    "readback": {
+      "visible_projects": 6,
+      "counts": {
+        "demand": 6,
+        "order_line": 6,
+        "commitment_change": 0,
+        "revision": 6,
+        "work_order": 6,
+        "test": 12,
+        "nonconformance": 1,
+        "rework": 1,
+        "release": 4,
+        "plan": 6,
+        "requirement": 16,
+        "commitment": 16,
+        "material_lot": 8,
+        "receipt": 12,
+        "shipment": 2,
+        "closure": 0,
+        "eco": 0,
+        "exchange": 44,
+        "reservation": 12,
+        "unit": 45,
+        "interruption": 0,
+        "rma": 1,
+        "capa": 1
+      },
+      "typed_object_details_verified": 205,
+      "ledger_pages_verified": 43,
+      "tasks_available": 10,
+      "tasks_truncated": false,
+      "private_scope_denied": true,
+      "read_only_action_stripping": true,
+      "dataset": {
+        "id": "manufacturing-full-flow-demo-20261028-v1",
+        "mode": "demo",
+        "label": "全流程模拟环境"
+      },
+      "home_expected": {
+        "pending_delivery_projects": 5,
+        "available_tasks": 10,
+        "tasks_truncated": false,
+        "open_nonconformances": 1,
+        "work_orders": 6
+      }
+    },
+    "backup": {
+      "verified": true,
+      "databases": 3,
+      "cross_file_atomic": false,
+      "consistency": "Each SQLite online backup is individually consistent; writes may occur between files."
+    },
+    "maintenance_path": "/opt/orbbec-agent-platform/staging/manufacturing-visual-hierarchy-20261029-r2/future-maintenance.json",
+    "maintenance_sha256": "7413bb654c7d6678e705c9cd73c10dca7bddf99822c509baeddf42a710b515cf",
+    "cutover_receipt_sha256": "591b04db06ad0c35b64493395441b7ee9c6c31f04ddbfa46df5c595ae34fa55a"
+  },
+  "artifacts": {
+    "payload_sha256": "e7c37448380b5a199d7604b93823c470e6116b5bff7e146ec1d2cc9e9b8c4bc6",
+    "fixture_sha256": "ad1f13647738c071e4c2cfd23993ffe08276410bf5cc7a284cdd56c99ccc0f64",
+    "runtime_manifest_sha256": "e2e9648d3e7b12a055e498dd6b838f7a3c614426043015ae803938f2bc0fdefc",
+    "local_archives": {
+      "passed": true,
+      "archives": {
+        "server-controller-evidence.tar.gz": {
+          "sha256": "01227dce58cc2305d045cb28ccb7d004db90f2a4b2055afeb0c7fedd2b564893",
+          "verified_files": 700,
+          "bytes": 3700921
+        },
+        "candidate-evidence.tar.gz": {
+          "sha256": "e526f03a222c369e7e9ca4cbe1ffa7c6123d95af2ac40d3142e3e131546460a9",
+          "verified_files": 23483,
+          "bytes": 16878531
+        }
+      },
+      "candidate_receipt_sha256": "fb8106f65672f60b4b11f7860b57ad75aec97383963fba85422d208ef02b5539",
+      "path": "/Users/neo/Developer/work/AI-Manufacturing-Platform/.superpowers/releases/manufacturing-visual-hierarchy-20261029"
+    },
+    "owned_candidate_filesystem_cleanup": {
+      "archive_verified_files": 23483,
+      "owned_evidence_contents_removed": true,
+      "exact_owned_mount_unmounted": true,
+      "owned_loop_auto_detached": true,
+      "owned_backing_removed": true,
+      "production_data_or_source_modified": false,
+      "retained": "complete candidate archive/receipt and published source/maintenance/private inputs"
+    }
+  },
+  "scope": {
+    "home_metrics": {
+      "pending_delivery_projects": "Count authorized projects with valid positive current_order_quantity and remaining_to_ship; require exact complete current metadata scope",
+      "available_tasks": "ActorTaskPage.total; explicitly disclose bounds/truncation",
+      "open_nonconformances": "Sum valid current complete scoped quality_summary.open_nonconformances",
+      "work_orders": "Dashboard.counts.work_order; record count, not WIP"
+    },
+    "unavailable_or_stale_data": "Display unavailable, not a fabricated zero",
+    "page_metrics": "Explicitly 本页",
+    "task_priority": "Only within fetched prefix; not a global risk ranking"
+  },
+  "preservation": {
+    "backend_overlay_files": 0,
+    "all_514_backend_source_hashes_unchanged": true,
+    "static_paths_preserved": 409,
+    "only_host_static_changed_path": ".vite/manifest.json",
+    "host_active_index_javascript_css_unchanged": true,
+    "previous_45_ordered_inputs_retained": true,
+    "no_reseed": true,
+    "no_nginx_change_test_or_reload": true
+  },
+  "retained_prior_evidence": [
+    "Initial standalone E30 invocation lacked HTTP fixture environment; original failure retained, actual fixture-backed E30 passed separately",
+    "Root read-only checks initially stopped on mount ordering, distinct audit naming and earlier concurrent SDK observations; originals and architectural baseline review retained; final strict exact preflight comparison passed",
+    "Initial cutover blocked before mutation by an external shared action lock; user paused, then resumed after FAE release",
+    "Resume readers initially stopped because latest FAE release uses published.json rather than manufacturing future-maintenance.json; exact actual FAE provenance was independently verified",
+    "Old9a-based candidate36 passed but was not deployed; final report uses only fresh195-based r2 candidate36"
+  ],
+  "acceptance_not_performed": [
+    "Browser desktop/mobile visual acceptance; user-owned under existing AGENTS.md agreement",
+    "Employee multi-role production operation",
+    "Real ERP/MRP/MES/PLM/WMS/QMS or factory business acceptance"
+  ],
+  "rollback": "Source/image and complete input-chain rollback only; retain current databases/WAL and later business edits"
+}
