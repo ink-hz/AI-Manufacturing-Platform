@@ -1,3 +1,8 @@
+import type {
+  PublicAssetPage,
+  AssistanceResult,
+  AssistanceKind,
+} from "./oemTypes";
 import type { MountOptions } from "../types";
 import type { Handbook } from "../projects/types";
 import type {
@@ -53,7 +58,10 @@ export function createWorkflowApi(
   };
   const dispose = () => {
     retired = true;
-    controllers.forEach((cleanup, c) => { c.abort(); cleanup(); });
+    controllers.forEach((cleanup, c) => {
+      c.abort();
+      cleanup();
+    });
     controllers.clear();
   };
   async function request<T>(
@@ -71,7 +79,8 @@ export function createWorkflowApi(
     controllers.set(c, cleanup);
     const assertCurrent = () => {
       assert();
-      if (c.signal.aborted) throw new DOMException("Read cancelled", "AbortError");
+      if (c.signal.aborted)
+        throw new DOMException("Read cancelled", "AbortError");
     };
     try {
       assertCurrent();
@@ -112,42 +121,115 @@ export function createWorkflowApi(
   const p = (id: string) => "/projects/" + encodeURIComponent(id);
   const pageQuery = (limit: number, offset: number, projectId?: string) =>
     `?limit=${limit}&offset=${offset}` +
-    (projectId === undefined ? "" : "&project_id=" + encodeURIComponent(projectId));
+    (projectId === undefined
+      ? ""
+      : "&project_id=" + encodeURIComponent(projectId));
   return {
-    ledger: (kind: ObjectKind, limit = 50, offset = 0, projectId?: string, signal?: AbortSignal) =>
-      request<ObjectPage>("/objects/" + kind + pageQuery(limit, offset, projectId), "GET", undefined, signal),
+    publicAssets: (limit = 50, offset = 0, signal?: AbortSignal) =>
+      request<PublicAssetPage>(
+        "/reusable-assets" + pageQuery(limit, offset),
+        "GET",
+        undefined,
+        signal,
+      ),
+    assistance: (id: string, kind: AssistanceKind, signal?: AbortSignal) =>
+      request<AssistanceResult>(
+        p(id) + "/assistance?kind=" + encodeURIComponent(kind),
+        "GET",
+        undefined,
+        signal,
+      ),
+    ledger: (
+      kind: ObjectKind,
+      limit = 50,
+      offset = 0,
+      projectId?: string,
+      signal?: AbortSignal,
+    ) =>
+      request<ObjectPage>(
+        "/objects/" + kind + pageQuery(limit, offset, projectId),
+        "GET",
+        undefined,
+        signal,
+      ),
     tasks: (limit = 50, offset = 0, projectId?: string, signal?: AbortSignal) =>
-      request<ActorTaskPage>("/tasks" + pageQuery(limit, offset, projectId), "GET", undefined, signal),
+      request<ActorTaskPage>(
+        "/tasks" + pageQuery(limit, offset, projectId),
+        "GET",
+        undefined,
+        signal,
+      ),
     bootstrap: () => request<WorkflowBootstrap>("/access"),
-    projects: (signal?: AbortSignal) => request<{ items: ProjectDetail[] }>("/projects", "GET", undefined, signal),
-    project: (id: string, signal?: AbortSignal) => request<ProjectDetail>(p(id), "GET", undefined, signal),
+    projects: (signal?: AbortSignal) =>
+      request<{ items: ProjectDetail[] }>(
+        "/projects",
+        "GET",
+        undefined,
+        signal,
+      ),
+    project: (id: string, signal?: AbortSignal) =>
+      request<ProjectDetail>(p(id), "GET", undefined, signal),
     createProject: (v: ProjectCreate) =>
       request<ProjectDetail>("/projects", "POST", v),
-    members: (id: string, limit?:number, offset=0) => request<{ items: Grant[] }>(p(id) + "/members" + (limit===undefined?"":`?limit=${limit}&offset=${offset}`)),
-    member: (id: string, user: string) => request<{ items: Grant[] }>(p(id) + "/members?user_id=" + encodeURIComponent(user)),
+    members: (id: string, limit?: number, offset = 0) =>
+      request<{ items: Grant[] }>(
+        p(id) +
+          "/members" +
+          (limit === undefined ? "" : `?limit=${limit}&offset=${offset}`),
+      ),
+    member: (id: string, user: string) =>
+      request<{ items: Grant[] }>(
+        p(id) + "/members?user_id=" + encodeURIComponent(user),
+      ),
     grant: (id: string, user: string, v: GrantChange) =>
       request<GrantResult>(
         p(id) + "/members/" + encodeURIComponent(user),
         "PUT",
         v,
       ),
-    objects: (id: string, kind: ObjectKind, limit = 50, offset = 0) =>
+    objects: (
+      id: string,
+      kind: ObjectKind,
+      limit = 50,
+      offset = 0,
+      signal?: AbortSignal,
+    ) =>
       request<ObjectPage>(
         p(id) + "/objects/" + kind + `?limit=${limit}&offset=${offset}`,
+        "GET",
+        undefined,
+        signal,
       ),
-    object: (id: string, kind: ObjectKind, object: string) =>
+    object: (
+      id: string,
+      kind: ObjectKind,
+      object: string,
+      signal?: AbortSignal,
+    ) =>
       request<ObjectDetail>(
         p(id) + "/objects/" + kind + "/" + encodeURIComponent(object),
+        "GET",
+        undefined,
+        signal,
       ),
     command: (id: string, v: WorkflowCommand) =>
       request<CommandResult>(p(id) + "/commands", "POST", v),
-    dashboard: (signal?: AbortSignal) => request<Dashboard>("/dashboard", "GET", undefined, signal),
-    exchanges: (id: string, limit=50, offset=0) => request<ObjectPage>(p(id) + `/exchanges?limit=${limit}&offset=${offset}`),
-    trace: (id: string, query: {sn:string;material_lot_id?:never}|{material_lot_id:string;sn?:never}, limit=500) => {
-      const params=new URLSearchParams();
-      if(query.sn!==undefined)params.set("sn",query.sn);else params.set("material_lot_id",query.material_lot_id);
-      params.set("limit",String(limit));
-      return request<TraceResult>(p(id)+"/trace?"+params);
+    dashboard: (signal?: AbortSignal) =>
+      request<Dashboard>("/dashboard", "GET", undefined, signal),
+    exchanges: (id: string, limit = 50, offset = 0) =>
+      request<ObjectPage>(p(id) + `/exchanges?limit=${limit}&offset=${offset}`),
+    trace: (
+      id: string,
+      query:
+        | { sn: string; material_lot_id?: never }
+        | { material_lot_id: string; sn?: never },
+      limit = 500,
+    ) => {
+      const params = new URLSearchParams();
+      if (query.sn !== undefined) params.set("sn", query.sn);
+      else params.set("material_lot_id", query.material_lot_id);
+      params.set("limit", String(limit));
+      return request<TraceResult>(p(id) + "/trace?" + params);
     },
     handbook: () => request<Handbook>("/handbook"),
     dispose,

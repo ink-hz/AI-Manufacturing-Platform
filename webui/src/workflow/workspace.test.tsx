@@ -6,11 +6,11 @@ import { project, order, bootstrap } from './testHelpers';
 import { it, expect, vi } from 'vitest';
 import { workflowView, flush } from './testHelpers';
 import type { ProjectDetail } from './types';
-it('offers nine operational workspaces with real project context and one current action', async () => {
+it('offers eleven operational workspaces with real project context and one current action', async () => {
     const v = await workflowView();
     try {
         const nav = v.host.querySelector('nav[aria-label="制造工作区"]')!;
-        expect([...nav.querySelectorAll('button')].map(b => b.textContent)).toEqual(['工作台', '制造项目', '订单与交付', '计划与物料', '工单与执行', '质量与追溯', '事项', '系统协同', '制造手册']);
+        expect([...nav.querySelectorAll('button')].map(b => b.textContent)).toEqual(['工作台', '制造项目', '订单与交付', '工程与资产', '测试与标定', '计划与物料', '工单与执行', '质量与追溯', '事项', '系统协同', '制造手册']);
         await v.click('订单与交付');
         await v.field('所属项目筛选', project.id);
         await v.click('进入项目办理');

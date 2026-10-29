@@ -267,7 +267,7 @@ it('shows a failed selected-object lookup without treating missing scope as a su
 it("selects the 51st work order through bounded lookup paging and preserves draft",async()=>{
   const {SupplyWorkspace}=await import('./SupplyWorkspace');
   const workOrders=Array.from({length:51},(_,n)=>({...summary(n+100,'requirement'),kind:'work_order' as const,title:`WO-${n+1}`}));
-  const api={objects:vi.fn(async(_pid:string,kind:string,limit:number,offset:number)=>({items:kind==='work_order'?workOrders.slice(offset,offset+limit):kind==='material_lot'?[summary(999,'material_lot')]:[],total:kind==='work_order'?51:kind==='material_lot'?1:0,limit,offset})),
+  const api={assistance:vi.fn(async()=>({items:[],unknowns:[],truncated:false,state:"no_evidence"})),objects:vi.fn(async(_pid:string,kind:string,limit:number,offset:number)=>({items:kind==='work_order'?workOrders.slice(offset,offset+limit):kind==='material_lot'?[summary(999,'material_lot')]:[],total:kind==='work_order'?51:kind==='material_lot'?1:0,limit,offset})),
     object:vi.fn(async(_pid:string,kind:string)=>kind==='work_order'?{value:{kind,revision_id:'revision-51',order_line_id:'order-51'}}:kind==='material_lot'?{value:{kind,material_id:'steel',owner_id:'客户甲',unit:'kg'}}:{summary:{version:2}}),command:vi.fn(async()=>({project_id:id,project_version:8}))} as any;
   await act(async()=>root.render(<SupplyWorkspace api={api} project={project} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();
   await click('接收供应计划');await field('计划物料数量 1','3');
@@ -285,7 +285,7 @@ it("selects the 51st work order through bounded lookup paging and preserves draf
 it('discards a late lookup page and old form when the project changes',async()=>{
  const {SupplyWorkspace}=await import('./SupplyWorkspace');let finish!:(x:any)=>void;
  const old={...summary(100,'requirement'),kind:'work_order',title:'OLD-WO'};
- const api={objects:vi.fn(async(pid:string,kind:string,_limit:number,offset:number)=>kind==='work_order'&&offset===50?new Promise(r=>finish=r):({items:pid===id&&kind==='work_order'?Array.from({length:50},(_,i)=>({...old,id:String(i)})):[],total:pid===id&&kind==='work_order'?51:0,limit:50,offset:0}))} as any;
+ const api={assistance:vi.fn(async()=>({items:[],unknowns:[],truncated:false,state:"no_evidence"})),objects:vi.fn(async(pid:string,kind:string,_limit:number,offset:number)=>kind==='work_order'&&offset===50?new Promise(r=>finish=r):({items:pid===id&&kind==='work_order'?Array.from({length:50},(_,i)=>({...old,id:String(i)})):[],total:pid===id&&kind==='work_order'?51:0,limit:50,offset:0}))} as any;
  const props={api,project,readOnly:false,onChanged:()=>{},onOpen:()=>{},onDirty:()=>{},requestLeave:(f:()=>void)=>f()};
  await act(async()=>root.render(<SupplyWorkspace {...props}/>));await flush();await click('接收供应计划');await field('计划物料数量 1','old draft');
  const more=[...host.querySelectorAll('button')].find(b=>b.textContent?.startsWith('读取更多工单（'))!;await act(async()=>more.click());

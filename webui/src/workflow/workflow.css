@@ -102,3 +102,10 @@
 @media (max-width: 360px) {
   .mf-root .wf-home-metrics, .mf-root .wf-home-shortcuts { grid-template-columns: minmax(0, 1fr); }
 }
+.wf-oem-workspace > section { margin-top: 1rem; }
+.wf-oem-workspace .wf-form { max-width: 70rem; }
+.wf-curve { max-width: 60rem; margin-block: 1rem; }
+.wf-curve svg { display: block; width: 100%; height: auto; color: var(--mf-accent, #2563eb); }
+.wf-curve .wf-table-scroll { max-height: 20rem; overflow: auto; }
+.wf-evidence-log { white-space: pre-wrap; overflow-wrap: anywhere; padding: .75rem; background: #f3f5f8; }
+.wf-oem-workspace details, .wf-detail details { margin-block: .5rem; }

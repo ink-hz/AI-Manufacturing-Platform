@@ -13,6 +13,18 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
   const target = (kind: WorkflowTarget["kind"], id: string) =>
     id ? [{ projectId, kind, id }] : [];
   switch (draft.action) {
+    case "npi.open":
+    case "test_plan.publish":return target("revision",draft.revision_id);
+    case "npi.review":case "npi.trial":case "npi.issue":case "npi.approve":case "asset.apply":return target("npi",draft.npi_id);
+    case "npi.resolve":case "asset.publish":return target("npi_issue",draft.issue_id);
+    case "asset.verify":return target("asset_use",draft.asset_use_id);
+    case "test_run.start":return [...target("test_plan",draft.plan_id),...target("unit",draft.unit_id)];
+    case "test_run.finish":case "calibration.record":return target("test_run",draft.run_id);
+    case "calibration.confirm":return target("calibration",draft.calibration_id);
+    case "component.install":case "unit.alias":return target("unit",draft.unit_id);
+    case "component.remove":return target("component_link",draft.component_link_id);
+    case "arrival.match":return [...target("arrival",draft.arrival_id),...target("receipt",draft.receipt_id)];
+    case "authority.verify":return target("authority_rule",draft.rule_id);
     case "freeze.request":return [...draft.unit_ids.slice(0,25).flatMap(id=>target("unit",id)),...draft.lot_ids.slice(0,25).flatMap(id=>target("material_lot",id))];
     case "rma.open":return [...target("unit",draft.unit_id),...target("shipment",draft.shipment_id)];
     case "capa.update":return [...target("rma",draft.rma_id),...target("capa",draft.capa_id||"")];
@@ -83,6 +95,16 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
 }
 function facts(v: DomainValue): [string, string][] {
   switch (v.kind) {
+    case "npi":return [["历史状态",label(v.state)],["当前批量资格",v.bulk_eligible?"有效":"受阻"],["当前阻断",v.blocking_reasons.join("；")]];
+    case "npi_issue":return [["问题",v.phenomenon],["当前验证",v.verified?"有效":"无效"],["历史验证次数",String(v.resolutions.length)]];
+    case "reusable_asset":return [["资产",v.content.title],["固定修订",String(v.revision)]];
+    case "asset_use":return [["采用快照",v.snapshot.title],["固定修订",String(v.revision)],["验证次数",String(v.verifications.length)]];
+    case "test_plan":return [["工位",v.station],["程序",v.test_spec.program_version],["算法",v.algorithm_version]];
+    case "test_run":return [["生命周期",label(v.state)],["历史判定",v.outcome?label(v.outcome):"无判定"],["运行次数",String(v.attempt)]];
+    case "calibration":return [["状态",label(v.state)],["来源标识",v.source_identity],["来源版本",v.source_version]];
+    case "component_link":return [["部件序列号",v.component_serial],["状态",label(v.state)]];
+    case "arrival":return [["到件编号",v.arrival_number],["观察位置",v.location],["匹配历史次数",String(v.matches.length)]];
+    case "authority_rule":return [["责任系统",v.system],["映射状态",label(v.state)],["连接状态",label(v.connection_state)]];
     case "rma":return [["客户",v.customer_id],["问题事实",v.reason],["状态",label(v.state)]];
     case "capa":return [["状态",label(v.state)],["证据步骤",String(v.steps.length)],["阻断原因",v.blocking_reasons.join("；")]];
     case "shipment":return [["实发",v.shipped],["签收",v.signed],["验收",v.accepted],["状态",label(v.state)]];

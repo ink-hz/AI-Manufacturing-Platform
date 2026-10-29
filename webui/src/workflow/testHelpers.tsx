@@ -45,7 +45,8 @@ export async function workflowView(config: {
         } else if (url.includes('/workflow/tasks?') && config.readTasks) {
             const u = new URL(url, 'http://localhost');
             value = await config.readTasks(Number(u.searchParams.get('limit')), Number(u.searchParams.get('offset')), u.searchParams.get('project_id') || undefined);
-        } else if (url.endsWith('/dashboard'))
+        } else if (url.includes('/assistance?')) value = {items:[],unknowns:[],state:'no_evidence',truncated:false};
+        else if (url.endsWith('/dashboard'))
             value = config.readDashboard ? await config.readDashboard() : { cards: [order], counts: { order_line: 1 }, project_ids: [project.id], project_count: 1 };
         else if (url.endsWith('/handbook'))
             value = { title: '大制造数字化系统手册', markdown: '# 大制造数字化系统手册\n\n完整连续正文', release: 'test', updated_at: '2026-10-28T08:00:00Z', source_path: 'handbook.md', sha256: 'test' };

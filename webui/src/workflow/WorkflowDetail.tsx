@@ -1,3 +1,7 @@
+import { IntroductionDetails } from "./details/IntroductionDetails";
+import { LaboratoryDetails } from "./details/LaboratoryDetails";
+import { ArrivalAuthorityDetails } from "./details/ArrivalAuthorityDetails";
+import { UnitPassport } from "./UnitPassport";
 import { StatusBadge } from "./StatusBadge";
 import { useEffect, useState, type ReactNode } from "react";
 import type { WorkflowApi } from "./api";
@@ -85,7 +89,9 @@ function ReadinessView({ title, value }: { title: string; value: Readiness }) {
 export function DetailContent({
   data,
   onOpen,
+  api,
 }: {
+  api?: WorkflowApi;
   data: ObjectDetail;
   onOpen(t: WorkflowTarget): void;
 }) {
@@ -327,6 +333,10 @@ export function DetailContent({
       {v.kind === "receipt" && v.corrections?.map(c=><p key={c.sequence}>追加纠正 · 到货 {c.received_delta} · 合格 {c.accepted_delta} · 拒收 {c.rejected_delta} · {c.evidence}</p>)}
       {v.kind === "receipt" && v.confirmations?.map(c=><section key={c.sequence}><h4>来源确认 · {label(c.source.mode)}</h4><p>外部签署人：{c.external_actor} · {c.signature}</p><Source value={c.source}/></section>)}
       {"source" in v && v.source && <Source value={v.source} />}
+      <IntroductionDetails data={data} onOpen={onOpen}/>
+      <LaboratoryDetails data={data} api={api}/>
+      <ArrivalAuthorityDetails data={data} onOpen={onOpen}/>
+      {v.kind === "unit" && <UnitPassport api={api} data={data} onOpen={onOpen}/>}
       <h4>关联记录</h4>
       {data.relations.map((r, i) => (
         <button
@@ -388,7 +398,7 @@ export function WorkflowDetail({
   return error ? (
     <p role="alert">{error}</p>
   ) : data ? (
-    <DetailContent data={data} onOpen={onOpen} />
+    <DetailContent data={data} onOpen={onOpen} api={api} />
   ) : (
     <p>正在读取详情…</p>
   );

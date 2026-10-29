@@ -1,3 +1,5 @@
+import type { OEMCommands, OEMValue, UnitAlias, ComponentHistory } from "./oemTypes";
+export type * from "./oemTypes";
 import type { PackageItem } from "../collaboration/types";
 export interface WorkflowBootstrap {
   protocol: 1;
@@ -23,6 +25,7 @@ export type WorkflowTarget = {
   id: string;
 };
 export type ObjectKind =
+  | "npi" | "npi_issue" | "reusable_asset" | "asset_use" | "test_plan" | "test_run" | "calibration" | "component_link" | "arrival" | "authority_rule"
   | "rma" | "capa"
   | "shipment" | "closure"
   | "nonconformance" | "rework" | "release"
@@ -193,6 +196,7 @@ export type DeliveryCommand =
 export interface ShipmentReceiptDetail {key:string;unit_id:string;sn:string;work_order_id:string;order_line_id:string;box_id:string|null}
 export interface ContractAgreement {id:string;supersedes_agreement_id:string|null;revision_id:string;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string;project_version:number;recorded_at:string}
 export type CommandFields =
+  | OEMCommands
   | {action:"contract.agree";revision_id:string;supersedes_agreement_id:string|null;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string}
   | {action:"project.stage";stage:"S1"|"S2"|"S3"|"S4"|"S5"|"S6"|"S7"|"S8"|"S9";status:"pending"|"active"|"blocked"|"complete";reason:string}
   | FeedbackCommand
@@ -375,6 +379,7 @@ export interface WorkOrderImpactPreview {
   }[];
 }
 export type DomainValue =
+  | OEMValue
   | RmaValue | CapaValue
   | ShipmentValue
   | {kind:"closure";id:string;closure_kind:"fulfillment"|"quality"|"cost";status:"closed"|"blocked";source:SourceRef|null;evidence:string;blocking_reasons:string[]}
@@ -384,7 +389,7 @@ export type DomainValue =
   | {kind:"release";id:string;release_kind:ReleaseKind;unit_ids:string[];decision:"approved"|"rejected";evidence:string;test_ids:string[];actor_id:string;customer_id:string|null;revision_id:string|null;customer_revision:string|null;external_signatory:string|null;method:"manual"|null;source:SourceRef|null;recorded_at:string}
   | EcoValue
   | ExchangeValue
-  | {kind:"unit";freeze_requested?:"frozen"|"unfrozen"|null;freeze_confirmed?:"frozen"|"unfrozen"|null;freeze_pending?:boolean;tests?:UnitTest[];test_total?:number;first_pass?:boolean|null;scrapped?:boolean;final_good?:boolean;id:string;project_id:string;work_order_id:string;revision_id:string;sn:string;state:"registered"|"start_pending"|"running"|"stopped";mode:"trial"|"bulk"|null;accepted_start_id:string|null;authority_start_accepted:boolean;execution_event_ids:string[];execution_event_total:number;execution_events:{id:string;source:SourceRef|null;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";rework_order_id?:string|null;supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[]}
+  | {kind:"unit";aliases?:UnitAlias[];components?:ComponentHistory[];freeze_requested?:"frozen"|"unfrozen"|null;freeze_confirmed?:"frozen"|"unfrozen"|null;freeze_pending?:boolean;tests?:UnitTest[];test_total?:number;first_pass?:boolean|null;scrapped?:boolean;final_good?:boolean;id:string;project_id:string;work_order_id:string;revision_id:string;sn:string;state:"registered"|"start_pending"|"running"|"stopped";mode:"trial"|"bulk"|null;accepted_start_id:string|null;authority_start_accepted:boolean;execution_event_ids:string[];execution_event_total:number;execution_events:{id:string;source:SourceRef|null;status:"accepted"|"rejected";reason:string;station:string;route_version:string;program_version:string;firmware_version:string;result:"pass"|"fail";route_kind:"initial"|"rework";rework_order_id?:string|null;supersedes_event_id:string|null;occurred_at:string;recorded_at:string;material_uses:{lot_id:string;material_id:string;owner_id:string;quantity:string;unit:string}[]}[]}
   | {kind:"interruption";id:string;work_order_id:string;reason:string;exception_id:string|null;exception_kind:"S3"|"S4"|"other";requested_at:string;authority_stopped_at:string|null;resolved_at:string|null;trial_resumed_at?:string|null;superseded_by?:string|null;plan_id:string|null;stop_exchange_id:string;recovery_start_id:string|null;resume_exchange_id:string|null;stop_exchange_ids:string[];resume_exchange_ids:string[]}
   | {kind:"reservation";requirement_id:string;work_order_id:string;material_lot_id:string;requested:string;confirmed:string;remaining:string;unit:string;source_version:number;authority_receipt_id:string|null;exchange_id:string}
   | {
@@ -481,7 +486,7 @@ export type DomainValue =
   | {kind:"requirement";plan_id:string;lineage_id:string;supersedes_requirement_id:string|null;work_order_id:string;execution_scope:"trial"|"bulk"|"common";material_id:string;owner_id:string;quantity:string;unit:string;balance:MaterialBalance;unqualified_quantity:string}
   | {kind:"commitment";requirement_id:string;type:"purchase"|"customer";owner_id:string;original_quantity:string;current_quantity:string;unit:string;original_due:string;current_due:string;source:SourceRef;promise_revisions:{source:SourceRef;quantity:string;current_due:string}[];material_lot_ids:string[];received:string;qualified:string;rejected:string}
   | {kind:"material_lot";freeze_requested?:"frozen"|"unfrozen"|null;freeze_confirmed?:"frozen"|"unfrozen"|null;freeze_pending?:boolean;ownership_balance?:OwnershipBalance;material_movements?:{id:string;movement:"return"|"raw_loss";quantity:string;supersedes_id:string|null;current:boolean;source:SourceRef|null;external_signatory:string;evidence:string}[];ownership_reconciliations?:{id:string;current:boolean;source:SourceRef|null;balance:OwnershipBalance}[];material_id:string;lot_id:string;owner_id:string;unit:string;scale:number;expiry:string;state:"active"|"frozen";source:SourceRef;received:string;qualified:string;rejected:string}
-  | {kind:"receipt";original_quantity?:string;corrections?:{sequence:number;received_delta:string;accepted_delta:string;rejected_delta:string;evidence:string}[];confirmations?:SourceConfirmation[];commitment_id:string;material_lot_id:string;quantity:string;unit:string;source:SourceRef;accepted:string;rejected:string;uninspected:string};
+  | {kind:"receipt";quantity_state?:"pending_inspection"|"partially_inspected"|"accepted"|"rejected"|"mixed";next_step?:"inspect_remaining"|"review_rejected"|"await_authority_reservation";original_quantity?:string;corrections?:{sequence:number;received_delta:string;accepted_delta:string;rejected_delta:string;evidence:string}[];confirmations?:SourceConfirmation[];commitment_id:string;material_lot_id:string;quantity:string;unit:string;source:SourceRef;accepted:string;rejected:string;uninspected:string};
 export interface ObjectDetail {
   summary: ObjectSummary;
   value: DomainValue;

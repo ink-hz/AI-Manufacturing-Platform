@@ -38,6 +38,7 @@ export function WorkflowHome({data, projects, projectsReady, dashboardError, pro
       <p>{card.note}</p>
       {card.value === null && <small>{card.title === '当前可处理事项' ? taskError ? '读取失败，可重试' : '正在读取事项…' : card.title === '制造工单' ? data ? '工单统计未提供' : '等待概览' : projectState || '所需汇总资料未提供或无效'}</small>}
     </article>)}</div>
+    <div className="mf-actions" aria-label="工程与实验室入口"><button onClick={()=>onNavigate("introduction","npi")}>工程导入与资产</button><button onClick={()=>onNavigate("laboratory","test_run")}>测试运行与标定</button></div>
     <div className="wf-home-columns">
       <section className="wf-panel wf-priority" aria-label="优先事项">
         <div className="wf-section-heading"><h2>优先事项</h2><button className="wf-text-link" onClick={() => onNavigate('tasks')}>查看全部事项</button></div>

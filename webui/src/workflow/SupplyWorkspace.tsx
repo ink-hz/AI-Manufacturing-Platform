@@ -1,3 +1,5 @@
+import { OEMWorkspace, type OEMWorkspaceProps } from "./OEMWorkspace";
+import { AssistancePanel } from "./AssistancePanel";
 import { useEffect, useRef, useState } from "react";
 import type { WorkspaceProps, ObjectKind, ObjectSummary, CommandFields } from "./types";
 import { ObjectTable } from "./OrdersWorkspace";
@@ -12,14 +14,15 @@ const actions: Record<string,string>={
   "supply.commit":"登记供应承诺","supply.receive":"登记到货",
   "supply.inspect":"登记来料检验",
 };
-export function SupplyWorkspace(p:WorkspaceProps & {requestLeave(action:()=>void):void;onReload?():void}){
+export function SupplyWorkspace(p:OEMWorkspaceProps & {onReload?():void}){
   const [items,setItems]=useState<Partial<Record<ObjectKind,ObjectSummary[]>>>({});
   const [totals,setTotals]=useState<Partial<Record<ObjectKind,number>>>({});
   const [loading,setLoading]=useState<Partial<Record<ObjectKind,boolean>>>({});
   const [error,setError]=useState("");
-  const [action,setAction]=useState<CommandFields["action"]|null>(null);
+  const [action,setAction]=useState<CommandFields["action"]|null>(()=>p.initialAction&&p.initialAction in actions?p.initialAction as CommandFields["action"]:null);
   const [epoch,setEpoch]=useState(0);
   const generation=useRef(0);
+  useEffect(()=>{if(p.initialAction?.startsWith("arrival."))setAction(null);},[p.initialAction]);
   useEffect(()=>{
     const current=++generation.current;
     setError(""); setItems({}); setTotals({}); setLoading({});
@@ -48,9 +51,9 @@ export function SupplyWorkspace(p:WorkspaceProps & {requestLeave(action:()=>void
     <h3>供应与物料</h3>
     <p>库存预留由权威系统原子接受。人工到货与检验只登记证据；确认预留以权威接受回执为准。</p>
     {error&&<p role="alert">{error}</p>}
-    <div className="mf-actions">{!p.readOnly&&available.map(a=><button key={a} onClick={()=>p.requestLeave(()=>{setAction(a as CommandFields["action"]);setEpoch(x=>x+1);})}>{actions[a]}</button>)}</div>
+    <div className="mf-actions">{!p.readOnly&&available.map(a=><button key={a} onClick={()=>p.requestLeave(()=>{p.onSelectAction?.(a);setAction(a as CommandFields["action"]);setEpoch(x=>x+1);})}>{actions[a]}</button>)}</div>
     {action&&<>
-      <button onClick={()=>p.requestLeave(()=>{setAction(null);setEpoch(x=>x+1);p.onReload?.();})}>放弃草稿并重新读取</button>
+      <button onClick={()=>p.requestLeave(()=>{p.onSelectAction?.(null);setAction(null);setEpoch(x=>x+1);p.onReload?.();})}>放弃草稿并重新读取</button>
       <SupplyForms key={p.project.id+action+epoch} {...p} action={action}
         workOrders={items.work_order||[]} orders={items.order_line||[]}
         revisions={items.revision||[]} lots={items.material_lot||[]}
@@ -59,6 +62,8 @@ export function SupplyWorkspace(p:WorkspaceProps & {requestLeave(action:()=>void
         onChanged={result=>{setAction(null);p.onChanged(result);}}/>
     </>}
     {lookups.map(k=>(items[k]||[]).length<(totals[k]||0)&&<button key={k} disabled={loading[k]} onClick={()=>void more(k)}>读取更多{label(k)}（已读取 {(items[k]||[]).length} / {totals[k]}）</button>)}
+    <OEMWorkspace {...p} domain="arrival"/>
+    <AssistancePanel api={p.api} projectId={p.project.id} version={p.project.version} onOpen={p.onOpen} initialKind="materials"/>
     {kinds.map(k=><section key={k}>
       <h4>{label(k)}</h4>
       {k==="requirement"?<table><thead><tr>

@@ -1,14 +1,17 @@
+import { OEMWorkspace, type OEMWorkspaceProps } from "./OEMWorkspace";
 import { useEffect, useRef, useState } from "react";
 import type { CommandFields, ExchangeValue, InboundKind, ObjectSummary, WorkspaceProps } from "./types";
 import { Choice, CommandForm, Field, ObjectChoice } from "./forms/shared";
 import { ObjectTable } from "./OrdersWorkspace";
 import { label } from "./labels";
 
-type Props=WorkspaceProps & {requestLeave(action:()=>void):void;mode:"production"|"demo"|"test"};
+const actionForForm = {pull:"source.pull",file:"source.import_file",dispatch:"exchange.dispatch",query:"exchange.query",reconcile:"exchange.reconcile"};
+type Props=OEMWorkspaceProps & {mode:"production"|"demo"|"test"};
 const policies:Record<InboundKind,CommandFields["action"]>={receipt:"supply.receive",iqc:"supply.inspect",customer_approval:"engineering.customer_approval"};
 export function ExchangeWorkspace(p:Props){
   const [items,setItems]=useState<ObjectSummary[]>([]),[total,setTotal]=useState(0),[error,setError]=useState("");
-  const [form,setForm]=useState<"pull"|"file"|"dispatch"|"query"|"reconcile"|null>(null),[epoch,setEpoch]=useState(0);
+  const [form,setForm]=useState<keyof typeof actionForForm|null>(()=>(Object.keys(actionForForm) as (keyof typeof actionForForm)[]).find(key=>actionForForm[key]===p.initialAction)||null),[epoch,setEpoch]=useState(0);
+  useEffect(()=>{if(p.initialAction?.startsWith("authority."))setForm(null);},[p.initialAction]);
   const activeSelection=useRef("");
   const fileGeneration=useRef(0);
   const alive=useRef(true);
@@ -18,7 +21,7 @@ export function ExchangeWorkspace(p:Props){
   useEffect(()=>{let active=true;p.api.objects(p.project.id,"exchange",50,0).then(page=>{if(active){setItems(page.items);setTotal(page.total);}}).catch(e=>{if(active)setError(String(e));});return()=>{active=false;};},[p.api,p.project.id,p.project.version]);
   const kinds=(Object.keys(policies) as InboundKind[]).filter(k=>p.project.allowed_actions.includes(policies[k]));
   const edit=!p.readOnly;
-  const switchForm=(value:typeof form)=>p.requestLeave(()=>{setForm(value);setSelected(null);setSelectedActions([]);activeSelection.current="";fileGeneration.current++;setEpoch(x=>x+1);});
+  const switchForm=(value:typeof form)=>p.requestLeave(()=>{p.onSelectAction?.(value?actionForForm[value]:null);setForm(value);setSelected(null);setSelectedActions([]);activeSelection.current="";fileGeneration.current++;setEpoch(x=>x+1);});
   const changed:WorkspaceProps["onChanged"]=r=>{setForm(null);setSelected(null);p.onChanged(r);};
   const shared={...p,onChanged:changed};
   const canExchange=selected && selectedActions.includes(form==="dispatch"?"exchange.dispatch":form==="query"?"exchange.query":"exchange.reconcile");
@@ -73,6 +76,7 @@ export function ExchangeWorkspace(p:Props){
         <Field name={`核对数量 ${i+1}`} value={d.quantity} onChange={x=>set({...v,details:v.details.map((item,n)=>n===i?{...item,quantity:x}:item)})}/><p>{d.unit}</p></fieldset>)}
       <Field name="对账凭据" value={v.evidence} onChange={x=>set({...v,evidence:x})}/></>}
     </CommandForm>}
+    <OEMWorkspace {...p} domain="authority"/>
     <ObjectTable items={items} onOpen={p.onOpen}/>
     {items.length<total&&<button onClick={()=>void p.api.objects(p.project.id,"exchange",50,items.length).then(page=>{if(alive.current){setItems(old=>[...old,...page.items]);setTotal(page.total);}}).catch(e=>setError(String(e)))}>读取更多交换（{items.length} / {total}）</button>}
   </section>;

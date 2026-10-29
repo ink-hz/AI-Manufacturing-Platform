@@ -33,7 +33,7 @@ export function GlobalLedger({api,module,context,onContext,projects,refresh,onRe
   },[api,module,context.kind,context.offset,context.projectId,refresh]);
   return <section className="wf-global-ledger wf-panel" aria-label={config.title}>
     <h2>{config.title}</h2>
-    <p className="mf-meta">{({orders:"核对订单承诺、发货与验收",supply:"核对计划依据、到货与物料准备",execution:"跟进固定版本工单与执行中断",quality:"处置不合格、核对独立放行与追溯",collaboration:"核对权威回执与来源差异"})[module]}</p>
+    <p className="mf-meta">{({introduction:"跟进导入证据、当前批量资格与资产验证",laboratory:"核对实际测试运行、标定读回和单台履历",orders:"核对订单承诺、发货与验收",supply:"核对计划依据、到货与物料准备",execution:"跟进固定版本工单与执行中断",quality:"处置不合格、核对独立放行与追溯",collaboration:"核对权威回执与来源差异"})[module]}</p>
     <div className="mf-tabs" aria-label="业务类型">{config.tabs.map(t=><button key={t.kind} aria-pressed={context.kind===t.kind} onClick={()=>onContext({...context,kind:t.kind,offset:0})}>{t.title}</button>)}</div>
     <div className="mf-actions wf-ledger-toolbar">
       <ProjectScope projects={projects} value={context.projectId} onChange={projectId=>onContext({...context,projectId,offset:0})}/>

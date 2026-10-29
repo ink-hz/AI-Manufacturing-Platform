@@ -1,5 +1,13 @@
 import type { ObjectSummary } from "./types";
 export const labels: Record<string, string> = {
+  pass: "通过", fail: "不通过", completed: "已完成", manual: "人工登记",
+  npi:"工程导入",npi_issue:"导入问题",reusable_asset:"可复用资产",asset_use:"资产采用",test_plan:"测试计划",test_run:"测试运行",calibration:"标定读回",component_link:"部件履历",arrival:"到件观察",authority_rule:"系统责任映射",
+  "npi.open":"创建工程导入","npi.review":"记录导入评审","npi.trial":"登记导入试做证据","npi.issue":"登记导入问题","npi.resolve":"验证或刷新问题解决依据","npi.approve":"批准当前导入证据",
+  "asset.publish":"发布可复用资产","asset.apply":"采用固定资产修订","asset.verify":"验证已采用资产",
+  "test_plan.publish":"发布测试计划","test_run.start":"开始测试运行","test_run.finish":"登记测试运行结果","calibration.record":"登记标定参数","calibration.confirm":"登记独立读回确认","unit.alias":"登记客户序列号","component.install":"登记部件安装","component.remove":"登记部件拆除",
+  "arrival.record":"登记收货观察","arrival.match":"匹配或纠正收货凭据","authority.register":"登记系统责任映射","authority.verify":"核验责任契约",
+  first_introduction:"首次导入",change_validation:"变更验证",unverified:"历史验证已失效",aborted:"已中断",invalid:"无效",installed:"已安装",removed:"已拆除",unlinked:"待匹配",matched:"已匹配",published:"已发布",unconnected:"未接入",demo:"隔离模拟",check:"检查项",process_module:"过程模块",test_module:"测试模块",not_applicable:"不适用",
+  pending_inspection:"待检",partially_inspected:"部分已检",mixed:"合格与拒收并存",inspect_remaining:"检验剩余数量",review_rejected:"处置拒收数量",await_authority_reservation:"待权威预留核验",
   complete:"已完成",closed:"已关闭",
   rma:"客户质量反馈",capa:"纠正预防措施",frozen:"冻结",unfrozen:"解冻",consumed:"实际物料消耗",prior_test:"前次检验依据",order:"原订单",
   "freeze.request":"冻结或解冻申请","rma.open":"登记客户 RMA","capa.update":"记录 CAPA 证据","capa.close":"核验 CAPA 关闭",

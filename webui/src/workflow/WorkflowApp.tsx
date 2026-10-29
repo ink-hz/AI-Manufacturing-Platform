@@ -1,4 +1,7 @@
+import { oemActionWorkspace, oemObjectWorkspace } from "./oemNavigation";
 import { StatusBadge } from "./StatusBadge";
+import { IntroductionWorkspace } from "./IntroductionWorkspace";
+import { LaboratoryWorkspace } from "./LaboratoryWorkspace";
 import {label} from "./labels";
 import { ActionForms } from "./ActionForms";
 import { TraceWorkspace } from "./TraceWorkspace";
@@ -47,13 +50,14 @@ export function WorkflowApp({
     [project, setProject] = useState<ProjectDetail | null>(null),
     [view, setView] = useState<ConsoleView>("home"),
     [creating, setCreating] = useState(false),
-    [workspace, setWorkspace] = useState<"orders" | "engineering" | "supply" | "execution" | "quality" | "delivery" | "trace" | "exchange" | "members">(
+    [workspace, setWorkspace] = useState<"introduction" | "laboratory" | "orders" | "engineering" | "supply" | "execution" | "quality" | "delivery" | "trace" | "exchange" | "members">(
       "orders",
     ),
     [target, setTarget] = useState<WorkflowTarget | null>(null),
     [detail, setDetail] = useState<ObjectDetail | null>(null),
     [resolve, setResolve] = useState(false),
     [currentTask,setCurrentTask]=useState<ObjectDetail|null>(null),
+    [chosenAction,setChosenAction]=useState<string|null>(null),
     [error, setError] = useState(""),
     [refresh, setRefresh] = useState(0),
     [epoch, setEpoch] = useState(0),
@@ -242,6 +246,12 @@ export function WorkflowApp({
         setProject(old => old?.id === p.id && old.version >= p.version ? old : p);
         setCreating(false);
         setTarget(t);
+        setChosenAction(null);
+        const domain = oemObjectWorkspace(t.kind);
+        if (domain) {
+          setWorkspace(domain);
+          if (view !== "projects") setView(domain === "exchange" ? "collaboration" : domain);
+        }
         setCurrentTask(null);
         setDetail(null);
         setResolve(false);
@@ -259,6 +269,7 @@ export function WorkflowApp({
     });
   }
   function changed(result: MutationAcknowledgement) {
+    setChosenAction(null);
     const version = Math.max(
       result.project_version,
       result.current_project_version || 0,
@@ -282,7 +293,7 @@ export function WorkflowApp({
       setResolve(false);
     } else if (
       [
-        "rma", "capa",
+        "rma", "capa", "npi", "npi_issue", "reusable_asset", "asset_use", "test_plan", "test_run", "calibration", "component_link", "arrival", "authority_rule",
         "eco",
         "demand",
         "order_line",
@@ -334,13 +345,14 @@ export function WorkflowApp({
       if (home && isBusinessModule(next)) setLedgers(old => ({...old, [next]: {kind: home.kind || initialLedgerContexts()[next].kind, projectId: home.projectId || "", offset: 0}}));
       if (home && next === "tasks") setTaskContext({projectId: "", offset: 0});
       setView(next);
+      setChosenAction(null);
       setCreating(false);
       setTarget(null);
       setCurrentTask(null);
       setResolve(false);
       setProject(null);
       setDetail(null);
-      const nextWorkspace = ({orders:"orders", supply:"supply", execution:"execution", quality:"quality", collaboration:"exchange"} as Record<string,string>)[next];
+      const nextWorkspace = ({introduction:"introduction",laboratory:"laboratory",orders:"orders", supply:"supply", execution:"execution", quality:"quality", collaboration:"exchange"} as Record<string,string>)[next];
       if (nextWorkspace) setWorkspace(nextWorkspace as typeof workspace);
     });
   }
@@ -364,6 +376,8 @@ export function WorkflowApp({
           ["home", "工作台"],
           ["projects", "制造项目"],
           ["orders", "订单与交付"],
+          ["introduction", "工程与资产"],
+          ["laboratory", "测试与标定"],
           ["supply", "计划与物料"],
           ["execution", "工单与执行"],
           ["quality", "质量与追溯"],
@@ -483,6 +497,8 @@ export function WorkflowApp({
                     [
                       ["orders", "订单与需求"],
                       ["engineering", "工程与工单"],
+                      ["introduction", "导入与资产"],
+                      ["laboratory", "测试与标定"],
                       ["supply", "供应与物料"],
                       ["execution", "生产执行"],
                       ["quality", "质量与放行"],
@@ -496,13 +512,14 @@ export function WorkflowApp({
                   ).filter(([key]) => {
                     const active = view === "handbook" ? workView : view;
                     if(active === "projects") return true;
-                    return ({orders:["orders","delivery"],supply:["supply"],execution:["engineering","execution"],quality:["quality","trace"],collaboration:["exchange"]} as Record<string,string[]>)[active]?.includes(key);
+                    return ({introduction:["engineering","introduction"],laboratory:["laboratory"],orders:["orders","delivery"],supply:["supply"],execution:["engineering","execution"],quality:["quality","trace"],collaboration:["exchange"]} as Record<string,string[]>)[active]?.includes(key);
                   }).map(([key, title]) => (
                     <button
                       key={key}
                       onClick={() =>
                         requestLeave(() => {
                           setWorkspace(key as typeof workspace);
+                          setChosenAction(null);
                           setTarget(null);
                           setResolve(false);
                           setEpoch((e) => e + 1);
@@ -536,9 +553,9 @@ export function WorkflowApp({
                       onLoaded={setDetail}
                     />
                     {detail&&<ActionForms {...props} detail={detail} onChoose={action=>requestLeave(()=>{
-                      setCurrentTask(detail);setTarget(null);setResolve(false);setEpoch(e=>e+1);
+                      setCurrentTask(detail);setChosenAction(action);setTarget(null);setResolve(false);setEpoch(e=>e+1);
                       const prefix=action.split(".")[0];
-                      setWorkspace(["shipment","delivery","ownership","stock_basis","closure"].includes(prefix)?"delivery":["supply","material","reservation","plan"].includes(prefix)?"supply":["production","execution","unit","first_article"].includes(prefix)?"execution":["test","nonconformance","rework","release"].includes(prefix)?"quality":["freeze","rma","capa"].includes(prefix)?"trace":["engineering","work_order","readiness","eco"].includes(prefix)?"engineering":["exchange","source"].includes(prefix)?"exchange":"orders");
+                      setWorkspace(oemActionWorkspace(action) || (["shipment","delivery","ownership","stock_basis","closure"].includes(prefix)?"delivery":["supply","material","reservation","plan"].includes(prefix)?"supply":["production","execution","unit","first_article"].includes(prefix)?"execution":["test","nonconformance","rework","release"].includes(prefix)?"quality":["freeze","rma","capa"].includes(prefix)?"trace":["engineering","work_order","readiness","eco"].includes(prefix)?"engineering":["exchange","source"].includes(prefix)?"exchange":"orders"));
                     })}/>}
                     {!readOnly &&
                       detail?.value.kind === "commitment_change" &&
@@ -566,13 +583,18 @@ export function WorkflowApp({
                         </>
                       )}
                   </>
+                ) : workspace === "introduction" ? (
+                  <IntroductionWorkspace {...props} requestLeave={requestLeave} configurationAdmin={b.configuration_admin} initialAction={chosenAction} onSelectAction={setChosenAction} initialObject={currentTask}/>
+                ) : workspace === "laboratory" ? (
+                  <LaboratoryWorkspace {...props} requestLeave={requestLeave} initialAction={chosenAction} onSelectAction={setChosenAction} initialObject={currentTask}/>
                 ) : workspace === "members" ? (
                   <Members {...props} findSubjects={options.findSubjects} />
                 ) : workspace === "exchange" ? (
-                  <ExchangeWorkspace key={props.project.id} {...props} requestLeave={requestLeave} mode={b.dataset?.mode||"production"} />
+                  <ExchangeWorkspace key={props.project.id} {...props} requestLeave={requestLeave} mode={b.dataset?.mode||"production"} initialAction={chosenAction} onSelectAction={setChosenAction} initialObject={currentTask} />
                 ) : workspace === "supply" ? (
                   <SupplyWorkspace
                     {...props}
+                    initialAction={chosenAction} onSelectAction={setChosenAction} initialObject={currentTask}
                     requestLeave={requestLeave}
                     onReload={() => setRefresh((r) => r + 1)}
                   />
