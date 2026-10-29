@@ -1,5 +1,7 @@
 """Scoped successor agreements retain original contract and fixed history."""
 
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
+
 from datetime import datetime
 from uuid import uuid4
 
@@ -301,7 +303,7 @@ def test_v16_migration_preserves_original_contract_route_operation_and_audit_byt
     workflow.reopen()
     assert workflow.client().get(f"{BASE}/projects/{pid}").status_code == 200
     with workflow.db() as db:
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 17
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
         for table in tables:
             assert db.execute("SELECT * FROM " + table).fetchall() == saved[table]
     payload = json.loads(audit)

@@ -195,6 +195,7 @@ class ReadinessCheck(StrictModel):
         "material",
         "plan",
         "first_article",
+        "npi",
     ]
     required: bool
     status: Literal["ready", "blocked", "not_required"]

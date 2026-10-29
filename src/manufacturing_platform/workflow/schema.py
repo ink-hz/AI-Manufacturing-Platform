@@ -1,4 +1,6 @@
-SCHEMA_VERSION = 17
+from .introduction_schema import INTRODUCTION_SCHEMA
+
+SCHEMA_VERSION = 18
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -201,3 +203,5 @@ CREATE INDEX IF NOT EXISTS contract_agreements_scope ON contract_agreements(proj
 CREATE VIEW IF NOT EXISTS current_revision_contracts AS SELECT r.project_id,r.id revision_id,COALESCE(a.contract_json,p.contract_json) contract_json FROM engineering_revisions r JOIN projects p ON p.id=r.project_id LEFT JOIN contract_agreements a ON a.id=(SELECT id FROM contract_agreements current WHERE current.project_id=r.project_id AND current.revision_id=r.id ORDER BY current.project_version DESC LIMIT 1);
 """
 SCHEMA += AGREEMENT_SCHEMA
+
+SCHEMA += INTRODUCTION_SCHEMA

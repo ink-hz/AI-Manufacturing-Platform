@@ -1,5 +1,7 @@
 """Supply evidence, quantity boundaries and scoped readiness through the public API."""
 
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
+
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -676,7 +678,7 @@ def test_v3_database_migrates_supply_without_touching_existing_orders(workflow):
         == "material_lot"
     )
     with workflow.db() as db:
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 17
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
 
 
 def test_v4_migration_orders_audited_plans_and_normalizes_supply_keys(workflow):
@@ -706,7 +708,7 @@ def test_v4_migration_orders_audited_plans_and_normalizes_supply_keys(workflow):
     with workflow.db() as db:
         row = db.execute("SELECT source_system,source_type,source_external_id,accepted_seq FROM plans WHERE id=?", (plan_id,)).fetchone()
         assert tuple(row) == ("erp", "plan", source["external_id"].strip(), 1)
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 17
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
     source["system"] = "erp"
     source["external_id"] = source["external_id"].strip()
     source["version"] = 2

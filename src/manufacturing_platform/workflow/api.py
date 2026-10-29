@@ -177,6 +177,10 @@ def build_workflow_router(
         value = await parse(request, GrantChange)
         return await run_in_threadpool(service.change_grant, a, project_id, user_id, value)
 
+    @router.get("/reusable-assets")
+    def reusable_assets(request: Request, limit: int = 50, offset: int = 0):
+        return service.reusable_assets(actor(request), limit=limit, offset=offset)
+
     @router.get("/dashboard")
     def dashboard(request: Request, project_id: UUID | None = None):
         return service.dashboard(actor(request), project_id)

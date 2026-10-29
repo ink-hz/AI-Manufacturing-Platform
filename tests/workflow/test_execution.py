@@ -1,5 +1,7 @@
 """B3 execution through the public API and the independent authority boundary."""
 
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
+
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from threading import Event, Thread
@@ -2531,7 +2533,7 @@ def test_review_v7_resume_envelope_survives_additive_migration(
         )
         for key in ("request_json", "request_hash", "business_key"):
             assert after[key] == row[key]
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 17
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
     with authority.store.transaction() as tx:
         assert tx.execute(
             "SELECT 1 FROM sqlite_master WHERE type='index' AND name='authority_stop_lineage'"

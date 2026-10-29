@@ -1,5 +1,7 @@
 """Canonical A2/A3 identity remains distinct from immutable source evidence."""
 
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
+
 from .conftest import BASE
 from .test_orders import approve, record, register
 from manufacturing_platform.workflow.contracts import SourceRef
@@ -45,7 +47,7 @@ def test_actual_schema15_key_upgrade_preserves_raw_business_history(tmp_path):
     store = WorkflowStore(str(path), str(tmp_path / "authority.db"), {"id": "workflow-test", "mode": "test", "label": "Workflow test"})
     with store.transaction() as db:
         assert tuple(db.execute("SELECT source_system,source_type,source_external_id FROM demands").fetchone()) == ("erp", "demand", "Old-Demand")
-        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == 17
+        assert db.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
         for table, rows in before.items():
             assert list(map(tuple, db.execute(f"SELECT * FROM {table}"))) == rows
         assert list(map(tuple, db.execute("SELECT source_json FROM demands"))) == source

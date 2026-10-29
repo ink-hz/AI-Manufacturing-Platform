@@ -33,6 +33,15 @@ BUSINESS_QUALIFICATIONS = frozenset(
 
 
 WorkflowAction = Literal[
+    "npi.open",
+    "npi.review",
+    "npi.trial",
+    "npi.issue",
+    "npi.resolve",
+    "npi.approve",
+    "asset.publish",
+    "asset.apply",
+    "asset.verify",
     "demand.record",
     "demand.review",
     "order.register",

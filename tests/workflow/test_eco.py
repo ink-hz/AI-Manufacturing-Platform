@@ -1,5 +1,7 @@
 """ECO boundaries exercised through public commands and two durable stores."""
 
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
+
 import pytest
 
 from .conftest import BASE, WorkflowHarness
@@ -880,7 +882,7 @@ def test_v8_migration_preserves_original_registration_and_adds_empty_delta_proje
             )
             == original
         )
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 17
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
 
 
 def test_multiple_ecos_on_same_revision_have_independent_immutable_impact_evidence(

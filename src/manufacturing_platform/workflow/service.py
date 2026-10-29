@@ -13,6 +13,7 @@ from . import (  # noqa: F401 - trusted domain registration
     execution,
     feedback,
     freeze,
+    introduction,
     orders,
     ownership,
     progress,
@@ -373,6 +374,9 @@ class WorkflowService:
         # Context associations are not a permission matrix. Every candidate is
         # intersected with the live command policy below, just like execute().
         related = {
+            "npi": ["npi.review", "npi.trial", "npi.issue", "npi.approve", "asset.apply"],
+            "npi_issue": ["npi.resolve", "asset.publish"],
+            "asset_use": ["asset.verify"],
             "unit": ["test.record", "release.decide", "freeze.request"],
             "demand": ["demand.review", "order.register"],
             "order_line": ["order.change", "order.allocate", "shipment.request"],
@@ -380,6 +384,7 @@ class WorkflowService:
                 "engineering.handoff",
                 "engineering.customer_approval",
                 "work_order.register",
+                "npi.open",
             ],
             "work_order": ["readiness.record", "production.start", "unit.register"],
             "requirement": ["supply.commit", "reservation.request"],
@@ -580,6 +585,15 @@ class WorkflowService:
             for r in rows
         ]
 
+    def reusable_assets(self, actor: Actor, *, limit=50, offset=0):
+        self._pagination(limit, offset)
+        with self.store.transaction() as tx:
+            if not self.resolve_subject(actor.user_id) or not (
+                actor.configuration_admin or project_ids(tx, actor)
+            ):
+                raise DomainError("FORBIDDEN", 403, "Workflow actor authorization required")
+            return introduction.public_catalog(tx, limit, offset)
+
     def objects(
         self,
         actor: Actor,
@@ -753,6 +767,7 @@ class WorkflowService:
                 permissions.roles, permissions.qualifications,
             ):
                 raise DomainError("FORBIDDEN", 403, "Action permission denied")
+            introduction.authorize(actor, command)
             delivery.authorize(tx, actor, project_id, command)
             if command.action == "release.decide":
                 quality.authorize_release(tx, actor, project_id, command)

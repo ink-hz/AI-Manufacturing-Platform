@@ -211,6 +211,10 @@ def outbound_execution_ready(tx, project_id, payload, now):
 
 
 def start_production(tx, context, command: StartProduction):
+    if command.mode == "bulk":
+        from .introduction import guard_bulk_start
+
+        guard_bulk_start(tx, context.project_id, command.work_order_id)
     from .eco import scope_locked
 
     if scope_locked(tx, context.project_id, command.work_order_id):

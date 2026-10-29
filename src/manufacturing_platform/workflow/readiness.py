@@ -241,6 +241,19 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         else "trial does not require first article",
         [UUID(article["id"])] if article else [],
     )
+    if mode == "bulk":
+        from .introduction import bulk_reasons
+
+        for npi in tx.execute(
+            "SELECT n.* FROM npis n JOIN npi_work_orders w ON w.npi_id=n.id AND w.project_id=n.project_id WHERE w.project_id=? AND w.work_order_id=?",
+            (str(project_id), str(work_order_id)),
+        ):
+            reasons = bulk_reasons(tx, project_id, npi)
+            add(
+                "npi", True, not reasons,
+                "; ".join(reasons) if reasons else "NPI approval is current",
+                [UUID(npi["id"])],
+            )
     return ReadinessResult(
         ready=all(c.status != "blocked" for c in checks),
         checks=checks,

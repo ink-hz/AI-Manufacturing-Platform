@@ -235,6 +235,10 @@ class ProjectQuantitySummary(StrictModel):
 
 
 class ObjectKind(str, Enum):
+    npi = "npi"
+    npi_issue = "npi_issue"
+    reusable_asset = "reusable_asset"
+    asset_use = "asset_use"
     demand = "demand"
     order_line = "order_line"
     commitment_change = "commitment_change"
