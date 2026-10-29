@@ -1,3 +1,4 @@
+import { StatusBadge } from "./StatusBadge";
 import {label} from "./labels";
 import { ActionForms } from "./ActionForms";
 import { TraceWorkspace } from "./TraceWorkspace";
@@ -15,6 +16,7 @@ import type {
   WorkflowTarget,
   MutationAcknowledgement,
   ObjectDetail,
+  ObjectKind,
 } from "./types";
 import { WorkflowHome } from "./WorkflowHome";
 import { WorkflowProjects, ProjectForm, Members } from "./WorkflowProjects";
@@ -39,6 +41,9 @@ export function WorkflowApp({
   const [denied, setDenied] = useState(false),
     [projects, setProjects] = useState<ProjectDetail[]>([]),
     [dashboard, setDashboard] = useState<Dashboard | null>(null),
+    [dashboardError, setDashboardError] = useState(""),
+    [projectsError, setProjectsError] = useState(""),
+    [projectsReady, setProjectsReady] = useState(false),
     [project, setProject] = useState<ProjectDetail | null>(null),
     [view, setView] = useState<ConsoleView>("home"),
     [creating, setCreating] = useState(false),
@@ -156,14 +161,17 @@ export function WorkflowApp({
     const current = () => !controller.signal.aborted && alive.current;
     const failed = (e: unknown) => { if (current()) setError(String(e)); };
     setError("");
+    setDashboard(null); setDashboardError(""); setProjectsError(""); setProjectsReady(false);
     // Metadata and dashboard are independent producers, each commits as it arrives.
-    api.dashboard(controller.signal).then(d => { if (current()) setDashboard(d); }).catch(failed);
+    api.dashboard(controller.signal).then(d => { if (current()) setDashboard(d); }).catch(e => { if (current()) setDashboardError(String(e)); });
     api.projects(controller.signal)
       .then((p) => {
         if (current()) {
           // A response older than an acknowledged mutation cannot lower freshness.
           const isCurrent = (value: ProjectDetail) =>
             value.version >= (projectVersions.current.get(value.id) || 0);
+          setProjectsReady(p.items.every(isCurrent));
+          if (!p.items.every(isCurrent)) setProjectsError("项目资料版本已更新，请重新读取。");
           setProjects((old) =>
             p.items.flatMap((value) =>
               isCurrent(value) ? [value] : old.filter((x) => x.id === value.id),
@@ -189,7 +197,7 @@ export function WorkflowApp({
           );
         }
       })
-      .catch(failed);
+      .catch(e => { if (current()) setProjectsError(String(e)); failed(e); });
     return () => controller.abort();
   }, [api, refresh]);
   useEffect(() => {
@@ -300,7 +308,7 @@ export function WorkflowApp({
     ? { api, project, onChanged: changed, onOpen: open, onDirty, readOnly }
     : null;
   const [workView, setWorkView] = useState<ConsoleView>("home");
-  function navigate(next: ConsoleView) {
+  function navigate(next: ConsoleView, home?: {kind?: ObjectKind; projectId?: string}) {
     if (next === "handbook") {
       if (view === "handbook") return;
       cancelOpening();
@@ -323,6 +331,8 @@ export function WorkflowApp({
       return;
     }
     requestLeave(() => {
+      if (home && isBusinessModule(next)) setLedgers(old => ({...old, [next]: {kind: home.kind || initialLedgerContexts()[next].kind, projectId: home.projectId || "", offset: 0}}));
+      if (home && next === "tasks") setTaskContext({projectId: "", offset: 0});
       setView(next);
       setCreating(false);
       setTarget(null);
@@ -404,8 +414,9 @@ export function WorkflowApp({
         )}
         {opening && (opening.error ? <p role="alert">{opening.error}<button onClick={() => open(opening.target)}>重试打开记录</button></p> : <p role="status">正在读取记录所属项目…</p>)}
         <div hidden={view === "handbook"} key={epoch}>
-          {activeView === "home" && !project && dashboard && (
-            <WorkflowHome data={dashboard} onOpen={open} />
+          {activeView === "home" && !project && (
+            <WorkflowHome data={dashboard} projects={projects} projectsReady={projectsReady} dashboardError={dashboardError} projectsError={projectsError} api={api} refresh={refresh} active={view === "home"} onRefresh={() => setRefresh(r => r + 1)} onOpen={open}
+              onNavigate={(module, kind, projectId) => navigate(module, {kind, projectId})} />
           )}{" "}
           {activeView === "tasks" && !project && <GlobalTasks api={api} context={taskContext} onContext={context=>{cancelOpening();setTaskContext(context);}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open}/> }
           {isBusinessModule(activeView) && !project && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>{cancelOpening();setLedgers(old=>({...old,[activeView]:context}));}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");})}/>}
@@ -464,7 +475,7 @@ export function WorkflowApp({
                   {project.summary.shipped} · 已验收 {project.summary.accepted}
                 </p>
                 <p>待发 {project.summary.remaining_to_ship} · 待验收 {project.summary.remaining_to_accept} · 已签收 {project.summary.signed}</p>
-                {!project.progress&&<p>正在核验当前项目业务条件…</p>}{project.progress && <section aria-label="实际业务进展"><h3>实际业务进展</h3>{project.progress.blockers_truncated&&<p>阻断对象展示有界；未展示的工单条件未逐一核验，请进入工单详情检查。</p>}<details><summary>当前 S1—S9 业务进展</summary><table><thead><tr><th>阶段</th><th>实际状态</th><th>依据</th></tr></thead><tbody>{project.progress.stages.map(s=><tr key={s.stage}><td>{s.stage}</td><td>{label(s.status)}</td><td>{s.reason}</td></tr>)}</tbody></table></details>{(["fulfillment","quality","cost"] as const).map(k=><details key={k}><summary>{({fulfillment:"履约",quality:"质量",cost:"成本"})[k]} · {label(project.progress![k].status)} · 历史关闭 {project.progress![k].recorded_count} 次</summary>{project.progress![k].blocking_reasons.map(r=><p key={r}>{r}</p>)}</details>)}</section>}
+                {!project.progress&&<p>正在核验当前项目业务条件…</p>}{project.progress && <section aria-label="实际业务进展"><h3>实际业务进展</h3>{project.progress.blockers_truncated&&<p>阻断对象展示有界；未展示的工单条件未逐一核验，请进入工单详情检查。</p>}<details><summary>当前 S1—S9 业务进展</summary><table><thead><tr><th>阶段</th><th>实际状态</th><th>依据</th></tr></thead><tbody>{project.progress.stages.map(s=><tr key={s.stage}><td>{s.stage}</td><td><StatusBadge state={s.status}/></td><td>{s.reason}</td></tr>)}</tbody></table></details>{(["fulfillment","quality","cost"] as const).map(k=><details key={k}><summary>{({fulfillment:"履约",quality:"质量",cost:"成本"})[k]} · <StatusBadge state={project.progress![k].status} kind="closure" blocking={project.progress![k].blocking_reasons}/> · 历史关闭 {project.progress![k].recorded_count} 次</summary>{project.progress![k].blocking_reasons.map(r=><p key={r}>{r}</p>)}</details>)}</section>}
                 <ActionForms {...props}/>
                 {currentTask&&!target&&<p>当前事项：{currentTask.summary.title} · <button onClick={()=>open({projectId:project.id,kind:currentTask.summary.kind,id:currentTask.summary.id})}>查看事项依据</button></p>}
                 <div className="mf-tabs">

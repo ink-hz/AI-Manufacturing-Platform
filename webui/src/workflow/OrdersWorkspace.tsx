@@ -8,6 +8,7 @@ import type {
 import { OrdersForms } from "./forms/OrdersForms";
 import { EngineeringForms } from "./forms/EngineeringForms";
 import { label, objectTitle } from "./forms/shared";
+import { StatusBadge, needsAttention } from "./StatusBadge";
 const actions: Record<string, string> = {
   "demand.record": "登记需求",
   "demand.review": "评审需求",
@@ -31,7 +32,7 @@ export function ObjectTable({
   onOpen: WorkspaceProps["onOpen"];
 }) {
   return (
-    <table>
+    <div className="wf-table-scroll"><table>
       <thead>
         <tr>
           <th>业务记录</th>
@@ -43,9 +44,9 @@ export function ObjectTable({
       </thead>
       <tbody>
         {items.map((i) => (
-          <tr key={i.id}>
+          <tr key={i.id} className={needsAttention(i)?"wf-attention-row":undefined}>
             <td>
-              <button
+              <button className="wf-text-link"
                 onClick={() =>
                   onOpen({ projectId: i.project_id, kind: i.kind, id: i.id })
                 }
@@ -53,11 +54,11 @@ export function ObjectTable({
                 {objectTitle(i)}
               </button>
             </td>
-            <td>{label(i.state)}</td>
-            <td>
+            <td><StatusBadge state={i.state} kind={i.kind} blocking={i.blocking_reasons}/></td>
+            <td className="wf-quantity">
               {i.quantity !== null ? `${i.quantity} ${i.unit || ""}` : "—"}
             </td>
-            <td>
+            <td className="wf-source">
               {i.source
                 ? `${i.source.system} · ${i.source.external_id} · ${i.source.mode === "manual" ? "人工登记" : i.source.mode}`
                 : "固定业务记录"}
@@ -66,7 +67,7 @@ export function ObjectTable({
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 export function OrdersWorkspace(

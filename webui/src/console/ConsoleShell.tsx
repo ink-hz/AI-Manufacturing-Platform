@@ -369,9 +369,10 @@ export function ConsoleShell({
               <h1>{title}</h1>
             </div>
             <div className="mf-actions">
+              {view === "home" && actualModules.some(([key]) => key === "tasks") && <button className="mf-primary" disabled={busy} onClick={() => onNavigate("tasks")}>处理待办</button>}
               {canCreate && (view === "home" || view === "projects") && (
                 <button
-                  className="mf-primary"
+                  className={view === "home" ? undefined : "mf-primary"}
                   disabled={readOnly || busy}
                   onClick={onCreate}
                 >

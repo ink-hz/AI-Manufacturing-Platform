@@ -18,7 +18,7 @@ export function WorkflowProjects({
   onOpen(p: ProjectDetail): void;
 }) {
   return (
-    <table>
+    <div className="wf-panel wf-table-scroll"><table>
       <thead>
         <tr>
           <th>项目</th>
@@ -47,7 +47,7 @@ export function WorkflowProjects({
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 export function ProjectForm({

@@ -1,16 +1,33 @@
 /* Every rule belongs to the mounted manufacturing console. */
 .mf-root.mf-product.mf-console-root {
-  --mf-line: #e1e7ef;
-  --mf-muted: #66758a;
-  --mf-accent: #2563c5;
-  --mf-soft: #f3f6fa;
-  --mf-surface: #fff;
+  --mf-nav: #111d32;
+  --mf-nav-text: #d2ddeb;
+  --mf-nav-muted: #aabbd0;
+  --mf-nav-active: #29466d;
+  --mf-text: #182638;
+  --mf-line: #dce4ef;
+  --mf-muted: #5d6c80;
+  --mf-accent: #2563eb;
+  --mf-accent-hover: #1d4ed8;
+  --mf-soft: #f3f5f9;
+  --mf-surface: #ffffff;
+  --mf-neutral-fg: #455468;
+  --mf-neutral-bg: #edf1f5;
+  --mf-info-fg: #1e4fa3;
+  --mf-info-bg: #eaf1ff;
+  --mf-success-fg: #14653d;
+  --mf-success-bg: #e9f6ee;
+  --mf-warning-fg: #8a4809;
+  --mf-warning-bg: #fff3dd;
+  --mf-danger-fg: #a62d35;
+  --mf-danger-bg: #fdecee;
   max-width: none;
   width: 100%;
   margin: 0;
   padding: 0;
-  background: #f3f6fa;
-  color: #1b2b42;
+  background: var(--mf-soft);
+  color: var(--mf-text);
+  font-size: 14px;
   font-family: "PingFang SC", "Microsoft YaHei", Inter, system-ui, sans-serif;
 }
 .mf-root .mf-console {
@@ -32,8 +49,9 @@
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-right: 1px solid var(--mf-line);
+  background: var(--mf-nav);
+  color: var(--mf-nav-text);
+  border-right: 1px solid var(--mf-nav);
   z-index: 35;
   padding: 0 14px;
 }
@@ -49,7 +67,7 @@
 .mf-root .mf-console-mark {
   display: grid;
   place-items: center;
-  background: #2059b1;
+  background: var(--mf-accent);
   color: #fff;
   width: 32px;
   height: 32px;
@@ -64,8 +82,8 @@
 }
 .mf-root .mf-console-brand small {
   display: block;
-  font-size: 10px;
-  color: var(--mf-muted);
+  font-size: 12px;
+  color: var(--mf-nav-muted);
   margin-top: 2px;
 }
 .mf-root .mf-console-sidebar > nav {
@@ -74,9 +92,9 @@
 }
 .mf-root .mf-console-group {
   padding: 12px 12px 6px;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
-  color: #8290a3;
+  color: var(--mf-nav-muted);
 }
 .mf-root .mf-console-sidebar button {
   display: flex;
@@ -86,7 +104,7 @@
   min-height: 44px;
   border: 0;
   background: transparent;
-  color: #53637a;
+  color: var(--mf-nav-text);
   text-align: left;
   border-radius: 7px;
   padding: 10px 12px;
@@ -95,25 +113,26 @@
   font-size: 13px;
 }
 .mf-root .mf-console-sidebar button:hover:enabled {
-  background: #f2f6fb;
-  color: #2059b1;
+  background: #233650;
+  color: #fff;
 }
 .mf-root .mf-console-sidebar button[aria-current="page"] {
-  background: #eaf1fd;
-  color: #2059b1;
+  background: var(--mf-nav-active);
+  color: #fff;
+  box-shadow: inset 3px 0 #9bc3ff;
   font-weight: 650;
 }
 .mf-root .mf-console-count {
   margin-left: auto;
-  background: #e2ebf9;
+  background: var(--mf-nav-active);
   border-radius: 5px;
   min-width: 22px;
   padding: 0 5px;
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
 }
 .mf-root .mf-console-sidebar-bottom {
-  border-top: 1px solid var(--mf-line);
+  border-top: 1px solid #314158;
   padding: 12px 0;
 }
 .mf-root .mf-console-workspace {
@@ -128,7 +147,7 @@
   position: sticky;
   top: 0;
   z-index: 30;
-  background: #fff;
+  background: var(--mf-surface);
   border-bottom: 1px solid var(--mf-line);
 }
 .mf-root .mf-console-breadcrumb {
@@ -137,7 +156,7 @@
   gap: 12px;
   min-width: 0;
   font-size: 12px;
-  color: #8190a3;
+  color: var(--mf-muted);
 }
 .mf-root .mf-console-breadcrumb strong {
   color: #354760;
@@ -187,8 +206,8 @@
   font-weight: 600;
 }
 .mf-root .mf-console-user-label small {
-  color: #8190a3;
-  font-size: 10px;
+  color: var(--mf-muted);
+  font-size: 12px;
 }
 .mf-root .mf-console-menu {
   position: absolute;
@@ -198,7 +217,7 @@
   padding: 6px;
   border: 1px solid var(--mf-line);
   border-radius: 9px;
-  background: #fff;
+  background: var(--mf-surface);
   box-shadow: 0 10px 28px #182e4a1a;
 }
 .mf-root .mf-console-menu button {
@@ -224,28 +243,28 @@
 }
 .mf-root .mf-console-page-heading p {
   margin: 0 0 5px;
-  font-size: 11px;
-  color: #7e8ca0;
+  font-size: 12px;
+  color: var(--mf-muted);
   letter-spacing: 0.06em;
 }
 .mf-root .mf-console-page-heading h1 {
   margin: 0;
-  font-size: 23px;
+  font-size: 24px;
   line-height: 1.4;
   font-weight: 650;
   letter-spacing: -0.02em;
 }
 .mf-root .mf-console .mf-primary {
-  background: #2563c5;
+  background: var(--mf-accent);
   color: #fff;
-  border: 1px solid #2563c5;
+  border: 1px solid var(--mf-accent);
   padding: 9px 17px;
   border-radius: 7px;
   font-size: 13px;
   white-space: nowrap;
 }
 .mf-root .mf-console .mf-primary:hover:enabled {
-  background: #1b51a5;
+  background: var(--mf-accent-hover);
   color: #fff;
 }
 .mf-root .mf-console .mf-console-drawer-toggle,
@@ -272,7 +291,7 @@
   left: 16px;
   z-index: 100;
   padding: 10px 16px;
-  background: #fff;
+  background: var(--mf-surface);
   color: #2059b1;
   border-radius: 6px;
 }
@@ -387,4 +406,18 @@
 }
 .mf-root .mf-console-content :is(h1, h2, h3, h4, h5, h6) {
   scroll-margin-top: 84px;
+}
+
+.mf-root .mf-console-sidebar button:focus-visible {
+  outline-color: #9bc3ff;
+}
+.mf-root .mf-console-page-heading .mf-actions {
+  justify-content: flex-end;
+}
+@media (max-width: 460px) {
+  .mf-root .mf-console-page-heading { align-items: flex-start; flex-direction: column; }
+  .mf-root .mf-console-page-heading .mf-actions { justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-root *, .mf-root *::before, .mf-root *::after { scroll-behavior: auto; animation: none; transition: none; }
 }
