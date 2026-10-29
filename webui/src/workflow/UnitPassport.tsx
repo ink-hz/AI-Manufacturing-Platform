@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ObjectDetail, WorkflowTarget } from "./types";
 import type { WorkflowApi } from "./api";
-import { label } from "./labels";
+import { label, objectStateLabel } from "./labels";
 export function UnitPassport({
   api,
   data,
@@ -144,7 +144,7 @@ export function UnitPassport({
               >
                 {r.summary.title}
               </button>{" "}
-              · {label(r.summary.state)}
+              · {objectStateLabel(r.summary.state, r.summary.kind)}
             </p>
           ))}
           {loading && <p role="status">正在核对单台关联记录…</p>}
@@ -157,6 +157,7 @@ export function UnitPassport({
             </p>
           )}
           {!loading &&
+            !error &&
             (coverage.test_run < totals.test_run ||
               coverage.calibration < totals.calibration) && (
               <button onClick={() => setPage((n) => n + 1)}>

@@ -1,4 +1,4 @@
-import type { ObjectSummary } from "./types";
+import type { ObjectKind, ObjectSummary } from "./types";
 export const labels: Record<string, string> = {
   pass: "通过", fail: "不通过", completed: "已完成", manual: "人工登记",
   npi:"工程导入",npi_issue:"导入问题",reusable_asset:"可复用资产",asset_use:"资产采用",test_plan:"测试计划",test_run:"测试运行",calibration:"标定读回",component_link:"部件履历",arrival:"到件观察",authority_rule:"系统责任映射",
@@ -113,6 +113,8 @@ export const labels: Record<string, string> = {
   return: "退回",
 };
 export const label = (v: string) => labels[v] || v;
+export const objectStateLabel = (state: string, kind?: ObjectKind) =>
+  kind === "test_run" && state === "running" ? "运行登记中" : label(state);
 export const objectTitle = (v: ObjectSummary) =>
   v.kind === "revision"
     ? v.title.replace(/^[0-9a-f]{8}-[0-9a-f-]{27} /i, "工程修订 ")

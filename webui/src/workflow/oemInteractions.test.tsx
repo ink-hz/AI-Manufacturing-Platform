@@ -6,6 +6,7 @@ import { ArrivalForms } from "./forms/ArrivalForms";
 import { IntroductionWorkspace } from "./IntroductionWorkspace";
 import { LaboratoryWorkspace } from "./LaboratoryWorkspace";
 import { UnitPassport } from "./UnitPassport";
+import { AssistancePanel } from "./AssistancePanel";
 import { workflowView, project, bootstrap, flush } from "./testHelpers";
 import type { ObjectSummary, WorkspaceProps, ObjectDetail } from "./types";
 let host: HTMLDivElement, root: Root;
@@ -401,4 +402,180 @@ it("switches between arrival and existing receiving forms with one active draft"
   } finally {
     await v.dispose();
   }
+});
+
+const passportUnit = {
+  summary: summary("unit", "unit-one"),
+  value: { kind: "unit", sn: "S1", aliases: [], components: [] },
+  relations: [],
+  evidence: [],
+  history: [],
+} as unknown as ObjectDetail;
+const passportButton = (text: string) =>
+  [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === text,
+  );
+
+it.each(["request", "detail"])(
+  "retries the failed passport calibration %s without skipping its first page",
+  async (failure) => {
+    const client = api();
+    let fail = true;
+    client.objects.mockImplementation(
+      async (_p: string, kind: string, _limit: number, offset: number) => {
+        if (fail && kind === "calibration" && failure === "request")
+          throw new Error("calibration request failed");
+        return {
+          items:
+            kind === "test_run"
+              ? Array.from({ length: Math.min(25, 51 - offset) }, (_, i) =>
+                  summary(kind, `run-${offset + i}`),
+                )
+              : offset === 0
+                ? [summary(kind, "calibration-mine")]
+                : [],
+          total: kind === "test_run" ? 51 : 1,
+        };
+      },
+    );
+    client.object.mockImplementation(
+      async (_p: string, kind: string, id: string) => {
+        if (fail && kind === "calibration" && failure === "detail")
+          throw new Error("calibration detail failed");
+        return {
+          summary: summary(kind, id),
+          value: { kind, unit_id: "unit-one" },
+        };
+      },
+    );
+    await act(async () =>
+      root.render(
+        <UnitPassport api={client} data={passportUnit} onOpen={() => {}} />,
+      ),
+    );
+    expect(host.querySelector('[role="alert"]')).toBeTruthy();
+    expect(host.textContent).toContain("运行 25/51");
+    expect(passportButton("继续核对实验室履历")).toBeUndefined();
+    fail = false;
+    await act(async () => passportButton("重试读取履历")!.click());
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent).toContain("calibration-mine");
+    expect(host.textContent).toContain("标定 1/1");
+    expect(
+      client.objects.mock.calls.every((call: unknown[]) => call[3] === 0),
+    ).toBe(true);
+    expect(passportButton("继续核对实验室履历")).toBeTruthy();
+  },
+);
+
+it("does not count or skip unread passport details after a later page fails", async () => {
+  const client = api();
+  let fail = true;
+  client.objects.mockImplementation(
+    async (_p: string, kind: string, _limit: number, offset: number) => ({
+      items: Array.from({ length: Math.min(25, 51 - offset) }, (_, i) =>
+        summary(kind, `${kind}-${offset + i}`),
+      ),
+      total: 51,
+    }),
+  );
+  client.object.mockImplementation(
+    async (_p: string, kind: string, id: string) => {
+      if (fail && id === "calibration-26") throw new Error("unread detail");
+      return {
+        summary: summary(kind, id),
+        value: { kind, unit_id: "unit-one" },
+      };
+    },
+  );
+  await act(async () =>
+    root.render(
+      <UnitPassport api={client} data={passportUnit} onOpen={() => {}} />,
+    ),
+  );
+  await act(async () => passportButton("继续核对实验室履历")!.click());
+  expect(host.querySelector('[role="alert"]')).toBeTruthy();
+  expect(host.textContent).toContain("运行 50/51");
+  expect(host.textContent).toContain("标定 25/51");
+  expect(host.textContent).not.toContain("calibration-25");
+  expect(passportButton("继续核对实验室履历")).toBeUndefined();
+  fail = false;
+  await act(async () => passportButton("重试读取履历")!.click());
+  expect(host.textContent).toContain("标定 50/51");
+  expect(host.textContent).toContain("calibration-25");
+  await act(async () => passportButton("继续核对实验室履历")!.click());
+  expect(host.textContent).toContain("运行 51/51");
+  expect(host.textContent).toContain("标定 51/51");
+  expect(passportButton("继续核对实验室履历")).toBeUndefined();
+});
+
+it("labels a running passport test run as manual registration", async () => {
+  const client = api();
+  client.objects.mockImplementation(async (_p: string, kind: string) => ({
+    items: kind === "test_run" ? [summary(kind, "run")] : [],
+    total: kind === "test_run" ? 1 : 0,
+  }));
+  client.object.mockResolvedValue({
+    summary: { ...summary("test_run", "run"), state: "running" },
+    value: { kind: "test_run", unit_id: "unit-one" },
+  });
+  await act(async () =>
+    root.render(
+      <UnitPassport api={client} data={passportUnit} onOpen={() => {}} />,
+    ),
+  );
+  expect(host.textContent).toContain("运行登记中");
+  expect(host.textContent).not.toContain("MES 已确认运行");
+});
+
+it("labels assistance run summaries and lifecycle as registration while preserving production MES states", async () => {
+  const client = api();
+  const item = (kind: string) => ({
+    target: { scope: "project", project_id: project.id, kind, id: kind },
+    title: kind,
+    state: "running",
+    suggestion: "Review registered evidence",
+    blockers: [],
+    unknowns: [],
+    evidence: [],
+    related_targets: [],
+    testing:
+      kind === "test_run"
+        ? {
+            run_state: "running",
+            outcome: null,
+            current_qualified: null,
+            program_version: "P1",
+            measurements: [],
+            failed_measurements: [],
+            similar_targets: [],
+          }
+        : null,
+  });
+  client.assistance.mockResolvedValue({
+    ...noEvidence,
+    state: "evidence_available",
+    items: [item("test_run"), item("unit")],
+  });
+  await act(async () =>
+    root.render(
+      <AssistancePanel
+        api={client}
+        projectId={project.id}
+        version={1}
+        onOpen={() => {}}
+        initialKind="testing"
+      />,
+    ),
+  );
+  const sections = host.querySelectorAll("details");
+  expect(sections).toHaveLength(2);
+  expect(sections[0].querySelector("summary")!.textContent).toContain(
+    "运行登记中",
+  );
+  expect(sections[0].textContent).toContain("运行生命周期 运行登记中");
+  expect(sections[0].textContent).not.toContain("MES 已确认运行");
+  expect(sections[1].querySelector("summary")!.textContent).toContain(
+    "MES 已确认运行",
+  );
 });

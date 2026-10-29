@@ -10,7 +10,7 @@ import type { WorkflowApi } from "./api";
 import { Source } from "./WorkflowDetail";
 import { AssetContentView } from "./details/IntroductionDetails";
 import { ParameterTable } from "./details/LaboratoryDetails";
-import { label } from "./labels";
+import { label, objectStateLabel } from "./labels";
 export const assistanceModes: Record<AssistanceKind, string> = {
   introduction: "导入证据",
   materials: "物料与收货",
@@ -118,7 +118,7 @@ export function AssistancePanel({
               open={data.items.length === 1}
             >
               <summary>
-                {item.title} · {label(item.state)}
+                {item.title} · {objectStateLabel(item.state, item.target.kind)}
               </summary>
               <p>{item.suggestion}</p>
               {link(
@@ -163,7 +163,7 @@ export function AssistancePanel({
                   <p>
                     运行生命周期{" "}
                     {item.testing.run_state
-                      ? label(item.testing.run_state)
+                      ? objectStateLabel(item.testing.run_state, "test_run")
                       : "不适用"}{" "}
                     · 历史判定{" "}
                     {item.testing.outcome

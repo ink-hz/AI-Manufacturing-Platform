@@ -1,5 +1,5 @@
 import type { ObjectKind, ObjectSummary } from './types';
-import { label } from './labels';
+import { objectStateLabel } from './labels';
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 /** Object states only: accepted/running never imply completion of the project. */
 export function statusTone(state: string, kind?: ObjectKind, blocking: readonly string[] = []): StatusTone {
@@ -22,6 +22,6 @@ export function StatusBadge({state, kind, blocking = []}: {state: string; kind?:
   const tone = statusTone(state, kind, blocking);
   return <span className={`wf-status wf-status-${tone}`}>
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={paths[tone]}/></svg>
-    {kind === "test_run" && state === "running" ? "运行登记中" : label(state)}
+    {objectStateLabel(state, kind)}
   </span>;
 }
