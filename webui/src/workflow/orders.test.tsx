@@ -238,7 +238,7 @@ it("guards account return once and clears dirty before invoking host", async () 
   await click("放弃并离开");
   expect(onNavigatePlatform).toHaveBeenCalledTimes(1);
 });
-it("admin switches to legacy only deliberately and guards a dirty workflow draft", async () => {
+it("admin has no retired product switch and retains the dirty workflow navigation guard", async () => {
   await mount({
     bootstrap: { ...bootstrap, legacy_access: true, configuration_admin: true },
   });
@@ -248,10 +248,12 @@ it("admin switches to legacy only deliberately and guards a dirty workflow draft
   await click("订单与需求");
   await click("登记需求");
   await field("需求数量", "12");
-  await click("打开旧项目协同");
+  expect(host.textContent).not.toContain("打开旧项目协同");
+  await click("订单与交付");
   expect(requests.every((r) => r.url.includes("/workflow/"))).toBe(true);
   await click("放弃并离开");
-  expect(requests.some((r) => r.url.endsWith("/catalog"))).toBe(true);
+  expect(requests.every((r) => r.url.includes("/workflow/"))).toBe(true);
+  expect(host.querySelector('[aria-label="所属项目筛选"]')).not.toBeNull();
   expect(host.querySelectorAll(".mf-console")).toHaveLength(1);
 });
 it("creates a project with explicit contract fields and exact decimal string DTO", async () => {

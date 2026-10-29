@@ -1,6 +1,7 @@
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { mount } from "./index";
+import { bootstrap } from "./workflow/testHelpers";
 it("exposes an independent mount handle and cleans up twice safely", async () => {
   const element = document.createElement("div");
   document.body.append(element);
@@ -13,6 +14,7 @@ it("exposes an independent mount handle and cleans up twice safely", async () =>
   let handle: ReturnType<typeof mount>;
   await act(async () => {
     handle = mount(element, {
+      bootstrap: {...bootstrap,configuration_admin:true},
       apiBase: "/api/v1/manufacturing",
       csrfToken: "",
       readOnly: true,
@@ -54,6 +56,7 @@ it.each([401, 403])(
     let old!: ReturnType<typeof mount>;
     await act(async () => {
       old = mount(element, {
+        bootstrap: {...bootstrap,configuration_admin:true},
         apiBase: "/api/v1/manufacturing",
         csrfToken: "",
         readOnly: true,
@@ -66,30 +69,13 @@ it.each([401, 403])(
     vi.mocked(fetch).mockImplementation(
       async (url) =>
         new Response(
-          JSON.stringify(
-            String(url).endsWith("/dashboard")
-              ? {
-                  counts: {
-                    active_projects: 0,
-                    blocked_projects: 0,
-                    due_soon: 0,
-                    open_tasks: 0,
-                    pending_confirmations: 0,
-                  },
-                  projects: [],
-                  attention: [],
-                  blockers: [],
-                  activity: [],
-                }
-              : String(url).endsWith("/catalog")
-                ? { groups: [], lines: [], stages: [], can_edit: false }
-                : { items: [] },
-          ),
+          JSON.stringify(String(url).endsWith('/dashboard') ? {counts:{},cards:[],project_ids:[],project_count:0} : {items:[]}),
         ),
     );
     let current!: ReturnType<typeof mount>;
     await act(async () => {
       current = mount(element, {
+        bootstrap: {...bootstrap,configuration_admin:true},
         apiBase: "/api/v1/manufacturing",
         csrfToken: "",
         readOnly: true,
@@ -118,25 +104,14 @@ it("updates account metadata in place while retaining a dirty project draft and 
     vi.fn(
       async (url) =>
         new Response(
-          JSON.stringify(
-            String(url).endsWith("/catalog")
-              ? { groups: [], lines: [], stages: [], can_edit: true }
-              : String(url).endsWith("/dashboard")
-                ? {
-                    counts: {},
-                    projects: [],
-                    attention: [],
-                    blockers: [],
-                    activity: [],
-                  }
-                : { items: [] },
-          ),
+          JSON.stringify(String(url).endsWith('/dashboard') ? {counts:{},cards:[],project_ids:[],project_count:0} : {items:[]}),
         ),
     ),
   );
   let handle!: ReturnType<typeof mount>;
   await act(async () => {
     handle = mount(element, {
+      bootstrap: {...bootstrap,configuration_admin:true},
       apiBase: "/api",
       csrfToken: "csrf",
       readOnly: false,

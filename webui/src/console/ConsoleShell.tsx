@@ -8,7 +8,6 @@ export type ConsoleView =
   | "projects"
   | "tasks"
   | "handbook"
-  | "legacy"
   | "collaboration";
 const modules = [
   ["home", "工作台"],
@@ -63,11 +62,9 @@ export function ConsoleShell({
   onLogout,
   children,
   navigation,
-  modeAction,
   canCreate = true,
 }: {
-  navigation?: readonly (readonly [Exclude<ConsoleView, "legacy">, string])[];
-  modeAction?: { label: string; run(): void };
+  navigation?: readonly (readonly [ConsoleView, string])[];
   canCreate?: boolean;
   view: ConsoleView;
   projectName?: string;
@@ -94,7 +91,7 @@ export function ConsoleShell({
   const displayName = user?.displayName.trim() || "企业账号";
   const actualModules = navigation || modules;
   const title =
-    actualModules.find(([key]) => key === view)?.[1] || "流程现状参考";
+    actualModules.find(([key]) => key === view)?.[1] || "制造工作区";
   function closeMenu(restore = true) {
     setMenu(false);
     if (restore) trigger.current?.focus();
@@ -372,12 +369,7 @@ export function ConsoleShell({
               <h1>{title}</h1>
             </div>
             <div className="mf-actions">
-              {modeAction && (
-                <button disabled={busy} onClick={modeAction.run}>
-                  {modeAction.label}
-                </button>
-              )}
-              {canCreate && (
+              {canCreate && (view === "home" || view === "projects") && (
                 <button
                   className="mf-primary"
                   disabled={readOnly || busy}

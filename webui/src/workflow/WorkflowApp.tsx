@@ -24,15 +24,18 @@ import { SupplyWorkspace } from "./SupplyWorkspace";
 import { ExecutionWorkspace } from "./ExecutionWorkspace";
 import { WorkflowDetail } from "./WorkflowDetail";
 import { OrdersForms } from "./forms/OrdersForms";
+import { GlobalLedger } from "./GlobalLedger";
+import { GlobalTasks } from "./GlobalTasks";
+import { initialLedgerContexts, isBusinessModule, type TaskContext } from "./navigationContext";
 import "./workflow.css";
 export function WorkflowApp({
   options,
-  onLegacy,
 }: {
   options: MountOptions;
-  onLegacy?: () => void;
 }) {
   const b = options.bootstrap!;
+  const [ledgers, setLedgers] = useState(initialLedgerContexts);
+  const [taskContext, setTaskContext] = useState<TaskContext>({projectId:"",offset:0});
   const [denied, setDenied] = useState(false),
     [projects, setProjects] = useState<ProjectDetail[]>([]),
     [dashboard, setDashboard] = useState<Dashboard | null>(null),
@@ -215,8 +218,8 @@ export function WorkflowApp({
       if (p) {
         setProject(old => old?.id === p.id && old.version >= p.version ? old : p);
         setCreating(false);
-        setView("projects");
         setTarget(t);
+        setCurrentTask(null);
         setDetail(null);
         setResolve(false);
       }
@@ -237,6 +240,7 @@ export function WorkflowApp({
     setProjects((old) => old.map(advance));
     setRefresh((r) => r + 1);
     setDirtyKeys({});
+    setCurrentTask(null);
     setEpoch((e) => e + 1);
     if (result.exchange_id) {
       // An intent can reserve an ID before its business object exists.
@@ -283,12 +287,13 @@ export function WorkflowApp({
           top: element.scrollTop,
           left: element.scrollLeft,
         }));
+      let ancestor: HTMLElement | null = frame.current;
+      while (ancestor) {
+        if (ancestor.scrollTop || ancestor.scrollLeft) scroll.current.push({element:ancestor,top:ancestor.scrollTop,left:ancestor.scrollLeft});
+        ancestor = ancestor.parentElement;
+      }
       setWorkView(view);
       setView(next);
-      return;
-    }
-    if (view === "handbook" && next === workView) {
-      back();
       return;
     }
     requestLeave(() => {
@@ -297,7 +302,8 @@ export function WorkflowApp({
       setTarget(null);
       setCurrentTask(null);
       setResolve(false);
-      if (next === "home" || next === "projects" || next === "tasks") setProject(null);
+      setProject(null);
+      setDetail(null);
       const nextWorkspace = ({orders:"orders", supply:"supply", execution:"execution", quality:"quality", collaboration:"exchange"} as Record<string,string>)[next];
       if (nextWorkspace) setWorkspace(nextWorkspace as typeof workspace);
     });
@@ -311,6 +317,7 @@ export function WorkflowApp({
       }),
     );
   }
+  const activeView = view === "handbook" ? workView : view;
   if (denied || !b.allowed || !b.workflow_access)
     return <p role="alert">无权访问制造工作区，请重新登录或联系管理员。</p>;
   return (
@@ -348,11 +355,6 @@ export function WorkflowApp({
             setView("projects");
           })
         }
-        modeAction={
-          onLegacy && b.legacy_access
-            ? { label: "打开旧项目协同", run: () => requestLeave(onLegacy) }
-            : undefined
-        }
         onNavigatePlatform={
           options.onNavigatePlatform ? () => account("navigate") : undefined
         }
@@ -375,11 +377,12 @@ export function WorkflowApp({
           </p>
         )}
         <div hidden={view === "handbook"} key={epoch}>
-          {(view === "handbook" ? workView : view) === "home" && dashboard && (
+          {activeView === "home" && !project && dashboard && (
             <WorkflowHome data={dashboard} onOpen={open} />
           )}{" "}
-          {(view === "handbook" ? workView : view) === "tasks" && <section><h2>我的待处理事项</h2>{project ? <><button onClick={()=>requestLeave(()=>setProject(null))}>返回项目列表</button><h3>{project.name}</h3><p>按当前职责与实际责任人列出的待办，点击查看原始对象。</p>{project.tasks_truncated && <p>仅显示前 50 个阻断对象，请进入业务工作区继续查看。</p>}<ul>{project.tasks?.map((task,i)=><li key={task.target.kind+task.target.id+i}><button onClick={()=>open({projectId:project.id,kind:task.target.kind,id:task.target.id})}>{task.target.title}</button> · {task.owner_id?"责任人 "+task.owner_name:"当前职责可处理"} · {task.title}<p>{task.target.blocking_reasons.join("；")}</p></li>)}</ul>{!project.progress?<p>正在读取当前责任事项…</p>:!project.tasks?.length&&<p>当前读取范围内没有分配给你的待处理事项。</p>}</> : <WorkflowProjects items={projects} onOpen={p=>setProject(p)}/>}</section>}
-          {!["home", "handbook", "tasks"].includes(view === "handbook" ? workView : view) &&
+          {activeView === "tasks" && !project && <GlobalTasks api={api} context={taskContext} onContext={setTaskContext} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open}/> }
+          {isBusinessModule(activeView) && !project && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>setLedgers(old=>({...old,[activeView]:context}))} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");})}/>}
+          {(activeView === "projects" || project) &&
             (creating ? (
               <ProjectForm
                 readOnly={readOnly}
@@ -403,10 +406,12 @@ export function WorkflowApp({
                     requestLeave(() => {
                       setProject(null);
                       setTarget(null);
+                      setCurrentTask(null);
+                      setDetail(null);
                     })
                   }
                 >
-                  返回项目列表
+                  {activeView === "projects" ? "返回项目列表" : activeView === "home" ? "返回工作台" : "返回台账"}
                 </button>
                 <button
                   onClick={() =>
@@ -476,14 +481,17 @@ export function WorkflowApp({
                       onClick={() =>
                         requestLeave(() => {
                           setTarget(null);
+                          setDetail(null);
+                          setCurrentTask(null);
                           setResolve(false);
+                          if (activeView !== "projects") setProject(null);
                         })
                       }
                     >
                       返回业务列表
                     </button>
                     <WorkflowDetail
-                      key={target.id}
+                      key={target.projectId+target.kind+target.id}
                       api={api}
                       target={target}
                       onOpen={open}

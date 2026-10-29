@@ -100,3 +100,8 @@
 .wf-comparison p {
   line-height: 1.6;
 }
+
+.wf-global-ledger .wf-ledger-toolbar { margin-block: 1rem; align-items: end; }
+.wf-table-scroll { overflow-x: auto; }
+.wf-table-scroll table { min-width: 760px; }
+.wf-pagination { margin-block: 1rem; align-items: center; }
