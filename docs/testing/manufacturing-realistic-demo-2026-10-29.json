@@ -1,0 +1,199 @@
+{
+  "completed_at_utc": "2026-10-29T01:40:26Z",
+  "online_url": "https://agent.orbbec.com.cn/manufacturing",
+  "importer_commit": "095f60c",
+  "runtime_manufacturing_commit": "c4773a0dd54000e0b9ce159f4b9b573085ef2db9",
+  "runtime_platform_commit": "74c7e6b4307946e77147039e42e3b6c38019bc12",
+  "runtime_image": "sha256:56948ff4636881265af21718fcc2dffc4bd355c1d923e2d316acd79a2b75d98a",
+  "dataset": {
+    "id": "manufacturing-full-flow-demo-20261028-v1",
+    "mode": "demo",
+    "label": "全流程模拟环境"
+  },
+  "run_id": "20261029T014016508361Z",
+  "seconds": 9.586,
+  "steps": 288,
+  "projects": [
+    {
+      "name": "【模拟】星澜工业相机 SC-240小批交付项目",
+      "line_id": "自研相机",
+      "initial_stage": "镜头组件缺料待补齐",
+      "summary": {
+        "original_order_quantity": "12",
+        "current_order_quantity": "12",
+        "allocated": "12",
+        "produced_good": "0",
+        "shipped": "0",
+        "signed": "0",
+        "accepted": "0",
+        "remaining_to_ship": "12",
+        "remaining_to_accept": "12"
+      }
+    },
+    {
+      "name": "【模拟】云岑数采相机 DC-810小批交付项目",
+      "line_id": "数采相机",
+      "initial_stage": "试产测试异常待返工",
+      "summary": {
+        "original_order_quantity": "8",
+        "current_order_quantity": "8",
+        "allocated": "8",
+        "produced_good": "0",
+        "shipped": "0",
+        "signed": "0",
+        "accepted": "0",
+        "remaining_to_ship": "8",
+        "remaining_to_accept": "8"
+      }
+    },
+    {
+      "name": "【模拟】栖木桌面打印机 P-220小批交付项目",
+      "line_id": "3D 打印机",
+      "initial_stage": "首件测试完成待检验",
+      "summary": {
+        "original_order_quantity": "5",
+        "current_order_quantity": "5",
+        "allocated": "5",
+        "produced_good": "1",
+        "shipped": "0",
+        "signed": "0",
+        "accepted": "0",
+        "remaining_to_ship": "5",
+        "remaining_to_accept": "5"
+      }
+    },
+    {
+      "name": "【模拟】凌舟协作机器人 OEM-R6小批交付项目",
+      "line_id": "OEM 代工代料",
+      "initial_stage": "客供料与客户图纸协同",
+      "summary": {
+        "original_order_quantity": "10",
+        "current_order_quantity": "10",
+        "allocated": "10",
+        "produced_good": "0",
+        "shipped": "0",
+        "signed": "0",
+        "accepted": "0",
+        "remaining_to_ship": "10",
+        "remaining_to_accept": "10"
+      }
+    },
+    {
+      "name": "【模拟】星澜工业相机 SC-120小批交付项目",
+      "line_id": "自研相机",
+      "initial_stage": "首批已交付余量待出货",
+      "summary": {
+        "original_order_quantity": "6",
+        "current_order_quantity": "6",
+        "allocated": "6",
+        "produced_good": "6",
+        "shipped": "3",
+        "signed": "3",
+        "accepted": "3",
+        "remaining_to_ship": "3",
+        "remaining_to_accept": "3"
+      }
+    },
+    {
+      "name": "【模拟】云岑数采相机 DC-420小批交付项目",
+      "line_id": "数采相机",
+      "initial_stage": "全部验收售后改进中",
+      "summary": {
+        "original_order_quantity": "4",
+        "current_order_quantity": "4",
+        "allocated": "4",
+        "produced_good": "4",
+        "shipped": "4",
+        "signed": "4",
+        "accepted": "4",
+        "remaining_to_ship": "0",
+        "remaining_to_accept": "0"
+      }
+    }
+  ],
+  "counts": {
+    "demand": 6,
+    "order_line": 6,
+    "commitment_change": 0,
+    "revision": 6,
+    "work_order": 6,
+    "test": 12,
+    "nonconformance": 1,
+    "rework": 1,
+    "release": 4,
+    "plan": 6,
+    "requirement": 16,
+    "commitment": 16,
+    "material_lot": 8,
+    "receipt": 12,
+    "shipment": 2,
+    "closure": 0,
+    "eco": 0,
+    "exchange": 44,
+    "reservation": 12,
+    "unit": 45,
+    "interruption": 0,
+    "rma": 1,
+    "capa": 1
+  },
+  "verification": {
+    "focused_passed": 30,
+    "focused_failed": 0,
+    "new_importer_cases": 14,
+    "baseline_cases": 16,
+    "live_typed_object_details": 205,
+    "live_serial_traces": 45,
+    "real_owner_project_visibility": true,
+    "unrelated_admin_denied": true,
+    "real_owner_quality_qualifications_added": false,
+    "original_rows_preserved": true,
+    "completed_rerun_unchanged": true,
+    "legacy_projects_preserved": 7,
+    "current_rehearsal_and_preimport_backup_integrity_checks": 12,
+    "postimport_snapshot_integrity_checks": 3,
+    "infrastructure": {
+      "infrastructure_unchanged": true,
+      "other_containers": 29,
+      "mounts": 15,
+      "compose_inputs": 43,
+      "health": "healthy",
+      "restart": 0,
+      "legacy_rows_unchanged": true,
+      "integrity_checks": 12,
+      "http_probes": [
+        {
+          "path": "/manufacturing",
+          "status": 200,
+          "cache_control": "no-store"
+        },
+        {
+          "path": "/api/v1/manufacturing/workflow/access",
+          "status": 401,
+          "cache_control": "private, no-store"
+        },
+        {
+          "path": "/api/v1/manufacturing/workflow/projects",
+          "status": 401,
+          "cache_control": "private, no-store"
+        }
+      ]
+    },
+    "broader_suite": {
+      "status": "interrupted_incomplete",
+      "passed": 392,
+      "failed": 19,
+      "skipped": 35,
+      "remaining_not_executed": "not counted in quiet interrupted run",
+      "failure_causes": {
+        "removed_historical_external_host_worktree": 18,
+        "unchanged_contract_agree_registry_expectation": 1
+      }
+    },
+    "browser_acceptance": "not executed; user-owned per repository instructions",
+    "real_factory_or_ERP_acceptance": "not executed; all fictional simulation"
+  },
+  "server_evidence_archive": {
+    "sha256": "a51508ded350695a04c0eb5139d772f716b8a6face1ca64710057564345b811a",
+    "bytes": 969294
+  }
+}
