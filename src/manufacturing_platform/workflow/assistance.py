@@ -114,6 +114,8 @@ def project_target(pid, kind, ident):
 
 
 def object_item(tx, pid, summary):
+    if summary.kind == ObjectKind.arrival:
+        return arrival_item(tx, pid, summary)
     detail = OBJECT_REGISTRY.detail(tx, pid, summary.kind, summary.id)
     value = detail.value
     item = AssistanceItem(
@@ -157,11 +159,6 @@ def object_item(tx, pid, summary):
             (["Inspection remains pending"] if value.uninspected else [])
             + (["Rejected quantity is not qualified stock"] if value.rejected else [])
         )
-    elif summary.kind == ObjectKind.arrival and not value.receipt_id:
-        item.suggestion = "Check package identity against an actual same-project receipt"
-        item.unknowns = [
-            "Material, sender and purchase identity remain unverified until checked against receipt evidence"
-        ]
     elif summary.kind == ObjectKind.eco:
         item.suggestion = "Review explicit affected objects and unresolved change dispositions"
         item.related_targets.extend(
@@ -223,6 +220,34 @@ def object_item(tx, pid, summary):
             )
             if value.source:
                 item.evidence.append(value.source.evidence)
+    return item
+
+
+def arrival_item(tx, pid, summary):
+    from .arrival import assistance_projection, relations
+
+    value, truncated = assistance_projection(tx, pid, summary.id, limit=LIMIT)
+    item = AssistanceItem(
+        target=project_target(pid, summary.kind, summary.id),
+        title=summary.title,
+        state=value.state,
+        suggestion="Review the referenced record and its current evidence",
+        blockers=summary.blocking_reasons,
+        unknowns=[],
+        evidence=[value.source.evidence],
+        source=value.source,
+        related_targets=[project_target(pid, r.kind, r.id) for r in relations(value, pid)],
+        evidence_truncated=truncated,
+    )
+    if not value.receipt_id:
+        item.suggestion = "Check package identity against an actual same-project receipt"
+        item.unknowns.append(
+            "Material, sender and purchase identity remain unverified until checked against receipt evidence"
+        )
+    if truncated:
+        item.unknowns.append(
+            f"Only the most recent {LIMIT} arrival match references are shown; older correction evidence is unknown in this analysis"
+        )
     return item
 
 
@@ -338,7 +363,7 @@ def analyze(tx, pid, kind):
         unknowns.append("No applicable authorized evidence is recorded for this analysis")
     if truncated:
         unknowns.append(
-            "Only the first 100 records per source category were examined; further evidence is unknown"
+            "Evidence was truncated: at most the first 100 records per source category and each item's disclosed evidence limit were examined; further evidence is unknown"
         )
     return AssistanceResult(
         project_id=pid,

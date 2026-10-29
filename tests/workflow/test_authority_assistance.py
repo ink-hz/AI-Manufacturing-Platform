@@ -209,6 +209,77 @@ def all_facts(w):
         return {table: [tuple(r) for r in tx.execute(f'SELECT * FROM "{table}" ORDER BY rowid')] for table in tables}
 
 
+def test_material_assistance_bounds_arrival_history_without_losing_current_match(workflow, monkeypatch):
+    import sqlite3
+
+    w = workflow
+    p, _, commitment = w.material_requirement(qualified="0")
+    receipts = [
+        w.receive(p["id"], commitment["id"], quantity="1", lot_id=commitment["lot_id"])["object_id"]
+        for _ in range(3)
+    ]
+    inventory = stock(w)
+    observation = fields(w)
+    arrival = w.command(p["id"], "arrival.record", **observation)["object_id"]
+    original = w.object(p["id"], "arrival", arrival)
+    for index in range(103):
+        w.command(
+            p["id"], "arrival.match", arrival_id=arrival,
+            receipt_id=receipts[2] if index == 102 else receipts[index % 2],
+            evidence=f"Checked package label {index}",
+            **({"correction_reason": f"Correcting selection {index - 1}"} if index else {}),
+        )
+        if index == 99:
+            result = assist(w, p, "materials")
+            item = next(i for i in result["items"] if i["target"]["id"] == arrival)
+            assert len(item["related_targets"]) == 100
+            assert not item["evidence_truncated"] and not result["truncated"]
+    assert stock(w) == inventory
+    before = all_facts(w)
+
+    # Trace real HTTP queries so loading the full history then slicing cannot pass.
+    statements = []
+    connect = sqlite3.connect
+
+    def traced_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    with monkeypatch.context() as patch:
+        patch.setattr(sqlite3, "connect", traced_connect)
+        response = w.client().get(f"{BASE}/projects/{p['id']}/objects/arrival")
+        assert response.status_code == 200, response.text
+        summary = response.json()["items"][0]
+        result = assist(w, p, "materials")
+    item = next(i for i in result["items"] if i["target"]["id"] == arrival)
+    assert len(item["related_targets"]) == 100
+    assert item["related_targets"][-1] == dict(
+        scope="project", project_id=p["id"], kind="receipt", id=receipts[2],
+    )
+    assert item["state"] == summary["state"] == "matched"
+    assert summary["version"] == 104
+    assert item["source"] == original["source"]
+    assert observation["source"]["evidence"] in item["evidence"]
+    assert item["evidence_truncated"] and result["truncated"]
+    assert any("100" in text and "unknown" in text for text in item["unknowns"])
+    assert any("truncated" in text.lower() for text in result["unknowns"])
+    history_queries = [sql.upper() for sql in statements if "FROM ARRIVAL_MATCHES" in sql.upper()]
+    assert history_queries
+    assert all("COUNT(" in sql or "LIMIT" in sql for sql in history_queries)
+
+    detail = w.client().get(f"{BASE}/projects/{p['id']}/objects/arrival/{arrival}").json()
+    assert detail["value"]["receipt_id"] == receipts[2]
+    assert detail["value"]["source"] == original["source"]
+    assert detail["value"]["description"] == observation["description"]
+    assert len(detail["value"]["matches"]) == len(detail["relations"]) == 103
+    assert detail["value"]["matches"][0]["previous_receipt_id"] is None
+    assert detail["value"]["matches"][-1]["previous_receipt_id"] == receipts[1]
+    assert len(detail["history"]) == 104
+    assert all_facts(w) == before
+    assert stock(w) == inventory
+
+
 def test_testing_assistance_reports_actual_failures_and_scoped_similar_records(workflow):
     from .test_laboratory import setup_run, finish
     from .test_quality import measure
