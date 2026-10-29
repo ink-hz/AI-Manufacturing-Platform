@@ -174,6 +174,7 @@ def aggregate(tx, project_id) -> ProgressSummary:
                 "equipment",
                 "people",
                 "first_article",
+                "npi",
             },
         ),
     ):
