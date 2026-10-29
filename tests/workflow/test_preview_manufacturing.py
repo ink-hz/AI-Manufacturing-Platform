@@ -1,5 +1,22 @@
-"""Owned demo startup and strict host/origin/CSRF boundary, without employee sessions."""
+"""Owned demo startup and strict host/origin/CSRF boundary, without employee sessions.
 
+The three renderer/demo/socket integration tests opt in through
+TEST_PLATFORM_SOURCE_ROOT=/absolute/path/to/AI-Agent-Platform. Before opting in,
+install the existing webui dependencies with `npm ci` in both repositories and
+build this repository's business bundle with `cd webui && npm run build`.
+Node, esbuild (local webui), jsdom (local webui), and the external Platform's
+renderer source/styles and dependencies must be available. Run from this repo:
+
+    TEST_PLATFORM_SOURCE_ROOT=/absolute/path/to/AI-Agent-Platform PYTHONPATH=src \
+        python -m pytest tests/workflow/test_preview_manufacturing.py -q -rs
+
+Without the opt-in, only those integrations skip with an explicit reason.
+An explicitly configured invalid source, missing build/dependency, or failed
+renderer build is a test failure. Independent path/security checks use synthetic
+local files and need no external Platform checkout or built JavaScript bundle.
+"""
+
+import hashlib
 import json
 import os
 import sys
@@ -10,20 +27,130 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-PLATFORM = Path(
-    os.environ.get(
-        "TEST_PLATFORM_SOURCE_ROOT", "/Users/neo/Developer/work/AI-Agent-Platform"
-    )
-)
 
 
 @pytest.fixture(scope="module")
 def prepared(tmp_path_factory):
     import preview_manufacturing as preview
 
+    platform = os.environ.get("TEST_PLATFORM_SOURCE_ROOT")
+    if platform is None:
+        pytest.skip(
+            "Renderer integration requires TEST_PLATFORM_SOURCE_ROOT and installed "
+            "webui dependencies in both repositories plus the built business bundle; "
+            "see this test module's prerequisite instructions"
+        )
     root = tmp_path_factory.mktemp("preview-parent") / "demo"
-    result = preview.prepare(root, PLATFORM)
+    result = preview.prepare(root, Path(platform))
     return preview, root, result
+
+
+def test_renderer_integration_requires_explicit_platform_source(
+    monkeypatch, tmp_path_factory
+):
+    monkeypatch.delenv("TEST_PLATFORM_SOURCE_ROOT", raising=False)
+    with pytest.raises(pytest.skip.Exception, match="TEST_PLATFORM_SOURCE_ROOT"):
+        prepared.__wrapped__(tmp_path_factory)
+
+
+def test_configured_invalid_renderer_source_is_a_hard_failure(
+    monkeypatch, tmp_path_factory, tmp_path
+):
+    monkeypatch.setenv("TEST_PLATFORM_SOURCE_ROOT", str(tmp_path / "missing-platform"))
+    with pytest.raises(FileNotFoundError):
+        prepared.__wrapped__(tmp_path_factory)
+
+
+@pytest.fixture
+def local_bundle(tmp_path, monkeypatch):
+    """Local preparation inputs; no external renderer or JavaScript tools needed."""
+    import preview_manufacturing as preview
+
+    repository = tmp_path / "repository"
+    assets = repository / "webui/dist"
+    assets.mkdir(parents=True)
+    for name in ("manufacturing.js", "manufacturing.css"):
+        (assets / name).write_text("local business bundle")
+    (repository / "docs").mkdir()
+    (repository / "docs/manufacturing-system-handbook.md").write_text("Synthetic handbook")
+    monkeypatch.setattr(preview, "ROOT", repository)
+    return preview, repository
+
+
+@pytest.mark.parametrize("name", ["manufacturing.js", "manufacturing.css"])
+@pytest.mark.parametrize("kind", ["symlink", "directory", "fifo"])
+def test_prepare_rejects_nonregular_build_inputs_before_writes(
+    local_bundle, tmp_path, name, kind
+):
+    preview, repository = local_bundle
+    source = repository / "webui/dist" / name
+    source.unlink()
+    outside = tmp_path / "outside-built-asset"
+    outside.write_bytes(b"outside sentinel")
+    if kind == "symlink":
+        source.symlink_to(outside)
+    elif kind == "directory":
+        source.mkdir()
+    else:
+        os.mkfifo(source)
+    root = tmp_path / "demo"
+    try:
+        with pytest.raises(ValueError):
+            preview.prepare(root, tmp_path)
+    finally:
+        assert outside.read_bytes() == b"outside sentinel"
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("directory", ["webui", "webui/dist"])
+def test_prepare_rejects_linked_asset_directories_before_writes(
+    local_bundle, tmp_path, directory
+):
+    preview, repository = local_bundle
+    source = repository / directory
+    outside = tmp_path / "outside-assets"
+    source.rename(outside)
+    sentinel = outside / "sentinel"
+    sentinel.write_bytes(b"outside directory sentinel")
+    source.symlink_to(outside, target_is_directory=True)
+    root = tmp_path / "demo"
+    try:
+        with pytest.raises(ValueError):
+            preview.prepare(root, tmp_path)
+    finally:
+        assert sentinel.read_bytes() == b"outside directory sentinel"
+        assert sorted(p.name for p in outside.iterdir()) == (
+            ["dist", "sentinel"]
+            if directory == "webui"
+            else ["manufacturing.css", "manufacturing.js", "sentinel"]
+        )
+    assert not root.exists()
+
+
+@pytest.fixture
+def owned_files(tmp_path):
+    """File-boundary checks fail before opening databases or using the renderer."""
+    import preview_manufacturing as preview
+
+    root = tmp_path / "owned-demo"
+    root.mkdir(mode=0o700)
+    for directory in sorted(preview.DIRECTORIES):
+        (root / directory).mkdir(mode=0o700)
+    for name in preview.BASE_FILES - {"manifest.json"}:
+        (root / name).write_bytes(b"synthetic local file")
+    manifest = {
+        "owner": preview.OWNER,
+        "directory": str(root),
+        "complete": True,
+        "dataset": {"mode": "demo"},
+        "assets": {
+            name: hashlib.sha256((root / "webui/dist" / name).read_bytes()).hexdigest()
+            for name in preview.ASSETS
+        },
+    }
+    preview.write_json(root / "manifest.json", manifest)
+    assert preview.load_owned(root) == manifest
+    return preview, root, manifest
 
 
 def test_prepare_refuses_unowned_paths_before_writes(tmp_path):
@@ -34,12 +161,12 @@ def test_prepare_refuses_unowned_paths_before_writes(tmp_path):
     sentinel = target / "workflow.db"
     sentinel.write_bytes(b"user-owned")
     with pytest.raises(ValueError):
-        preview.prepare(target, PLATFORM)
+        preview.prepare(target, tmp_path)
     assert sentinel.read_bytes() == b"user-owned"
     linked = tmp_path / "linked"
     linked.symlink_to(target, target_is_directory=True)
     with pytest.raises(ValueError):
-        preview.prepare(linked, PLATFORM)
+        preview.prepare(linked, tmp_path)
     assert sorted(p.name for p in target.iterdir()) == ["workflow.db"]
 
 
@@ -137,8 +264,8 @@ def test_prepared_demo_and_guarded_real_commands(prepared):
     assert len(manifest["renderer"]["sha256"]) == 64
 
 
-def test_owned_root_rejects_added_links_and_changed_manifest(prepared, tmp_path):
-    preview, root, manifest = prepared
+def test_owned_root_rejects_added_links_and_changed_manifest(owned_files, tmp_path):
+    preview, root, manifest = owned_files
     target = tmp_path / "sentinel"
     target.write_text("unchanged")
     link = root / "unexpected"
@@ -272,8 +399,8 @@ dom.window.close();
     assert result.returncode == 0, result.stderr
 
 
-def test_allowed_database_cannot_be_a_symlink_or_hardlink(prepared, tmp_path):
-    preview, root, _ = prepared
+def test_allowed_database_cannot_be_a_symlink_or_hardlink(owned_files, tmp_path):
+    preview, root, _ = owned_files
     database = root / "workflow.db"
     held = tmp_path / "held-workflow.db"
     database.rename(held)
@@ -293,11 +420,12 @@ def test_allowed_database_cannot_be_a_symlink_or_hardlink(prepared, tmp_path):
         held.rename(database)
 
 
-def test_failed_preparation_is_preserved_and_never_auto_reset(tmp_path, monkeypatch):
+def test_failed_preparation_is_preserved_and_never_auto_reset(
+    local_bundle, tmp_path, monkeypatch
+):
     from types import SimpleNamespace
 
-    import preview_manufacturing as preview
-
+    preview, _ = local_bundle
     root = tmp_path / "failed-demo"
     monkeypatch.setattr(
         preview.subprocess,
@@ -307,12 +435,12 @@ def test_failed_preparation_is_preserved_and_never_auto_reset(tmp_path, monkeypa
         ),
     )
     with pytest.raises(ValueError, match="Renderer build failed"):
-        preview.prepare(root, PLATFORM)
+        preview.prepare(root, tmp_path)
     failed = (root / "manifest.json").read_bytes()
     assert json.loads(failed)["complete"] is False
     assert not (root / "workflow.db").exists()
     with pytest.raises(ValueError, match="new directory"):
-        preview.prepare(root, PLATFORM)
+        preview.prepare(root, tmp_path)
     assert (root / "manifest.json").read_bytes() == failed
     with pytest.raises(ValueError, match="Complete owned"):
         preview.build_app(root, 8765)

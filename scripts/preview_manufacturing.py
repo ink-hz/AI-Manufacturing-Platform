@@ -135,10 +135,16 @@ def prepare(root, platform_root):
         name: ROOT / "webui/dist" / name
         for name in ("manufacturing.js", "manufacturing.css")
     }
-    for source in sources.values():
-        if not source.is_file():
+    for directory in (ROOT / "webui", ROOT / "webui/dist"):
+        if directory.is_symlink() or not directory.is_dir():
             raise ValueError(
-                "Build the business bundle first: cd webui && npm run build"
+                "A non-symlink build directory is required: " + str(directory)
+            )
+    for source in sources.values():
+        if source.is_symlink() or not source.is_file():
+            raise ValueError(
+                "A non-symlink regular build file is required; "
+                "build the business bundle first: cd webui && npm run build"
             )
     root.mkdir(mode=0o700)
     manifest = {
