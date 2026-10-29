@@ -59,13 +59,51 @@ def historical_replay(context):
         conflict = api.post("/projects", {**body, "name": "Changed"}, expected=409)
         assert conflict["code"] == "IDEMPOTENCY_CONFLICT"
         api.grant(old["id"], "owner", ["project_owner"], active=False)
-        api.post("/projects", body, expected=404)
-        api.post("/projects", {**body, "name": "Changed after revocation"}, expected=404)
+        with api.db() as db:
+            command_body = json.loads(db.execute(
+                "SELECT typed_payload FROM audit_events WHERE project_id=? AND actor_id=? AND action='demand.record' ORDER BY id LIMIT 1",
+                (old["id"], owner),
+            ).fetchone()[0])
+        command_body.pop("project_id")
+        # A responsibility grant is not the trusted host's global admin role.
+        # Replay must retain the frozen result and never duplicate business writes.
+        revocation_before = snapshot(child.paths.domain)
+        revoked_replay = api.post("/projects", body)
+        assert revoked_replay == replay and {k: revoked_replay[k] for k in old} == old
+        revoked_conflict = api.post("/projects", {**body, "name": "Changed after revocation"}, expected=409)
+        assert revoked_conflict["code"] == "IDEMPOTENCY_CONFLICT"
+        command_path = "/projects/" + old["id"] + "/commands"
+        command_replay = api.post(command_path, command_body)
+        assert command_replay["replayed"] is True
+        revocation_after = snapshot(child.paths.domain)
+        assert revocation_after == revocation_before
+        # Change the actual trusted provider role; headers/payload cannot demote
+        # or elevate the server-owned actor. The same accepted operations deny.
+        demotion_before = snapshot(child.paths.domain)
+        api.control("owner", role="member")
+        demoted_access = api.get("/access")
+        assert demoted_access["configuration_admin"] is False
+        assert demoted_access["project_ids"] == []
+        api.get("/projects/" + old["id"], expected=404)
+        api.post("/projects", body, expected=403)
+        api.post("/projects", {**body, "name": "Changed after demotion"}, expected=403)
+        api.post(command_path, command_body, expected=404)
+        demotion_after = snapshot(child.paths.domain)
+        assert demotion_after == demotion_before
         with api.db() as db:
             assert list(map(tuple, db.execute("SELECT * FROM operations WHERE operation_id=?", (body["operation_id"],)))) == operation
             assert list(map(tuple, db.execute("SELECT * FROM audit_events WHERE action='project.create'"))) == audits
         child.evidence.record_db_snapshot(child.paths.domain)
-        child.evidence.record("historical-replay", {"old_result": old, "replay": replay, "live_order_quantity": "100", "payload_conflict": conflict, "original_operations": operation, "original_audits": audits, "revoked_replay_status": 404})
+        child.evidence.record("historical-replay", {
+            "old_result": old, "replay": replay, "live_order_quantity": "100",
+            "payload_conflict": conflict, "original_operations": operation, "original_audits": audits,
+            "revoked_replay_status": 200, "revoked_replay": revoked_replay,
+            "revoked_payload_conflict": revoked_conflict, "command_replay": command_replay,
+            "revocation_before": revocation_before, "revocation_after": revocation_after,
+            "demoted_access": demoted_access, "demoted_create_status": 403,
+            "demoted_read_status": 404, "demoted_command_replay_status": 404,
+            "demotion_before": demotion_before, "demotion_after": demotion_after,
+        })
     finally:
         api.close()
 

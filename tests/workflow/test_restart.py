@@ -37,3 +37,27 @@ def test_private_http_host_relogs_and_reads_after_process_restart(tmp_path):
 
     result = run_case(context, steps=[scenario])
     assert result.status == "passed", result.error
+
+
+def test_actual_historical_replay_separates_admin_grant_revocation_from_role_demotion(tmp_path):
+    import json
+
+    from .d3.case_restart import historical_replay
+
+    context = ScenarioContext.isolated(tmp_path, case_id="E31", seed=82)
+    historical_replay(context)
+    artifacts = list((context.directory / "historical").rglob("*-historical-replay.json"))
+    assert len(artifacts) == 1
+    proof = json.loads(artifacts[0].read_text())["value"]
+    assert proof["revoked_replay_status"] == 200
+    assert proof["revoked_replay"] == proof["replay"]
+    assert {key: proof["revoked_replay"][key] for key in proof["old_result"]} == proof["old_result"]
+    assert proof["live_order_quantity"] == "100"
+    assert proof["revoked_replay"]["summary"]["current_order_quantity"] == "0"
+    assert proof["revocation_before"] == proof["revocation_after"]
+    assert proof["demoted_create_status"] == 403
+    assert proof["demoted_read_status"] == 404
+    assert proof["demoted_command_replay_status"] == 404
+    assert proof["demoted_access"]["configuration_admin"] is False
+    assert proof["demoted_access"]["project_ids"] == []
+    assert proof["demotion_before"] == proof["demotion_after"]
