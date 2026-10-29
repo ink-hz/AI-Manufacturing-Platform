@@ -47,24 +47,34 @@ export function createWorkflowApi(
   )
     throw new Error("Expected same-origin manufacturing API root");
   let retired = false;
-  const controllers = new Set<AbortController>();
+  const controllers = new Map<AbortController, () => void>();
   const assert = () => {
     if (retired) throw new DOMException("Workflow retired", "AbortError");
   };
   const dispose = () => {
     retired = true;
-    controllers.forEach((c) => c.abort());
+    controllers.forEach((cleanup, c) => { c.abort(); cleanup(); });
     controllers.clear();
   };
   async function request<T>(
     path: string,
     method = "GET",
     body?: unknown,
+    signal?: AbortSignal,
   ): Promise<T> {
     assert();
     const c = new AbortController();
-    controllers.add(c);
+    const abort = () => c.abort();
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+    controllers.set(c, cleanup);
+    const assertCurrent = () => {
+      assert();
+      if (c.signal.aborted) throw new DOMException("Read cancelled", "AbortError");
+    };
     try {
+      assertCurrent();
       const r = await fetch(base + "/workflow" + path, {
         method,
         signal: c.signal,
@@ -79,14 +89,14 @@ export function createWorkflowApi(
               },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
-      assert();
+      assertCurrent();
       if (r.status === 401 || r.status === 403) {
         dispose();
         onAuthError?.();
         throw new WorkflowError(r.status);
       }
       const v = await r.json();
-      assert();
+      assertCurrent();
       if (!r.ok)
         throw new WorkflowError(
           r.status,
@@ -96,7 +106,7 @@ export function createWorkflowApi(
         );
       return v as T;
     } finally {
-      controllers.delete(c);
+      if (controllers.delete(c)) cleanup();
     }
   }
   const p = (id: string) => "/projects/" + encodeURIComponent(id);
@@ -104,13 +114,13 @@ export function createWorkflowApi(
     `?limit=${limit}&offset=${offset}` +
     (projectId === undefined ? "" : "&project_id=" + encodeURIComponent(projectId));
   return {
-    ledger: (kind: ObjectKind, limit = 50, offset = 0, projectId?: string) =>
-      request<ObjectPage>("/objects/" + kind + pageQuery(limit, offset, projectId)),
-    tasks: (limit = 50, offset = 0, projectId?: string) =>
-      request<ActorTaskPage>("/tasks" + pageQuery(limit, offset, projectId)),
+    ledger: (kind: ObjectKind, limit = 50, offset = 0, projectId?: string, signal?: AbortSignal) =>
+      request<ObjectPage>("/objects/" + kind + pageQuery(limit, offset, projectId), "GET", undefined, signal),
+    tasks: (limit = 50, offset = 0, projectId?: string, signal?: AbortSignal) =>
+      request<ActorTaskPage>("/tasks" + pageQuery(limit, offset, projectId), "GET", undefined, signal),
     bootstrap: () => request<WorkflowBootstrap>("/access"),
-    projects: () => request<{ items: ProjectDetail[] }>("/projects"),
-    project: (id: string) => request<ProjectDetail>(p(id)),
+    projects: (signal?: AbortSignal) => request<{ items: ProjectDetail[] }>("/projects", "GET", undefined, signal),
+    project: (id: string, signal?: AbortSignal) => request<ProjectDetail>(p(id), "GET", undefined, signal),
     createProject: (v: ProjectCreate) =>
       request<ProjectDetail>("/projects", "POST", v),
     members: (id: string, limit?:number, offset=0) => request<{ items: Grant[] }>(p(id) + "/members" + (limit===undefined?"":`?limit=${limit}&offset=${offset}`)),
@@ -131,7 +141,7 @@ export function createWorkflowApi(
       ),
     command: (id: string, v: WorkflowCommand) =>
       request<CommandResult>(p(id) + "/commands", "POST", v),
-    dashboard: () => request<Dashboard>("/dashboard"),
+    dashboard: (signal?: AbortSignal) => request<Dashboard>("/dashboard", "GET", undefined, signal),
     exchanges: (id: string, limit=50, offset=0) => request<ObjectPage>(p(id) + `/exchanges?limit=${limit}&offset=${offset}`),
     trace: (id: string, query: {sn:string;material_lot_id?:never}|{material_lot_id:string;sn?:never}, limit=500) => {
       const params=new URLSearchParams();

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { expect, vi } from 'vitest';
 import { App } from '../App';
 import type { MountOptions } from '../types';
-import type { ProjectDetail, ObjectSummary, WorkflowBootstrap, ObjectDetail, ObjectKind, ObjectPage, ActorTaskPage } from './types';
+import type { ProjectDetail, ObjectSummary, WorkflowBootstrap, ObjectDetail, ObjectKind, ObjectPage, ActorTaskPage, Dashboard } from './types';
 export const project: ProjectDetail = { id: '00000000-0000-4000-8000-000000000001', version: 3, name: '相机项目', line_id: '相机线', product: '相机', customer_id: '客户甲', mode: 'internal', unit: { code: '件', scale: 0 }, quantity: '2', contract: { customer_approval_required: false, customer_release_required: false, acceptance_required: true, customer_revision: 'C1', internal_revision: 'M1', material_ownership_rules: '自有' }, stages: [], summary: { original_order_quantity: '2', current_order_quantity: '2', allocated: '2', produced_good: '2', shipped: '0', signed: '0', accepted: '0', remaining_to_ship: '2', remaining_to_accept: '2' }, allowed_actions: ['demand.record', 'shipment.request'] };
 export const bootstrap: WorkflowBootstrap = { protocol: 1, allowed: true, available: true, workflow_available: true, workflow_access: true, can_edit: true, release: 'test', legacy_access: false, configuration_admin: false, dataset: { id: 'test', mode: 'test', label: '独立测试' }, user: { id: '00000000-0000-4000-8000-000000000002', display_name: '李工' }, project_ids: [project.id] };
 export const source = { system: 'ERP凭据', object_type: 'order_line', external_id: 'ORDER-001', version: 1, mode: 'manual' as const, occurred_at: '2026-10-28T08:00:00Z', collected_at: '2026-10-28T08:01:00Z', cutoff: null, evidence: '原始签署文件' };
@@ -18,6 +18,7 @@ export async function workflowView(config: {
     options?: Partial<MountOptions>;
     detail?: ObjectDetail;
     readObject?: (projectId: string, kind: ObjectKind, id: string) => Promise<ObjectDetail>;
+    readDashboard?: () => Promise<Dashboard>;
     readProjects?: () => Promise<ProjectDetail[]>;
     readProject?: () => Promise<ProjectDetail>;
 } = {}) {
@@ -45,7 +46,7 @@ export async function workflowView(config: {
             const u = new URL(url, 'http://localhost');
             value = await config.readTasks(Number(u.searchParams.get('limit')), Number(u.searchParams.get('offset')), u.searchParams.get('project_id') || undefined);
         } else if (url.endsWith('/dashboard'))
-            value = { cards: [order], counts: { order_line: 1 }, project_ids: [project.id], project_count: 1 };
+            value = config.readDashboard ? await config.readDashboard() : { cards: [order], counts: { order_line: 1 }, project_ids: [project.id], project_count: 1 };
         else if (url.endsWith('/handbook'))
             value = { title: '大制造数字化系统手册', markdown: '# 大制造数字化系统手册\n\n完整连续正文', release: 'test', updated_at: '2026-10-28T08:00:00Z', source_path: 'handbook.md', sha256: 'test' };
         else if (config.readObject && /\/projects\/[^/]+\/objects\/[^/]+\/[^/?]+$/.test(url)) {

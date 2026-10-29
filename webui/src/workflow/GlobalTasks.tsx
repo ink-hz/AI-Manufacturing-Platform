@@ -11,9 +11,9 @@ export function GlobalTasks({api,context,onContext,projects,refresh,onRefresh,on
 }) {
   const [page,setPage]=useState<ActorTaskPage|null>(null),[error,setError]=useState('');
   useEffect(()=>{
-    let active=true;setPage(null);setError('');
-    api.tasks(50,context.offset,context.projectId||undefined).then(value=>{if(active)setPage(value);}).catch(e=>{if(active)setError(String(e));});
-    return ()=>{active=false;};
+    const controller=new AbortController();let active=true;setPage(null);setError('');
+    api.tasks(50,context.offset,context.projectId||undefined,controller.signal).then(value=>{if(active)setPage(value);}).catch(e=>{if(active)setError(String(e));});
+    return ()=>{active=false;controller.abort();};
   },[api,context.projectId,context.offset,refresh]);
   return <section aria-label="我的待处理事项"><h2>我的待处理事项</h2>
     <div className="mf-actions"><ProjectScope projects={projects} value={context.projectId} onChange={projectId=>onContext({projectId,offset:0})}/><button onClick={onRefresh}>刷新事项</button></div>

@@ -122,3 +122,70 @@ it('distinguishes an empty page after totals shrink from an empty project scope'
  const v=await workflowView({...configuration,readLedger:async(kind,limit,offset)=>({items:offset?[]:rows(kind).slice(0,1),total:offset?1:60,limit,offset})});
  try{await v.click('订单与交付');await v.click('下一页');expect(v.host.textContent).toContain('订单合计 1 条');expect(v.host.textContent).toContain('当前页暂无订单记录');expect(v.host.textContent).not.toContain('当前范围暂无订单记录');await v.click('上一页');expect(v.host.textContent).toContain('order_line-业务-0');}finally{await v.dispose();}
 });
+
+it.each([['tab',401],['filter',403],['module',403],['tasks',401]] as const)('retires a global read on %s change before a late %s can erase current work',async(change,status)=>{
+ const auth=vi.fn(),v=await workflowView({...configuration,options:{onAuthError:auth}});
+ let finish!:(v:Response)=>void;let signal:AbortSignal|null|undefined;
+ const original=fetch;let pending=true;
+ vi.stubGlobal('fetch',vi.fn((input,init)=>{if(pending && String(input).includes(change==='tasks'?'/workflow/tasks?':'/workflow/objects/order_line?')){pending=false;signal=init?.signal;return new Promise<Response>(r=>finish=r);}return original(input,init);}));
+ try{await v.click(change==='tasks'?'事项':'订单与交付');
+ if(change==='tab')await v.click('需求');
+ if(change==='filter')await v.field('所属项目筛选',project.id);
+ if(change==='module'||change==='tasks'){await v.click('计划与物料');}
+ const aborted=signal?.aborted;
+ await v.click('订单与交付');await v.field('所属项目筛选',project.id);await v.click('进入项目办理');await v.click('登记需求');await v.field('产品','retained draft');
+ await act(async()=>finish(new Response('{}',{status})));await flush();
+ expect(auth).not.toHaveBeenCalled();expect(aborted).toBe(true);expect((v.host.querySelector('[aria-label="产品"]') as HTMLInputElement)?.value).toBe('retained draft');
+ }finally{await v.dispose();}
+});
+it.each(['deferred','failed'] as const)('loads metadata and opens real rows while dashboard is %s',async(mode)=>{
+ const v=await workflowView({...configuration,readDashboard:()=>mode==='deferred'?new Promise(()=>{}):Promise.reject(Error('dashboard unavailable'))});
+ try{await v.click('订单与交付');expect(v.host.textContent).toContain('客户乙');await v.click('order_line-业务-0');expect(v.host.textContent).toContain('原始承诺数量');expect(v.requests.some(r=>r.url.endsWith(`/projects/${project.id}/objects/order_line/order_line-0`))).toBe(true);}finally{await v.dispose();}
+});
+it.each(['deferred','failed'] as const)('resolves exact row project when project list is %s',async(mode)=>{
+ let finish!:(p:typeof project)=>void;const exact=new Promise<typeof project>(r=>finish=r);
+ const v=await workflowView({...configuration,readProjects:()=>mode==='deferred'?new Promise(()=>{}):Promise.reject(Error('list unavailable')),readProject:()=>exact});
+ try{await v.click('订单与交付');await v.click('order_line-业务-0');expect(v.host.textContent).toContain('正在读取记录所属项目');
+ await act(async()=>finish(project));await flush();expect(v.requests.some(r=>r.url.endsWith(`/projects/${project.id}/objects/order_line/order_line-0`))).toBe(true);
+ await v.click('返回业务列表');expect(v.host.querySelector('nav [aria-current="page"]')?.textContent).toBe('订单与交付');}finally{await v.dispose();}
+});
+it('shows exact project read failure and supports retry',async()=>{
+ let fail=true;const v=await workflowView({...configuration,readProjects:async()=>[],readProject:async()=>{if(fail)throw Error('exact unavailable');return project;}});
+ try{await v.click('订单与交付');await v.click('order_line-业务-0');expect(v.host.querySelector('[role="alert"]')?.textContent).toContain('exact unavailable');fail=false;await v.click('重试打开记录');expect(v.requests.some(r=>r.url.endsWith(`/projects/${project.id}/objects/order_line/order_line-0`))).toBe(true);}finally{await v.dispose();}
+});
+it.each(['module','identity','row','handbook'] as const)('cancels obsolete exact project resolution on %s change',async(change)=>{
+ let finish!:(r:Response)=>void;let signal:AbortSignal|null|undefined;
+ const v=await workflowView({...configuration,readProjects:async()=>[]});const original=fetch;
+ vi.stubGlobal('fetch',vi.fn((input,init)=>{if(String(input).endsWith('/projects/'+project.id)){signal=init?.signal;return new Promise<Response>(r=>finish=r);}if(String(input).endsWith('/projects/'+other.id))return Promise.resolve(new Response(JSON.stringify(other)));return original(input,init);}));
+ try{await v.click('订单与交付');await v.click('order_line-业务-0');expect(v.host.textContent).toContain('正在读取记录所属项目');
+ if(change==='module')await v.click('计划与物料');if(change==='identity')await v.rerender({bootstrap:{...bootstrap,user:{id:'new',display_name:'new'}}});if(change==='row')await v.click('order_line-业务-1');if(change==='handbook')await v.click('制造手册');
+ expect(signal?.aborted).toBe(true);await act(async()=>finish(new Response(JSON.stringify(project))));await flush();
+ expect(v.requests.some(r=>r.url.endsWith(`/projects/${project.id}/objects/order_line/order_line-0`))).toBe(false);
+ if(change==='row')expect(v.host.textContent).toContain(other.name);else expect(v.host.textContent).not.toContain('返回业务列表');
+ }finally{await v.dispose();}
+});
+it('aborts a ledger read when its owner changes offset or unmounts',async()=>{
+ const {createRoot}=await import('react-dom/client');const {GlobalLedger}=await import('./GlobalLedger');const {createWorkflowApi}=await import('./api');
+ const signals:AbortSignal[]=[];const finishes:Array<(r:Response)=>void>=[];const auth=vi.fn();
+ vi.stubGlobal('fetch',vi.fn((_input,init)=>{signals.push(init.signal);return new Promise<Response>(r=>finishes.push(r));}));
+ const api=createWorkflowApi({apiBase:'/api/v1/manufacturing',csrfToken:'csrf',readOnly:false},auth),host=document.createElement('div'),root=createRoot(host);
+ const render=(offset:number)=><GlobalLedger api={api} module="orders" context={{kind:'order_line',projectId:'',offset}} onContext={()=>{}} projects={[]} refresh={0} onRefresh={()=>{}} onOpen={()=>{}} onProject={()=>{}}/>;
+ try{await act(async()=>root.render(render(0)));await act(async()=>root.render(render(50)));expect(signals[0].aborted).toBe(true);expect(signals[1].aborted).toBe(false);
+ await act(async()=>root.unmount());expect(signals[1].aborted).toBe(true);await act(async()=>finishes.forEach(f=>f(new Response('{}',{status:403}))));expect(auth).not.toHaveBeenCalled();}finally{api.dispose();vi.unstubAllGlobals();}
+});
+it('aborts superseded root metadata and project reads before late revocation',async()=>{
+ const auth=vi.fn(),v=await workflowView({...configuration,options:{onAuthError:auth}}),original=fetch;
+ const pending:Array<{signal:AbortSignal,finish:(r:Response)=>void}>=[];let hold=true;
+ vi.stubGlobal('fetch',vi.fn((input,init)=>{if(hold&&(/\/(projects|dashboard)$/.test(String(input))||String(input).endsWith('/projects/'+project.id)))return new Promise<Response>(finish=>pending.push({signal:init!.signal as AbortSignal,finish}));return original(input,init);}));
+ try{await v.click('订单与交付');await v.click('刷新台账');expect(pending).toHaveLength(2);hold=false;await v.click('刷新台账');expect(pending.every(r=>r.signal.aborted)).toBe(true);
+ hold=true;await v.field('所属项目筛选',project.id);await v.click('进入项目办理');expect(pending).toHaveLength(3);hold=false;await v.click('返回台账');expect(pending[2].signal.aborted).toBe(true);
+ await act(async()=>pending.forEach(p=>p.finish(new Response('{}',{status:401}))));await flush();expect(auth).not.toHaveBeenCalled();expect(v.host.textContent).toContain('order_line-业务-0');}finally{await v.dispose();}
+});
+it('refuses an exact project response older than independently arrived metadata',async()=>{
+ let list!:(p:typeof project[])=>void,exact!:(p:typeof project)=>void;
+ const v=await workflowView({...configuration,readProjects:()=>new Promise(r=>list=r),readProject:()=>new Promise(r=>exact=r)});
+ try{await v.click('订单与交付');await v.click('order_line-业务-0');await act(async()=>list([{...project,version:8}]));await flush();await act(async()=>exact(project));await flush();
+ expect(v.host.textContent).toContain('项目版本已更新');expect(v.host.textContent).not.toContain('返回业务列表');
+ await v.click('重试打开记录');expect(v.requests.some(r=>r.url.endsWith(`/projects/${project.id}/objects/order_line/order_line-0`))).toBe(true);
+ }finally{await v.dispose();}
+});

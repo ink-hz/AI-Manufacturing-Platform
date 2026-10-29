@@ -25,10 +25,10 @@ export function GlobalLedger({api,module,context,onContext,projects,refresh,onRe
   const config=businessModules[module], tab=config.tabs.find(t=>t.kind===context.kind)!;
   const selected=projects.find(p=>p.id===context.projectId);
   useEffect(()=>{
-    let active=true;setPage(null);setError('');
-    api.ledger(context.kind,50,context.offset,context.projectId||undefined)
+    const controller=new AbortController();let active=true;setPage(null);setError('');
+    api.ledger(context.kind,50,context.offset,context.projectId||undefined,controller.signal)
       .then(value=>{if(active)setPage(value);}).catch(e=>{if(active)setError(String(e));});
-    return ()=>{active=false;};
+    return ()=>{active=false;controller.abort();};
   },[api,module,context.kind,context.offset,context.projectId,refresh]);
   return <section className="wf-global-ledger" aria-label={config.title}>
     <h2>{config.title}</h2>

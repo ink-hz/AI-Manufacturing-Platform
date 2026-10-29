@@ -135,3 +135,41 @@ it.each(["ledger", "tasks"] as const)("retires %s requests on auth failures and 
   resolve(new Response("{}"));
   await expect(late).rejects.toMatchObject({name:"AbortError"});
 });
+
+it.each([401,403,200])('cancels caller-owned reads before late %s transport outcomes and cleans listeners', async status => {
+  let finish!:(r:Response)=>void;
+  const fetcher=vi.fn((_url:string,_init?:RequestInit)=>new Promise<Response>(r=>finish=r));
+  vi.stubGlobal('fetch',fetcher);
+  const auth=vi.fn(), api=createWorkflowApi({apiBase:'/api/v1/manufacturing',csrfToken:'csrf',readOnly:false},auth);
+  const owner=new AbortController(), remove=vi.spyOn(owner.signal,'removeEventListener');
+  const pending=api.ledger('demand',50,0,undefined,owner.signal);
+  owner.abort();
+  const aborted=fetcher.mock.calls[0][1]?.signal?.aborted;
+  finish(new Response('{}',{status}));
+  await expect(pending).rejects.toMatchObject({name:'AbortError'});
+  expect(aborted).toBe(true);expect(auth).not.toHaveBeenCalled();
+  expect(remove).toHaveBeenCalledWith('abort',expect.any(Function));
+  vi.stubGlobal('fetch',vi.fn(async()=>new Response('{}')));
+  await expect(api.project('current')).resolves.toEqual({});api.dispose();
+});
+it('checks caller cancellation after body parsing and removes listeners on completion/disposal',async()=>{
+  const owner=new AbortController(), remove=vi.spyOn(owner.signal,'removeEventListener');
+  let finish!:(v:unknown)=>void;
+  vi.stubGlobal('fetch',vi.fn(async()=>({status:200,ok:true,json:()=>new Promise(r=>finish=r)})));
+  const api=createWorkflowApi({apiBase:'/api/v1/manufacturing',csrfToken:'csrf',readOnly:false});
+  const pending=api.project('p',owner.signal);await Promise.resolve();owner.abort();finish({id:'old'});
+  await expect(pending).rejects.toMatchObject({name:'AbortError'});expect(remove).toHaveBeenCalledOnce();
+  const next=new AbortController(), cleanup=vi.spyOn(next.signal,'removeEventListener');
+  vi.stubGlobal('fetch',vi.fn(async()=>new Response('{}')));
+  await api.tasks(50,0,undefined,next.signal);expect(cleanup).toHaveBeenCalledOnce();
+  const last=new AbortController(), disposeCleanup=vi.spyOn(last.signal,'removeEventListener');
+  let settle!:(v:Response)=>void;vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(r=>settle=r)));
+  const disposed=api.projects(last.signal);api.dispose();expect(disposeCleanup).toHaveBeenCalledOnce();
+  settle(new Response('{}',{status:401}));await expect(disposed).rejects.toMatchObject({name:'AbortError'});
+});
+it('does not send a pre-cancelled read and still denies a current authenticated request',async()=>{
+ const fetcher=vi.fn(async()=>new Response('{}',{status:401})),auth=vi.fn();vi.stubGlobal('fetch',fetcher);
+ const api=createWorkflowApi({apiBase:'/api/v1/manufacturing',csrfToken:'csrf',readOnly:false},auth),owner=new AbortController();owner.abort();
+ await expect(api.dashboard(owner.signal)).rejects.toMatchObject({name:'AbortError'});expect(fetcher).not.toHaveBeenCalled();
+ await expect(api.project('current',new AbortController().signal)).rejects.toMatchObject({status:401});expect(auth).toHaveBeenCalledOnce();
+});

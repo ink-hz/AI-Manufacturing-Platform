@@ -63,6 +63,13 @@ export function WorkflowApp({
     accountLock = useRef(false),
     frame = useRef<HTMLDivElement>(null),
     scroll = useRef<{ element: HTMLElement; top: number; left: number }[]>([]);
+  const openingRead = useRef<AbortController | null>(null);
+  const [opening, setOpening] = useState<{ target: WorkflowTarget; error: string } | null>(null);
+  const cancelOpening = useCallback(() => {
+    openingRead.current?.abort();
+    openingRead.current = null;
+    setOpening(null);
+  }, []);
   const projectVersions = useRef(new Map<string, number>());
   callbacks.current = options;
   const apiRef = useRef<ReturnType<typeof createWorkflowApi> | null>(null);
@@ -70,6 +77,7 @@ export function WorkflowApp({
     if (!alive.current) return;
     alive.current = false;
     apiRef.current?.dispose();
+    cancelOpening();
     setDenied(true);
     setDashboard(null);
     setDetail(null);
@@ -95,6 +103,7 @@ export function WorkflowApp({
     alive.current = true;
     return () => {
       alive.current = false;
+      openingRead.current?.abort();
       api.dispose();
     };
   }, [api]);
@@ -143,11 +152,15 @@ export function WorkflowApp({
     })();
   }, [accountAction, dirty]);
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
+    const current = () => !controller.signal.aborted && alive.current;
+    const failed = (e: unknown) => { if (current()) setError(String(e)); };
     setError("");
-    Promise.all([api.projects(), api.dashboard()])
-      .then(([p, d]) => {
-        if (active && alive.current) {
+    // Metadata and dashboard are independent producers, each commits as it arrives.
+    api.dashboard(controller.signal).then(d => { if (current()) setDashboard(d); }).catch(failed);
+    api.projects(controller.signal)
+      .then((p) => {
+        if (current()) {
           // A response older than an acknowledged mutation cannot lower freshness.
           const isCurrent = (value: ProjectDetail) =>
             value.version >= (projectVersions.current.get(value.id) || 0);
@@ -156,7 +169,6 @@ export function WorkflowApp({
               isCurrent(value) ? [value] : old.filter((x) => x.id === value.id),
             ),
           );
-          setDashboard(d);
           setProject((old) => {
             if (!old) return old;
             const incoming = p.items.find((x) => x.id === old.id);
@@ -177,18 +189,14 @@ export function WorkflowApp({
           );
         }
       })
-      .catch((e) => {
-        if (active && alive.current) setError(String(e));
-      });
-    return () => {
-      active = false;
-    };
+      .catch(failed);
+    return () => controller.abort();
   }, [api, refresh]);
   useEffect(() => {
     if (!project) return;
-    let active = true;
-    api.project(project.id).then(value => {
-      if(active && alive.current && value.version >= (projectVersions.current.get(value.id) || 0)) {
+    const controller = new AbortController();
+    api.project(project.id, controller.signal).then(value => {
+      if(!controller.signal.aborted && alive.current && value.version >= (projectVersions.current.get(value.id) || 0)) {
         projectVersions.current.set(value.id,value.version);
         setProject(value);
         // Keep the list's version/metadata coherent without treating it as detail.
@@ -196,15 +204,16 @@ export function WorkflowApp({
           ? {...value, progress:null, tasks:[], tasks_truncated:false}
           : item));
       }
-    }).catch(e => { if(active && alive.current) setError(String(e)); });
-    return () => {active=false;};
+    }).catch(e => { if(!controller.signal.aborted && alive.current) setError(String(e)); });
+    return () => controller.abort();
   }, [api, project?.id, project?.version, refresh]);
   const requestLeave = useCallback(
     (action: () => void) => {
-      if (Object.values(dirtyKeys).some(Boolean)) setPending((existing) => existing || action);
-      else action();
+      const leave = () => { cancelOpening(); action(); };
+      if (Object.values(dirtyKeys).some(Boolean)) setPending((existing) => existing || leave);
+      else leave();
     },
-    [dirtyKeys],
+    [dirtyKeys, cancelOpening],
   );
   function account(action: "navigate" | "logout") {
     if (accountLock.current || !alive.current || pending) return;
@@ -214,14 +223,30 @@ export function WorkflowApp({
   }
   function open(t: WorkflowTarget) {
     requestLeave(() => {
-      const p = projects.find((p) => p.id === t.projectId);
-      if (p) {
+      const controller = new AbortController();
+      openingRead.current = controller;
+      const current = () => alive.current && !controller.signal.aborted && openingRead.current === controller;
+      const commit = (p: ProjectDetail) => {
+        if (!current()) return;
+        if (p.version < (projectVersions.current.get(p.id) || 0))
+          throw new Error("项目版本已更新，请重试打开记录。");
+        projectVersions.current.set(p.id, p.version);
         setProject(old => old?.id === p.id && old.version >= p.version ? old : p);
         setCreating(false);
         setTarget(t);
         setCurrentTask(null);
         setDetail(null);
         setResolve(false);
+        setOpening(null);
+        openingRead.current = null;
+      };
+      const cached = projects.find(p => p.id === t.projectId && p.version >= (projectVersions.current.get(p.id) || 0));
+      if (cached) commit(cached);
+      else {
+        setOpening({target:t,error:""});
+        api.project(t.projectId, controller.signal).then(commit).catch(e => {
+          if (current()) setOpening({target:t,error:String(e)});
+        });
       }
     });
   }
@@ -278,6 +303,7 @@ export function WorkflowApp({
   function navigate(next: ConsoleView) {
     if (next === "handbook") {
       if (view === "handbook") return;
+      cancelOpening();
       scroll.current = [
         ...(frame.current?.querySelectorAll<HTMLElement>("*") || []),
       ]
@@ -376,12 +402,13 @@ export function WorkflowApp({
             <button onClick={() => setRefresh((r) => r + 1)}>重试读取</button>
           </p>
         )}
+        {opening && (opening.error ? <p role="alert">{opening.error}<button onClick={() => open(opening.target)}>重试打开记录</button></p> : <p role="status">正在读取记录所属项目…</p>)}
         <div hidden={view === "handbook"} key={epoch}>
           {activeView === "home" && !project && dashboard && (
             <WorkflowHome data={dashboard} onOpen={open} />
           )}{" "}
-          {activeView === "tasks" && !project && <GlobalTasks api={api} context={taskContext} onContext={setTaskContext} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open}/> }
-          {isBusinessModule(activeView) && !project && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>setLedgers(old=>({...old,[activeView]:context}))} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");})}/>}
+          {activeView === "tasks" && !project && <GlobalTasks api={api} context={taskContext} onContext={context=>{cancelOpening();setTaskContext(context);}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open}/> }
+          {isBusinessModule(activeView) && !project && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>{cancelOpening();setLedgers(old=>({...old,[activeView]:context}));}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");})}/>}
           {(activeView === "projects" || project) &&
             (creating ? (
               <ProjectForm
