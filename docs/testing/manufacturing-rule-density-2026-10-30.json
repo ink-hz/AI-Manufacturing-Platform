@@ -1,0 +1,105 @@
+{
+  "browser_acceptance": "not_run_per_user_instruction",
+  "candidate": {
+    "archive_file_count": 24258,
+    "archive_retained_on_server_and_client": true,
+    "archive_sha256": "eb72af03d511d0cf6483bcfd2c1bb85ffe85a9125f35680bb163374afbdfe785",
+    "passed": true,
+    "workflow_acceptance": {
+      "cases": 36,
+      "oem_acceptance": {
+        "business_source_root": "/opt/manufacturing/src",
+        "passed": true,
+        "test": "test_oem_cross_project_socket_flow_and_current_bulk_projection"
+      },
+      "passed": true,
+      "runtime": {
+        "cryptography": "50.0.0",
+        "fastapi": "0.141.1",
+        "httpx": "0.28.1",
+        "node": "v24.7.0",
+        "pydantic": "2.13.4",
+        "python": "3.11.13",
+        "sqlite": "3.40.1",
+        "starlette": "1.9.0",
+        "uvicorn": "0.52.1"
+      },
+      "scope": "Synthetic identity, stateful mock authority, actual candidate dependencies; not production business acceptance"
+    }
+  },
+  "compose_files": 53,
+  "container": "50df6739cd1edb61bdb8855f4d2399a139370870a66f34549f99d23368a0056e",
+  "database_backup": {
+    "cross_file_atomic": false,
+    "files": [
+      "authority",
+      "legacy",
+      "workflow"
+    ],
+    "verified": true
+  },
+  "frontend_verification": {
+    "build_and_bundle_checks_passed": true,
+    "component_tests_passed": 273,
+    "excluded_local_test": "acceptanceNavigationHttp.test.tsx requires dedicated WORKFLOW_HTTP_* environment; E30 exercised in private candidate",
+    "test_files_passed": 29
+  },
+  "http_statuses": {
+    "/api/health": 200,
+    "/api/v1/manufacturing/access": 401,
+    "/api/v1/manufacturing/assets/manufacturing.js": 401,
+    "/api/v1/manufacturing/catalog": 401,
+    "/api/v1/manufacturing/dashboard": 401,
+    "/api/v1/manufacturing/handbook": 401,
+    "/api/v1/manufacturing/health": 401,
+    "/api/v1/manufacturing/project-tasks": 401,
+    "/api/v1/manufacturing/projects": 401,
+    "/manufacturing": 200,
+    "/sdk-admin": 200,
+    "/sdk/api.php/v1/users": 403
+  },
+  "image": "sha256:104f9816e54ddde139cbac5f7baf9000ab278cb487fd2d6b27d8bd1fd73a56a3",
+  "maintenance_receipt": "/opt/orbbec-agent-platform/staging/manufacturing-rule-density-20261030-r1/future-maintenance.json",
+  "manufacturing_commit": "642362d95885ecb65bf80645d605b618626ac739",
+  "platform_commit": "4fa65dee6627f300eb97a93402417ed66b216a85",
+  "readiness": {
+    "business_records_written": 0,
+    "schema_ready": true,
+    "source_read_only": true,
+    "workflow": {
+      "authority_database_path": "/app/data/manufacturing/authority-demo.sqlite3",
+      "authority_ready": true,
+      "authority_status": "independent_demo_store",
+      "database_path": "/app/data/manufacturing/workflow-demo.sqlite3",
+      "dataset_id": "manufacturing-full-flow-demo-20261028-v1",
+      "dataset_label": "全流程模拟环境",
+      "dataset_mode": "demo",
+      "schema_ready": true,
+      "schema_version": 21
+    }
+  },
+  "recorded_at_utc": "2026-10-30T03:18:34Z",
+  "runtime": {
+    "business": {
+      "assets": {
+        "webui/dist/manufacturing.css": "c0c6683c101fa5ca71266ab081c37c6f3c200706feef92dd87077a046df6d02c",
+        "webui/dist/manufacturing.js": "6cd4d2708ed093edb003051355419d6ea2b99001d89f65f2d0973cec5ffd97e9"
+      },
+      "files_verified": 82,
+      "manufacturing_commit": "642362d95885ecb65bf80645d605b618626ac739",
+      "platform_commit": "4fa65dee6627f300eb97a93402417ed66b216a85",
+      "source_read_only": true
+    },
+    "compose_files": 53,
+    "container": "50df6739cd1edb61bdb8855f4d2399a139370870a66f34549f99d23368a0056e",
+    "deployment_locks_released": true,
+    "health": "healthy",
+    "image": "sha256:104f9816e54ddde139cbac5f7baf9000ab278cb487fd2d6b27d8bd1fd73a56a3",
+    "mounts": 15,
+    "other_containers_preserved": 34,
+    "passed": true,
+    "restarts": 0
+  },
+  "status": "healthy",
+  "url": "https://agent.orbbec.com.cn/manufacturing"
+}
