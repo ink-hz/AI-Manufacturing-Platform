@@ -3,6 +3,7 @@ import type { DomainValue, ObjectKind, ObjectSummary, Readiness, WorkspaceProps 
 import { ObjectTable } from "./OrdersWorkspace";
 import { ExecutionForms } from "./forms/ExecutionForms";
 import { label } from "./labels";
+import { OperationHelp } from "./OperationHelp";
 
 type Props=WorkspaceProps & {requestLeave(action:()=>void):void};
 type Action="unit.register"|"production.start"|"production.interrupt"|"production.resume"|"execution.record"|"first_article.record";
@@ -35,7 +36,7 @@ export function ExecutionWorkspace(p:Props){
   useEffect(()=>{if(!workOrder?.revision_id){setRevision(null);return;}let active=true;p.api.object(p.project.id,"revision",workOrder.revision_id).then(d=>{if(active&&d.value.kind==="revision")setRevision(d.value);}).catch(e=>{if(active)setError(String(e));});return()=>{active=false;};},[p.api,p.project.id,workOrder?.revision_id,p.project.version]);
   async function more(kind:ObjectKind){if(loading[kind])return;const current=generation.current;setLoading(x=>({...x,[kind]:true}));try{const page=await p.api.objects(p.project.id,kind,50,(items[kind]||[]).length);if(current===generation.current){setItems(x=>({...x,[kind]:[...(x[kind]||[]),...page.items]}));setTotals(x=>({...x,[kind]:page.total}));}}catch(e){if(current===generation.current)setError(String(e));}finally{if(current===generation.current)setLoading(x=>({...x,[kind]:false}));}}
   const show=(value:(typeof actions)[number]|null)=>p.requestLeave(()=>{setAction(value);setEpoch(x=>x+1);});
-  return <section><h3>生产执行与序列号</h3><p>开工分为首件试做与批量执行。待定请求占用序列号预算；MES 接受回执确认运行。所有工位与物料事件追加来源历史。</p>
+  return <section><h3>生产执行与序列号</h3><OperationHelp><p>开工分为首件试做与批量执行。待定请求占用序列号预算；MES 接受回执确认运行。所有工位与物料事件追加来源历史。</p></OperationHelp>
     {error&&<p role="alert">{error}</p>}
     <label>查看工单<select aria-label="查看工单" value={selected} onChange={e=>{setSelected(e.target.value);setWorkOrder(null);setRevision(null);}}><option value="">请选择</option>{(items.work_order||[]).map(w=><option key={w.id} value={w.id}>{w.title}</option>)}</select></label>
     {workOrder&&<><ReadinessCard title="试产准备" readiness={workOrder.trial_readiness}/><ReadinessCard title="量产准备" readiness={workOrder.bulk_readiness}/></>}

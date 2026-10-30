@@ -109,3 +109,6 @@
 .wf-curve .wf-table-scroll { max-height: 20rem; overflow: auto; }
 .wf-evidence-log { white-space: pre-wrap; overflow-wrap: anywhere; padding: .75rem; background: #f3f5f8; }
 .wf-oem-workspace details, .wf-detail details { margin-block: .5rem; }
+.mf-root .wf-operation-help, .mf-root .wf-evidence-details { margin-block: .75rem; padding: .65rem .85rem; border: 1px solid var(--mf-line); border-radius: 8px; background: var(--mf-surface); }
+.mf-root .wf-operation-help summary, .mf-root .wf-evidence-details summary { cursor: pointer; font-weight: 600; }
+.mf-root .wf-operation-help[open] summary, .mf-root .wf-evidence-details[open] summary { margin-bottom: .65rem; }

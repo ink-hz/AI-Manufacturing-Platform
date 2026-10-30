@@ -3,6 +3,7 @@ import type { DomainValue, ObjectKind, ObjectSummary, ReleaseKind, WorkspaceProp
 import { QualityForms } from './forms/QualityForms';
 import { ObjectTable } from './OrdersWorkspace';
 import { label } from './labels';
+import { OperationHelp } from './OperationHelp';
 type Props=WorkspaceProps&{requestLeave(action:()=>void):void};
 type Action='test.record'|'nonconformance.open'|'nonconformance.disposition'|'rework.complete'|'release.decide';
 const kinds:ObjectKind[]=['unit','test','nonconformance','rework','release'];
@@ -22,7 +23,7 @@ export function QualityWorkspace(p:Props){
  async function more(kind:ObjectKind){if(loading[kind])return;const current=generation.current;setLoading(x=>({...x,[kind]:true}));try{const page=await p.api.objects(p.project.id,kind,50,(items[kind]||[]).length);if(current===generation.current){setItems(x=>({...x,[kind]:[...(x[kind]||[]),...page.items]}));setTotals(x=>({...x,[kind]:page.total}));}}catch(e){if(current===generation.current)setError(String(e));}finally{if(current===generation.current)setLoading(x=>({...x,[kind]:false}));}}
  const show=(value:Action|null,kind?:ReleaseKind)=>p.requestLeave(()=>{setAction(value);if(kind)setReleaseKind(kind);setEpoch(x=>x+1);});
  const summary=p.project.quality_summary;
- return <section><h3>测量、返工与独立放行</h3><p>首次结果与最终合格分开统计，原始失败不可覆盖。</p>{summary&&<p>首次已测 {summary.first_tested} · 首次通过 {summary.first_passed} · 最终合格 {summary.final_good} · 报废 {summary.scrapped} · 未结不合格 {summary.open_nonconformances}</p>}{error&&<p role="alert">{error}</p>}
+ return <section><h3>测量、返工与独立放行</h3><OperationHelp><p>首次结果与最终合格分开统计，原始失败不可覆盖。</p></OperationHelp>{summary&&<p>首次已测 {summary.first_tested} · 首次通过 {summary.first_passed} · 最终合格 {summary.final_good} · 报废 {summary.scrapped} · 未结不合格 {summary.open_nonconformances}</p>}{error&&<p role="alert">{error}</p>}
   <label>查看序列号<select aria-label="查看序列号" value={selected} onChange={e=>{const id=e.target.value;p.requestLeave(()=>{setSelected(id);setAction(null);});}}><option value="">请选择</option>{(items.unit||[]).map(u=><option key={u.id} value={u.id}>{u.title}</option>)}</select></label>
   <label>查看返工单<select aria-label="查看返工单" value={selectedRework} onChange={e=>{const id=e.target.value;p.requestLeave(()=>{setSelectedRework(id);setAction(null);});}}><option value="">请选择</option>{(items.rework||[]).map(u=><option key={u.id} value={u.id}>{u.title}</option>)}</select></label>
   {unit&&<section><h4>测量历史 · {unit.first_pass===false?'首次未通过':unit.first_pass?'首次通过':'尚未测量'}</h4><p>{unit.scrapped?'不可逆报废':unit.final_good?'最终合格':'尚未最终合格'} · 最近 100 条，共 {unit.test_total||0} 次</p><ol>{(unit.tests||[]).map(t=><li key={t.id}><button onClick={()=>p.onOpen({projectId:p.project.id,kind:'test',id:t.id})}>第 {t.attempt} 次 · {label(t.outcome)} · {t.rework_order_id?'返工复测':'初始路线测试'}</button></li>)}</ol></section>}

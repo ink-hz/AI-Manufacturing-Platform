@@ -18,6 +18,7 @@ import { AuthorityForms } from "./forms/AuthorityForms";
 import { AssistancePanel } from "./AssistancePanel";
 import { AssetContentView } from "./details/IntroductionDetails";
 import { label } from "./labels";
+import { OperationHelp } from "./OperationHelp";
 export const domainActions = {
   introduction: [
     "npi.open",
@@ -217,7 +218,7 @@ export function OEMWorkspace(
   return (
     <section className="wf-oem-workspace" aria-label={title[p.domain]}>
       <h3>{title[p.domain]}</h3>
-      <p>{guidance[p.domain]}</p>
+      <OperationHelp><p>{guidance[p.domain]}</p></OperationHelp>
       {error && (
         <p role="alert">
           {error}

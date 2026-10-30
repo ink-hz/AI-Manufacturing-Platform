@@ -63,3 +63,49 @@ it("keeps provenance mode and blocking visible without verbose source identity i
     await view.dispose();
   }
 });
+
+it("keeps source mode visible while collapsing full provenance", async () => {
+  const { Source } = await import("./WorkflowDetail");
+  await act(async () => root.render(<Source value={source} />));
+  const disclosure = host.querySelector("details");
+  expect(disclosure).not.toBeNull();
+  expect(disclosure!.open).toBe(false);
+  expect(disclosure!.querySelector("summary")?.textContent).toContain("模拟系统");
+  expect(disclosure!.textContent).toContain("INTERNAL-ERP-987");
+});
+
+it("keeps readiness blockers visible and collapses explanatory versions", async () => {
+  const { DetailContent } = await import("./WorkflowDetail");
+  const readiness = {
+    ready: false,
+    checks: [{kind: "material", required: true, status: "blocked", reason: "缺少物料", evidence_ids: []}],
+    input_versions: {project: "7", revision: "M2"},
+  };
+  const detail = {
+    summary: {...row, kind: "work_order", source: null},
+    value: {
+      kind: "work_order", quantity: "8", unit: "件", remaining_obligation: "8",
+      purpose: "production", trial_quantity: "1", planned_start: "2026-11-01", planned_end: "2026-11-02",
+      trial_readiness: readiness, bulk_readiness: readiness, held_start_scopes: [], execution_events: [],
+    },
+    relations: [], evidence: [], history: [],
+  };
+  await act(async () => root.render(<DetailContent data={detail as any} onOpen={() => {}} />));
+  expect(host.textContent).toContain("缺少物料");
+  const disclosure = [...host.querySelectorAll("details")].find(d => d.querySelector("summary")?.textContent?.includes("依据版本"));
+  expect(disclosure).toBeTruthy();
+  expect(disclosure!.open).toBe(false);
+  expect(disclosure!.textContent).toContain("M2");
+});
+
+it("puts static supply rules behind operation help", async () => {
+  const view = await workflowView({ initial: "计划与物料", projectContext: true });
+  try {
+    const help = [...view.host.querySelectorAll("details")].find(d => d.querySelector("summary")?.textContent === "操作说明");
+    expect(help).toBeTruthy();
+    expect(help!.open).toBe(false);
+    expect(help!.textContent).toContain("库存预留由权威系统原子接受");
+  } finally {
+    await view.dispose();
+  }
+});

@@ -4,6 +4,7 @@ import type { CommandFields, ExchangeValue, InboundKind, ObjectSummary, Workspac
 import { Choice, CommandForm, Field, ObjectChoice } from "./forms/shared";
 import { ObjectTable } from "./OrdersWorkspace";
 import { label } from "./labels";
+import { OperationHelp } from "./OperationHelp";
 
 const actionForForm = {pull:"source.pull",file:"source.import_file",dispatch:"exchange.dispatch",query:"exchange.query",reconcile:"exchange.reconcile"};
 type Props=OEMWorkspaceProps & {mode:"production"|"demo"|"test"};
@@ -28,7 +29,7 @@ export function ExchangeWorkspace(p:Props){
   return <section>
     <h3>同步与回执</h3>
     <p role="status">{p.mode==="production"?"权威系统未接入 · 当前来源不可用":"模拟权威系统 · 独立库存与回执数据库"}</p>
-    <p>库存预留由权威系统原子接受。未知结果先查询；重发仍使用原业务键。收到、校验、批准、接受与过账分别记录。</p>
+    <OperationHelp><p>库存预留由权威系统原子接受。未知结果先查询；重发仍使用原业务键。收到、校验、批准、接受与过账分别记录。</p></OperationHelp>
     {error&&<p role="alert">{error}</p>}
     {edit&&<div className="mf-actions">
       {kinds.length>0&&<><button onClick={()=>switchForm("pull")}>获取来源事实</button><button onClick={()=>switchForm("file")}>导入来源文件</button></>}

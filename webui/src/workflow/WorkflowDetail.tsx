@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import { label, objectTitle } from "./forms/shared";
 import { sourceModeLabel } from "./sourcePresentation";
+import { OperationHelp } from "./OperationHelp";
 function Facts({ items }: { items: [string, ReactNode][] }) {
   return (
     <dl className="wf-facts">
@@ -27,8 +28,8 @@ function Facts({ items }: { items: [string, ReactNode][] }) {
 }
 export function Source({ value: v }: { value: SourceRef }) {
   return (
-    <section>
-      <h4>来源依据</h4>
+    <details className="wf-evidence-details">
+      <summary>来源依据 · {sourceModeLabel(v.mode)}</summary>
       <Facts
         items={[
           ["来源系统", v.system],
@@ -49,7 +50,7 @@ export function Source({ value: v }: { value: SourceRef }) {
           ["凭据", v.evidence],
         ]}
       />
-    </section>
+    </details>
   );
 }
 function ReadinessView({ title, value }: { title: string; value: Readiness }) {
@@ -76,14 +77,14 @@ function ReadinessView({ title, value }: { title: string; value: Readiness }) {
           ))}
         </tbody>
       </table>
-      <Facts items={Object.entries(value.input_versions).filter(([key])=>key!=="plan_id").map(([key,version])=>[
+      <details className="wf-evidence-details"><summary>依据版本</summary><Facts items={Object.entries(value.input_versions).filter(([key])=>key!=="plan_id").map(([key,version])=>[
         ({project:"项目版本",revision:"固定修订",work_order:"工单来源版本",plan:"计划来源版本",
           plan_source:"计划业务编号",plan_cutoff:"计划来源截止"} as Record<string,string>)[key]||key,
         version || "未提供",
-      ])}/>
-      <p>
+      ])}/></details>
+      <OperationHelp><p>
         库存预留由权威系统原子接受。开工分为首件试做与批量执行；量产首件需实际检验。
-      </p>
+      </p></OperationHelp>
     </section>
   );
 }
@@ -101,8 +102,9 @@ export function DetailContent({
     <article className="wf-detail">
       <h3>{objectTitle(data.summary)}</h3>
       <p>
-        状态：<StatusBadge state={data.summary.state} kind={data.summary.kind} blocking={data.summary.blocking_reasons}/>{data.summary.source && <> · {sourceModeLabel(data.summary.source.mode)}</>} · 记录版本 {data.summary.version}
+        状态：<StatusBadge state={data.summary.state} kind={data.summary.kind} blocking={data.summary.blocking_reasons}/>{data.summary.source && <> · {sourceModeLabel(data.summary.source.mode)}</>}
       </p>
+      <details className="wf-evidence-details"><summary>记录信息</summary><p>记录版本 {data.summary.version}</p></details>
       {(v.kind === "unit" || v.kind === "material_lot") && <Facts items={[["申请冻结状态",v.freeze_requested||"无申请"],["权威确认状态",v.freeze_confirmed||"尚未确认"],["回执状态",v.freeze_pending?"等待权威确认":"无待确认申请"]]}/>}
       {v.kind === "rma" && <><Facts items={[["原始客户",v.customer_id],["客户问题事实",v.reason],["状态",<StatusBadge state={v.state} kind={v.kind}/>]]}/>{v.source&&<Source value={v.source}/>}<p>原始检验记录{v.tests_truncated?"（已截断）":""}</p>{v.test_ids.map((id,i)=><button key={id} onClick={()=>onOpen({projectId:data.summary.project_id,kind:"test",id})}>查看原始检验 {i+1}</button>)}<p>RMA 登记不代表实物已经退回。</p></>}
       {v.kind === "capa" && <><p>人工调查与实施证据 · <StatusBadge state={v.state} kind={v.kind}/> · 当前纠正依据 {v.current_basis_sequence??"待补充"}</p>{v.steps_truncated&&<p>仅显示最近 100 条证据。</p>}{v.steps.map(s=><section key={s.sequence}><h4>{({containment:"遏制",root_cause:"根因分析",correction:"纠正措施",verification:"有效性验证"})[s.step]}</h4><p>{s.description}</p><p>{s.evidence}</p>{s.implementation_evidence&&<p>实际实施：{s.implementation_evidence}</p>}{s.effective!==null&&<p>{s.effective?"验证通过":"验证失败，保持开放"} · 验证依据 {s.basis_sequence??"历史纠正依据"}</p>}{s.eco_id&&<button onClick={()=>onOpen({projectId:data.summary.project_id,kind:"eco",id:s.eco_id!})}>查看实际工程实施</button>}</section>)}{v.blocking_reasons.map(r=><p key={r}>{r}</p>)}</>}
