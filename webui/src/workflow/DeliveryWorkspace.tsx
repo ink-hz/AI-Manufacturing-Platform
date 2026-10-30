@@ -3,6 +3,7 @@ import type {DomainValue,Grant,ObjectKind,ObjectSummary,ShipmentValue,WorkspaceP
 import {DeliveryForms,type DeliveryAction} from './forms/DeliveryForms';
 import {ObjectTable} from './OrdersWorkspace';
 import {label} from './labels';
+import {OperationHelp} from './OperationHelp';
 type Props=WorkspaceProps&{requestLeave(action:()=>void):void};
 const kinds:ObjectKind[]=['order_line','unit','shipment','closure','material_lot','eco','reservation'];
 export function DeliveryWorkspace(p:Props){
@@ -20,7 +21,7 @@ export function DeliveryWorkspace(p:Props){
  async function loadMembers(){const token=generation.current;try{const page=await p.api.members(p.project.id,50,memberOffset);if(token===generation.current){setMembers(x=>[...x,...page.items]);setMemberOffset(x=>x+page.items.length);setMoreMembers(page.items.length===50);}}catch{if(token===generation.current)setError('成员姓名服务暂不可用。');}}
  const show=(next:DeliveryAction|null,kind?:typeof closureKind)=>p.requestLeave(()=>{setAction(next);if(kind)setClosureKind(kind);setEpoch(x=>x+1);});
  const picker=(title:string,kind:ObjectKind,value:string,set:(id:string)=>void)=><label>{title}<select aria-label={title} value={value} onChange={e=>{const id=e.target.value;p.requestLeave(()=>{set(id);setAction(null);});}}><option value="">请选择</option>{(items[kind]||[]).map(i=><option key={i.id} value={i.id}>{i.title}</option>)}</select></label>;
- return <section><h3>交付、所有权与独立关闭</h3><p>权威发货、客户签收和客户验收分别保存；质量暂缓不抹去已发出的实物。</p>{error&&<p role="alert">{error}</p>}
+ return <section><h3>交付、所有权与独立关闭</h3><OperationHelp><p>权威发货、客户签收和客户验收分别保存；质量暂缓不抹去已发出的实物。</p></OperationHelp>{error&&<p role="alert">{error}</p>}
  {picker('查看订单余量','order_line',orderId,setOrderId)}{order&&<p>订单 {order.current_quantity} {order.unit} · 待发 {order.remaining_to_ship} · 待验收 {order.remaining_to_accept} · 已签收 {order.signed} · 已验收 {order.accepted}</p>}
  {picker('查看发货记录','shipment',shipmentId,setShipmentId)}{shipment&&<section><p>{label(shipment.state)} · 实发 {shipment.shipped} · 签收 {shipment.signed} · 验收 {shipment.accepted} · 待发占用 {shipment.remaining.pending_shipment}</p>{shipment.blocking_reasons.map(reason=><p key={reason}>{reason}</p>)}<button onClick={()=>p.onOpen({projectId:p.project.id,kind:'exchange',id:shipment.exchange_id})}>查看权威发货回执</button><ol>{shipment.issues.map(i=><li key={i.id}>{i.title} · {i.owner_name} · {i.required?'必须解决':'一般问题'} · {i.resolved?'已解决':'未解决'}</li>)}</ol></section>}
  {picker('查看物料所有权','material_lot',lotId,setLotId)}{lot?.ownership_balance&&<p>所有者 {lot.owner_id} · 实收 {lot.ownership_balance.received} · 消耗 {lot.ownership_balance.consumed} · 原料损耗 {lot.ownership_balance.scrapped} · 实退 {lot.ownership_balance.returned} · 余额 {lot.ownership_balance.balance} {lot.unit} · {lot.ownership_balance.complete?'来源已核对':'来源尚不完整'} · {lot.ownership_balance.hold_reason}</p>}

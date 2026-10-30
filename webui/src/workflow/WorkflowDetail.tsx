@@ -13,7 +13,6 @@ import type {
 } from "./types";
 import { label, objectTitle } from "./forms/shared";
 import { sourceModeLabel } from "./sourcePresentation";
-import { OperationHelp } from "./OperationHelp";
 function Facts({ items }: { items: [string, ReactNode][] }) {
   return (
     <dl className="wf-facts">
@@ -82,9 +81,6 @@ function ReadinessView({ title, value }: { title: string; value: Readiness }) {
           plan_source:"计划业务编号",plan_cutoff:"计划来源截止"} as Record<string,string>)[key]||key,
         version || "未提供",
       ])}/></details>
-      <OperationHelp><p>
-        库存预留由权威系统原子接受。开工分为首件试做与批量执行；量产首件需实际检验。
-      </p></OperationHelp>
     </section>
   );
 }
