@@ -264,6 +264,8 @@ it("offers all six rule modes and opens public evidence without protected projec
       <AssistancePanel api={api} projectId="p" version={1} onOpen={onOpen} />,
     ),
   );
+  expect(requested).toEqual([]);
+  await act(async () => (host.querySelector('button[aria-expanded="false"]') as HTMLButtonElement).click());
   const select = host.querySelector("select")!;
   expect([...select.options].map((o) => o.value)).toEqual([
     "introduction",
@@ -293,7 +295,7 @@ it("offers all six rule modes and opens public evidence without protected projec
   await act(async () => b!.click());
   expect(host.textContent).toContain("public execution");
   expect(onOpen).not.toHaveBeenCalled();
-  expect(host.textContent).toContain("规则分析");
+  expect(host.textContent).toContain("核对建议");
   expect(host.textContent).toContain("有界");
 });
 it("keeps calibration expected values out of observed readback inputs", async () => {

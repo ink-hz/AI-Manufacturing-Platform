@@ -112,3 +112,5 @@
 .mf-root .wf-operation-help, .mf-root .wf-evidence-details { margin-block: .75rem; padding: .65rem .85rem; border: 1px solid var(--mf-line); border-radius: 8px; background: var(--mf-surface); }
 .mf-root .wf-operation-help summary, .mf-root .wf-evidence-details summary { cursor: pointer; font-weight: 600; }
 .mf-root .wf-operation-help[open] summary, .mf-root .wf-evidence-details[open] summary { margin-bottom: .65rem; }
+.mf-root .wf-assistance-collapsed { margin-block: 1rem; }
+.mf-root .wf-assistance-item { border-top: 1px solid var(--mf-line); padding-block: .85rem; }

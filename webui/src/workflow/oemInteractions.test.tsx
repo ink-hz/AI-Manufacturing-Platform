@@ -568,14 +568,15 @@ it("labels assistance run summaries and lifecycle as registration while preservi
       />,
     ),
   );
-  const sections = host.querySelectorAll("details");
+  await act(async () => (host.querySelector('button[aria-expanded="false"]') as HTMLButtonElement).click());
+  const sections = host.querySelectorAll(".wf-assistance-item");
   expect(sections).toHaveLength(2);
-  expect(sections[0].querySelector("summary")!.textContent).toContain(
+  expect(sections[0].querySelector("h4")!.textContent).toContain(
     "运行登记中",
   );
   expect(sections[0].textContent).toContain("运行生命周期 运行登记中");
   expect(sections[0].textContent).not.toContain("MES 已确认运行");
-  expect(sections[1].querySelector("summary")!.textContent).toContain(
+  expect(sections[1].querySelector("h4")!.textContent).toContain(
     "MES 已确认运行",
   );
 });

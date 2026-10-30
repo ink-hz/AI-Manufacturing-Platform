@@ -11,6 +11,7 @@ import { Source } from "./WorkflowDetail";
 import { AssetContentView } from "./details/IntroductionDetails";
 import { ParameterTable } from "./details/LaboratoryDetails";
 import { label, objectStateLabel } from "./labels";
+import { OperationHelp } from "./OperationHelp";
 export const assistanceModes: Record<AssistanceKind, string> = {
   introduction: "导入证据",
   materials: "物料与收货",
@@ -33,25 +34,30 @@ export function AssistancePanel({
   initialKind?: AssistanceKind;
 }) {
   const [kind, setKind] = useState<AssistanceKind>(initialKind),
-    [data, setData] = useState<AssistanceResult | null>(null),
-    [error, setError] = useState(""),
+    [expanded, setExpanded] = useState(false),
+    [result, setResult] = useState<{ key: string; data: AssistanceResult } | null>(null),
+    [failure, setFailure] = useState<{ key: string; message: string } | null>(null),
     [retry, setRetry] = useState(0),
     [publicEntry, setPublicEntry] = useState<PublicAssetEntry | null>(null);
+  const requestKey = JSON.stringify([projectId, version, kind, retry]);
+  const data = result?.key === requestKey ? result.data : null;
+  const error = failure?.key === requestKey ? failure.message : "";
   useEffect(() => {
+    if (!expanded) return;
     const c = new AbortController();
-    setData(null);
-    setError("");
+    setResult(null);
+    setFailure(null);
     setPublicEntry(null);
     api
       .assistance(projectId, kind, c.signal)
       .then((d) => {
-        if (!c.signal.aborted) setData(d);
+        if (!c.signal.aborted) setResult({ key: requestKey, data: d });
       })
       .catch((e) => {
-        if (!c.signal.aborted) setError(String(e));
+        if (!c.signal.aborted) setFailure({ key: requestKey, message: String(e) });
       });
     return () => c.abort();
-  }, [api, projectId, version, kind, retry]);
+  }, [api, projectId, version, kind, retry, expanded, requestKey]);
   function target(t: AssistanceTarget, entry?: PublicAssetEntry | null) {
     if (t.scope === "public_catalog") {
       if (entry && entry.asset_revision_id === t.id) setPublicEntry(entry);
@@ -73,9 +79,19 @@ export function AssistancePanel({
       {text}
     </button>
   );
+  function close() {
+    setResult(null);
+    setFailure(null);
+    setPublicEntry(null);
+    setExpanded(false);
+  }
+  if (!expanded) {
+    return <section className="wf-assistance-collapsed" aria-label="规则分析"><button type="button" aria-expanded="false" onClick={() => setExpanded(true)}>查看核对建议</button></section>;
+  }
   return (
     <section className="wf-panel" aria-label="规则分析">
-      <h3>规则分析 · 只读证据辅助</h3>
+      <h3>核对建议</h3>
+      <button type="button" aria-expanded="true" onClick={close}>收起核对建议</button>
       <label>
         分析范围
         <select
@@ -93,33 +109,23 @@ export function AssistancePanel({
       <button type="button" onClick={() => setRetry((n) => n + 1)}>
         刷新规则分析
       </button>
-      <p>
-        依据当前授权项目与已批准公共内容提供核对建议；不执行 AI
-        模型、设备动作、原因验证或客户批准。
-      </p>
+      <OperationHelp><p>依据当前授权项目与已批准公共内容提供只读建议；不执行模型、设备动作、原因验证或客户批准。</p></OperationHelp>
       {error ? (
         <p role="alert">{error}</p>
       ) : !data ? (
         <p role="status">正在读取规则证据…</p>
       ) : (
         <>
-          <p>
-            {data.state === "no_evidence" ? "暂无适用证据" : "已读取登记证据"} ·{" "}
-            {data.truncated
-              ? "分析范围有界，部分证据未纳入"
-              : "本次范围未报告截断"}
-          </p>
+          <p>{data.state === "no_evidence" ? "暂无适用证据" : "已读取登记证据"}</p>
+          {data.truncated && <p role="alert">分析范围有界，部分证据未纳入</p>}
           {data.unknowns.map((text, i) => (
             <p key={i}>{text}</p>
           ))}
           {data.items.map((item, i) => (
-            <details
-              key={`${item.target.scope}-${item.target.id}-${i}`}
-              open={data.items.length === 1}
-            >
-              <summary>
+            <section className="wf-assistance-item" key={`${item.target.scope}-${item.target.id}-${i}`}>
+              <h4>
                 {item.title} · {objectStateLabel(item.state, item.target.kind)}
-              </summary>
+              </h4>
               <p>{item.suggestion}</p>
               {link(
                 item.target,
@@ -137,10 +143,6 @@ export function AssistancePanel({
               {item.evidence_truncated && (
                 <p>此记录证据有界，完整历史请查看依据记录。</p>
               )}
-              {item.evidence.map((r, n) => (
-                <p key={n}>凭据：{r}</p>
-              ))}
-              {item.source && <Source value={item.source} />}{" "}
               {item.quantities && (
                 <p>
                   合格 {item.quantities.accepted} · 拒收{" "}
@@ -159,7 +161,6 @@ export function AssistancePanel({
                 </p>
               )}
               {item.testing && (
-                <section>
                   <p>
                     运行生命周期{" "}
                     {item.testing.run_state
@@ -176,6 +177,14 @@ export function AssistancePanel({
                         ? "有效"
                         : "无效"}
                   </p>
+              )}
+              <details className="wf-evidence-details"><summary>详细依据</summary>
+              {item.evidence.map((r, n) => (
+                <p key={n}>凭据：{r}</p>
+              ))}
+              {item.source && <Source value={item.source} />}
+              {item.testing && (
+                <section>
                   <p>
                     比较依据：相同固定修订与程序 {item.testing.program_version}
                     ；相似不代表因果。
@@ -243,7 +252,8 @@ export function AssistancePanel({
               {item.related_targets.map((t, n) => (
                 <span key={n}>{link(t, `关联${label(t.kind)}`)}</span>
               ))}
-            </details>
+              </details>
+            </section>
           ))}
         </>
       )}
