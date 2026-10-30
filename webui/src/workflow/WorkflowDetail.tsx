@@ -12,6 +12,7 @@ import type {
   SourceRef,
 } from "./types";
 import { label, objectTitle } from "./forms/shared";
+import { sourceModeLabel } from "./sourcePresentation";
 function Facts({ items }: { items: [string, ReactNode][] }) {
   return (
     <dl className="wf-facts">
@@ -100,7 +101,7 @@ export function DetailContent({
     <article className="wf-detail">
       <h3>{objectTitle(data.summary)}</h3>
       <p>
-        状态：<StatusBadge state={data.summary.state} kind={data.summary.kind} blocking={data.summary.blocking_reasons}/> · 记录版本 {data.summary.version}
+        状态：<StatusBadge state={data.summary.state} kind={data.summary.kind} blocking={data.summary.blocking_reasons}/>{data.summary.source && <> · {sourceModeLabel(data.summary.source.mode)}</>} · 记录版本 {data.summary.version}
       </p>
       {(v.kind === "unit" || v.kind === "material_lot") && <Facts items={[["申请冻结状态",v.freeze_requested||"无申请"],["权威确认状态",v.freeze_confirmed||"尚未确认"],["回执状态",v.freeze_pending?"等待权威确认":"无待确认申请"]]}/>}
       {v.kind === "rma" && <><Facts items={[["原始客户",v.customer_id],["客户问题事实",v.reason],["状态",<StatusBadge state={v.state} kind={v.kind}/>]]}/>{v.source&&<Source value={v.source}/>}<p>原始检验记录{v.tests_truncated?"（已截断）":""}</p>{v.test_ids.map((id,i)=><button key={id} onClick={()=>onOpen({projectId:data.summary.project_id,kind:"test",id})}>查看原始检验 {i+1}</button>)}<p>RMA 登记不代表实物已经退回。</p></>}

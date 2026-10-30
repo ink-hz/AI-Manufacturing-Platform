@@ -416,8 +416,7 @@ export function WorkflowApp({
             ? "生产数据"
             : b.dataset?.mode === "demo"
               ? "隔离演示数据"
-              : "隔离测试数据"}{" "}
-          · 人工登记保留来源凭据
+              : "隔离测试数据"}
         </p>
         {readOnly && <p>当前只读</p>}
         {error && (

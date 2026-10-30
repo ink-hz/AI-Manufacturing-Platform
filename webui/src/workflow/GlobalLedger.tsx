@@ -4,6 +4,7 @@ import type { ObjectPage, ProjectDetail, WorkflowTarget } from './types';
 import { businessModules, type BusinessModule, type LedgerContext } from './navigationContext';
 import { label } from './labels';
 import { StatusBadge, needsAttention } from './StatusBadge';
+import { compactSource } from './sourcePresentation';
 
 export function ProjectScope({projects, value, onChange}: {projects:ProjectDetail[];value:string;onChange(value:string):void}) {
   return <label>所属项目筛选 <select aria-label="所属项目筛选" value={value} onChange={e=>onChange(e.target.value)}>
@@ -50,7 +51,7 @@ export function GlobalLedger({api,module,context,onContext,projects,refresh,onRe
         <td><button className="wf-text-link" onClick={()=>onOpen({projectId:row.project_id,kind:row.kind,id:row.id})}>{row.title}</button></td>
         <td>{p?.customer_id||'—'}</td><td>{p?.product||'—'}</td><td>{p?.name||row.project_id}</td>
         <td className="wf-quantity">{row.quantity??'—'} {row.unit}</td><td><StatusBadge state={row.state} kind={row.kind} blocking={row.blocking_reasons}/></td>
-        <td className="wf-source">{row.source?`${row.source.system} · ${row.source.external_id} · ${label(row.source.mode)} · 版本 ${row.source.version}`:'无外部来源'}</td>
+        <td className="wf-source">{row.source?compactSource(row.source):'无外部来源'}</td>
         <td>{row.blocking_reasons.map(label).join('；')||'无'}</td>
       </tr>;})}</tbody></table></div>}
       <PageControls page={page} onPage={offset=>onContext({...context,offset})}/>

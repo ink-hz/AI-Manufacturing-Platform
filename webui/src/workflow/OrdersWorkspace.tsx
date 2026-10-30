@@ -9,6 +9,7 @@ import { OrdersForms } from "./forms/OrdersForms";
 import { EngineeringForms } from "./forms/EngineeringForms";
 import { label, objectTitle } from "./forms/shared";
 import { StatusBadge, needsAttention } from "./StatusBadge";
+import { compactSource } from "./sourcePresentation";
 const actions: Record<string, string> = {
   "demand.record": "登记需求",
   "demand.review": "评审需求",
@@ -59,9 +60,7 @@ export function ObjectTable({
               {i.quantity !== null ? `${i.quantity} ${i.unit || ""}` : "—"}
             </td>
             <td className="wf-source">
-              {i.source
-                ? `${i.source.system} · ${i.source.external_id} · ${i.source.mode === "manual" ? "人工登记" : i.source.mode}`
-                : "固定业务记录"}
+              {i.source ? compactSource(i.source) : "固定业务记录"}
             </td>
             <td>{i.blocking_reasons.map(label).join("；") || "—"}</td>
           </tr>
