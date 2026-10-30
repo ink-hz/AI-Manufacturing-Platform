@@ -18,7 +18,7 @@
 
 ## Task 1: 发布兼容性探测与真实回退就绪检查
 
-**Files:** modify `deploy/release.py`, focused `deploy/tests/test_workflow_storage.py` or new `deploy/tests/test_workflow_rollback.py`, `docs/runbooks/workflow-release.md`; `deploy/candidate_verify.py`/`candidate_fixture.py` only if required for direct candidate probe evidence.
+**Files:** modify `deploy/release.py`, focused `deploy/tests/test_workflow_storage.py` or new `deploy/tests/test_workflow_rollback.py`, `docs/runbooks/workflow-release.md`; `deploy/candidate_fixture.py` and focused fixture tests for direct OEM candidate evidence; `tests/workflow/test_oem_capabilities_flow.py` only to select the validated mounted runtime source when explicitly configured.
 
 **Interfaces:** existing `cutover(e)`, `READINESS_CODE`, `ops.Locks`, `ops.inspect/run/write`, `previous_source(e)`, exact `workflow_configuration(e)`.
 
@@ -26,5 +26,6 @@
 - [ ] Implement a bounded stdlib-only probe constant/helper in existing release module, using pinned previous source schema declaration and approved workflow path/dataset. Execute it independently with pinned image, UID10001, network none and read-only mounts after stopping the verified target on rollback. Reject unexpected runtime ownership or drift; recover the same stopped container on refusal without old Compose. Cover absent/unconfigured workflow behavior separately.
 - [ ] Set lock retention before uncertain recovery; persist explicit refusal/recovery results. Run old runtime READINESS_CODE before a successful rollback receipt and clear retention only on full success. Fail closed on probe/readiness/receipt errors. Surface forward-only policy in future maintenance.
 - [ ] Update runbook with actual forward migration and recovery contract. Keep source/schema validation strict; no broad refactor or production call in tests.
+- [ ] Private fixture exports the committed OEM recipe script dependencies. After the unchanged original36 gate, invoke the existing pure-Python socket OEM cross-project acceptance function in its own evidence subdirectory, using the configured `/opt/manufacturing/src` runtime. Record its result separately from the36-case registry; do not install pytest, weaken assertions, add a fake scenario or put private test assets into the production package.
 - [ ] Run targeted new tests and current deployment regression. Commands use `/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest deploy/tests/test_workflow_storage.py deploy/tests/test_release_upgrade.py deploy/tests/test_workflow_rollback.py -q` where new file exists. Run affected deploy tests needed by changed interfaces; no unrelated business suites.
 - [ ] Self-review, commit exact files, write report to canonical `.superpowers/releases/manufacturing-oem-capabilities-20261030/implementation-report.md` with RED/GREEN, exact commands and unresolved limitations. Parent reviews, integrates, builds and executes production release separately.
