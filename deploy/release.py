@@ -1,5 +1,6 @@
 """Manufacturing-only API rollout; private receipts and exact runtime preservation."""
 from __future__ import annotations
+import ast
 import copy
 import hashlib
 import importlib.util
@@ -46,7 +47,7 @@ if any(v is not None for v in values):
         assert connection.execute('SELECT version FROM schema_version').fetchone()[0]==SCHEMA_VERSION
         assert tuple(connection.execute('SELECT id,mode,label FROM dataset_metadata').fetchone())==(dataset_id,mode,label)
         assert connection.execute('PRAGMA quick_check').fetchone()[0]=='ok'
-    workflow={'schema_ready':True,'dataset_id':dataset_id,'dataset_mode':mode,'dataset_label':label,'database_path':domain,'authority_database_path':authority,'authority_ready':False,'authority_status':'external_adapter_unverified'}
+    workflow={'schema_ready':True,'schema_version':SCHEMA_VERSION,'dataset_id':dataset_id,'dataset_mode':mode,'dataset_label':label,'database_path':domain,'authority_database_path':authority,'authority_ready':False,'authority_status':'external_adapter_unverified'}
     if mode=='demo':
         from manufacturing_platform.workflow.adapters.mock_store import MockStore
         with MockStore(authority,dataset_id).transaction() as connection:
@@ -55,6 +56,60 @@ if any(v is not None for v in values):
         workflow.update(authority_ready=True,authority_status='independent_demo_store')
     else:assert mode=='production'
 print(json.dumps({'schema_ready':True,'source_read_only':True,'business_records_written':0,'workflow':workflow}))
+'''
+
+
+# This code never imports business modules: opening a WorkflowStore can migrate.
+# mode=ro deliberately includes committed WAL state; immutable=1 must not be used.
+WORKFLOW_COMPATIBILITY_CODE = '''import ast,json,sqlite3,stat,sys,time
+from pathlib import Path
+result={'compatible':False,'expected_schema_version':None,'observed_schema_version':None}
+def require(value,reason):
+    if not value:raise ValueError(reason)
+def safe_file(path,required=True):
+    require(path.is_absolute() and '..' not in path.parts,'unsafe_path')
+    require(not any(p.is_symlink() for p in [path,*path.parents]),'symlink_path')
+    if not path.exists():
+        require(not required,'missing_database')
+        return None
+    info=path.stat()
+    require(stat.S_ISREG(info.st_mode) and info.st_nlink==1,'nonregular_or_aliased_file')
+    return (info.st_dev,info.st_ino)
+try:
+    payload=json.load(sys.stdin);config=payload['workflow'];root=Path(payload['data_root'])
+    source=Path(payload['source_root'])/'src/manufacturing_platform/workflow/schema.py'
+    safe_file(source)
+    require(source.stat().st_size<2000000,'schema_source_too_large')
+    nodes=ast.parse(source.read_text()).body
+    declarations=[n for n in nodes if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='SCHEMA_VERSION' for t in n.targets)]
+    require(len(declarations)==1 and len(declarations[0].targets)==1,'schema_declaration')
+    value=declarations[0].value
+    require(isinstance(value,ast.Constant) and type(value.value) is int and value.value>0,'schema_literal')
+    expected=value.value;result['expected_schema_version']=expected
+    paths=[root/'workbench.sqlite3',Path(config['database_path']),Path(config['authority_database_path'])]
+    require(len(set(paths))==3 and all(p.parent==root and p.suffix=='.sqlite3' for p in paths),'database_path')
+    identities=[safe_file(p,p==paths[1]) for p in paths]
+    existing=[v for v in identities if v is not None]
+    require(len(set(existing))==len(existing),'database_alias')
+    domain=paths[1]
+    for suffix in ['-wal','-shm','-journal']:safe_file(Path(str(domain)+suffix),False)
+    with sqlite3.connect(domain.as_uri()+'?mode=ro',uri=True,timeout=2) as connection:
+        connection.execute('PRAGMA query_only=ON')
+        deadline=time.monotonic()+5
+        connection.set_progress_handler(lambda:time.monotonic()>deadline,1000)
+        connection.execute('BEGIN')
+        versions=connection.execute('SELECT version FROM schema_version').fetchmany(2)
+        require(len(versions)==1 and type(versions[0][0]) is int,'schema_version_rows')
+        result['observed_schema_version']=versions[0][0]
+        metadata=connection.execute('SELECT id,mode,label FROM dataset_metadata').fetchmany(2)
+        require(metadata==[(config['dataset_id'],config['dataset_mode'],config['dataset_label'])],'dataset_mismatch')
+        require(connection.execute('PRAGMA quick_check(1)').fetchall()==[('ok',)],'database_integrity')
+        require(versions==[(expected,)],'schema_version_incompatible')
+        require([safe_file(p,p==domain) for p in paths]==identities,'database_identity_changed')
+    result.update(compatible=True,dataset_verified=True,database_path=str(domain))
+except Exception as error:
+    result.update(reason=str(error),error_type=type(error).__name__)
+print(json.dumps(result))
 '''
 
 
@@ -337,6 +392,130 @@ def others_unchanged(before):
     require({k:v for k,v in observed.items() if k!=ops.API}=={k:v for k,v in before.items() if k!=ops.API},'other_container_changed')
 
 
+def workflow_compatibility(e):
+    require(e.get('mode')=='upgrade' and workflow_configuration(e,baseline=True) is not None,'workflow_baseline_unconfigured')
+    args=['docker','run','--rm','-i','--network','none','--read-only','--cap-drop','ALL',
+          '--security-opt','no-new-privileges','--user','10001:10001',
+          '--mount',f"type=bind,source={previous_source(e)},target=/opt/manufacturing-previous,readonly",
+          '--mount',f"type=bind,source={e['data_host']},target=/app/data/manufacturing,readonly",
+          '--entrypoint','python',e['target_image_id'],'-B','-c',WORKFLOW_COMPATIBILITY_CODE]
+    payload={'workflow':workflow_configuration(e),'source_root':'/opt/manufacturing-previous','data_root':'/app/data/manufacturing'}
+    return json.loads(ops.run(args,data=ops.canonical(payload),timeout=30))
+
+
+def no_other_workflow_writers(e,current):
+    # All API workers/threads stop with their container. Refuse another running
+    # container with a writable bind at, above, or below this dedicated data dir.
+    root=Path(e['data_host'])
+    for identity in ops.identities().values():
+        if identity['id']==current['Id']:continue
+        row=ops.inspect(identity['id'])
+        if not row['State'].get('Running'):continue
+        for mount in row['Mounts']:
+            source=Path(mount['Source'])
+            require(not (mount.get('RW') and (source==root or source in root.parents or root in source.parents)),
+                    'other_workflow_writer_mount')
+
+
+def workflow_readiness(config,container,expected_schema):
+    result=json.loads(ops.run(['docker','exec',container,'python','-c',READINESS_CODE]))
+    workflow=result.get('workflow') or {}
+    require(result.get('schema_ready') is True and workflow.get('schema_ready') is True,'rollback_workflow_not_ready')
+    require(all(workflow.get(k)==v for k,v in config.items()),'rollback_workflow_identity')
+    require(workflow.get('schema_version')==expected_schema,'rollback_workflow_schema')
+    return result
+
+
+def workflow_maintenance(e,readiness):
+    workflow=readiness.get('workflow') or {}
+    require(workflow.get('schema_ready') is True and type(workflow.get('schema_version')) is int,'workflow_schema_not_recorded')
+    baseline=None
+    if e.get('mode')=='upgrade' and workflow_configuration(e,baseline=True) is not None:
+        source=Path(previous_source(e))/'src/manufacturing_platform/workflow/schema.py'
+        declarations=[n for n in ast.parse(source.read_text()).body if isinstance(n,ast.Assign)
+                      and any(isinstance(t,ast.Name) and t.id=='SCHEMA_VERSION' for t in n.targets)]
+        require(len(declarations)==1 and len(declarations[0].targets)==1,'baseline_schema_declaration')
+        value=declarations[0].value
+        require(isinstance(value,ast.Constant) and type(value.value) is int and value.value>0,'baseline_schema_literal')
+        baseline=value.value
+    return {'policy':'forward_only_after_schema_advance','baseline_schema_version':baseline,
+            'target_schema_version':workflow['schema_version'],'readiness':workflow,
+            'recovery':'After schema advance the previous release is not a valid source-only rollback target. '
+                       'Preserve the live database and WAL; do not restore pre-cutover backups. Use forward repair. '
+                       'Inspect failure/rollback receipts and actual runtime/schema before reconciling retained locks.'}
+
+
+def rollback_workflow(e,pre,old,env,locks,error):
+    """Only a quiesced, proven compatible database permits old-source replay."""
+    locks.retained=True
+    state={'policy':'forward_only_after_schema_advance','forward_repair_required':True,
+           'old_runtime_restored':False,'original_failure':{'type':type(error).__name__,'reason':str(error)},
+           'phase':'checking_runtime','target_restart':{'attempted':False}}
+    current=None;stop_attempted=False;recreate_attempted=False
+    def record():ops.write('workflow-rollback-state.private.json',state)
+    try:
+        record();unchanged(e,pre)
+        current=ops.inspect(ops.API)
+        baseline=current['Id']==old['Id']
+        if baseline:compare_rollback_runtime(old,current)
+        else:compare_runtime(old,current,e)
+        require(ops.discover_files(current)==pre['files']+([] if baseline else [str(ops.STAGE/'overlay.json')]),'rollback_current_chain')
+        require(current['State'].get('Running') is True,'rollback_current_not_running')
+        no_other_workflow_writers(e,current)
+        state.update(container=current['Id'],runtime='baseline' if baseline else 'target',phase='stopping')
+        record()
+        # Stop by full identity, never a mutable name. A failed stop command may
+        # already have stopped it, so inspect/recover this same identity below.
+        stop_attempted=True
+        ops.run(['docker','stop','--time','30',current['Id']],timeout=45)
+        stopped=ops.inspect(current['Id'])
+        require(stopped['Id']==current['Id'] and stopped['State'].get('Running') is False,'rollback_stop_unconfirmed')
+        if baseline:compare_rollback_runtime(old,stopped)
+        else:compare_runtime(old,stopped,e)
+        state['phase']='probing';record()
+        state['compatibility']=workflow_compatibility(e)
+        compatibility=state['compatibility']
+        require(compatibility.get('compatible') is True and compatibility.get('dataset_verified') is True
+                and type(compatibility.get('expected_schema_version')) is int and compatibility['expected_schema_version']>0
+                and compatibility.get('observed_schema_version')==compatibility['expected_schema_version']
+                and compatibility.get('database_path')==workflow_configuration(e)['database_path'],'workflow_rollback_refused')
+        state['phase']='recreating_baseline';record()
+        unchanged(e,pre);check_rollback_image(old)
+        require(ops.inspect(current['Id'])['State'].get('Running') is False,'rollback_target_restarted')
+        no_other_workflow_writers(e,current)
+        recreate_attempted=True
+        ops.run(ops.compose(pre['files'])+['up','-d','--no-build','--no-deps','--force-recreate','platform-api'],env=env)
+        restored=ready(old['Image']);compare_rollback_runtime(old,restored)
+        require(ops.discover_files(restored)==pre['files'],'rollback_chain_mismatch')
+        require(ops.maps(ops.API)==pre['baseline_content'],'rollback_content_mismatch')
+        others_unchanged(pre['containers'])
+        state['phase']='checking_old_workflow';record()
+        readiness=workflow_readiness(workflow_configuration(e,baseline=True),restored['Id'],state['compatibility']['expected_schema_version'])
+        state.update(phase='verified_baseline',old_runtime_restored=True,forward_repair_required=False,readiness=readiness)
+        record()
+        ops.write('rollback.json',{'restored':True,'image':restored['Image'],'container':restored['Id'],
+                  'manufacturing_data_retained':True,'compatibility':state['compatibility'],'readiness':readiness})
+        locks.retained=False
+    except BaseException as rollback_error:
+        state.update(phase='forward_repair_required',old_runtime_restored=False,forward_repair_required=True,
+                     failure={'type':type(rollback_error).__name__,'reason':str(rollback_error)})
+        if stop_attempted and not recreate_attempted:
+            try:
+                observed=ops.inspect(current['Id'])
+                require(observed['Id']==current['Id'] and ops.inspect(ops.API)['Id']==current['Id'],'recovery_identity_changed')
+                compare_rollback_runtime(current,observed)
+                if observed['State'].get('Running') is False:
+                    state['target_restart']={'attempted':True,'container':current['Id']}
+                    ops.run(['docker','start',current['Id']])
+                resumed=ready(current['Image'])
+                require(resumed['Id']==current['Id'],'recovery_identity_changed')
+                compare_rollback_runtime(current,resumed)
+                state['target_restart'].update(container=current['Id'],healthy=True)
+            except BaseException as restart_error:
+                state['target_restart'].update(healthy=False,error=str(restart_error))
+        record()  # Failure here must keep locks, never trigger old Compose.
+
+
 def prepare(e):
     with ops.Locks():
         require(not (ops.STAGE/'preflight.json').exists(),'prepare_already_done')
@@ -478,9 +657,17 @@ def cutover(e):
             readiness=json.loads(ops.run(['docker','exec',ops.API,'python','-c',READINESS_CODE]))
             statuses=http_checks(e,pre);unchanged(e,pre)
             receipt={'status':'healthy','platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'container':new['Id'],'compose_files':pre['files']+[str(ops.STAGE/'overlay.json')],'readiness':readiness,'http_statuses':statuses,'database_backup':backup,'browser_acceptance':'not_run','production_erp_connections':'unverified'}
-            publish_success(receipt,{'compose_files_in_order':receipt['compose_files'],'platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'previous_manifest':e['previous_manifest'],'preservation':'All prior ordered overlays, mounts, networks, runtime security and Git capability retained.'})
+            maintenance={'compose_files_in_order':receipt['compose_files'],'platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'previous_manifest':e['previous_manifest'],'preservation':'All prior ordered overlays, mounts, networks, runtime security and Git capability retained.'}
+            if workflow_configuration(e) is not None:maintenance['workflow_rollback']=workflow_maintenance(e,readiness)
+            publish_success(receipt,maintenance)
             print(json.dumps({'deployed':True,'platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'compose_files':len(receipt['compose_files'])}))
         except BaseException as error:
+            if workflow_configuration(e) is not None:
+                locks.retained=True
+                invalidate_success()
+                ops.write('cutover-failure.private.json',{'type':type(error).__name__,'reason':str(error)})
+                rollback_workflow(e,pre,old,env,locks,error)
+                raise
             try:invalidate_success()
             except OSError:pass
             try:
