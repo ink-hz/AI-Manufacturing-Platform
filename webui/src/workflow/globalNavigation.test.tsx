@@ -19,7 +19,7 @@ it.each([
  try {await v.click(module);
   expect(v.host.querySelector('table')?.textContent).toContain(column);
   expect(v.host.textContent).toContain(`${kind}-业务-0`); expect(v.host.textContent).toContain(`${kind}-业务-1`);
-  expect(v.host.textContent).toContain('SOURCE-1'); expect(v.host.textContent).toContain('客户乙');
+  expect(v.host.textContent).toContain('ERP凭据 · 人工登记'); expect(v.host.textContent).not.toContain('SOURCE-1'); expect(v.host.textContent).toContain('客户乙');
   expect(v.host.textContent).not.toContain(`${kind}-业务-2`); expect(v.host.textContent).not.toContain('私有项目');
   expect(v.host.querySelector('table')?.textContent).not.toContain('项目名称');
   expect(v.requests.some(r=>r.url.includes(`/workflow/objects/${kind}?`))).toBe(true);
