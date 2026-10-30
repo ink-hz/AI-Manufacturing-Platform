@@ -110,6 +110,16 @@ it("puts static supply rules behind operation help", async () => {
   }
 });
 
+it("keeps the laboratory device evidence limitation visible", async () => {
+  const view = await workflowView({ initial: "测试与标定", projectContext: true });
+  try {
+    const notice = view.host.querySelector(".wf-oem-workspace > p");
+    expect(notice?.textContent).toContain("设备证据为人工登记或隔离模拟");
+  } finally {
+    await view.dispose();
+  }
+});
+
 it("loads rule advice only after the reader opens it", async () => {
   const { AssistancePanel } = await import("./AssistancePanel");
   const api = { assistance: vi.fn(async () => ({ items: [], unknowns: ["来源尚未核清"], state: "no_evidence", truncated: true })) };
@@ -150,6 +160,7 @@ it("keeps each suggestion and blocker visible while detailed evidence is closed"
     evidence: [`凭据 ${id}`],
     related_targets: [],
     evidence_truncated: false,
+    source: id === "A" ? source : null,
   });
   const api = { assistance: vi.fn(async () => ({ items: [item("A"), item("B")], unknowns: [], state: "evidence_available", truncated: false })) };
   await act(async () => root.render(<AssistancePanel api={api as any} projectId="p1" version={1} onOpen={() => {}} />));
@@ -159,6 +170,7 @@ it("keeps each suggestion and blocker visible while detailed evidence is closed"
   expect(cards[0].querySelector("details")?.open).toBe(false);
   expect(cards[0].querySelector("details")?.textContent).toContain("凭据 A");
   expect(cards[0].querySelector("details")?.textContent).not.toContain("建议 A");
+  expect(cards[0].querySelector("h4")?.textContent).toContain("模拟系统");
   expect(cards[0].textContent).toContain("阻断 A");
   expect(cards[1].textContent).toContain("未知 B");
 });

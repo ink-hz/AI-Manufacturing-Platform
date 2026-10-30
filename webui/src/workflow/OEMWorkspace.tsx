@@ -66,7 +66,7 @@ const guidance = {
   introduction:
     "基于固定修订核对导入证据，明确当前批量资格，采用经验证的资产修订。",
   laboratory:
-    "选择实际 SN，登记测试计划、运行、原始证据及独立标定读回。所有设备证据为人工登记或隔离模拟。",
+    "选择实际 SN，登记测试计划、运行、原始证据及独立标定读回。",
   arrival: "先记录实际看见的包裹，再核对到货凭据；采购和物料身份可暂时未知。",
   authority: "维护责任范围与契约核验。责任登记、契约核验、系统连接分别展示。",
 };
@@ -218,6 +218,7 @@ export function OEMWorkspace(
   return (
     <section className="wf-oem-workspace" aria-label={title[p.domain]}>
       <h3>{title[p.domain]}</h3>
+      {p.domain === "laboratory" && <p>设备证据为人工登记或隔离模拟。</p>}
       <OperationHelp><p>{guidance[p.domain]}</p></OperationHelp>
       {error && (
         <p role="alert">

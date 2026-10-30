@@ -12,6 +12,7 @@ import { AssetContentView } from "./details/IntroductionDetails";
 import { ParameterTable } from "./details/LaboratoryDetails";
 import { label, objectStateLabel } from "./labels";
 import { OperationHelp } from "./OperationHelp";
+import { sourceModeLabel } from "./sourcePresentation";
 export const assistanceModes: Record<AssistanceKind, string> = {
   introduction: "导入证据",
   materials: "物料与收货",
@@ -124,7 +125,7 @@ export function AssistancePanel({
           {data.items.map((item, i) => (
             <section className="wf-assistance-item" key={`${item.target.scope}-${item.target.id}-${i}`}>
               <h4>
-                {item.title} · {objectStateLabel(item.state, item.target.kind)}
+                {item.title} · {objectStateLabel(item.state, item.target.kind)}{item.source && <> · {sourceModeLabel(item.source.mode)}</>}
               </h4>
               <p>{item.suggestion}</p>
               {link(
