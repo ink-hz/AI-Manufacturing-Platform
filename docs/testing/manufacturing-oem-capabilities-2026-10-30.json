@@ -1,0 +1,103 @@
+{
+  "released": true,
+  "url": "https://agent.orbbec.com.cn/manufacturing",
+  "manufacturing_commit": "0d3e5f7dbd94b7c11f084f649c2cb1343ac8348d",
+  "platform_commit": "c6ee87f25e4562ee9ce84a4508491a3a089dbd4e",
+  "image": "sha256:baf2b448feecf41e1e437151c28296f3dc4ee4a443abac31c6c31824a0f2d1bf",
+  "container": "b3f50672205436eb2864c879b22095262832481f0cd9cee378b8d7b9a1715b63",
+  "runtime_preservation": {
+    "passed": true,
+    "container": "b3f50672205436eb2864c879b22095262832481f0cd9cee378b8d7b9a1715b63",
+    "image": "sha256:baf2b448feecf41e1e437151c28296f3dc4ee4a443abac31c6c31824a0f2d1bf",
+    "health": "healthy",
+    "restarts": 0,
+    "compose_files": 52,
+    "mounts": 15,
+    "other_containers_unchanged": 34,
+    "source_files_preserved": 524,
+    "static_files_preserved": 638,
+    "nginx_unchanged": true,
+    "existing_business_rows_unchanged": true,
+    "schema_version": 21,
+    "added_empty_tables": 17,
+    "projects": 6,
+    "units": 45,
+    "three_database_backups_verified": true,
+    "manufacturing_commit": "0d3e5f7dbd94b7c11f084f649c2cb1343ac8348d",
+    "platform_commit": "c6ee87f25e4562ee9ce84a4508491a3a089dbd4e"
+  },
+  "candidate": {
+    "archive_sha256": "f9a90819dba51b3cad9768f08fb170043a15d22f29082f790e8ffc8fc780b9c3",
+    "cases": 36,
+    "e29_e30_e31_e32_verified": true,
+    "failed": 0,
+    "files_verified": 24258,
+    "image": "sha256:baf2b448feecf41e1e437151c28296f3dc4ee4a443abac31c6c31824a0f2d1bf",
+    "manufacturing_commit": "0d3e5f7dbd94b7c11f084f649c2cb1343ac8348d",
+    "not_executed": 0,
+    "oem_facts": {
+      "asset_uses": 1,
+      "calibrations": 2,
+      "component_links": 4,
+      "npis": 2,
+      "reusable_assets": 1,
+      "test_runs": 4,
+      "unit_aliases": 2
+    },
+    "oem_new_actions_verified": 17,
+    "oem_passed": true,
+    "passed": true,
+    "platform_commit": "c6ee87f25e4562ee9ce84a4508491a3a089dbd4e",
+    "run_id": "run-20261030T014201-7c866ed49e744136bcab2eb33bd78f0c",
+    "runtime": {
+      "cryptography": "50.0.0",
+      "fastapi": "0.141.1",
+      "httpx": "0.28.1",
+      "node": "v24.7.0",
+      "pydantic": "2.13.4",
+      "python": "3.11.13",
+      "sqlite": "3.40.1",
+      "starlette": "1.9.0",
+      "uvicorn": "0.52.1"
+    },
+    "scope": "isolated candidate real HTTP/React/mock authority; not employee browser or physical integration"
+  },
+  "admin_policy": {
+    "role": "platform_admin",
+    "status": "active",
+    "directory_freshness": "fresh",
+    "explicit_project_grants": 0,
+    "all_project_count": 6,
+    "all_business_actions": 73
+  },
+  "read_only_scope_verified": true,
+  "typed_details_verified": 205,
+  "ledger_pages_verified": 53,
+  "public_http": {
+    "/manufacturing": {
+      "status": 200,
+      "cache_control": "no-store",
+      "body_sha256": "96bc4d95af25361426f83b1c57e3e9e8b8810e20f4da68beb84275f6142bcc81"
+    },
+    "/api/v1/manufacturing/workflow/access": {
+      "status": 401,
+      "cache_control": "private, no-store",
+      "body_sha256": "ab8fc6cf92b3c2ec0e49303b46c9c71d50f00f2139868b728f95363d1d5f054c"
+    },
+    "/api/v1/manufacturing/workflow/reusable-assets": {
+      "status": 401,
+      "cache_control": "private, no-store",
+      "body_sha256": "ab8fc6cf92b3c2ec0e49303b46c9c71d50f00f2139868b728f95363d1d5f054c"
+    }
+  },
+  "database_backup": {
+    "verified": true,
+    "files": 3,
+    "cross_file_atomic": false
+  },
+  "data_mode": "demo",
+  "browser_acceptance": "user-owned/not_run",
+  "real_factory_external_system_acceptance": "not_run",
+  "maintenance_policy": "forward_only_after_schema_advance",
+  "evidence_directory": ".superpowers/releases/manufacturing-oem-capabilities-20261030-r3"
+}
