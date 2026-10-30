@@ -125,7 +125,9 @@ def test_export_is_exact_committed_private_source_separate_from_production(tmp_p
     from test_build_artifact import repo
     import subprocess
     m=module();repository,_,assets=repo(tmp_path)
-    for name,value in {'webui/package-lock.json':'{}','webui/vite.config.ts':'export default {}','tests/workflow/private.py':'SYNTHETIC = True','scripts/run_workflow_acceptance.py':'pass','docs/testing/manufacturing-full-workflow-acceptance.md':'# Private'}.items():
+    recipes={'scripts/seed_workflow_demo.py':'QUALIFICATIONS = {}','scripts/workflow_demo/__init__.py':'',
+             'scripts/workflow_demo/portfolio.py':'# committed recipe','scripts/workflow_demo/oem_preview.py':'# committed OEM recipe'}
+    for name,value in {'webui/package-lock.json':'{}','webui/vite.config.ts':'export default {}','tests/workflow/private.py':'SYNTHETIC = True','scripts/run_workflow_acceptance.py':'pass','docs/testing/manufacturing-full-workflow-acceptance.md':'# Private',**recipes}.items():
         p=repository/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(value)
     for name in build_artifact.TOOLS:
         path=repository/'deploy'/name;path.parent.mkdir(exist_ok=True)
@@ -153,11 +155,17 @@ def test_export_is_exact_committed_private_source_separate_from_production(tmp_p
     pre={'expected_source':{k:'a'*64 for k in m.PF_OVERLAY},'old':{'Image':'sha256:'+'b'*64}}
     # An uncommitted test edit cannot enter either exported source or its hashes.
     (repository/'tests/workflow/private.py').write_text('UNREVIEWED')
+    (repository/'scripts/workflow_demo/oem_preview.py').write_text('UNREVIEWED RECIPE')
     output=stage/'candidate-fixture';pin=m.export_fixture(repository,sha,'c'*40,business,pre,runtime,manifest,m.digest(manifest),output)
     assert (output/'source/tests/workflow/private.py').read_text()=='SYNTHETIC = True'
     assert not (business/'tests').exists() and not (business/'webui/node_modules').exists()
+    assert not (business/'scripts').exists()
     spec=m.pinned_json(output/'fixture.json',pin['fixture_sha256'])
     envelope=m.pinned_json(output/'source-manifest.json',spec['source_manifest_sha256'])
+    for name,value in recipes.items():
+        assert (output/'source'/name).read_text()==value
+        assert envelope['source']['files'][name]==m.digest(output/'source'/name)
+        assert name not in envelope['manufacturing_runtime']['files']
     assert set(envelope['platform_runtime']['files'])=={'backend/app/'+k for k in m.PF_OVERLAY}
     assert envelope['manufacturing_runtime']['files']['webui/dist/manufacturing.js']==m.digest(business/'webui/dist/manufacturing.js')
     assert not any('.git' in p.parts for p in output.rglob('*'))
@@ -256,3 +264,79 @@ def test_generated_vitest_config_keeps_test_options_and_owns_module_cache(tmp_pa
     assert result['test']['environment']=='jsdom' and result['test']['fileParallelism'] is False
     assert result['test']['include']==['src/**/*.test.tsx'] and result['define']=={'KEEP':'yes'}
     assert result['root']=='readonly-source'
+
+
+def test_oem_context_uses_candidate_runtime_source_and_preserves_local_default(tmp_path,monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[2]/'tests'))
+    from workflow.test_oem_capabilities_flow import socket_context
+    monkeypatch.delenv('WORKFLOW_MANUFACTURING_RUNTIME_ROOT',raising=False)
+    local=tmp_path/'local';local.mkdir()
+    assert socket_context(local).business_source_root==str(Path(__file__).parents[2]/'src')
+    runtime=tmp_path/'runtime';runtime.mkdir()
+    monkeypatch.setenv('WORKFLOW_MANUFACTURING_RUNTIME_ROOT',str(runtime))
+    candidate=tmp_path/'candidate';candidate.mkdir()
+    context=socket_context(candidate)
+    assert context.business_source_root==str(runtime/'src')
+    assert json.loads((candidate/'oem-http/manifest.json').read_text())['business_source_root']==str(runtime/'src')
+
+
+@pytest.mark.parametrize('failure',[False,True])
+def test_oem_candidate_callback_is_mandatory_and_records_separate_owned_evidence(tmp_path,monkeypatch,failure):
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[2]/'tests'))
+    import workflow.test_oem_capabilities_flow as oem
+    calls=[]
+    def actual_callback(root):
+        calls.append(root)
+        assert root.is_dir() and root.stat().st_mode&0o777==0o700
+        if failure:raise AssertionError('OEM assertion failed')
+    monkeypatch.setattr(oem,'test_oem_cross_project_socket_flow_and_current_bulk_projection',actual_callback)
+    monkeypatch.setenv('WORKFLOW_MANUFACTURING_RUNTIME_ROOT','/opt/manufacturing')
+    if failure:
+        with pytest.raises(AssertionError,match='OEM assertion failed'):module().run_oem_acceptance(tmp_path)
+    else:
+        result=module().run_oem_acceptance(tmp_path)
+        assert result['passed'] is True and result['business_source_root']=='/opt/manufacturing/src'
+    assert calls==[tmp_path/'oem']
+    receipt=json.loads((tmp_path/'oem/result.json').read_text())
+    assert receipt['passed'] is (not failure)
+    assert receipt['test']=='test_oem_cross_project_socket_flow_and_current_bulk_projection'
+    with pytest.raises(FileExistsError):module().run_oem_acceptance(tmp_path)
+
+
+@pytest.mark.parametrize('failure',[None,'all36','oem'])
+def test_acceptance_returns_separate_oem_result_only_after_original36(tmp_path,monkeypatch,failure):
+    import types
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[2]/'tests'))
+    from workflow.scenarios import CASE_IDS,provenance
+    m=module();events=[];root=tmp_path/'evidence';root.mkdir()
+    runtime=tmp_path/'runtime.json';runtime.write_text('{"node_version":"v26.5.0"}')
+    original_path=Path
+    monkeypatch.setattr(m,'Path',lambda value:root if value=='/candidate-evidence' else runtime if value=='/candidate-fixture/runtime-manifest.json' else original_path(value))
+    monkeypatch.setattr(m.os,'getuid',lambda:10001);monkeypatch.setattr(m.os,'getgid',lambda:10001)
+    monkeypatch.setattr(m.os,'statvfs',lambda p:SimpleNamespace(f_flag=os.ST_RDONLY))
+    monkeypatch.setattr(m.subprocess,'check_output',lambda *a,**kw:'v26.5.0\n')
+    monkeypatch.setattr(provenance,'source_manifest',lambda *a:events.append('provenance'))
+    auth=types.ModuleType('app.control_plane.auth')
+    class Repository:
+        def active_internal_user_profiles(self,ids):
+            with self._connection() as connection:rows=connection.execute('profiles',ids).fetchall()
+            return [{'user_id':str(row['internal_user_id']),'display_name':row['display_name']} for row in rows]
+    auth.WebSessionRepository=Repository
+    monkeypatch.setitem(sys.modules,'app.control_plane.auth',auth)
+    def all36(*args,**kwargs):
+        events.append('all36');run=root/'runs/complete';run.mkdir(parents=True)
+        (run/'run.json').write_text(json.dumps({'selected':list(CASE_IDS),'statuses':{k:'passed' for k in CASE_IDS},'results':[{'id':k,'status':'passed'} for k in CASE_IDS]}))
+        return SimpleNamespace(returncode=1 if failure=='all36' else 0)
+    monkeypatch.setattr(m.subprocess,'run',all36)
+    def oem(evidence):
+        events.append('oem')
+        if failure=='oem':raise AssertionError('OEM assertion failed')
+        return {'passed':True,'test':'OEM'}
+    monkeypatch.setattr(m,'run_oem_acceptance',oem)
+    if failure:
+        with pytest.raises((ValueError,AssertionError)):m.run_acceptance()
+        assert events==['provenance','all36']+(['oem'] if failure=='oem' else [])
+    else:
+        result=m.run_acceptance()
+        assert events==['provenance','all36','oem']
+        assert result['cases']==36 and result['oem_acceptance']=={'passed':True,'test':'OEM'}

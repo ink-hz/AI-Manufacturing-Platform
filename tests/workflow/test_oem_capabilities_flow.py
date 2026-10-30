@@ -1,6 +1,7 @@
 """OEM integration uses real socket HTTP, independently authenticated roles and facts."""
 
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -81,7 +82,10 @@ def socket_context(tmp_path):
         ),
         EvidenceWriter(directory),
     )
-    ctx.business_source_root = str(Path(__file__).resolve().parents[2] / "src")
+    runtime_root = os.environ.get("WORKFLOW_MANUFACTURING_RUNTIME_ROOT")
+    ctx.business_source_root = str(
+        (Path(runtime_root) if runtime_root else Path(__file__).resolve().parents[2]) / "src"
+    )
     (directory / "manifest.json").write_text(
         json.dumps(
             {
@@ -89,6 +93,7 @@ def socket_context(tmp_path):
                 "directory": str(directory),
                 "dataset_id": ctx.dataset_id,
                 "dataset_mode": "test",
+                "business_source_root": ctx.business_source_root,
             }
         )
     )

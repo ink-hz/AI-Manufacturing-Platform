@@ -124,7 +124,9 @@ def export_fixture(repo, sha, platform_sha, business, preflight, runtime, runtim
     source_map=preflight['expected_source']
     require(PF_OVERLAY<=set(source_map),'private_complete_pf_overlay_required')
     output.mkdir(mode=0o700);source=output/'source';source.mkdir()
-    export_paths(repo,sha,source,['src','webui','tests/workflow','scripts/run_workflow_acceptance.py','docs/manufacturing-system-handbook.md','docs/testing/manufacturing-full-workflow-acceptance.md'])
+    export_paths(repo,sha,source,['src','webui','tests/workflow','scripts/run_workflow_acceptance.py',
+                               'scripts/seed_workflow_demo.py','scripts/workflow_demo',
+                               'docs/manufacturing-system-handbook.md','docs/testing/manufacturing-full-workflow-acceptance.md'])
     require(not (source/'webui/node_modules').exists(),'private_dependency_tree_in_source')
     (source/'webui/node_modules').mkdir()
     published=json.loads((Path(business)/'manifest.json').read_text())
@@ -200,6 +202,23 @@ def verify_workflow_bootstrap(client,check):
     require(access['workflow_available'] is True and access['dataset']=={'id':'isolated-candidate-smoke','mode':'test','label':'Synthetic candidate test'},'private_actual_workflow_bootstrap')
 
 
+def run_oem_acceptance(root):
+    """Existing pytest-independent socket assertions, with new private state only."""
+    from workflow.test_oem_capabilities_flow import test_oem_cross_project_socket_flow_and_current_bulk_projection
+    evidence=safe(root)/'oem';evidence.mkdir(mode=0o700)
+    result={'passed':False,'test':'test_oem_cross_project_socket_flow_and_current_bulk_projection',
+            'business_source_root':str(Path(os.environ['WORKFLOW_MANUFACTURING_RUNTIME_ROOT'])/'src')}
+    try:
+        test_oem_cross_project_socket_flow_and_current_bulk_projection(evidence)
+        result['passed']=True
+    except BaseException as error:
+        result['error_type']=type(error).__name__
+        raise
+    finally:
+        (evidence/'result.json').write_text(json.dumps(result,sort_keys=True))
+    return result
+
+
 def run_acceptance():
     """Inside the isolated candidate after the existing app/assets/legacy smoke."""
     require(os.getuid()==os.getgid()==10001,'private_candidate_uid')
@@ -233,7 +252,8 @@ def run_acceptance():
     reports=list((root/'runs').glob('*/run.json'))
     require(completed.returncode==0 and len(reports)==1,'private_exact36_failed_see_durable_evidence')
     count=validate_result(json.loads(reports[0].read_text()),CASE_IDS)
-    return {'passed':True,'cases':count,'scope':'Synthetic identity, stateful mock authority, actual candidate dependencies; not production business acceptance','runtime':versions}
+    oem=run_oem_acceptance(root)
+    return {'passed':True,'cases':count,'oem_acceptance':oem,'scope':'Synthetic identity, stateful mock authority, actual candidate dependencies; not production business acceptance','runtime':versions}
 
 
 def archive_evidence(stage):
