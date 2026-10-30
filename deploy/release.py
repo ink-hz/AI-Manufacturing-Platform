@@ -61,8 +61,10 @@ print(json.dumps({'schema_ready':True,'source_read_only':True,'business_records_
 
 # This code never imports business modules: opening a WorkflowStore can migrate.
 # mode=ro deliberately includes committed WAL state; immutable=1 must not be used.
-WORKFLOW_COMPATIBILITY_CODE = '''import ast,json,sqlite3,stat,sys,time
+WORKFLOW_COMPATIBILITY_CODE = '''import ast,hashlib,json,os,sqlite3,stat,struct,sys,tempfile,time
+from contextlib import ExitStack,closing
 from pathlib import Path
+SNAPSHOT_LIMIT=16*1024*1024
 result={'compatible':False,'expected_schema_version':None,'observed_schema_version':None}
 def require(value,reason):
     if not value:raise ValueError(reason)
@@ -75,6 +77,54 @@ def safe_file(path,required=True):
     info=path.stat()
     require(stat.S_ISREG(info.st_mode) and info.st_nlink==1,'nonregular_or_aliased_file')
     return (info.st_dev,info.st_ino)
+def fingerprint(info):
+    return {key:getattr(info,'st_'+key) for key in ['dev','ino','size','mtime_ns','ctime_ns','mode','nlink']}
+def source_state(domain):
+    states={}
+    for suffix in ['', '-wal','-shm','-journal']:
+        path=Path(str(domain)+suffix)
+        states[suffix]=fingerprint(path.stat()) if safe_file(path,suffix=='') is not None else None
+    require(states['-journal'] is None,'rollback_journal_present')
+    return states
+def stream(fd,size,destination=None):
+    os.lseek(fd,0,os.SEEK_SET);digest=hashlib.sha256();remaining=size
+    while remaining:
+        block=os.read(fd,min(65536,remaining))
+        require(block,'snapshot_source_truncated')
+        remaining-=len(block);digest.update(block)
+        if destination is not None:destination.write(block)
+    require(not os.read(fd,1),'snapshot_source_grew')
+    return digest.hexdigest()
+def verify_sources(domain,states,files,hashes):
+    require(source_state(domain)==states,'snapshot_source_changed')
+    for suffix,fd in files.items():
+        require(fingerprint(os.fstat(fd))==states[suffix],'snapshot_source_fd_changed')
+        require(stream(fd,states[suffix]['size'])==hashes[suffix],'snapshot_source_hash_changed')
+        require(fingerprint(os.fstat(fd))==states[suffix],'snapshot_source_fd_changed')
+    require(source_state(domain)==states,'snapshot_source_changed')
+def validate_wal(path):
+    # SQLite ignores invalid trailing frames. Refuse them instead of accepting a
+    # possibly older main DB. A zero-byte WAL is a valid no-frame state.
+    data=path.read_bytes()
+    if not data:return
+    require(len(data)>=32,'snapshot_wal_truncated')
+    magic,version,page_size=struct.unpack('>III',data[:12])
+    require(magic in (0x377f0682,0x377f0683) and version==3007000,'snapshot_wal_header')
+    require(512<=page_size<=65536 and page_size&(page_size-1)==0,'snapshot_wal_page_size')
+    require((len(data)-32)%(24+page_size)==0,'snapshot_wal_truncated')
+    endian='<' if magic==0x377f0682 else '>'
+    def checksum(block,state):
+        a,b=state
+        for x,y in struct.iter_unpack(endian+'II',block):
+            a=(a+x+b)&0xffffffff;b=(b+y+a)&0xffffffff
+        return a,b
+    state=checksum(data[:24],(0,0))
+    require(state==struct.unpack('>II',data[24:32]),'snapshot_wal_checksum')
+    for offset in range(32,len(data),24+page_size):
+        frame=data[offset:offset+24+page_size]
+        require(frame[8:16]==data[16:24] and struct.unpack('>I',frame[:4])[0]>0,'snapshot_wal_frame')
+        state=checksum(frame[:8]+frame[24:],state)
+        require(state==struct.unpack('>II',frame[16:24]),'snapshot_wal_checksum')
 try:
     payload=json.load(sys.stdin);config=payload['workflow'];root=Path(payload['data_root'])
     source=Path(payload['source_root'])/'src/manufacturing_platform/workflow/schema.py'
@@ -92,21 +142,43 @@ try:
     existing=[v for v in identities if v is not None]
     require(len(set(existing))==len(existing),'database_alias')
     domain=paths[1]
-    for suffix in ['-wal','-shm','-journal']:safe_file(Path(str(domain)+suffix),False)
-    with sqlite3.connect(domain.as_uri()+'?mode=ro',uri=True,timeout=2) as connection:
-        connection.execute('PRAGMA query_only=ON')
-        deadline=time.monotonic()+5
-        connection.set_progress_handler(lambda:time.monotonic()>deadline,1000)
-        connection.execute('BEGIN')
-        versions=connection.execute('SELECT version FROM schema_version').fetchmany(2)
-        require(len(versions)==1 and type(versions[0][0]) is int,'schema_version_rows')
-        result['observed_schema_version']=versions[0][0]
-        metadata=connection.execute('SELECT id,mode,label FROM dataset_metadata').fetchmany(2)
-        require(metadata==[(config['dataset_id'],config['dataset_mode'],config['dataset_label'])],'dataset_mismatch')
-        require(connection.execute('PRAGMA quick_check(1)').fetchall()==[('ok',)],'database_integrity')
-        require(versions==[(expected,)],'schema_version_incompatible')
+    result.update(database_path=str(domain),probe_method='verified_private_snapshot')
+    states=source_state(domain)
+    require(sum(states[s]['size'] for s in ['', '-wal'] if states[s] is not None)<=SNAPSHOT_LIMIT,'snapshot_size_limit')
+    with ExitStack() as stack:
+        files={};hashes={}
+        for suffix in ['', '-wal']:
+            if states[suffix] is None:continue
+            fd=os.open(str(domain)+suffix,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+            stack.callback(os.close,fd);files[suffix]=fd
+            require(fingerprint(os.fstat(fd))==states[suffix],'snapshot_source_fd_changed')
+            hashes[suffix]=stream(fd,states[suffix]['size'])
+        verify_sources(domain,states,files,hashes)
+        private=Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='workflow-probe-',dir='/tmp')))
+        snapshot=private/domain.name
+        for suffix,fd in files.items():
+            with Path(str(snapshot)+suffix).open('xb') as destination:
+                require(stream(fd,states[suffix]['size'],destination)==hashes[suffix],'snapshot_source_hash_changed')
+            require(hashlib.sha256(Path(str(snapshot)+suffix).read_bytes()).hexdigest()==hashes[suffix],'snapshot_copy_hash_changed')
+        verify_sources(domain,states,files,hashes)
+        result['snapshot_sources']={suffix:({**states[suffix],'sha256':hashes[suffix]} if suffix in files else None) for suffix in ['', '-wal']}
+        if '-wal' in files:validate_wal(Path(str(snapshot)+'-wal'))
+        with closing(sqlite3.connect(snapshot.as_uri()+'?mode=ro',uri=True,timeout=2)) as connection:
+            connection.execute('PRAGMA query_only=ON')
+            deadline=time.monotonic()+5
+            connection.set_progress_handler(lambda:time.monotonic()>deadline,1000)
+            connection.execute('BEGIN')
+            versions=connection.execute('SELECT version FROM schema_version').fetchmany(2)
+            require(len(versions)==1 and type(versions[0][0]) is int,'schema_version_rows')
+            result['observed_schema_version']=versions[0][0]
+            metadata=connection.execute('SELECT id,mode,label FROM dataset_metadata').fetchmany(2)
+            require(metadata==[(config['dataset_id'],config['dataset_mode'],config['dataset_label'])],'dataset_mismatch')
+            require(connection.execute('PRAGMA quick_check(1)').fetchall()==[('ok',)],'database_integrity')
+        verify_sources(domain,states,files,hashes)
         require([safe_file(p,p==domain) for p in paths]==identities,'database_identity_changed')
-    result.update(compatible=True,dataset_verified=True,database_path=str(domain))
+        result['source_unchanged']=True
+        require(versions==[(expected,)],'schema_version_incompatible')
+    result.update(compatible=True,dataset_verified=True)
 except Exception as error:
     result.update(reason=str(error),error_type=type(error).__name__)
 print(json.dumps(result))
@@ -396,6 +468,7 @@ def workflow_compatibility(e):
     require(e.get('mode')=='upgrade' and workflow_configuration(e,baseline=True) is not None,'workflow_baseline_unconfigured')
     args=['docker','run','--rm','-i','--network','none','--read-only','--cap-drop','ALL',
           '--security-opt','no-new-privileges','--user','10001:10001',
+          '--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=32m,mode=0700,uid=10001,gid=10001',
           '--mount',f"type=bind,source={previous_source(e)},target=/opt/manufacturing-previous,readonly",
           '--mount',f"type=bind,source={e['data_host']},target=/app/data/manufacturing,readonly",
           '--entrypoint','python',e['target_image_id'],'-B','-c',WORKFLOW_COMPATIBILITY_CODE]

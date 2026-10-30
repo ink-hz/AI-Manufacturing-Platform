@@ -32,8 +32,8 @@ def probe_fixture(tmp_path):
     return db,{'workflow':config,'source_root':str(source),'data_root':str(data)}
 
 
-def run_probe(payload):
-    result=subprocess.run([sys.executable,'-B','-c',release.WORKFLOW_COMPATIBILITY_CODE],input=json.dumps(payload),text=True,capture_output=True,timeout=15)
+def run_probe(payload, prelude=''):
+    result=subprocess.run([sys.executable,'-B','-c',prelude+'\n'+release.WORKFLOW_COMPATIBILITY_CODE],input=json.dumps(payload),text=True,capture_output=True,timeout=15)
     assert result.returncode==0,result.stderr
     return json.loads(result.stdout)
 
@@ -152,6 +152,7 @@ def rollback_harness(tmp_path,monkeypatch,*,compatible=True,fault=None,configure
             assert args[args.index('--user')+1]=='10001:10001'
             assert args[args.index('--network')+1]=='none'
             assert '--read-only' in args and '--cap-drop' in args and 'no-new-privileges' in args
+            assert args[args.index('--tmpfs')+1]=='/tmp:rw,noexec,nosuid,nodev,size=32m,mode=0700,uid=10001,gid=10001'
             mounts=[args[i+1] for i,v in enumerate(args) if v=='--mount']
             assert len(mounts)==2 and all(m.endswith(',readonly') for m in mounts)
             assert args[args.index('--entrypoint')+2]==e['target_image_id']
@@ -264,12 +265,13 @@ def test_initial_or_unconfigured_baseline_workflow_refuses_probe(monkeypatch,mis
     with pytest.raises(ValueError,match='workflow_baseline_unconfigured'):release.workflow_compatibility(e)
 
 
-def test_real_exclusive_sqlite_lock_refuses_readonly_probe(tmp_path):
+def test_real_uncommitted_sqlite_journal_refuses_snapshot_probe(tmp_path):
     db,payload=probe_fixture(tmp_path)
     db.execute('BEGIN EXCLUSIVE')
+    db.execute('UPDATE schema_version SET version=21')
     try:
         result=run_probe(payload)
-        assert not result['compatible'] and 'locked' in result['reason']
+        assert not result['compatible'] and 'journal' in result['reason']
     finally:db.rollback();db.close()
 
 
@@ -295,3 +297,223 @@ def test_target_recreate_failure_with_known_baseline_still_checks_quiesced_schem
     with pytest.raises(ValueError,match='target_compose_failed'):release.cutover(e)
     assert events.index('stop')<events.index('probe')<events.index('old_readiness')
     assert writes['rollback.json']['restored'] and not locks.retained
+
+
+def source_state(root):
+    return {p.name:(p.stat().st_dev,p.stat().st_ino,p.stat().st_size,
+                    p.stat().st_mtime_ns,p.stat().st_ctime_ns,hashlib.sha256(p.read_bytes()).hexdigest())
+            for p in root.iterdir() if p.is_file()}
+
+
+def private_connection_check(payload):
+    # Inspect the real SQLite boundary, including that source SHM is never copied.
+    return f"""import sqlite3
+from pathlib import Path
+original_connect=sqlite3.connect
+def checked_connect(database,*args,**kwargs):
+    uri=database
+    assert uri != {str(Path(payload['workflow']['database_path']).as_uri()+'?mode=ro')!r}, 'original_database_opened'
+    assert uri.startswith('file:///tmp/') and uri.endswith('?mode=ro'), 'private_readonly_required'
+    assert not Path(uri[5:].split('?')[0]+'-shm').exists(), 'copied_source_shm'
+    return original_connect(uri,*args,**kwargs)
+sqlite3.connect=checked_connect
+"""
+
+
+def test_snapshot_wal_only_committed_21_never_reports_main_17(tmp_path):
+    db,payload=probe_fixture(tmp_path)
+    db.execute('PRAGMA journal_mode=WAL');db.execute('PRAGMA wal_autocheckpoint=0')
+    base=Path(payload['workflow']['database_path']).read_bytes()
+    db.execute('UPDATE schema_version SET version=21');db.commit()
+    assert Path(payload['workflow']['database_path']).read_bytes()==base
+    standalone=tmp_path/'base.sqlite3';standalone.write_bytes(base)
+    with sqlite3.connect(standalone) as check:assert check.execute('SELECT version FROM schema_version').fetchall()==[(17,)]
+    before=source_state(Path(payload['data_root']))
+    result=run_probe(payload,private_connection_check(payload))
+    assert result['observed_schema_version']==21 and not result['compatible'],result
+    assert result['reason']=='schema_version_incompatible'
+    assert result['source_unchanged'] and result['probe_method']=='verified_private_snapshot'
+    assert result['database_path']==payload['workflow']['database_path']
+    assert source_state(Path(payload['data_root']))==before
+    db.close()
+
+
+def test_snapshot_wal_mode_17_without_sidecars_is_private_and_preserves_source(tmp_path):
+    db,payload=probe_fixture(tmp_path);db.execute('PRAGMA journal_mode=WAL');db.close()
+    root=Path(payload['data_root']);assert len(list(root.iterdir()))==1
+    before=source_state(root)
+    result=run_probe(payload,private_connection_check(payload))
+    assert result['compatible'] and result['observed_schema_version']==17,result
+    assert result['source_unchanged'] and result['database_path']==payload['workflow']['database_path']
+    evidence=result['snapshot_sources']['']
+    assert evidence['sha256']==before['workflow.sqlite3'][-1] and evidence['size']==before['workflow.sqlite3'][2]
+    assert result['snapshot_sources']['-wal'] is None
+    assert source_state(root)==before
+
+
+@pytest.mark.parametrize('fault',['journal','oversize_main','oversize_total','truncated_wal','corrupt_wal'])
+def test_snapshot_refuses_unsafe_or_unbounded_copy(tmp_path,fault):
+    db,payload=probe_fixture(tmp_path);path=Path(payload['workflow']['database_path']);db.close()
+    if fault=='journal':Path(str(path)+'-journal').write_bytes(b'')
+    if fault=='oversize_main':
+        with path.open('ab') as file:file.truncate(16*1024*1024+1)
+    if fault=='oversize_total':
+        with Path(str(path)+'-wal').open('wb') as file:file.truncate(16*1024*1024)
+    if fault in {'truncated_wal','corrupt_wal'}:
+        db=sqlite3.connect(path);db.execute('PRAGMA journal_mode=WAL')
+        db.execute('UPDATE schema_version SET version=21');db.commit()
+        wal=Path(str(path)+'-wal');data=bytearray(wal.read_bytes())
+        if fault=='truncated_wal':data=data[:-1]
+        else:data[-1]^=1
+        wal.write_bytes(data)
+    before=source_state(Path(payload['data_root']))
+    result=run_probe(payload)
+    assert not result['compatible'],result
+    assert source_state(Path(payload['data_root']))==before
+    if fault.startswith('oversize'):assert result['reason']=='snapshot_size_limit'
+    if fault.endswith('wal'):assert result['reason'].startswith('snapshot_wal_')
+    if fault=='journal':assert result['reason']=='rollback_journal_present'
+    db.close()
+
+
+@pytest.mark.parametrize('fault',['grow','replace','same_size','wal_appears','shm_appears','journal_appears'])
+def test_snapshot_refuses_source_changes_during_streaming(tmp_path,fault):
+    db,payload=probe_fixture(tmp_path);db.close()
+    path=Path(payload['workflow']['database_path'])
+    actions={
+        'grow':"with path.open('ab') as file:file.write(b'x')",
+        'replace':"data=path.read_bytes();path.unlink();path.write_bytes(data)",
+        'same_size':"data=bytearray(path.read_bytes());data[-1]^=1;path.write_bytes(data)",
+        'wal_appears':"Path(str(path)+'-wal').write_bytes(b'')",
+        'shm_appears':"Path(str(path)+'-shm').write_bytes(b'')",
+        'journal_appears':"Path(str(path)+'-journal').write_bytes(b'')",
+    }
+    prelude=f"""import os
+from pathlib import Path
+path=Path({str(path)!r});original_read=os.read;changed=False
+def changed_read(fd,count):
+    global changed
+    data=original_read(fd,count)
+    if data and not changed:
+        changed=True
+        {actions[fault]}
+    return data
+os.read=changed_read
+"""
+    result=run_probe(payload,prelude)
+    assert not result['compatible'],result
+    assert 'snapshot_source' in result['reason'] or 'journal' in result['reason'],result
+
+
+def test_snapshot_temporary_space_error_refuses_without_touching_source(tmp_path):
+    db,payload=probe_fixture(tmp_path);db.close();root=Path(payload['data_root']);before=source_state(root)
+    prelude="""import tempfile
+original_temporary_directory=tempfile.TemporaryDirectory
+def full(*args,**kwargs):raise OSError(28,'No space left on device')
+tempfile.TemporaryDirectory=full
+"""
+    result=run_probe(payload,prelude)
+    assert not result['compatible'] and result['error_type']=='OSError'
+    assert source_state(root)==before
+
+
+def test_snapshot_empty_wal_is_a_valid_no_frame_state(tmp_path):
+    db,payload=probe_fixture(tmp_path);db.execute('PRAGMA journal_mode=WAL');db.close()
+    Path(payload['workflow']['database_path']+'-wal').write_bytes(b'')
+    before=source_state(Path(payload['data_root']))
+    result=run_probe(payload,private_connection_check(payload))
+    assert result['compatible'] and result['snapshot_sources']['-wal']['size']==0
+    assert source_state(Path(payload['data_root']))==before
+
+
+def test_snapshot_rechecks_source_after_sqlite_read(tmp_path):
+    db,payload=probe_fixture(tmp_path);db.close()
+    prelude=f"""import sqlite3
+from pathlib import Path
+class ChangedOnClose(sqlite3.Connection):
+    def close(self):
+        super().close()
+        path=Path({payload['workflow']['database_path']!r})
+        with path.open('ab') as file:file.write(b'x')
+original_connect=sqlite3.connect
+def changed_connect(*args,**kwargs):return original_connect(*args,factory=ChangedOnClose,**kwargs)
+sqlite3.connect=changed_connect
+"""
+    result=run_probe(payload,prelude)
+    assert not result['compatible'] and result['observed_schema_version']==17
+    assert result['reason']=='snapshot_source_changed'
+
+
+def test_snapshot_rehash_detects_bytes_changed_even_with_frozen_stat_evidence(tmp_path):
+    db,payload=probe_fixture(tmp_path);db.close()
+    # Fault injection deliberately hides metadata changes to isolate SHA checks.
+    prelude=f"""import os
+from pathlib import Path
+path=Path({payload['workflow']['database_path']!r})
+original_stat=os.stat;original_fstat=os.fstat;original_read=os.read
+saved=path.stat();reads=0
+def frozen_stat(p,*args,**kwargs):
+    result=original_stat(p,*args,**kwargs)
+    return saved if result.st_ino==saved.st_ino else result
+def frozen_fstat(fd):
+    result=original_fstat(fd)
+    return saved if result.st_ino==saved.st_ino else result
+def changed_read(fd,count):
+    global reads
+    data=original_read(fd,count)
+    if data:
+        reads+=1
+        if reads==1:
+            blob=bytearray(path.read_bytes());blob[-1]^=1;path.write_bytes(blob)
+    return data
+os.stat=frozen_stat;os.fstat=frozen_fstat;os.read=changed_read
+"""
+    result=run_probe(payload,prelude)
+    assert not result['compatible'] and result['reason']=='snapshot_source_hash_changed'
+
+
+@pytest.mark.parametrize('fault',['read','write'])
+def test_snapshot_copy_io_errors_fail_closed(tmp_path,fault):
+    db,payload=probe_fixture(tmp_path);db.close();root=Path(payload['data_root']);before=source_state(root)
+    prelude="""import os
+from pathlib import Path
+original_open=Path.open
+class FullDestination:
+    def __enter__(self):return self
+    def __exit__(self,*args):pass
+    def write(self,data):raise OSError(28,'No space left on device')
+def failing_open(self,mode='r',*args,**kwargs):
+    if mode=='xb':return FullDestination()
+    return original_open(self,mode,*args,**kwargs)
+def failed_read(*args):raise OSError(5,'Input/output error')
+"""+('os.read=failed_read' if fault=='read' else 'Path.open=failing_open')
+    result=run_probe(payload,prelude)
+    assert not result['compatible'] and result['error_type']=='OSError'
+    assert source_state(root)==before
+
+
+@pytest.mark.parametrize('fault',['grow','remove','replace'])
+def test_snapshot_rejects_existing_wal_mutation(tmp_path,fault):
+    db,payload=probe_fixture(tmp_path);db.execute('PRAGMA journal_mode=WAL')
+    db.execute('UPDATE schema_version SET version=21');db.commit()
+    wal=Path(payload['workflow']['database_path']+'-wal')
+    action={
+        'grow':"with wal.open('ab') as file:file.write(b'x')",
+        'remove':'wal.unlink()',
+        'replace':'data=wal.read_bytes();wal.unlink();wal.write_bytes(data)',
+    }[fault]
+    prelude=f"""import os
+from pathlib import Path
+wal=Path({str(wal)!r});wal_inode=wal.stat().st_ino;original_read=os.read;changed=False
+def changed_read(fd,count):
+    global changed
+    data=original_read(fd,count)
+    if data and not changed and os.fstat(fd).st_ino==wal_inode:
+        changed=True
+        {action}
+    return data
+os.read=changed_read
+"""
+    result=run_probe(payload,prelude)
+    assert not result['compatible'] and result['reason'].startswith('snapshot_source'),result
+    db.close()
