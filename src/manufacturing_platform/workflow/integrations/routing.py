@@ -8,12 +8,21 @@ from uuid import UUID
 from ..adapters.base import AuthorityAdapter
 from ..commands import CommandContext
 from ..contracts import Actor, DomainError
-from .contracts import IntegrationFact, ProjectionResult, SystemAdapter, SystemOperation
+from .contracts import (
+    DeliveryReceipt,
+    IntegrationFact,
+    ProjectionResult,
+    SystemAdapter,
+    SystemOperation,
+)
 from .core_models import ProfileId, SourceKey, SystemId
 from .store import SystemStore
 
 
 class SourceAdapter(SystemAdapter, Protocol):
+    def query_delivery(
+        self, project_id: UUID, delivery_id: UUID
+    ) -> DeliveryReceipt | None: ...
     def fact(self, project_id: UUID, key: SourceKey) -> IntegrationFact: ...
 
 

@@ -784,7 +784,7 @@ class WorkflowService:
     def integration_systems(self, actor, project_id):
         from .integrations import browse
         from .integrations.store import canonical_hash
-        from .integrations.contracts import SystemReceipt
+        from .integrations.contracts import SystemReceipt, DeliveryReceipt
         from .exchange_models import ExternalReceipt
 
         with self.store.transaction() as tx:
@@ -814,7 +814,7 @@ class WorkflowService:
         recorded = {
             card.system: card.last_receipt for card in initial if card.last_receipt
         }
-        healthy, network_pending = [], {}
+        healthy, network_pending, consumer_activity = [], {}, {}
         for source in self.system_registry.existing_stores():
             try:
                 network_pending[source.system] = source.pending_count(project_id)
@@ -829,6 +829,28 @@ class WorkflowService:
                         healthy.append(source.system)
             except (ValueError, OSError, DomainError):
                 pass
+            try:
+                activity = source.consumer_activity(project_id)
+                if activity is not None:
+                    consumer_activity[source.system] = activity
+                    query = getattr(
+                        self.system_registry.adapter(source.system),
+                        "query_delivery",
+                        None,
+                    )
+                    observed = (
+                        query(project_id, activity.last_receipt.delivery_id)
+                        if query
+                        else None
+                    )
+                    if observed is not None and canonical_hash(
+                        DeliveryReceipt.model_validate(observed)
+                    ) == canonical_hash(activity.last_receipt):
+                        consumer_activity[source.system] = activity.model_copy(
+                            update={"healthy": True}
+                        )
+            except (ValueError, OSError, DomainError):
+                pass
         with self.store.transaction() as tx:
             return browse.systems(
                 tx,
@@ -838,6 +860,7 @@ class WorkflowService:
                 healthy_systems=healthy,
                 network_pending=network_pending,
                 legacy_healthy=legacy_healthy,
+                consumer_activity=consumer_activity,
             )
 
     def integration_facts(
@@ -967,7 +990,7 @@ class WorkflowService:
                     {**replay, "replayed": True, "current_project_version": row["version"]}
                 )
                 if isinstance(command, integration_operations.COMMANDS):
-                    return self.integration_service.result(tx, replay_result)
+                    return self.integration_service.result(tx, replay_result, intent_id=self.integration_service.intent_id(command))
                 return replay_result
             if row["version"] != command.expected_version:
                 raise DomainError(

@@ -64,6 +64,17 @@ class FactLinkPage(StrictModel):
     complete: bool
 
 
+class ConsumerActivity(StrictModel):
+    accepted_count: int = Field(strict=True, ge=0)
+    rejected_count: int = Field(strict=True, ge=0)
+    last_receipt: DeliveryReceipt
+    healthy: bool
+
+
+class ObservedSystemDescriptor(SystemDescriptor):
+    consumer_activity: ConsumerActivity | None = None
+
+
 class FactDetail(StrictModel):
     fact: IntegrationFact
     origin: SourceOrigin = Field(default_factory=UntrackedOrigin)
@@ -78,7 +89,6 @@ class FactDetail(StrictModel):
     projection: ProjectionResult | None = None
     predecessors: list[IntegrationFact] = Field(default_factory=list, max_length=1000)
     receipts: list[SystemReceipt] = Field(default_factory=list, max_length=200)
-    deliveries: list[DeliveryReceipt] = Field(default_factory=list, max_length=200)
 
 
 def authorize(tx, actor, project_id, registry, system=None):
@@ -102,6 +112,7 @@ def systems(
     healthy_systems=(),
     network_pending=None,
     legacy_healthy=False,
+    consumer_activity=None,
 ):
     require_project(tx, actor, project_id)
     profile = profile_for(tx, project_id)
@@ -132,7 +143,7 @@ def systems(
             else "unexercised"
         )
     descriptors = [
-        SystemDescriptor(
+        ObservedSystemDescriptor(
             system="erp",
             profile=profile,
             mode=mode,
@@ -177,6 +188,12 @@ def systems(
             (str(project_id), system),
         ).fetchone()[0]
         pending += (network_pending or {}).get(system, 0)
+        activity = (consumer_activity or {}).get(system)
+        if activity and (
+            activity.last_receipt.project_id != project_id
+            or activity.last_receipt.consumer != system
+        ):
+            raise DomainError("NOT_FOUND", 404, "Consumer activity not found")
         configured = profile == "oem-network-v1" and registry.available(system)
         status = "unexercised" if configured else "unconfigured"
         if mode == "production":
@@ -191,8 +208,16 @@ def systems(
                 if last.phase == "accepted" and system in healthy_systems
                 else "degraded"
             )
+        if configured and last is None and activity:
+            status = (
+                "pending"
+                if pending
+                else "connected-mock"
+                if activity.healthy and activity.last_receipt.phase == "accepted"
+                else "degraded"
+            )
         descriptors.append(
-            SystemDescriptor(
+            ObservedSystemDescriptor(
                 system=system,
                 profile=profile,
                 mode=mode,
@@ -202,6 +227,7 @@ def systems(
                 permitted_operations=permitted if configured else [],
                 pending_count=pending,
                 last_receipt=last,
+                consumer_activity=activity,
             )
         )
     return descriptors
@@ -251,7 +277,6 @@ def fact(
     *,
     observation=None,
     predecessors=(),
-    deliveries=(),
     origin=None,
     delivery_states=(),
 ):
@@ -267,9 +292,6 @@ def fact(
             or predecessor.source_key not in record.caused_by
         ):
             raise DomainError("NOT_FOUND", 404, "Causal predecessor not found")
-    for receipt in deliveries:
-        if receipt.project_id != project_id or receipt.source_key != key:
-            raise DomainError("NOT_FOUND", 404, "Delivery receipt not found")
     rows = tx.execute(
         "SELECT receipt_json FROM integration_receipts WHERE project_id=? AND EXISTS(SELECT 1 FROM json_each(receipt_json,'$.source_keys') k WHERE json_extract(k.value,'$.system')=? AND json_extract(k.value,'$.object_type')=? AND json_extract(k.value,'$.external_id')=? AND json_extract(k.value,'$.version')=?) ORDER BY rowid DESC LIMIT 200",
         identity(project_id, key),
@@ -311,7 +333,6 @@ def fact(
         projection=projected,
         predecessors=list(predecessors),
         receipts=[SystemReceipt.model_validate_json(r[0]) for r in rows],
-        deliveries=list(deliveries),
         origin=origin,
         source_accepted=source_receipt.phase == "accepted" if source_receipt else None,
         consumer_delivered=all(

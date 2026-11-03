@@ -32,6 +32,9 @@ class TestAdapter:
     def query(self, project_id, operation_id):
         return self.store.query(project_id, operation_id)
 
+    def query_delivery(self, project_id, delivery_id):
+        return self.store.query_delivery(project_id, delivery_id)
+
     def facts(self, *args):
         return self.store.list_facts(*args)
 

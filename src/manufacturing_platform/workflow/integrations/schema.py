@@ -73,6 +73,19 @@ CREATE INDEX IF NOT EXISTS integration_links_target ON integration_object_links(
 """
 
 
+# Mutable transport scheduling only; independent of immutable intent/fact identity.
+NETWORK_SCHEDULER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS integration_network_cursors(
+ project_id TEXT NOT NULL REFERENCES projects(id),
+ producer TEXT NOT NULL,
+ position INTEGER NOT NULL CHECK(position>=1),
+ turn INTEGER NOT NULL CHECK(turn>=1),
+ PRIMARY KEY(project_id,producer)
+)
+"""
+INTEGRATION_SCHEMA += NETWORK_SCHEDULER_SCHEMA + ";\n"
+
+
 def migrate_integration_schema(tx):
     # sqlite executescript implicitly commits, so use complete statements within
     # the caller's existing migration transaction (including trigger bodies).

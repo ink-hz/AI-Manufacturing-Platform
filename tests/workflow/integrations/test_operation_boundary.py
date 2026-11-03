@@ -11,7 +11,7 @@ def test_query_first_recovers_committed_timeout_with_original_identity(rig):
     op = uuid4()
     rig.fault("sap", op, "timeout_after_commit")
     result = rig.execute(operation_id=op)
-    assert result.object_id == op
+    assert result.integration.intent_id == op
     assert len(rig.rows("sap", "facts")) == 1
     rig.reopen()
     rig.retry(op)
@@ -83,7 +83,7 @@ def test_browse_no_authority_origin_inference_and_cross_project(rig):
     assert next(d for d in descriptors if d.system == "sap").status == "unexercised"
     assert not (rig.root / "mock-systems").exists()
     result = rig.execute()
-    key = rig.source_receipt(result.object_id).source_keys[0]
+    key = rig.source_receipt(result.integration.intent_id).source_keys[0]
     with rig.workflow.store.transaction() as tx:
         with pytest.raises(DomainError) as exc:
             browse.fact(tx, rig.actor, rig.other_project_id, rig.registry, key)
@@ -379,10 +379,12 @@ def test_no_adapter_io_in_workflow_transactions(rig, monkeypatch):
 
         monkeypatch.setattr(TestAdapter, method, guarded)
     result = rig.execute()
-    rig.query(result.object_id)
+    rig.query(result.integration.intent_id)
     rig.workflow.integration_facts(rig.actor, rig.project_id, "sap", "order")
     rig.workflow.integration_fact(
-        rig.actor, rig.project_id, rig.source_receipt(result.object_id).source_keys[0]
+        rig.actor,
+        rig.project_id,
+        rig.source_receipt(result.integration.intent_id).source_keys[0],
     )
 
 
@@ -398,7 +400,7 @@ def test_projection_changes_project_version_and_is_audited(rig):
             (str(rig.project_id),),
         ).fetchall()
     assert len(events) == 1
-    assert str(result.object_id) in events[0][0]
+    assert str(result.integration.intent_id) in events[0][0]
 
 
 def test_revocation_during_query_prevents_new_source_execution(rig, monkeypatch):
@@ -487,12 +489,12 @@ def test_consumer_return_without_durable_inbox_is_not_delivery(rig, monkeypatch)
 
 def test_pull_pins_observation_and_does_not_repeat_projection(rig):
     original = rig.execute()
-    receipt = rig.source_receipt(original.object_id)
+    receipt = rig.source_receipt(original.integration.intent_id)
     key = receipt.source_keys[0]
     pulled = rig.pull(key)
     assert pulled.integration.projection_applied is True
     assert rig.projection_count(key) == 1
-    rig.retry(pulled.object_id)
+    rig.retry(pulled.integration.intent_id)
     assert rig.projection_count(key) == 1
     assert len(rig.rows("sap", "operations")) == 1
 
@@ -553,7 +555,7 @@ def test_all_closed_fact_types_have_explicit_fixed_policy():
 def test_explicit_query_advances_bounded_network_for_already_applied_intent(rig):
     result = rig.execute()
     assert rig.registry.source_store("sap").pending_count(rig.project_id) == 1
-    rig.query(result.object_id)
+    rig.query(result.integration.intent_id)
     assert rig.registry.source_store("sap").pending_count(rig.project_id) == 0
     assert len(rig.rows("wms", "test_effects")) == 1
     assert len(rig.rows("sap", "operations")) == 1
@@ -573,7 +575,7 @@ def test_system_status_includes_actual_pending_deliveries_and_release_variants(r
         "mes.release"
         not in next(c for c in cards if c.system == "mes").permitted_operations
     )
-    rig.query(result.object_id)
+    rig.query(result.integration.intent_id)
     sap = next(
         c
         for c in rig.workflow.integration_systems(rig.actor, rig.project_id)
@@ -601,7 +603,7 @@ def test_untracked_source_fact_is_readable_but_cannot_project_as_accepted(rig):
 
 def test_connected_status_requires_current_adapter_round_trip(rig, monkeypatch):
     result = rig.execute()
-    rig.query(result.object_id)
+    rig.query(result.integration.intent_id)
     monkeypatch.setattr(rig.registry.adapter("sap"), "query", lambda pid, op: None)
     card = next(
         c
@@ -633,3 +635,323 @@ def test_production_network_drain_fails_closed_without_source_files(production_r
         production_rig.drain()
     assert exc.value.code == "SOURCE_UNAVAILABLE"
     assert not (production_rig.root / "mock-systems").exists()
+
+
+def test_integration_acknowledgments_reference_real_project_and_keep_original_intent(
+    rig, monkeypatch
+):
+    import json
+
+    client = http_client(rig, monkeypatch)
+    url = f"/api/v1/manufacturing/workflow/projects/{rig.project_id}/commands"
+    original = uuid4()
+    execute = dict(
+        action="mock_system.execute",
+        operation_id=str(original),
+        expected_version=rig.version(),
+        system="sap",
+        payload=order_payload(),
+    )
+    response = client.post(url, json=execute)
+    assert response.status_code == 200, response.text
+    assert response.json()["object_type"] == "project"
+    assert response.json()["object_id"] == str(rig.project_id)
+    assert response.json()["integration"]["intent_id"] == str(original)
+    with rig.workflow.store.transaction() as tx:
+        saved = tx.execute(
+            "SELECT result_json FROM operations WHERE actor_id=? AND operation_id=?",
+            (str(rig.actor.user_id), str(original)),
+        ).fetchone()[0]
+    key = rig.source_receipt(original).source_keys[0]
+    commands = [
+        execute,
+        dict(action="mock_system.query", intent_id=str(original)),
+        dict(action="mock_system.retry", intent_id=str(original)),
+        dict(action="integration.pull", source_key=key.model_dump(mode="json")),
+    ]
+    for fields in commands:
+        command = (
+            fields
+            if fields is execute
+            else dict(
+                operation_id=str(uuid4()), expected_version=rig.version(), **fields
+            )
+        )
+        expected = (
+            command["operation_id"]
+            if fields["action"] == "integration.pull"
+            else str(original)
+        )
+        response = client.post(url, json=command)
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["object_type"] == "project" and data["object_id"] == str(
+            rig.project_id
+        )
+        assert data["integration"]["intent_id"] == expected
+        assert (
+            client.get(
+                f"/api/v1/manufacturing/workflow/projects/{data['object_id']}"
+            ).status_code
+            == 200
+        )
+    with rig.workflow.store.transaction() as tx:
+        assert (
+            tx.execute(
+                "SELECT result_json FROM operations WHERE actor_id=? AND operation_id=?",
+                (str(rig.actor.user_id), str(original)),
+            ).fetchone()[0]
+            == saved
+        )
+        assert json.loads(saved)["object_id"] == str(rig.project_id)
+        audits = tx.execute(
+            "SELECT object_id,typed_payload FROM audit_events WHERE project_id=? AND (action LIKE 'mock_system.%' OR action LIKE 'integration.%')",
+            (str(rig.project_id),),
+        ).fetchall()
+        assert audits and all(row["object_id"] == str(rig.project_id) for row in audits)
+        applications = [
+            json.loads(row["typed_payload"])
+            for row in audits
+            if json.loads(row["typed_payload"])["action"] == "integration.apply"
+        ]
+        assert str(original) in {a["intent_id"] for a in applications}
+    assert (
+        len(rig.rows("sap", "operations")) == 1 and len(rig.rows("sap", "facts")) == 1
+    )
+
+
+@pytest.mark.parametrize("different_producer", [False, True])
+def test_bounded_drain_resumes_past_unavailable_delivery_across_restart(
+    rig, monkeypatch, different_producer
+):
+    from manufacturing_platform.workflow.integrations.contracts import (
+        IntegrationFact,
+        SystemOperation,
+        SystemReceipt,
+    )
+    from manufacturing_platform.workflow.integrations.store import canonical_hash
+
+    from .support import NOW, TestAdapter, test_authorize, test_projector
+    from .test_contracts import valid_payload
+
+    blocked = rig.execute().integration.intent_id
+    blocked_ids = {str(blocked)}
+    if different_producer:
+        blocked_ids.add(str(rig.execute().integration.intent_id))
+        rig.registry.register(
+            "pdm",
+            factory=TestAdapter,
+            projector=test_projector,
+            authorize=test_authorize,
+        )
+        producer = rig.registry.source_store("pdm")
+        operation = SystemOperation(
+            operation_id=uuid4(),
+            project_id=rig.project_id,
+            system="pdm",
+            payload=valid_payload("pdm.publish_revision"),
+        )
+
+        def apply(tx, op):
+            observed = IntegrationFact(
+                project_id=op.project_id,
+                source=dict(
+                    system="pdm",
+                    object_type="revision",
+                    external_id=str(op.operation_id),
+                    version=1,
+                    occurred_at=NOW,
+                    collected_at=NOW,
+                    evidence="signed test revision",
+                ),
+                payload=dict(
+                    fact_type="pdm.revision",
+                    **op.payload.model_dump(mode="json", exclude={"operation"}),
+                ),
+                external_actor="test source",
+                evidence="signed test revision",
+            )
+            sequence = producer.append_fact(tx, observed)
+            producer.enqueue(tx, observed, "sap")
+            return SystemReceipt(
+                operation_id=op.operation_id,
+                system="pdm",
+                request_hash=canonical_hash(op),
+                phase="accepted",
+                source_keys=[observed.source_key],
+                sequence=sequence,
+                occurred_at=NOW,
+                received_at=NOW,
+            )
+
+        producer.execute(operation, apply)
+        healthy_consumer = "sap"
+    else:
+        rig.execute()
+        healthy_consumer = "wms"
+    consume = TestAdapter.consume
+
+    def available(self, delivery):
+        if delivery.fact.source.external_id in blocked_ids:
+            raise DomainError(
+                "SOURCE_UNAVAILABLE", 503, "test scoped unavailable delivery"
+            )
+        return consume(self, delivery)
+
+    monkeypatch.setattr(TestAdapter, "consume", available)
+    first = rig.drain(limit=1)
+    assert (
+        len(first.receipts) == 1
+        and first.receipts[0].phase == "pending"
+        and first.pending == len(blocked_ids) + 1
+    )
+    assert first.receipts[0].source_key.external_id == str(blocked)
+    rig.reopen()
+    if different_producer:
+        rig.registry.register(
+            "pdm",
+            factory=TestAdapter,
+            projector=test_projector,
+            authorize=test_authorize,
+        )
+    second = rig.drain(limit=1)
+    assert (
+        len(second.receipts) == 1
+        and second.delivered == 1
+        and second.pending == len(blocked_ids)
+    )
+    assert second.receipts[0].source_key.external_id != str(blocked)
+    assert len(rig.rows(healthy_consumer, "test_effects")) == 1
+    rig.reopen()
+    if different_producer:
+        rig.registry.register(
+            "pdm",
+            factory=TestAdapter,
+            projector=test_projector,
+            authorize=test_authorize,
+        )
+    third = rig.drain(limit=100)
+    assert (
+        len(third.receipts) == len(blocked_ids)
+        and all(r.phase == "pending" for r in third.receipts)
+        and third.pending == len(blocked_ids)
+    )
+    assert len(rig.rows(healthy_consumer, "test_effects")) == 1
+
+    assert len({r.delivery_id for r in third.receipts}) == len(third.receipts)
+    monkeypatch.setattr(TestAdapter, "consume", consume)
+    rig.drain(limit=1)
+    assert rig.drain(limit=100).pending == 0
+    assert len(rig.rows("wms", "test_effects")) == len(blocked_ids) + (
+        0 if different_producer else 1
+    )
+
+
+def test_consumer_only_descriptor_uses_durable_inbox_and_health_reads_do_not_mutate(
+    rig, monkeypatch
+):
+    result = rig.execute()
+    rig.drain()
+    key = rig.source_receipt(result.integration.intent_id).source_keys[0]
+    before = {
+        system: {
+            table: rig.rows(system, table)
+            for table in ("operations", "facts", "outbox", "inbox", "acknowledgments")
+        }
+        for system in ("sap", "wms")
+    }
+    version = rig.version()
+    cards = rig.workflow.integration_systems(rig.actor, rig.project_id)
+    wms = next(card for card in cards if card.system == "wms")
+    assert wms.status == "connected-mock"
+    assert wms.last_receipt is None
+    assert (
+        wms.consumer_activity.accepted_count == 1
+        and wms.consumer_activity.rejected_count == 0
+    )
+    assert wms.consumer_activity.healthy is True
+    assert wms.consumer_activity.last_receipt.source_key == key
+    assert wms.consumer_activity.last_receipt.consumer == "wms"
+    other = next(
+        card
+        for card in rig.workflow.integration_systems(rig.admin, rig.other_project_id)
+        if card.system == "wms"
+    )
+    assert other.consumer_activity is None and other.status == "unexercised"
+    with pytest.raises(DomainError) as denied:
+        rig.workflow.integration_systems(rig.actor, rig.other_project_id)
+    assert denied.value.status == 404
+    assert rig.version() == version
+    for system, tables in before.items():
+        for table, rows in tables.items():
+            assert rig.rows(system, table) == rows
+    monkeypatch.setattr(
+        rig.registry.adapter("wms"), "query_delivery", lambda pid, did: None
+    )
+    wms = next(
+        card
+        for card in rig.workflow.integration_systems(rig.actor, rig.project_id)
+        if card.system == "wms"
+    )
+    assert wms.status == "degraded" and wms.consumer_activity.healthy is False
+
+
+def test_fact_detail_has_one_actual_delivery_collection(rig, monkeypatch):
+    result = rig.execute()
+    rig.drain()
+    client = http_client(rig, monkeypatch)
+    response = client.get(
+        f"/api/v1/manufacturing/workflow/projects/{rig.project_id}/systems/sap/facts/order/{result.integration.intent_id}",
+        params={"version": 1},
+    )
+    assert response.status_code == 200, response.text
+    detail = response.json()
+    assert "deliveries" not in detail
+    assert len(detail["delivery_states"]) == 1
+    assert detail["delivery_states"][0]["receipt"]["phase"] == "accepted"
+    assert detail["consumer_delivered"] is True
+
+
+def test_scheduler_additive_initialization_preserves_existing_schema23_business_state(
+    rig,
+):
+    rig.execute()
+    with rig.workflow.store.transaction(write=True) as tx:
+        tx.execute("DROP TABLE integration_network_cursors")
+        before = {
+            name: [tuple(row) for row in tx.execute(f"SELECT * FROM {name}")]
+            for name in (
+                "projects",
+                "project_grants",
+                "operations",
+                "audit_events",
+                "integration_intents",
+                "integration_receipts",
+                "integration_projections",
+            )
+        }
+    result = rig.drain(limit=1)
+    assert result.delivered == 1
+    with rig.workflow.store.transaction() as tx:
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 23
+        for name, rows in before.items():
+            assert [tuple(row) for row in tx.execute(f"SELECT * FROM {name}")] == rows
+        cursors = tx.execute(
+            "SELECT project_id,producer,position,turn FROM integration_network_cursors"
+        ).fetchall()
+        assert len(cursors) == 1 and tuple(cursors[0]) == (
+            str(rig.project_id),
+            "sap",
+            1,
+            1,
+        )
+    from manufacturing_platform.workflow.integrations.network import MockNetwork
+
+    assert MockNetwork(rig.registry).drain(rig.other_project_id, limit=1).receipts == []
+    with rig.workflow.store.transaction() as tx:
+        assert (
+            tx.execute("SELECT COUNT(*) FROM integration_network_cursors").fetchone()[0]
+            == 1
+        )
+    rig.reopen()
+    assert rig.drain(limit=1).cursor == result.cursor

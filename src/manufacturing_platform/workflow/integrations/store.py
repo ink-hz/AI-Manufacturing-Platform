@@ -6,8 +6,10 @@ import re
 import sqlite3
 from collections.abc import Callable
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from time import monotonic, sleep
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from ..contracts import DomainError
@@ -60,6 +62,12 @@ CREATE TABLE faults(project_id TEXT NOT NULL,operation_id TEXT NOT NULL,name TEX
 """
 
 
+@dataclass(frozen=True)
+class ScheduledDelivery:
+    position: int
+    delivery: NetworkDelivery
+
+
 class SystemStore:
     def __init__(
         self, root: Path, dataset_id: str, system, *, clock: Callable[[], datetime]
@@ -103,6 +111,26 @@ class SystemStore:
                 raise ValueError("source metadata mismatch")
         return bool(tables)
 
+    @staticmethod
+    def _enable_wal(tx):
+        # SQLite's journal-mode upgrade can report BUSY immediately during first
+        # concurrent opens despite busy_timeout. Retry only this pre-transaction
+        # configuration; never replay an operation or consumer callback.
+        deadline = monotonic() + 5
+        while True:
+            try:
+                if tx.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
+                    tx.execute("PRAGMA journal_mode=WAL")
+                return
+            except sqlite3.OperationalError as exc:
+                if (
+                    getattr(exc, "sqlite_errorcode", None)
+                    not in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+                    or monotonic() >= deadline
+                ):
+                    raise
+                sleep(0.01)
+
     @contextmanager
     def transaction(self, write=False):
         self._validate_path()
@@ -114,7 +142,7 @@ class SystemStore:
             # Reject foreign identity before WAL, then recheck under the writer lock:
             # another process may have initialized the same empty file meanwhile.
             tables = self._metadata(tx)
-            tx.execute("PRAGMA journal_mode=WAL")
+            self._enable_wal(tx)
             tx.execute("BEGIN IMMEDIATE" if write or not tables else "BEGIN")
             tables = self._metadata(tx)
             if not tables:
@@ -481,6 +509,38 @@ class SystemStore:
                 for r in rows
             ]
 
+    def query_delivery(self, project_id, delivery_id):
+        with self.transaction() as tx:
+            row = tx.execute(
+                "SELECT receipt_json FROM inbox WHERE project_id=? AND delivery_id=?",
+                (str(project_id), str(delivery_id)),
+            ).fetchone()
+            return DeliveryReceipt.model_validate_json(row[0]) if row else None
+
+    def consumer_activity(self, project_id):
+        from .browse import ConsumerActivity
+
+        with self.transaction() as tx:
+            row = tx.execute(
+                "SELECT receipt_json FROM inbox WHERE project_id=? ORDER BY rowid DESC LIMIT 1",
+                (str(project_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            receipt = DeliveryReceipt.model_validate_json(row[0])
+            if receipt.project_id != project_id or receipt.consumer != self.system:
+                conflict("Consumer activity scope mismatch")
+            counts = tx.execute(
+                "SELECT COALESCE(SUM(json_extract(receipt_json,'$.phase')='accepted'),0),COALESCE(SUM(json_extract(receipt_json,'$.phase')='rejected'),0) FROM inbox WHERE project_id=?",
+                (str(project_id),),
+            ).fetchone()
+            return ConsumerActivity(
+                accepted_count=counts[0],
+                rejected_count=counts[1],
+                last_receipt=receipt,
+                healthy=False,
+            )
+
     def inbox_receipt(self, project_id, key):
         with self.transaction() as tx:
             row = tx.execute(
@@ -488,6 +548,29 @@ class SystemStore:
                 identity(project_id, key),
             ).fetchone()
             return DeliveryReceipt.model_validate_json(row[0]) if row else None
+
+    def pending_window(self, project_id, limit=100, *, after=0, through=None):
+        if not 1 <= limit <= 200 or after < 0 or (through is not None and through < 0):
+            raise DomainError("INVALID_PAGINATION", 422, "Invalid delivery window")
+        with self.transaction() as tx:
+            rows = tx.execute(
+                "SELECT o.rowid position,o.delivery_json FROM outbox o WHERE project_id=? AND o.rowid>? "
+                + ("AND o.rowid<=? " if through is not None else "")
+                + "AND NOT EXISTS(SELECT 1 FROM acknowledgments a WHERE a.delivery_id=o.id) ORDER BY o.rowid LIMIT ?",
+                (
+                    str(project_id),
+                    after,
+                    *((through,) if through is not None else ()),
+                    limit,
+                ),
+            ).fetchall()
+            return [
+                ScheduledDelivery(
+                    r["position"],
+                    NetworkDelivery.model_validate_json(r["delivery_json"]),
+                )
+                for r in rows
+            ]
 
     def pending(self, project_id, limit=100):
         if not 1 <= limit <= 200:

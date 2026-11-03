@@ -107,15 +107,23 @@ class IntegrationService:
     def __init__(self, workflow, registry):
         self.workflow, self.registry = workflow, registry
 
-    def result(self, tx, result, *, network=None):
-        row = intent(tx, result.project_id, result.object_id)
+    @staticmethod
+    def intent_id(command):
+        return (
+            command.intent_id
+            if isinstance(command, (QuerySystemOperation, RetrySystemOperation))
+            else command.operation_id
+        )
+
+    def result(self, tx, result, *, intent_id, network=None):
+        row = intent(tx, result.project_id, intent_id)
         receipt = tx.execute(
             "SELECT receipt_json FROM integration_receipts WHERE project_id=? AND intent_id=? ORDER BY attempt DESC LIMIT 1",
-            (str(result.project_id), str(result.object_id)),
+            (str(result.project_id), str(intent_id)),
         ).fetchone()
         phase = SystemReceipt.model_validate_json(receipt[0]).phase if receipt else None
         status = IntegrationStatus(
-            intent_id=result.object_id,
+            intent_id=intent_id,
             phase=row["phase"],
             source_committed=True
             if phase == "accepted"
@@ -234,7 +242,7 @@ class IntegrationService:
     def prepare(self, tx, context, command, *, observed_fact=None):
         self.authorize(tx, context.actor, context.project_id, command)
         if isinstance(command, (QuerySystemOperation, RetrySystemOperation)):
-            return MutationResult(object_type="project", object_id=command.intent_id)
+            return MutationResult(object_type="project", object_id=context.project_id)
         if isinstance(command, ExecuteSystemOperation):
             value = self._operation(tx, context.project_id, command)
             system, operation, policy = (
@@ -286,7 +294,7 @@ class IntegrationService:
                     context.now.isoformat(),
                 ),
             )
-        return MutationResult(object_type="project", object_id=command.operation_id)
+        return MutationResult(object_type="project", object_id=context.project_id)
 
     def _admit_fact(self, tx, actor, pid, fact):
         fact = IntegrationFact.model_validate_json(canonical(fact))
@@ -373,7 +381,7 @@ class IntegrationService:
                 409,
                 "Project changed before source I/O",
                 {
-                    "intent_id": str(result.object_id),
+                    "intent_id": str(self.intent_id(command)),
                     "source_committed": None,
                     "projection_applied": False,
                     "current_version": project["version"],
@@ -382,15 +390,16 @@ class IntegrationService:
             )
 
     def perform(self, actor, project_id, command, result):
+        intent_id = self.intent_id(command)
         with self.workflow.store.transaction() as tx:
             self.authorize(tx, actor, project_id, command)
-            row = dict(intent(tx, project_id, result.object_id))
+            row = dict(intent(tx, project_id, intent_id))
             completed = row["phase"] == "applied"
             advance_network = isinstance(
                 command, (QuerySystemOperation, RetrySystemOperation)
             )
             if completed and not advance_network:
-                return self.result(tx, result)
+                return self.result(tx, result, intent_id=intent_id)
             self._before_io(tx, actor, project_id, command, result)
             value = (
                 PinnedPull.model_validate_json(row["payload_json"])
@@ -401,7 +410,7 @@ class IntegrationService:
             batch = MockNetwork(self.registry).drain(project_id, limit=100)
             with self.workflow.store.transaction() as tx:
                 self.authorize(tx, actor, project_id, command)
-                return self.result(tx, result, network=batch)
+                return self.result(tx, result, intent_id=intent_id, network=batch)
         adapter = self.registry.adapter(row["system"])
         receipt = None
         facts = []
@@ -482,17 +491,17 @@ class IntegrationService:
         # Persist observed receipt before any reauthorization/CAS can reject application.
         # This is internal durability only; a revoked caller receives no source evidence.
         with self.workflow.store.transaction(write=True) as tx:
-            current = intent(tx, project_id, result.object_id)
+            current = intent(tx, project_id, intent_id)
             if receipt is not None:
                 attempt = tx.execute(
                     "SELECT COALESCE(MAX(attempt),0)+1 FROM integration_receipts WHERE project_id=? AND intent_id=?",
-                    (str(project_id), str(result.object_id)),
+                    (str(project_id), str(intent_id)),
                 ).fetchone()[0]
                 tx.execute(
                     "INSERT INTO integration_receipts VALUES (?,?,?,?,?)",
                     (
                         str(project_id),
-                        str(result.object_id),
+                        str(intent_id),
                         attempt,
                         canonical(receipt),
                         receipt.received_at.isoformat(),
@@ -501,7 +510,7 @@ class IntegrationService:
             if current["phase"] != "applied":
                 tx.execute(
                     "UPDATE integration_intents SET phase=? WHERE project_id=? AND id=?",
-                    (phase, str(project_id), str(result.object_id)),
+                    (phase, str(project_id), str(intent_id)),
                 )
         batch = None
         if advance_network:
@@ -511,16 +520,16 @@ class IntegrationService:
         with self.workflow.store.transaction(write=True) as tx:
             self.authorize(tx, actor, project_id, command)
             project = require_project(tx, actor, project_id)
-            current = intent(tx, project_id, result.object_id)
+            current = intent(tx, project_id, intent_id)
             if current["phase"] == "applied":
-                return self.result(tx, result, network=batch)
+                return self.result(tx, result, intent_id=intent_id, network=batch)
             if project["version"] != result.project_version:
                 raise DomainError(
                     "VERSION_CONFLICT",
                     409,
                     "Project changed while source was responding",
                     dict(
-                        intent_id=str(result.object_id),
+                        intent_id=str(intent_id),
                         source_committed=True
                         if receipt and receipt.phase == "accepted"
                         else None,
@@ -543,7 +552,7 @@ class IntegrationService:
                     self._project(tx, context, fact)
                 tx.execute(
                     "UPDATE integration_intents SET phase='applied' WHERE project_id=? AND id=?",
-                    (str(project_id), str(result.object_id)),
+                    (str(project_id), str(intent_id)),
                 )
                 applied_id = uuid4()
                 applied = result.model_copy(
@@ -562,7 +571,7 @@ class IntegrationService:
                     applied_id,
                     {
                         "action": "integration.apply",
-                        "intent_id": str(result.object_id),
+                        "intent_id": str(intent_id),
                         "expected_version": project["version"],
                         "sources": [
                             f.source_key.model_dump(mode="json") for f in facts
@@ -571,12 +580,12 @@ class IntegrationService:
                     applied.model_dump(mode="json"),
                     project_id,
                     "integration.apply",
-                    result.object_id,
+                    project_id,
                 )
                 result = result.model_copy(
                     update={"current_project_version": project["version"] + 1}
                 )
-            return self.result(tx, result, network=batch)
+            return self.result(tx, result, intent_id=intent_id, network=batch)
 
 
 def prepare(tx, context, command):
