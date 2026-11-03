@@ -149,3 +149,52 @@ PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Plat
 ```
 
 The replacement regression was then expanded (test-only) to cover both primary-key and unique-RMA collisions with `recursive_triggers=0/1`; final focused `test_test_external_edges.py -k return_lineage_cannot -q`: **2 passed, 13 deselected in 0.03s**. All final production changes are covered by those final targeted runs; no source edits followed them.
+
+## Independent-review fix wave (I1–I4)
+
+Reviewed fix base: `3f61b9ee47ee9bdab6eb136bc6ed8e165d7e15a0`. This appendix supersedes the earlier no-known-issues statement for the four reproduced review findings. It records one focused implementation wave; controller still requires independent spec and quality re-review before Task5. No deployment, user-document edit, real account creation, legacy data rewrite, or full-suite re-run was performed for these precise boundary fixes.
+
+### Fixes and published interface delta
+
+- **I1:** `WorkflowService.integration_artifact` retains resolved original bytes locally, then opens a new workflow read transaction and repeats `browse.authorize` (live project/source authorization) before returning. Source I/O stays outside either workflow transaction. Service and HTTP tests revoke actual project-grant metadata through `change_grant`, separately setting roles empty and setting `active=false`. Both paths now return NOT_FOUND/404 with no artifact bytes/ETag/checksum disclosed. The controller confirmed this is the required live metadata boundary; no additional availability redesign is needed.
+- **I2:** `external_claims.validate_signed_coverage(tx, context, fact)` checks the exact accepted unit set against admitted signed delivery rows for the same project and physical WMS shipment. Each contributing native signature must pass existing original-source/hash/projection/row admission, be no later than the acceptance, and appear in the acceptance's immutable `caused_by`. Source-accepted but not yet projected signatures do not count. Validation runs before source commit and again during projection. Disjoint or incompletely covered accepted scopes reject with a durable rejected receipt and zero new source facts or delivery effects.
+- **Controller-approved domestic path:** new closed `CustomerReceiveShipment(DeliveryClaimData)` operation **`customer.receive_shipment`** produces `CustomerReceiveShipmentFact`, **`customer.delivery_receipt`**. It has the same typed claim fields as overseas signing: `shipment_id`, exact WMS `shipment` SourceKey, `units` (unit ID + SN), `amount`, `customer_id`, `external_signer`, `reason`, `signed_evidence`, `occurred_at`, `decision=accepted|partial|rejected`, and `accepted_unit_ids` for an explicit partial subset. Catalog policy is the existing **`delivery.sign`**; `FACT_POLICIES` derives it automatically. The closed operation/fact unions and `ExternalClaimRecord.claim` include this fact. It creates actual signed delivery state and the typed original claim view, and is delivered on the existing **customer→MES** edge. There are still exactly 15 systems and 32 directed edges; no schema version, legacy command model, or ERP wire change.
+- **Task5/6 sequence/API:** for domestic flow, use the existing authorized command endpoint with `action=mock_system.execute`, `system=customer`, and the new typed payload operation `customer.receive_shipment`, then separately execute `customer.confirm_delivery` for only signed units. Overseas may instead use `overseas.receive_shipment`. Customer acceptance can use the union of exact admitted CUSTOMER and OVERSEAS signed subsets, preserving each contributing source key. A new signing operation overlapping already signed SNs across either source is rejected before effects; disjoint signed subsets and idempotent retry do not inflate signed counts. These are distinct source operations and receipts, not a generic stage/JSON shortcut.
+- **Legacy/manual boundary:** existing `DeliverySign` has aggregate quantity only. Its handler, model, JSON and historical rows are unchanged; those quantities cannot invent signed serial membership for a typed external acceptance. Valid typed customer/overseas signed SN evidence supplies that membership. Physical `shipment_items` are never rewritten or counted a second time.
+- **I3:** `external_claims.admitted_return` now requires immutable mapping `unit_id == row.unit_id` and `row.id == uuid5(domain_id(original_full_claim), mapped_unit_id)`. Existing exact full-claim source/hash/project/target/row checks remain. Both valid derived RMAs remain readable with original full claim provenance; swapping either member in memory rejects for CRM and overseas.
+- **I4:** `external_claims.prepare_causes(payload, observations)` is the single shared claim preparation policy for physical shipment/MES-context lineage, positive-unit deduplication and signed-source causes. Enterprise calls it only for its CRM return operation; evidence calls it only for its supported customer/overseas operations. The duplicated dispatch/policy block and unreachable enterprise branches are removed. Shared `SIGN_TAGS` classifies the two actual signing fact types; no generic plugin/workflow engine was introduced.
+
+### RED/GREEN evidence
+
+All commands below use `PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest` in the worktree.
+
+- `tests/workflow/integrations/test_test_external_edges.py -k 'artifact_reauthorizes or multi_work_order_claim_has_two' -q`: **RED 6 failed, 13 deselected in 9.90s**. Four grant-revocation cases returned bytes/HTTP200 instead of 404; both CRM/overseas swapped-member probes returned admitted provenance. After I1/I3 guards: **GREEN 6 passed, 16 deselected in 9.20s** (three I2 tests had meanwhile been added to collection).
+- `.../test_test_external_edges.py -k review_customer_acceptance -q`: **RED 3 failed, 19 deselected in 8.28s**, all `DID NOT RAISE DomainError`: disjoint SN, overlapping scope padded by an aggregate manual receipt, and entirely aggregate-only manual evidence. After exact coverage/lineage validation: **GREEN 3 passed, 19 deselected in 7.60s**. Valid exact subsets succeed, duplicate acceptance rejects, and physical shipped quantity remains 2.
+- `.../test_test_external_edges.py -k review_pending_signature -q`: **1 passed, 22 deselected in 2.87s**. Actual timeout-after-source-commit leaves the signature receipt accepted but unprojected; it cannot supply SN coverage despite manual aggregate credit. Retrying projects the same immutable signature and allows exact acceptance without duplicate signed/shipped counts.
+- Before the approved domestic addition, enterprise/evidence/all-edge plus four targeted legacy delivery/feedback tests: **52 passed in 46.65s**. This is intermediate evidence, not the final domestic-path result.
+- `.../test_test_external_edges.py -k 'review_domestic or review_mixed' -q`: **RED 3 failed, 23 deselected in 6.38s**, closed union rejected missing `customer.receive_shipment`. After typed registration/real projection/shared signed coverage: **GREEN 3 passed, 23 deselected in 6.65s**. Domestic signing/acceptance needs no overseas receipt; both customer-first and overseas-first mixed-source orders reject overlap, accept disjoint subsets, retain both causal keys, and preserve physical shipped quantity.
+
+### Fix-owned paths and final verification
+
+- `src/manufacturing_platform/workflow/service.py`
+- `src/manufacturing_platform/workflow/integrations/catalog.py`
+- `src/manufacturing_platform/workflow/integrations/contracts.py`
+- `src/manufacturing_platform/workflow/integrations/enterprise_systems.py`
+- `src/manufacturing_platform/workflow/integrations/evidence_models.py`
+- `src/manufacturing_platform/workflow/integrations/evidence_projections.py`
+- `src/manufacturing_platform/workflow/integrations/evidence_systems.py`
+- `src/manufacturing_platform/workflow/integrations/external_claims.py`
+- `tests/workflow/integrations/test_contracts.py`
+- `tests/workflow/integrations/test_test_external_edges.py`
+- This report.
+
+**Exact code/test fix commit:** `363df1743c1ac755e166cf1dc9213751d9ee7896` — `fix: enforce artifact authorization and exact claim scope` (10 source/test paths; this report is recorded separately).
+
+Final command on the complete domestic + I1–I4 code:
+
+```text
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest tests/workflow/integrations/test_contracts.py tests/workflow/integrations/test_test_external_edges.py tests/workflow/integrations/test_enterprise_edges.py tests/workflow/integrations/test_all_edges.py tests/workflow/test_feedback.py::test_rma_retains_original_delivery_revision_failure_and_manual_source tests/workflow/test_feedback.py::test_invalid_rma_source_is_suppressed_in_value_and_restricted_audit_projection tests/workflow/test_delivery.py::test_pending_claim_and_separate_signed_accepted tests/workflow/test_delivery.py::test_required_named_issue_and_independent_closures -q
+182 passed in 53.13s
+```
+
+Ruff `check --select F` on all 10 changed Python files: **All checks passed!** Unstaged and staged `git diff --check`: exit0/no output. Exact staging assertion verified only those 10 source/test paths. Source/test files were not edited after this final verification. Final self-review checked source I/O/authorization ordering, original signed-source/hash admission and same-shipment coverage, pending-projection rejection, cross-counterparty signed-SN duplication, deterministic per-unit RMA identity, catalog/fact policy/typed view registration, actual customer→MES acknowledgment and unchanged manual/legacy delivery/RMA behavior. No known remaining implementation issue in these four findings; independent spec and quality verdicts remain the controller's next gate.
