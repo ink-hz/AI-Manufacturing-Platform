@@ -51,14 +51,16 @@ class SourceSnapshot:
         self.project_id = project_id
         self.facts = {}
         self.acks = {}
+        self.source_cutoffs = {}
         for store in registry.existing_stores():
             with store.transaction() as tx:
                 for row in tx.execute(
-                    "SELECT fact_json FROM facts WHERE project_id=? ORDER BY sequence",
+                    "SELECT fact_json,sequence FROM facts WHERE project_id=? ORDER BY sequence",
                     (str(project_id),),
                 ):
                     fact = IntegrationFact.model_validate_json(row[0])
                     self.facts[identity(project_id, fact.source_key)] = fact
+                    self.source_cutoffs[store.system] = row[1]
                 for row in tx.execute(
                     "SELECT o.system,o.object_type,o.external_id,o.version,o.consumer,a.receipt_json FROM outbox o LEFT JOIN acknowledgments a ON a.delivery_id=o.id WHERE o.project_id=?",
                     (str(project_id),),

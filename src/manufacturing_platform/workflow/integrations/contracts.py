@@ -40,6 +40,7 @@ from .core_models import (
     Name,
     ProfileId,
     SapBomRequest,
+    SapRequestBom,
     SapReceiptPosting,
     SapVariancePosting,
     SapShipmentPosting,
@@ -78,6 +79,7 @@ from .core_models import (
     WmsStocktakeFact,
 )
 from .enterprise_models import (
+    PdmBomConfirmation,
     CrmOpenReturn,
     CrmOpenReturnFact,
     CrmPublishDemand,
@@ -105,6 +107,8 @@ from .enterprise_models import (
     SrmPromiseFact,
 )
 from .evidence_models import (
+    ProductTestPrepareArtifact,
+    ProductTestArtifactFact,
     ArtifactEvidenceData,
     BiRefresh,
     BiRefreshFact,
@@ -132,6 +136,7 @@ from .evidence_models import (
 
 OperationPayload = Annotated[
     SapReleaseOrder
+    | SapRequestBom
     | SapReleaseWorkOrder
     | SapPublishPlan
     | SapPostMovement
@@ -167,6 +172,7 @@ OperationPayload = Annotated[
     | HrDingtalkAssignShift
     | SrmPromise
     | SrmAnnounceArrival
+    | ProductTestPrepareArtifact
     | ProductTestRun
     | ProductTestCalibrate
     | PlcSetState
@@ -207,6 +213,7 @@ FactPayload = Annotated[
     | MesContainFact
     | MesReleaseFact
     | MesCompleteFact
+    | PdmBomConfirmation
     | PdmPublishRevisionFact
     | PdmIssueChangeFact
     | CrmPublishDemandFact
@@ -218,6 +225,7 @@ FactPayload = Annotated[
     | HrDingtalkAssignShiftFact
     | SrmPromiseFact
     | SrmAnnounceArrivalFact
+    | ProductTestArtifactFact
     | ProductTestRunFact
     | ProductTestCalibrateFact
     | PlcSetStateFact
@@ -350,6 +358,12 @@ class ObjectRef(StrictModel):
 class AuxiliaryRef(StrictModel):
     project_id: UUID
     kind: Literal[
+        "approval_request",
+        "approval_decision",
+        "supplier_notice",
+        "external_claim",
+        "bom_confirmation",
+        "artifact",
         "employee",
         "qualification",
         "shift",

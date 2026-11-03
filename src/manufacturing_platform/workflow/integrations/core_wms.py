@@ -147,6 +147,15 @@ class WmsSystem(CoreSystem):
         facts = super().prepare(operation, observations)
         p = operation.payload
         causes = []
+        if p.operation == "wms.receive":
+            notices = [
+                f
+                for f in observations.of_type("srm.arrival")
+                if f.payload.commitment_id == p.commitment_id
+                and f.payload.material_id == p.material_id
+                and f.payload.supplier_batch == p.supplier_batch
+            ]
+            causes.extend(f.source_key for f in notices)
         if hasattr(p, "allocations"):
             for a in p.allocations:
                 causes.extend(

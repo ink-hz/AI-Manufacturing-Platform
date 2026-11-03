@@ -38,11 +38,18 @@ class EdgeSpec:
     fact_types: tuple[str, ...]
     maturity: str = "modeled"
 
+    @property
+    def id(self):
+        return f"{self.producer}->{self.consumer}"
+
 
 OPERATIONS: Mapping[str, OperationSpec] = MappingProxyType(
     {
         "sap.release_order": OperationSpec(
             "sap", core.SapReleaseOrder, ("sap.order",), "order.register"
+        ),
+        "sap.request_bom": OperationSpec(
+            "sap", core.SapRequestBom, ("sap.bom_request",), "work_order.register"
         ),
         "sap.release_work_order": OperationSpec(
             "sap",
@@ -215,6 +222,12 @@ OPERATIONS: Mapping[str, OperationSpec] = MappingProxyType(
         "srm.announce_arrival": OperationSpec(
             "srm", enterprise.SrmAnnounceArrival, ("srm.arrival",), "arrival.record"
         ),
+        "product_test.prepare_artifact": OperationSpec(
+            "product_test",
+            evidence.ProductTestPrepareArtifact,
+            ("product_test.artifact",),
+            "test.record",
+        ),
         "product_test.run": OperationSpec(
             "product_test",
             evidence.ProductTestRun,
@@ -283,7 +296,7 @@ EDGES: tuple[EdgeSpec, ...] = (
         ("wms.receipt", "wms.pick", "wms.return", "wms.stocktake", "wms.shipment"),
     ),
     EdgeSpec("sap", "pdm", ("sap.bom_request",)),
-    EdgeSpec("pdm", "sap", ("pdm.revision", "pdm.change")),
+    EdgeSpec("pdm", "sap", ("pdm.revision", "pdm.change", "pdm.bom_confirmation")),
     EdgeSpec("pdm", "mes", ("pdm.revision", "pdm.change")),
     EdgeSpec(
         "wms",

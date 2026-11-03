@@ -20,6 +20,13 @@ from .contracts import (
     SystemReceipt,
 )
 from .core_models import SystemId
+from .enterprise_models import EnterpriseRecord, BomConfirmationRecord
+from .evidence_models import (
+    EquipmentRecord,
+    PreparedArtifactRecord,
+    ExternalClaimRecord,
+    MetricSnapshot,
+)
 from .routing import profile_for
 from .store import canonical_hash, identity
 
@@ -76,6 +83,14 @@ class ObservedSystemDescriptor(SystemDescriptor):
 
 
 class FactDetail(StrictModel):
+    auxiliary_records: list[
+        EnterpriseRecord
+        | BomConfirmationRecord
+        | EquipmentRecord
+        | PreparedArtifactRecord
+        | ExternalClaimRecord
+        | MetricSnapshot
+    ] = Field(default_factory=list, max_length=1000)
     fact: IntegrationFact
     origin: SourceOrigin = Field(default_factory=UntrackedOrigin)
     source_accepted: bool | None = None
@@ -328,7 +343,25 @@ def fact(
         if isinstance(origin, InboxOrigin)
         else None
     )
+    from .enterprise_projections import auxiliary_record
+
+    from .evidence_projections import auxiliary_record as evidence_record
+
+    auxiliary = (
+        (auxiliary_record(record) or evidence_record(record))
+        if projected is not None
+        else None
+    )
+    if auxiliary is not None:
+        from .core_projections import domain_id
+
+        if not any(
+            ref.kind == auxiliary.kind and ref.id == domain_id(record)
+            for ref in projected.auxiliary
+        ):
+            auxiliary = None
     return FactDetail(
+        auxiliary_records=[auxiliary] if auxiliary else [],
         fact=record,
         projection=projected,
         predecessors=list(predecessors),

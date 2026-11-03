@@ -107,8 +107,12 @@ def source_conflict(tx, source):
 
 
 def dispatch_record_demand(tx, context, command: RecordDemand):
-    p = project(tx, context.project_id)
     source_ok(command.source, "demand")
+    return _record_demand(tx, context, command)
+
+
+def validate_demand(tx, context, command: RecordDemand):
+    p = project(tx, context.project_id)
     source_conflict(tx, command.source)
     if command.product != p["product"]:
         fail("Demand product does not match project")
@@ -121,6 +125,11 @@ def dispatch_record_demand(tx, context, command: RecordDemand):
             fail("A firm demand cannot be silently superseded")
         if command.kind != "firm":
             fail("Superseding demand must be firm")
+    return q
+
+
+def _record_demand(tx, context, command):
+    q = validate_demand(tx, context, command)
     ident = str(uuid4())
     tx.execute(
         "INSERT INTO demands VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

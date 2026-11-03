@@ -103,9 +103,9 @@ class WorkflowService:
         self.resolve_subject_profiles = resolve_subject_profiles
         self.system_registry = SystemRegistry(store)
         if configure_systems is None:
-            from .integrations.core_systems import register_core
+            from .integrations.enterprise_systems import register_enterprise_network
 
-            configure_systems = register_core
+            configure_systems = register_enterprise_network
         configure_systems(self.system_registry)
         self.exchange_service = exchanges.ExchangeService(self)
         self.integration_service = integration_operations.IntegrationService(
@@ -891,6 +891,16 @@ class WorkflowService:
                 object_type,
                 observation=observation,
             )
+
+    def integration_artifact(self, actor, project_id, ref, checksum):
+        from .integrations import browse
+        from .integrations.test_artifacts import resolve
+
+        with self.store.transaction() as tx:
+            browse.authorize(tx, actor, project_id, self.system_registry, "product_test")
+        return resolve(
+            self.system_registry.source_store("product_test"), project_id, ref, checksum
+        )
 
     def integration_fact(self, actor, project_id, key):
         from .integrations import browse

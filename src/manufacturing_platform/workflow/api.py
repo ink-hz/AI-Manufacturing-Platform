@@ -304,6 +304,34 @@ def build_workflow_router(
             ),
         )
 
+    @router.get("/projects/{project_id}/systems/product_test/artifacts/{artifact_id}")
+    def integration_artifact(project_id: UUID, artifact_id: UUID, request: Request):
+        from .integrations.core_models import SourceKey
+
+        user = actor(request)
+        detail = service.integration_fact(
+            user,
+            project_id,
+            SourceKey(
+                system="product_test",
+                object_type="artifact",
+                external_id=str(artifact_id),
+                version=1,
+            ),
+        )
+        prepared = detail.fact.payload.prepared
+        content = service.integration_artifact(
+            user, project_id, prepared.artifact_ref, prepared.artifact_checksum
+        )
+        return Response(
+            content,
+            media_type="application/json",
+            headers={
+                "ETag": '"' + prepared.artifact_checksum + '"',
+                "Content-Disposition": f'attachment; filename="artifact-{artifact_id}.json"',
+            },
+        )
+
     @router.get("/projects/{project_id}/trace")
     def trace(project_id: UUID, request: Request, sn: str | None = None, material_lot_id: UUID | None = None, limit: int = 500):
         return service.trace(actor(request), project_id, sn=sn, material_lot_id=material_lot_id, limit=limit)

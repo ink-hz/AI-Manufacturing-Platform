@@ -22,6 +22,7 @@ def test_extension_contracts_exist_and_production_registry_contains_only_real_ac
     assert hasattr(contracts, "DomainValue")
     assert set(commands.COMMAND_REGISTRY._entries) == {
         "project.stage",
+        "mock_system.execute", "mock_system.query", "mock_system.retry", "integration.pull",
         "material_handoff.record", "material_handoff.receive", "material_handoff.resolve", "material_handoff.cancel",
         "authority.register", "authority.verify", "arrival.record", "arrival.match",
         "test_plan.publish", "test_run.start", "test_run.finish",

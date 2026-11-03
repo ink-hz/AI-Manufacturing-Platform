@@ -386,8 +386,8 @@ def record_fact(tx, context, command):
         if isinstance(command, DeliverySign) and not isinstance(command, DeliveryAccept)
         else "accept"
     )
-    row = own(tx, "shipments", context.project_id, command.shipment_id)
-    p = project(tx, context.project_id)
+    own(tx, "shipments", context.project_id, command.shipment_id)
+    project(tx, context.project_id)
     record = DeliverySourceRecord(
         project_id=context.project_id,
         object_type="delivery_" + kind,
@@ -397,6 +397,17 @@ def record_fact(tx, context, command):
     admit_records(tx, context, [record], object_type=record.object_type, trusted=False)
     if command.source.mode != "manual":
         fail("Delivery facts require explicit manual recording provenance")
+    return _record_fact(tx, context, command)
+
+
+def validate_delivery_fact(tx, context, command):
+    kind = (
+        "sign"
+        if isinstance(command, DeliverySign) and not isinstance(command, DeliveryAccept)
+        else "accept"
+    )
+    row = own(tx, "shipments", context.project_id, command.shipment_id)
+    p = project(tx, context.project_id)
     q = atoms(command.quantity, row["unit"], row["unit"], p["unit_scale"])
     shipped = (
         tx.execute(
@@ -428,6 +439,11 @@ def record_fact(tx, context, command):
                     "Active named project member profile unavailable for responsible owner"
                 )
             owners[str(issue.owner_id)] = name
+    return kind, row, q, key, owners
+
+
+def _record_fact(tx, context, command):
+    kind, row, q, key, owners = validate_delivery_fact(tx, context, command)
     ident = uuid4()
     tx.execute(
         "INSERT INTO delivery_facts(id,project_id,shipment_id,action,q_atoms,source_system,source_type,source_external_id,source_json,external_signatory,actor_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -470,6 +486,10 @@ def admitted_source(tx, pid, row, kind):
 
     try:
         source = SourceRef.model_validate_json(row["source_json"])
+        if source.mode == "mock":
+            from .integrations.external_claims import admitted_delivery
+
+            return admitted_delivery(tx, pid, row, source)
         if source.mode != "manual" or source_key(source) != (
             row["source_system"],
             row["source_type"],

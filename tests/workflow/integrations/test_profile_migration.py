@@ -287,3 +287,52 @@ def test_sql_replace_and_delete_cannot_erase_pinned_identity(
             tx.execute("SELECT * FROM integration_intents WHERE id='intent'").fetchone()
         )
         assert after == intent[:9] + ("pending",) + intent[10:]
+
+
+def test_existing23_adds_claim_lineage_without_rewriting_legacy_manual_rma(workflow):
+    from ..test_feedback import open_rma
+
+    project, _, _, _, rma = open_rma(workflow)
+    # Explicit fixture-only writer: the harness's normal db() is read-only.
+    with sqlite3.connect(workflow.paths.domain) as tx:
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 23
+        assert (
+            tx.execute("SELECT count(*) FROM integration_return_units").fetchone()[0]
+            == 0
+        )
+        tx.execute("DROP TABLE integration_return_units")
+        tables = [
+            row[0]
+            for row in tx.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+        ]
+        before = {
+            table: [tuple(row) for row in tx.execute(f'SELECT * FROM "{table}"')]
+            for table in tables
+        }
+    authority_before = workflow.paths.authority.read_bytes()
+    legacy_before = workflow.paths.legacy.read_bytes()
+    for _ in range(2):
+        workflow.reopen()
+        current = workflow.object(project["id"], "rma", rma["id"])
+        assert current == rma
+        assert current["source"]["mode"] == "manual"
+        with workflow.db() as tx:
+            assert profile_for(tx, UUID(project["id"])) == "legacy-erp-v1"
+            assert (
+                tx.execute("SELECT count(*) FROM integration_return_units").fetchone()[
+                    0
+                ]
+                == 0
+            )
+            assert tx.execute(
+                "SELECT sql FROM sqlite_master WHERE name='return_units_no_replace'"
+            ).fetchone()
+            for table, rows in before.items():
+                assert [
+                    tuple(row) for row in tx.execute(f'SELECT * FROM "{table}"')
+                ] == rows
+        assert workflow.paths.authority.read_bytes() == authority_before
+        assert workflow.paths.legacy.read_bytes() == legacy_before
+    assert not (workflow.paths.domain.parent / "mock-systems").exists()

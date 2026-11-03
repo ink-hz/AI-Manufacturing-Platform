@@ -342,6 +342,9 @@ class WorkflowStore:
                 from .integrations.schema import initialize_reservation_releases
 
                 initialize_reservation_releases(conn)
+            if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='integration_return_units'").fetchone():
+                from .integrations.schema import initialize_claims
+                initialize_claims(conn)
             from . import quality
             from .execution import bind_test_reader
 

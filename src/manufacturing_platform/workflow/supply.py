@@ -284,6 +284,11 @@ def _receive_plan(tx, context, command, *, object_id=None, requirement_ids=None)
 
 
 def commit_supply(tx, context, command: CommitSupply):
+    source_ok(command.source, "commitment", context.now)
+    return _commit_supply(tx, context, command)
+
+
+def validate_commitment(tx, context, command):
     req = own(tx, "requirements", context.project_id, command.requirement_id)
     if command.commitment_id is None and req["plan_id"] != current_plan_id(
         tx, context.project_id, req["work_order_id"]
@@ -292,28 +297,8 @@ def commit_supply(tx, context, command: CommitSupply):
     if req["owner_id"] != command.owner_id:
         fail("supply owner mismatch")
     q = atoms(command.quantity, command.unit, req["unit"], req["scale"])
-    source_ok(command.source, "commitment", context.now)
     if command.commitment_id is None:
         source_free(tx, "supply_promise_revisions", command.source)
-        ident = str(uuid4())
-        tx.execute(
-            "INSERT INTO supply_commitments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                ident,
-                str(context.project_id),
-                req["id"],
-                command.type,
-                command.owner_id,
-                q,
-                q,
-                command.unit,
-                command.original_due.isoformat(),
-                command.current_due.isoformat(),
-                command.source.model_dump_json(),
-                command.source.version,
-                context.now.isoformat(),
-            ),
-        )
     else:
         prior = own(tx, "supply_commitments", context.project_id, command.commitment_id)
         if (
@@ -336,7 +321,33 @@ def commit_supply(tx, context, command: CommitSupply):
         if source_key(command.source) != source_key(original_source):
             fail("promise amendment must retain source identity")
         source_free(tx, "supply_promise_revisions", command.source, versioned=True)
-        ident = prior["id"]
+    return req, q
+
+
+def _commit_supply(tx, context, command, *, assigned_id=None):
+    req, q = validate_commitment(tx, context, command)
+    if command.commitment_id is None:
+        ident = str(assigned_id or uuid4())
+        tx.execute(
+            "INSERT INTO supply_commitments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                ident,
+                str(context.project_id),
+                req["id"],
+                command.type,
+                command.owner_id,
+                q,
+                q,
+                command.unit,
+                command.original_due.isoformat(),
+                command.current_due.isoformat(),
+                command.source.model_dump_json(),
+                command.source.version,
+                context.now.isoformat(),
+            ),
+        )
+    else:
+        ident = str(command.commitment_id)
         tx.execute(
             "UPDATE supply_commitments SET current_q_atoms=?,current_due=?,source_json=?,source_version=? WHERE id=?",
             (
@@ -347,7 +358,6 @@ def commit_supply(tx, context, command: CommitSupply):
                 ident,
             ),
         )
-    key = source_key(command.source)
     tx.execute(
         "INSERT INTO supply_promise_revisions VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (
@@ -357,7 +367,7 @@ def commit_supply(tx, context, command: CommitSupply):
             q,
             command.current_due.isoformat(),
             command.source.model_dump_json(),
-            *key,
+            *source_key(command.source),
             command.source.version,
             context.now.isoformat(),
         ),

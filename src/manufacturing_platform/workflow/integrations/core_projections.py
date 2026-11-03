@@ -393,7 +393,33 @@ def project_fact(tx, context, fact):
     }:
         from .core_preparation import project_bound_effect
 
-        targets.extend(project_bound_effect(tx, context, fact))
+        if (
+            p.fact_type == "mes.containment"
+            and p.cause
+            and (p.cause.system, p.cause.object_type)
+            in {("crm", "return_claim"), ("overseas", "return_claim")}
+        ):
+            from .enterprise_admission import projected_fact
+
+            original = projected_fact(tx, context.project_id, p.cause)
+            require(
+                p.decision == "frozen"
+                and not p.material_lot_ids
+                and set(p.unit_ids) == {u.unit_id for u in original.payload.units},
+                "Return containment scope mismatch",
+            )
+            targets.extend(
+                ObjectRef(project_id=context.project_id, kind="unit", id=uid)
+                for uid in p.unit_ids
+            )
+        else:
+            targets.extend(project_bound_effect(tx, context, fact))
+        if p.fact_type == "wms.shipment":
+            target = ObjectRef(
+                project_id=context.project_id, kind="shipment", id=p.shipment_id
+            )
+            if target not in targets:
+                targets.append(target)
         if p.fact_type == "mes.start":
             targets.extend(
                 ObjectRef(project_id=context.project_id, kind="unit", id=u.unit_id)

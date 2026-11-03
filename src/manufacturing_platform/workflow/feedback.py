@@ -31,20 +31,67 @@ from .orders import _history_rows, own, project, source_key
 from .queries import OBJECT_REGISTRY
 
 
-def open_rma(tx, context, command):
-    from .imports import admit_records
-
+def validate_rma(tx, context, unit_id, shipment_id):
     pid = context.project_id
-    unit = own(tx, "units", pid, command.unit_id)
-    shipment = own(tx, "shipments", pid, command.shipment_id)
+    unit = own(tx, "units", pid, unit_id)
+    shipment = own(tx, "shipments", pid, shipment_id)
     membership = tx.execute(
         "SELECT * FROM shipment_items WHERE project_id=? AND shipment_id=? AND unit_id=?",
         (str(pid), shipment["id"], unit["id"]),
     ).fetchone()
     if not membership:
         fail("RMA requires actual accepted shipped serial membership")
+    if tx.execute(
+        "SELECT 1 FROM rmas r LEFT JOIN capas c ON c.rma_id=r.id WHERE r.project_id=? AND r.unit_id=? AND (c.id IS NULL OR c.state<>'closed')",
+        (str(pid), unit["id"]),
+    ).fetchone():
+        fail("Serial already has open mandatory RMA")
+    return unit, shipment, membership
+
+
+def _persist_rma(tx, context, *, unit_id, shipment_id, reason, source, derived_id=None):
+    unit, shipment, membership = validate_rma(tx, context, unit_id, shipment_id)
+    ident = derived_id or uuid4()
+    key = (
+        ("platform-derived", "rma_unit", str(ident))
+        if derived_id
+        else source_key(source)
+    )
+    if tx.execute(
+        "SELECT 1 FROM rmas WHERE source_system=? AND source_type=? AND source_external_id=?",
+        key,
+    ).fetchone():
+        fail("RMA source identity already recorded")
+    cutoff = tx.execute(
+        "SELECT COALESCE(MAX(seq),0) FROM quality_tests WHERE project_id=? AND unit_id=?",
+        (str(context.project_id), unit["id"]),
+    ).fetchone()[0]
+    tx.execute(
+        "INSERT INTO rmas(id,project_id,unit_id,shipment_id,order_line_id,customer_id,revision_id,test_cutoff,reason,source_system,source_type,source_external_id,source_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            str(ident),
+            str(context.project_id),
+            unit["id"],
+            shipment["id"],
+            membership["order_line_id"],
+            project(tx, context.project_id)["customer_id"],
+            unit["revision_id"],
+            cutoff,
+            reason,
+            *key,
+            source.model_dump_json(),
+            context.now.isoformat(),
+        ),
+    )
+    return MutationResult(object_type="rma", object_id=ident)
+
+
+def open_rma(tx, context, command):
+    from .imports import admit_records
+
+    validate_rma(tx, context, command.unit_id, command.shipment_id)
     record = RmaSourceRecord(
-        project_id=pid,
+        project_id=context.project_id,
         unit_id=command.unit_id,
         shipment_id=command.shipment_id,
         source=command.source,
@@ -52,39 +99,14 @@ def open_rma(tx, context, command):
     admit_records(tx, context, [record], object_type="rma", trusted=False)
     if command.source.mode != "manual":
         fail("Direct RMA requires explicitly labeled manual source provenance")
-    if tx.execute(
-        "SELECT 1 FROM rmas WHERE source_system=? AND source_type=? AND source_external_id=?",
-        source_key(command.source),
-    ).fetchone():
-        fail("RMA source identity already recorded")
-    if tx.execute(
-        "SELECT 1 FROM rmas r LEFT JOIN capas c ON c.rma_id=r.id WHERE r.project_id=? AND r.unit_id=? AND (c.id IS NULL OR c.state<>'closed')",
-        (str(pid), unit["id"]),
-    ).fetchone():
-        fail("Serial already has open mandatory RMA")
-    ident = uuid4()
-    cutoff = tx.execute(
-        "SELECT COALESCE(MAX(seq),0) FROM quality_tests WHERE project_id=? AND unit_id=?",
-        (str(pid), unit["id"]),
-    ).fetchone()[0]
-    tx.execute(
-        "INSERT INTO rmas(id,project_id,unit_id,shipment_id,order_line_id,customer_id,revision_id,test_cutoff,reason,source_system,source_type,source_external_id,source_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (
-            str(ident),
-            str(pid),
-            unit["id"],
-            shipment["id"],
-            membership["order_line_id"],
-            project(tx, pid)["customer_id"],
-            unit["revision_id"],
-            cutoff,
-            command.reason,
-            *source_key(command.source),
-            command.source.model_dump_json(),
-            context.now.isoformat(),
-        ),
+    return _persist_rma(
+        tx,
+        context,
+        unit_id=command.unit_id,
+        shipment_id=command.shipment_id,
+        reason=command.reason,
+        source=command.source,
     )
-    return MutationResult(object_type="rma", object_id=ident)
 
 
 def admitted_source(tx, pid, row):
@@ -94,6 +116,10 @@ def admitted_source(tx, pid, row):
         if row["project_id"] != str(pid):
             return None
         source = SourceRef.model_validate_json(row["source_json"])
+        if source.mode == "mock":
+            from .integrations.external_claims import admitted_return
+
+            return admitted_return(tx, pid, row, source)
         if source.mode != "manual" or source_key(source) != (
             row["source_system"],
             row["source_type"],

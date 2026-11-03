@@ -603,3 +603,23 @@ class MesSystem(CoreSystem):
         from .core_mes_contexts import emit_delivery_context
 
         emit_delivery_context(self, tx, delivery, observations)
+        if delivery.fact.payload.fact_type in {
+            "crm.return_claim",
+            "overseas.return_claim",
+        }:
+            p = delivery.fact.payload
+            self.emit(
+                tx,
+                self.child(
+                    delivery,
+                    dict(
+                        fact_type="mes.containment",
+                        work_order_id=None,
+                        unit_ids=[u.unit_id for u in p.units],
+                        material_lot_ids=[],
+                        decision="frozen",
+                        cause=delivery.fact.source_key,
+                        evidence="External returned-product containment: " + p.reason,
+                    ),
+                ),
+            )

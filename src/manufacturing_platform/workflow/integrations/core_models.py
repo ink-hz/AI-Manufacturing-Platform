@@ -730,3 +730,8 @@ class WmsReleaseReservation(ReservationReleaseData):
 class WmsReleaseReservationFact(ReservationReleaseData):
     fact_type: Literal["wms.reservation_release"] = "wms.reservation_release"
     allocations: list[ReleasedAllocation] = Field(min_length=1, max_length=500)
+
+
+class SapRequestBom(StrictModel):
+    operation: Literal["sap.request_bom"] = "sap.request_bom"
+    work_order_id: UUID

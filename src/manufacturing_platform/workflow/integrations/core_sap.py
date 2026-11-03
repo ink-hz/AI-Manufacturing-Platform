@@ -25,6 +25,10 @@ class SapSystem(CoreSystem):
         from ..orders import own
 
         p = operation.payload
+        if p.operation == "sap.request_bom":
+            from .bom_sync import request_fact
+
+            return [request_fact(self, operation, observations)]
         facts = super().prepare(operation, observations)
         if p.operation == "sap.release_work_order":
             revision = observations.fact(p.released_revision)
@@ -53,6 +57,11 @@ class SapSystem(CoreSystem):
                 )
             )
         elif p.operation == "sap.publish_plan":
+            from .bom_sync import plan_causes
+
+            facts[0] = facts[0].model_copy(
+                update={"caused_by": plan_causes(self, operation, observations)}
+            )
             with self.registry.workflow_store.transaction() as tx:
                 for req in p.requirements:
                     wo = own(tx, "work_orders", operation.project_id, req.work_order_id)
@@ -115,7 +124,11 @@ class SapSystem(CoreSystem):
                 ),
                 "Completion already posted",
             )
-        elif p.operation not in {"sap.release_order", "sap.publish_plan"}:
+        elif p.operation not in {
+            "sap.release_order",
+            "sap.publish_plan",
+            "sap.request_bom",
+        }:
             require(False, "SAP operation prerequisite unavailable")
 
     def consume_fact(self, tx, delivery, observations):

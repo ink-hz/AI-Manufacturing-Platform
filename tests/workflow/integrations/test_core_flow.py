@@ -1366,6 +1366,8 @@ def test_multi_work_order_shipment_emits_only_actual_per_work_order_contexts(rig
         quantity="6",
         unit="piece",
     )
+    rig.drain()
+    rig.drain()
     req = uuid4()
     rig.execute(
         "sap",

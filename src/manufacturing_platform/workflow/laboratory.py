@@ -289,7 +289,7 @@ def parameter_content(parameters):
     )
 
 
-def record_calibration(tx, context, command):
+def validate_calibration(tx, context, command):
     run = qualified_run(tx, context.project_id, command.run_id)
     plan = json.loads(
         own(tx, "test_plans", context.project_id, run["plan_id"])["payload_json"]
@@ -301,6 +301,12 @@ def record_calibration(tx, context, command):
         fail("simulated run evidence must remain visibly simulated")
     if command.algorithm_version != plan["algorithm_version"]:
         fail("calibration algorithm version must match published plan")
+    parameter_content(command.parameters)
+    return run
+
+
+def record_calibration(tx, context, command):
+    run = validate_calibration(tx, context, command)
     ident = insert(
         tx,
         "calibrations",
@@ -314,7 +320,7 @@ def record_calibration(tx, context, command):
     return MutationResult(object_type="calibration", object_id=ident)
 
 
-def confirm_calibration(tx, context, command):
+def confirmation_basis(tx, context, command):
     row = own(tx, "calibrations", context.project_id, command.calibration_id)
     value = json.loads(row["payload_json"])
     if row["confirmation_json"]:
@@ -325,8 +331,18 @@ def confirm_calibration(tx, context, command):
     if command.origin != value["origin"]:
         fail("readback origin must match calibration evidence origin")
     readback_digest = digest(parameter_content(command.readback))
-    if readback_digest != value["parameter_digest"]:
+    return row, readback_digest, value["parameter_digest"]
+
+
+def validate_confirmation(tx, context, command):
+    row, readback_digest, parameter_digest = confirmation_basis(tx, context, command)
+    if readback_digest != parameter_digest:
         fail("readback must match recorded parameters and units")
+    return row, readback_digest
+
+
+def confirm_calibration(tx, context, command):
+    row, readback_digest = validate_confirmation(tx, context, command)
     payload = business(command)
     payload.pop("calibration_id")
     tx.execute(
@@ -393,7 +409,7 @@ def remove(tx, context, command):
     return MutationResult(object_type="component_link", object_id=row["id"])
 
 
-def alias(tx, context, command):
+def validate_alias(tx, context, command):
     own(tx, "units", context.project_id, command.unit_id)
     customer = tx.execute(
         "SELECT customer_id FROM projects WHERE id=?", (str(context.project_id),)
@@ -404,6 +420,11 @@ def alias(tx, context, command):
         (customer, key),
     ).fetchone():
         fail("customer serial is already assigned")
+    return customer, key
+
+
+def alias(tx, context, command):
+    customer, key = validate_alias(tx, context, command)
     insert(
         tx,
         "unit_aliases",

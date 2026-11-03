@@ -139,3 +139,35 @@ def initialize_reservation_releases(tx):
         if complete_statement(statement):
             tx.execute(statement)
             statement = ""
+
+
+CLAIM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS integration_return_units(
+ project_id TEXT NOT NULL REFERENCES projects(id), system TEXT NOT NULL, object_type TEXT NOT NULL,
+ external_id TEXT NOT NULL, version INTEGER NOT NULL, payload_hash TEXT NOT NULL,
+ unit_id TEXT NOT NULL REFERENCES units(id), rma_id TEXT NOT NULL UNIQUE REFERENCES rmas(id),
+ PRIMARY KEY(project_id,system,object_type,external_id,version,unit_id),
+ FOREIGN KEY(project_id,system,object_type,external_id,version) REFERENCES integration_projections(project_id,system,object_type,external_id,version) DEFERRABLE INITIALLY DEFERRED
+);
+CREATE TRIGGER IF NOT EXISTS return_units_no_update BEFORE UPDATE ON integration_return_units
+BEGIN SELECT RAISE(ABORT,'immutable return claim lineage'); END;
+CREATE TRIGGER IF NOT EXISTS return_units_no_delete BEFORE DELETE ON integration_return_units
+BEGIN SELECT RAISE(ABORT,'immutable return claim lineage'); END;
+CREATE TRIGGER IF NOT EXISTS return_units_no_replace BEFORE INSERT ON integration_return_units
+WHEN EXISTS(SELECT 1 FROM integration_return_units WHERE rma_id=NEW.rma_id
+ OR (project_id=NEW.project_id AND system=NEW.system AND object_type=NEW.object_type
+ AND external_id=NEW.external_id AND version=NEW.version AND unit_id=NEW.unit_id))
+BEGIN SELECT RAISE(ABORT,'immutable return claim lineage'); END;
+"""
+INTEGRATION_SCHEMA += CLAIM_SCHEMA
+
+
+def initialize_claims(tx):
+    from sqlite3 import complete_statement
+
+    statement = ""
+    for line in CLAIM_SCHEMA.splitlines(keepends=True):
+        statement += line
+        if complete_statement(statement):
+            tx.execute(statement)
+            statement = ""

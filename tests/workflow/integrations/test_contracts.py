@@ -286,6 +286,32 @@ def test_every_operation_and_primary_fact_roundtrip_and_rejects_wrong_pair(tag):
         fact_payload["remaining_amount"] = dict(quantity="1", unit="piece", scale=0)
     if tag == "mes.switch_revision":
         fact_payload["replacement_work_order_id"] = str(uuid4())
+    if tag == "plc.readback":
+        fact_payload.update(parameter_digest="a" * 64, confirmation_matches=True)
+    if tag in {"bi.refresh", "product_test.prepare_artifact", "sap.request_bom"}:
+        from manufacturing_platform.workflow.integrations.evidence_models import (
+            BiRefreshFact,
+            ProductTestArtifactFact,
+        )
+        from manufacturing_platform.workflow.integrations.core_models import (
+            SapBomRequest,
+        )
+
+        model = {
+            "bi.refresh": BiRefreshFact,
+            "product_test.prepare_artifact": ProductTestArtifactFact,
+            "sap.request_bom": SapBomRequest,
+        }[tag]
+        schema = model.model_json_schema()
+        fact_payload = sample_from_schema(schema, schema.get("$defs", {}))
+        if tag == "product_test.prepare_artifact":
+            fact_payload["prepared"]["artifact_ref"]["project_id"] = str(
+                data["project_id"]
+            )
+        if tag == "bi.refresh":
+            fact_payload["metrics"][0]["sources"][0].update(
+                system="sap", object_type="order"
+            )
     fact = IntegrationFact(
         project_id=data["project_id"],
         source=dict(

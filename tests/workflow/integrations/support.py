@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID, uuid4
 
 from manufacturing_platform.workflow.contracts import Actor, GrantChange, ProjectCreate
@@ -19,6 +20,9 @@ from manufacturing_platform.workflow.service import WorkflowService
 from manufacturing_platform.workflow.store import WorkflowStore
 
 from .test_contracts import order_payload
+
+if TYPE_CHECKING:
+    from .network_scenarios import ScenarioRefs
 
 NOW = datetime(2026, 11, 3, tzinfo=UTC)
 
@@ -133,8 +137,9 @@ def test_authorize(tx, actor, pid, value):
 
 
 class MockRig:
-    def __init__(self, root, mode="test", *, core=False):
-        self.core = core
+    def __init__(self, root, mode="test", *, core=False, network=False):
+        self.core = core or network
+        self.network = network
         self.root = Path(root)
         self.mode = mode
         self.admin = Actor(
@@ -167,9 +172,11 @@ class MockRig:
                 business_clock=lambda: NOW,
             ),
             lambda uid: True,
-            configure_systems=lambda registry: None,
+            configure_systems=None if self.network else lambda registry: None,
         )
         self.registry = self.workflow.system_registry
+        if self.network:
+            return self
         if self.core:
             from manufacturing_platform.workflow.integrations.core_systems import (
                 register_core,
@@ -441,15 +448,31 @@ class MockRig:
         )
         wo_quantity = quantity if work_order_quantity is None else work_order_quantity
         due = (NOW + timedelta(days=7)).date().isoformat()
-        demand = self.command(
-            "demand.record",
-            kind="firm",
-            product="P",
-            quantity=str(quantity),
-            unit="piece",
-            due_date=due,
-            source=self.manual_source("demand"),
-        ).object_id
+        if self.network:
+            demand_fact = self.result_fact(
+                self.execute(
+                    "crm",
+                    dict(
+                        operation="crm.publish_demand",
+                        customer_id="C",
+                        demand_kind="firm",
+                        product="P",
+                        amount=dict(quantity=str(quantity), unit="piece", scale=0),
+                        due_date=due,
+                    ),
+                )
+            )
+            demand = self.target(demand_fact, "demand")
+        else:
+            demand = self.command(
+                "demand.record",
+                kind="firm",
+                product="P",
+                quantity=str(quantity),
+                unit="piece",
+                due_date=due,
+                source=self.manual_source("demand"),
+            ).object_id
         for dimension in ("technical", "material", "capacity", "commercial", "quality"):
             self.command(
                 "demand.review",
@@ -546,6 +569,8 @@ class MockRig:
             expiry=expiry,
             source=self.manual_source("material_lot"),
         ).object_id
+        self.drain()
+        self.drain()
         reqid = uuid4()
         self.result_fact(
             self.execute(
@@ -570,17 +595,60 @@ class MockRig:
                 ),
             )
         )
-        commitment = self.command(
-            "supply.commit",
-            requirement_id=str(reqid),
-            type="customer",
-            owner_id="C",
-            quantity=str(wo_quantity),
-            unit="piece",
-            original_due=due,
-            current_due=due,
-            source=self.manual_source("commitment"),
-        ).object_id
+        if self.network:
+            purchase = next(
+                f
+                for f in self.registry.adapter("sap")
+                .facts(self.project_id, "purchase_requirement", 0, 200)
+                .records
+                if f.payload.requirement_id == reqid
+            )
+            commitment = uuid4()
+            promise = self.result_fact(
+                self.execute(
+                    "srm",
+                    dict(
+                        operation="srm.promise",
+                        requirement_id=str(reqid),
+                        purchase_requirement=purchase.source_key.model_dump(),
+                        commitment_id=str(commitment),
+                        supplier_id="Supplier",
+                        owner_id="C",
+                        supply_type="customer",
+                        amount=dict(quantity=str(wo_quantity), unit="piece", scale=0),
+                        original_due=due,
+                        current_due=due,
+                        evidence="Confirmed source promise",
+                    ),
+                )
+            )
+            self.execute(
+                "srm",
+                dict(
+                    operation="srm.announce_arrival",
+                    commitment_id=str(commitment),
+                    promise=promise.source_key.model_dump(),
+                    material_id="M",
+                    supplier_batch="B1",
+                    supplier_id="Supplier",
+                    amount=dict(quantity=str(wo_quantity), unit="piece", scale=0),
+                    expected_at=NOW.isoformat(),
+                    coa_reference="COA1",
+                    coa_evidence="Expected certificate",
+                ),
+            )
+        else:
+            commitment = self.command(
+                "supply.commit",
+                requirement_id=str(reqid),
+                type="customer",
+                owner_id="C",
+                quantity=str(wo_quantity),
+                unit="piece",
+                original_due=due,
+                current_due=due,
+                source=self.manual_source("commitment"),
+            ).object_id
         receipt = self.result_fact(
             self.execute(
                 "wms",
@@ -632,6 +700,72 @@ class MockRig:
             qualification=qualification.source_key,
             quantity=wo_quantity,
         )
+
+    def connected_scenario(
+        self, name: Literal["completion", "shortage", "ecn_return"]
+    ) -> "ScenarioRefs":
+        from .network_scenarios import connected_scenario
+
+        return connected_scenario(self, name)
+
+    def all_visible_systems(self):
+        return self.workflow.integration_systems(self.actor, self.project_id)
+
+    def completed_operations(self, system):
+        return sum(
+            SystemReceipt.model_validate_json(r["receipt_json"]).phase == "accepted"
+            for r in self.rows(system, "operations")
+            if r["project_id"] == str(self.project_id)
+        )
+
+    def visible_fact_count(self, system):
+        from manufacturing_platform.workflow.integrations.catalog import OPERATIONS
+
+        tags = {
+            tag.split(".")[1]
+            for spec in OPERATIONS.values()
+            if spec.system == system
+            for tag in spec.output_fact_types
+        }
+        return sum(
+            len(
+                self.workflow.integration_facts(
+                    self.actor, self.project_id, system, tag, limit=200
+                ).records
+            )
+            for tag in tags
+        )
+
+    def edge_evidence(self, edge_id):
+        from manufacturing_platform.workflow.integrations.catalog import EDGES
+        from manufacturing_platform.workflow.integrations.contracts import (
+            NetworkDelivery,
+        )
+
+        edge = next(e for e in EDGES if e.id == edge_id)
+        for row in self.rows(edge.producer, "outbox"):
+            d = NetworkDelivery.model_validate_json(row["delivery_json"])
+            if (
+                d.project_id != self.project_id
+                or d.consumer != edge.consumer
+                or d.fact.payload.fact_type not in edge.fact_types
+            ):
+                continue
+            receipt = self.registry.adapter(edge.consumer).query_delivery(
+                self.project_id, d.delivery_id
+            )
+            if receipt and receipt.phase == "accepted":
+                detail = self.workflow.integration_fact(
+                    self.actor, self.project_id, d.fact.source_key
+                )
+                if detail.projection:
+                    return SimpleNamespace(
+                        producer_key=d.fact.source_key,
+                        consumer_receipt=receipt,
+                        projection_refs=detail.projection.targets
+                        + detail.projection.auxiliary,
+                    )
+        raise AssertionError("No durable projected delivery for " + edge_id)
 
     def physical_balance(self, lot):
         return self.registry.adapter("wms").balance(self.project_id, lot)
@@ -754,11 +888,16 @@ class MockRig:
     def start_ready(self, refs=None, *, sn="SN1"):
         refs = refs or self.core_ready(quantity=12, received=12, accepted=12)
         self.pick_qualified(refs, quantity=refs.quantity)
+        with self.workflow.store.transaction() as tx:
+            internal_revision = tx.execute(
+                "SELECT internal_revision FROM engineering_revisions WHERE id=?",
+                (str(refs.revision),),
+            ).fetchone()[0]
         self.command(
             "engineering.handoff",
             revision_id=str(refs.revision),
             to_system="MES",
-            received_revision="A",
+            received_revision=internal_revision,
             decision="accepted",
             evidence="Fixed revision handoff",
         )
@@ -927,6 +1066,31 @@ class MockRig:
             .facts(self.project_id, "test_request", 0, 200)
             .records[-1]
         )
+        if self.network:
+            prepared = self.result_fact(
+                self.execute(
+                    "product_test",
+                    dict(
+                        operation="product_test.prepare_artifact",
+                        run_id=str(run.object_id),
+                        template="pass-v1",
+                    ),
+                )
+            )
+            refs.test = self.result_fact(
+                self.execute(
+                    "product_test",
+                    dict(
+                        operation="product_test.run",
+                        **prepared.payload.prepared.model_dump(
+                            mode="json", exclude={"kind"}
+                        ),
+                    ),
+                )
+            )
+            refs.run = run.object_id
+            self.drain()
+            return refs
         artifact_id = uuid4()
         raw = dict(origin="demo", curves=[], logs=["VOLTAGE 5 V"])
         original = json.dumps(raw, sort_keys=True, separators=(",", ":")).encode()
@@ -1069,13 +1233,16 @@ class MockRig:
                 ),
             )
         )
-        eco = self.command(
-            "eco.open",
-            old_revision_id=str(refs.revision),
-            new_revision_id=str(rid),
-            effective_work_order_ids=[str(refs.work_order)],
-            reason="Switch remaining scope to B",
-        )
+        if self.network:
+            eco = SimpleNamespace(object_id=self.target(change, "eco"))
+        else:
+            eco = self.command(
+                "eco.open",
+                old_revision_id=str(refs.revision),
+                new_revision_id=str(rid),
+                effective_work_order_ids=[str(refs.work_order)],
+                reason="Switch remaining scope to B",
+            )
         return SimpleNamespace(
             revision=rid,
             source=new.source_key,
@@ -1090,6 +1257,14 @@ from manufacturing_platform.workflow.integrations.core_systems import CoreSystem
 
 class PrerequisiteAdapter(CoreSystem):
     """TEST ONLY: concrete released PDM data until Task4 real adapter is available."""
+
+    def consume_fact(self, tx, delivery, observations):
+        if self.store.system == "pdm":
+            from manufacturing_platform.workflow.integrations.bom_sync import (
+                emit_confirmation,
+            )
+
+            emit_confirmation(self, tx, delivery, observations)
 
     def transition(self, tx, operation, facts, observations):
         if operation.payload.operation == "product_test.run":

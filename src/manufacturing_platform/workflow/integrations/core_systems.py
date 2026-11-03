@@ -103,7 +103,7 @@ class CoreSystem:
                     )
                     self.validate_operation(tx, context, operation, requests)
                     for fact in facts:
-                        validate_fact(tx, context, fact)
+                        self.validate_fact(tx, context, fact)
             except DomainError as exc:
                 if exc.status >= 500:
                     raise
@@ -167,6 +167,8 @@ class CoreSystem:
                 operation.project_id, dict(fact_type=tag, **p), operation.operation_id
             )
         ]
+
+    validate_fact = staticmethod(validate_fact)
 
     def validate_operation(self, tx, context, operation, requests):
         return None

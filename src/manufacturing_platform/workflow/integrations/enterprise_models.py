@@ -322,3 +322,65 @@ class MesPrepare(PreparationData):
 
 class MesPreparation(PreparationData):
     fact_type: Literal["mes.preparation"] = "mes.preparation"
+
+
+class EnterpriseRecordIdentity(StrictModel):
+    project_id: UUID
+    source_key: SourceKey
+    payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class EmployeeRecord(EnterpriseRecordIdentity, EmployeeData):
+    kind: Literal["employee"] = "employee"
+
+
+class QualificationRecord(EnterpriseRecordIdentity, QualificationData):
+    kind: Literal["qualification"] = "qualification"
+
+
+class ShiftRecord(EnterpriseRecordIdentity, ShiftData):
+    kind: Literal["shift"] = "shift"
+
+
+HRRecord = Annotated[
+    EmployeeRecord | QualificationRecord | ShiftRecord, Field(discriminator="kind")
+]
+
+
+class ApprovalRequestRecord(EnterpriseRecordIdentity, ApprovalRequestData):
+    kind: Literal["approval_request"] = "approval_request"
+
+
+class ApprovalDecisionRecord(EnterpriseRecordIdentity, ApprovalDecisionData):
+    kind: Literal["approval_decision"] = "approval_decision"
+
+
+class SupplierNotice(EnterpriseRecordIdentity, ArrivalData):
+    kind: Literal["supplier_notice"] = "supplier_notice"
+
+
+EnterpriseRecord = Annotated[
+    EmployeeRecord
+    | QualificationRecord
+    | ShiftRecord
+    | ApprovalRequestRecord
+    | ApprovalDecisionRecord
+    | SupplierNotice,
+    Field(discriminator="kind"),
+]
+
+
+class BomConfirmationData(StrictModel):
+    request: SourceKey
+    released_revision: SourceKey
+    work_order_id: UUID
+    bom_materials: list[BomMaterial] = Field(min_length=1, max_length=500)
+    bom_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class PdmBomConfirmation(BomConfirmationData):
+    fact_type: Literal["pdm.bom_confirmation"] = "pdm.bom_confirmation"
+
+
+class BomConfirmationRecord(EnterpriseRecordIdentity, BomConfirmationData):
+    kind: Literal["bom_confirmation"] = "bom_confirmation"

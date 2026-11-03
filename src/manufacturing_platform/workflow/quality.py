@@ -581,7 +581,7 @@ def open_nonconformance(tx, context, command):
     return MutationResult(object_type="nonconformance", object_id=ident)
 
 
-def disposition(tx, context, command):
+def validate_disposition(tx, context, command):
     pid = context.project_id
     nc = own(tx, "nonconformances", pid, command.nonconformance_id)
     if scrapped(tx, pid, nc["unit_id"]) or (
@@ -593,6 +593,12 @@ def disposition(tx, context, command):
         fail("disposition is immutable and scrap cannot be reversed")
     if command.decision == "concession":
         fail("no explicit validated concession policy is configured")
+    return nc
+
+
+def disposition(tx, context, command):
+    pid = context.project_id
+    nc = validate_disposition(tx, context, command)
     ident = str(uuid4())
     tx.execute(
         "INSERT INTO quality_dispositions(id,project_id,nonconformance_id,unit_id,decision,evidence,actor_id,created_at) VALUES (?,?,?,?,?,?,?,?)",

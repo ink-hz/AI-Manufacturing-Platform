@@ -91,6 +91,7 @@ FACT_POLICIES = MappingProxyType(
             for spec in OPERATIONS.values()
             for tag in spec.output_fact_types
         },
+        "pdm.bom_confirmation": FactPolicy("engineering.handoff"),
         "wms.qualification": FactPolicy("supply.inspect"),
         "wms.consumption": FactPolicy("execution.record"),
         "sap.variance_posting": FactPolicy("ownership.movement"),

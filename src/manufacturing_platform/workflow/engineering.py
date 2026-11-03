@@ -39,7 +39,7 @@ def _json(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def record_revision(tx, context, command: RecordRevision):
+def validate_revision(tx, context, command: RecordRevision):
     if any(item.status == "pending" for item in command.items):
         fail("fixed revision contains pending package items")
     exists = tx.execute(
@@ -48,6 +48,10 @@ def record_revision(tx, context, command: RecordRevision):
     ).fetchone()
     if exists:
         fail("fixed engineering revision already registered", "SOURCE_CONFLICT")
+
+
+def record_revision(tx, context, command: RecordRevision):
+    validate_revision(tx, context, command)
     ident = str(uuid4())
     payload = command.model_dump(mode="json")
     fingerprint = hashlib.sha256(
@@ -127,12 +131,14 @@ def record_handoff(tx, context, command: RecordHandoff):
     )
 
 
-def record_customer_approval(tx, context, command: RecordCustomerApproval):
+def record_customer_approval(
+    tx, context, command: RecordCustomerApproval, *, approval_id=None
+):
     own(tx, "engineering_revisions", context.project_id, command.revision_id)
     p = project(tx, context.project_id)
     if command.customer_id != p["customer_id"]:
         fail("customer approval must name project customer")
-    ident = str(uuid4())
+    ident = str(approval_id or uuid4())
     tx.execute(
         "INSERT INTO customer_approvals VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (
@@ -249,6 +255,14 @@ def record_readiness(tx, context, command: RecordReadiness):
     )
 
 
+def trusted_customer_approval(tx, project_id, row):
+    if row["method"] != "mock":
+        return None
+    from .integrations.customer_bridge import admitted_approval
+
+    return admitted_approval(tx, project_id, row)
+
+
 def fixed_revision(tx, project_id, revision_id) -> EngineeringRevision:
     row = own(tx, "engineering_revisions", project_id, revision_id)
     items = [
@@ -280,7 +294,9 @@ def fixed_revision(tx, project_id, revision_id) -> EngineeringRevision:
     ]
     approvals = [
         CustomerApprovalView(
-            source=json.loads(r["authority_source"]) if r["authority_source"] else None,
+            source=json.loads(r["authority_source"])
+            if r["authority_source"]
+            else trusted_customer_approval(tx, project_id, r),
             id=r["id"],
             method=r["method"],
             recorded_by=r["actor_id"],
@@ -295,6 +311,7 @@ def fixed_revision(tx, project_id, revision_id) -> EngineeringRevision:
         )
     ]
     from .agreements import view as agreement_view
+
     return EngineeringRevision(
         contract_agreement=agreement_view(tx, project_id, row["id"]),
         id=row["id"],

@@ -1,6 +1,6 @@
 """Test, equipment and counterparty facts preserve independent source lineage."""
 
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -12,6 +12,7 @@ from .core_models import (
     AwareTime,
     Digest,
     Name,
+    SystemId,
     SourceKey,
     Text,
 )
@@ -129,6 +130,23 @@ class CustomerApprovalData(StrictModel):
 
 class DeliveryClaimData(ReturnData):
     decision: Literal["accepted", "rejected", "partial"]
+    accepted_unit_ids: list[UUID] = Field(default_factory=list, max_length=500)
+
+    @model_validator(mode="after")
+    def explicit_partial(self):
+        selected = {u.unit_id for u in self.units}
+        accepted = set(self.accepted_unit_ids)
+        if len(accepted) != len(self.accepted_unit_ids) or not accepted <= selected:
+            raise ValueError("Accepted serial subset must be unique and within claim")
+        if self.decision == "partial" and not (0 < len(accepted) < len(selected)):
+            raise ValueError(
+                "Partial claim requires explicit nonempty strict accepted subset"
+            )
+        if self.decision == "rejected" and accepted:
+            raise ValueError("Rejected claim cannot accept serials")
+        if self.decision == "accepted" and accepted and accepted != selected:
+            raise ValueError("Accepted claim must cover its complete scope")
+        return self
 
 
 class SerialMappingData(StrictModel):
@@ -157,7 +175,16 @@ class MetricDefinition(StrictModel):
         return self
 
 
+class SourceCutoff(StrictModel):
+    system: SystemId
+    sequence: int = Field(strict=True, ge=0)
+
+
 class SnapshotData(StrictModel):
+    snapshot_version: int = Field(strict=True, ge=1)
+    source_vector: list[SourceCutoff] = Field(min_length=1, max_length=15)
+    workflow_version: int = Field(strict=True, ge=1)
+    cohort_unit_ids: list[UUID] = Field(max_length=1000)
     cutoff: AwareTime
     metrics: list[MetricDefinition] = Field(min_length=1, max_length=20)
 
@@ -199,6 +226,8 @@ class PlcReadback(ReadbackData):
 
 
 class PlcReadbackFact(ReadbackData):
+    parameter_digest: Digest
+    confirmation_matches: bool = Field(strict=True)
     fact_type: Literal["plc.readback"] = "plc.readback"
 
 
@@ -242,9 +271,81 @@ class OverseasReportReturnFact(ReturnData):
     fact_type: Literal["overseas.return_claim"] = "overseas.return_claim"
 
 
-class BiRefresh(SnapshotData):
+class BiRefresh(StrictModel):
     operation: Literal["bi.refresh"] = "bi.refresh"
 
 
 class BiRefreshFact(SnapshotData):
     fact_type: Literal["bi.snapshot"] = "bi.snapshot"
+
+
+class ProductTestPrepareArtifact(StrictModel):
+    operation: Literal["product_test.prepare_artifact"] = (
+        "product_test.prepare_artifact"
+    )
+    run_id: UUID
+    template: Literal["pass-v1", "fail-v1", "calibration-v1"]
+
+
+class PreparedTest(TestData):
+    kind: Literal["test"] = "test"
+
+
+class PreparedCalibration(CalibrationData):
+    kind: Literal["calibration"] = "calibration"
+
+
+class ProductTestArtifactFact(StrictModel):
+    fact_type: Literal["product_test.artifact"] = "product_test.artifact"
+    template: Literal["pass-v1", "fail-v1", "calibration-v1"]
+    prepared: Annotated[PreparedTest | PreparedCalibration, Field(discriminator="kind")]
+
+
+class EquipmentRecord(StrictModel):
+    confirmation_state: Literal["matched", "mismatched", "not_applicable"] = (
+        "not_applicable"
+    )
+    kind: Literal["equipment", "sample", "readback"]
+    project_id: UUID
+    source_key: SourceKey
+    payload_hash: Digest
+    observation: Annotated[
+        PlcSetStateFact | PlcSampleFact | PlcReadbackFact,
+        Field(discriminator="fact_type"),
+    ]
+    parameter_digest: Digest | None = None
+
+    @property
+    def equipment(self):
+        return self.observation.equipment
+
+
+class PreparedArtifactRecord(StrictModel):
+    kind: Literal["artifact"] = "artifact"
+    project_id: UUID
+    source_key: SourceKey
+    payload_hash: Digest
+    artifact: ProductTestArtifactFact
+
+
+class ExternalClaimRecord(StrictModel):
+    kind: Literal["external_claim"] = "external_claim"
+    project_id: UUID
+    source_key: SourceKey
+    payload_hash: Digest
+    claim: Annotated[
+        CustomerConfirmDeliveryFact
+        | OverseasReceiveShipmentFact
+        | OverseasReportReturnFact,
+        Field(discriminator="fact_type"),
+    ]
+    accepted_unit_ids: list[UUID] = Field(max_length=500)
+    issue_unit_ids: list[UUID] = Field(max_length=500)
+
+
+class MetricSnapshot(StrictModel):
+    kind: Literal["snapshot"] = "snapshot"
+    project_id: UUID
+    source_key: SourceKey
+    payload_hash: Digest
+    snapshot: BiRefreshFact
