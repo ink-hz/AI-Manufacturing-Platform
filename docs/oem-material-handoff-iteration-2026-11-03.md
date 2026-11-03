@@ -79,4 +79,4 @@ WORKFLOW_TEST_PYTHON=/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/b
 npm run test:bundle
 ```
 
-普通 Homebrew `python3.11` 缺宿主所需 `cryptography`，因此实际使用已有平台虚拟环境，没有为本轮修改依赖。原始证据保存在本地任务报告及日志：`.superpowers/sdd/task-1-report.md`、`task-1-review.md`、`task-2-report.md`、`task-2-review.md`、`final-backend.log`、`final-e30.log`；视觉依据为 `/tmp/oem-material-handoff-visual-review.md`。以上都是隔离软件和模拟数据验证，没有生产切换、生产数据修改或真实 ERP／MES／WMS／PDA 调用。上线、接口联调及现场验收仍需各自证据。
+普通 Homebrew `python3.11` 缺宿主所需 `cryptography`，因此实际使用已有平台虚拟环境，没有为本轮修改依赖。本轮原始任务报告、审查及日志现保存在隔离工作区 `/Users/neo/.codex/worktrees/a065/AI-Manufacturing-Platform/.superpowers/sdd/`，包括 `task-1-report.md`、`task-1-review.md`、`task-2-report.md`、`task-2-review.md`、`final-backend.log` 和 `final-e30.log`；最终验收后由控制器归档至原仓库专用目录 `.superpowers/sdd/oem-handoff-2026-11-03/`，保留隔离工作区证据，不覆盖原仓库已有同名报告。视觉依据为 `/tmp/oem-material-handoff-visual-review.md`。以上都是隔离软件和模拟数据验证，没有生产切换、生产数据修改或真实 ERP／MES／WMS／PDA 调用。上线、接口联调及现场验收仍需各自证据。
