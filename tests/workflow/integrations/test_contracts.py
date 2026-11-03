@@ -248,6 +248,8 @@ def test_every_operation_and_primary_fact_roundtrip_and_rejects_wrong_pair(tag):
     data = dict(
         operation_id=uuid4(), project_id=uuid4(), system=spec.system, payload=payload
     )
+    if "artifact_ref" in payload:
+        payload["artifact_ref"]["project_id"] = str(data["project_id"])
     value = SystemOperation.model_validate(data)
     assert SystemOperation.model_validate_json(value.model_dump_json()) == value
     with pytest.raises(ValidationError):
@@ -361,3 +363,84 @@ def test_mes_cannot_claim_customer_release_authority():
     data = valid_payload("mes.release") | {"kind": "customer"}
     with pytest.raises(ValidationError):
         OPERATIONS["mes.release"].input_model.model_validate(data)
+
+
+@pytest.mark.parametrize("tag", ["product_test.run", "product_test.calibrate"])
+def test_raw_artifact_reference_is_required_and_closed(tag):
+    payload = valid_payload(tag)
+    payload.pop("artifact_ref", None)
+    with pytest.raises(ValidationError):
+        OPERATIONS[tag].input_model.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"system": "plc"},
+        {"project_id": "not-a-project"},
+        {"artifact_id": "bad-id"},
+        {"version": 0},
+        {"version": True},
+        {"reference": "../outside"},
+        {"reference": "https://example.com/raw"},
+        {"reference": " "},
+        {"reference": "a" * 201},
+        {"unexpected": "data"},
+    ],
+)
+def test_raw_artifact_reference_rejects_malformed_identity(change):
+    payload = valid_payload("product_test.run")
+    payload["artifact_ref"] = (
+        dict(
+            system="product_test",
+            project_id=str(uuid4()),
+            artifact_id=str(uuid4()),
+            version=1,
+            reference="raw-result-1.json",
+        )
+        | change
+    )
+    with pytest.raises(ValidationError):
+        OPERATIONS["product_test.run"].input_model.model_validate(payload)
+
+
+@pytest.mark.parametrize("tag", ["product_test.run", "product_test.calibrate"])
+@pytest.mark.parametrize("envelope", ["operation", "fact"])
+def test_raw_artifact_project_matches_its_envelope(tag, envelope):
+    from manufacturing_platform.workflow.integrations.contracts import IntegrationFact
+
+    payload = valid_payload(tag)
+    project_id = uuid4()
+    payload["artifact_ref"]["project_id"] = str(project_id)
+    if envelope == "operation":
+        data = dict(
+            operation_id=uuid4(),
+            project_id=project_id,
+            system="product_test",
+            payload=payload,
+        )
+        model = SystemOperation
+    else:
+        payload.pop("operation")
+        payload["fact_type"] = OPERATIONS[tag].output_fact_types[0]
+        data = dict(
+            project_id=project_id,
+            source=dict(
+                system="product_test",
+                object_type=payload["fact_type"].split(".")[1],
+                external_id="fact-1",
+                version=1,
+                mode="mock",
+                occurred_at="2027-01-01T00:00:00Z",
+                collected_at="2027-01-01T00:00:00Z",
+                evidence="source",
+            ),
+            payload=payload,
+            external_actor="instrument",
+            evidence="source",
+        )
+        model = IntegrationFact
+    model.model_validate(data)
+    payload["artifact_ref"]["project_id"] = str(uuid4())
+    with pytest.raises(ValidationError, match="cross-project artifact"):
+        model.model_validate(data)

@@ -95,6 +95,7 @@ from .enterprise_models import (
     SrmPromiseFact,
 )
 from .evidence_models import (
+    ArtifactEvidenceData,
     BiRefresh,
     BiRefreshFact,
     CustomerApproveRevision,
@@ -253,6 +254,11 @@ class SystemOperation(StrictModel):
     def matching_system(self):
         if self.payload.operation.split(".")[0] != self.system:
             raise ValueError("system and operation mismatch")
+        if (
+            isinstance(self.payload, ArtifactEvidenceData)
+            and self.payload.artifact_ref.project_id != self.project_id
+        ):
+            raise ValueError("cross-project artifact")
         return self
 
 
@@ -277,6 +283,11 @@ class IntegrationFact(StrictModel):
     def identity(self):
         if self.payload.fact_type != f"{self.source.system}.{self.source.object_type}":
             raise ValueError("source identity and fact type mismatch")
+        if (
+            isinstance(self.payload, ArtifactEvidenceData)
+            and self.payload.artifact_ref.project_id != self.project_id
+        ):
+            raise ValueError("cross-project artifact")
         keys = [
             (s.system, s.object_type, s.external_id, s.version) for s in self.caused_by
         ]

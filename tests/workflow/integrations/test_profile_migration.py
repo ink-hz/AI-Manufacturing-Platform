@@ -216,3 +216,74 @@ def test_persisted_intent_identity_is_pinned_and_receipt_is_project_scoped(tmp_p
                 "INSERT INTO integration_receipts VALUES (?,?,?,?,?)",
                 (other, "intent", 1, "{}", "now"),
             )
+
+
+@pytest.mark.parametrize("recursive_triggers", [0, 1])
+def test_sql_replace_and_delete_cannot_erase_pinned_identity(
+    tmp_path, recursive_triggers
+):
+    freeze22(tmp_path)
+    with store(tmp_path).transaction(write=True) as tx:
+        tx.execute(f"PRAGMA recursive_triggers={recursive_triggers}")
+        tx.execute(
+            "INSERT INTO project_integration_profiles VALUES (?,?)",
+            (str(PID), "oem-network-v1"),
+        )
+        intent = (
+            "intent",
+            str(PID),
+            "owner",
+            "sap",
+            "sap.release_order",
+            "order.register",
+            1,
+            '{ "original" : true }',
+            "original-hash",
+            "prepared",
+            "now",
+        )
+        tx.execute(
+            "INSERT INTO integration_intents VALUES (?,?,?,?,?,?,?,?,?,?,?)", intent
+        )
+        before = {
+            table: [tuple(r) for r in tx.execute(f"SELECT * FROM {table}")]
+            for table in (
+                "project_integration_profiles",
+                "integration_intents",
+                "exchanges",
+                "audit_events",
+            )
+        }
+        for sql, args in [
+            (
+                "INSERT OR REPLACE INTO project_integration_profiles VALUES (?,?)",
+                (str(PID), "legacy-erp-v1"),
+            ),
+            (
+                "INSERT OR REPLACE INTO integration_intents VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                intent[:3]
+                + (
+                    "wms",
+                    "wms.ship",
+                    "shipment.request",
+                    1,
+                    "{}",
+                    "changed-hash",
+                    "prepared",
+                    "now",
+                ),
+            ),
+            ("DELETE FROM integration_intents WHERE id=?", ("intent",)),
+        ]:
+            with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+                tx.execute(sql, args)
+            assert {
+                table: [tuple(r) for r in tx.execute(f"SELECT * FROM {table}")]
+                for table in before
+            } == before
+        assign_profile(tx, PID, "oem-network-v1")
+        tx.execute("UPDATE integration_intents SET phase='pending' WHERE id='intent'")
+        after = tuple(
+            tx.execute("SELECT * FROM integration_intents WHERE id='intent'").fetchone()
+        )
+        assert after == intent[:9] + ("pending",) + intent[10:]

@@ -22,7 +22,28 @@ class MockRawEvidence(RawEvidence):
     origin: Literal["demo"] = "demo"
 
 
-class TestData(StrictModel):
+class RawArtifactRef(StrictModel):
+    """A project-scoped product-test object key, never a URL or filesystem path.
+
+    The product-test adapter resolves this key and verifies the accompanying
+    artifact_checksum against the exact stored bytes before emitting a fact.
+    """
+
+    system: Literal["product_test"] = "product_test"
+    project_id: UUID
+    artifact_id: UUID
+    version: int = Field(strict=True, ge=1)
+    reference: str = Field(
+        min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    )
+
+
+class ArtifactEvidenceData(StrictModel):
+    artifact_ref: RawArtifactRef
+    artifact_checksum: Digest
+
+
+class TestData(ArtifactEvidenceData):
     work_order_id: UUID
     unit_id: UUID
     revision_id: UUID
@@ -40,12 +61,11 @@ class TestData(StrictModel):
     result: Literal["pass", "fail"]
     measurements: list[Measurement] = Field(min_length=1, max_length=200)
     raw: MockRawEvidence
-    artifact_checksum: Digest
     occurred_at: AwareTime
     rework_order_id: UUID | None = None
 
 
-class CalibrationData(StrictModel):
+class CalibrationData(ArtifactEvidenceData):
     run_id: UUID
     unit_id: UUID
     algorithm_version: Name

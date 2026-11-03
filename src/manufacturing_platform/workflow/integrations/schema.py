@@ -5,6 +5,9 @@ CREATE TABLE IF NOT EXISTS project_integration_profiles(
  project_id TEXT PRIMARY KEY REFERENCES projects(id),
  profile TEXT NOT NULL CHECK(profile IN ('legacy-erp-v1','oem-network-v1'))
 );
+CREATE TRIGGER IF NOT EXISTS project_profile_immutable_insert BEFORE INSERT ON project_integration_profiles
+WHEN EXISTS(SELECT 1 FROM project_integration_profiles WHERE project_id=NEW.project_id)
+BEGIN SELECT RAISE(ABORT, 'immutable project integration profile'); END;
 CREATE TRIGGER IF NOT EXISTS project_profile_immutable_update BEFORE UPDATE ON project_integration_profiles
 BEGIN SELECT RAISE(ABORT, 'immutable project integration profile'); END;
 CREATE TRIGGER IF NOT EXISTS project_profile_immutable_delete BEFORE DELETE ON project_integration_profiles
@@ -23,6 +26,11 @@ CREATE TABLE IF NOT EXISTS integration_intents(
  created_at TEXT NOT NULL,
  UNIQUE(project_id,id)
 );
+CREATE TRIGGER IF NOT EXISTS integration_intent_immutable_insert BEFORE INSERT ON integration_intents
+WHEN EXISTS(SELECT 1 FROM integration_intents WHERE id=NEW.id)
+BEGIN SELECT RAISE(ABORT, 'immutable integration intent identity'); END;
+CREATE TRIGGER IF NOT EXISTS integration_intent_immutable_delete BEFORE DELETE ON integration_intents
+BEGIN SELECT RAISE(ABORT, 'immutable integration intent identity'); END;
 CREATE TRIGGER IF NOT EXISTS integration_intent_identity_immutable
 BEFORE UPDATE OF id,project_id,actor_id,system,operation,policy_action,expected_version,payload_json,payload_hash,created_at ON integration_intents
 BEGIN SELECT RAISE(ABORT, 'immutable integration intent identity'); END;
