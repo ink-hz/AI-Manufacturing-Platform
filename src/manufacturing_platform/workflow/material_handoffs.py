@@ -87,10 +87,23 @@ def project_receive_capable(tx, actor, pid):
     )
 
 
+def trusted_name(user_id, *names):
+    """Keep a usable trusted name, or retain the real identity when unnamed."""
+    for name in names:
+        if name and name.strip():
+            return name.strip()
+    return str(user_id)
+
+
 def actor_fact(context):
+    actor = context.actor
     return dict(
-        actor_id=str(context.actor.user_id),
-        actor_name=context.actor.display_name,
+        actor_id=str(actor.user_id),
+        actor_name=trusted_name(
+            actor.user_id,
+            (context.subject_profiles or {}).get(str(actor.user_id)),
+            actor.display_name,
+        ),
         recorded_at=context.now.isoformat(),
     )
 
@@ -124,8 +137,12 @@ def record(tx, context, command):
         occurred_at=happened,
         recorded_at=context.now.isoformat(),
         sender_id=str(context.actor.user_id),
-        sender_name=profiles.get(str(context.actor.user_id), context.actor.display_name),
-        receiver_name=profiles.get(str(command.receiver_id), str(command.receiver_id)),
+        sender_name=trusted_name(
+            context.actor.user_id,
+            profiles.get(str(context.actor.user_id)),
+            context.actor.display_name,
+        ),
+        receiver_name=trusted_name(command.receiver_id, profiles.get(str(command.receiver_id))),
         handoff_number="MH-" + ident.upper(),
         source=dict(
             system="manual",

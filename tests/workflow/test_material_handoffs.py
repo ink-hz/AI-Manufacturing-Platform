@@ -395,3 +395,70 @@ def test_handoff_list_and_task_sql_boundaries(workflow,monkeypatch):
     assert "ORDER BY category,id LIMIT 51" in query
     assert other not in query
     assert f"h.project_id='{pid}' AND h.receiver_id='{USERS['production']}'" in query
+
+
+@pytest.mark.parametrize("blank_name", ["", " \t "])
+@pytest.mark.parametrize("phase", ["record", "receive", "resolve", "cancel"])
+def test_handoff_blank_trusted_actor_names_preserve_readable_identity(
+    workflow, monkeypatch, blank_name, phase,
+):
+    from . import conftest
+
+    w = workflow
+    pid, fields = setup(w)
+    if phase != "record":
+        ident = record(w, pid, fields)["object_id"]
+    if phase == "resolve":
+        receive(w, pid, ident, received_quantity="0", note="现场缺料")
+
+    actor_name = "production" if phase == "receive" else "warehouse"
+    original_router = conftest.build_workflow_router
+
+    def with_blank_trusted_name(**options):
+        authenticate = options["authenticate"]
+
+        def trusted_actor(request, write=False):
+            identity = authenticate(request, write=write)
+            if request.headers.get("x-test-actor") == actor_name:
+                identity["display_name"] = blank_name
+            return identity
+
+        options["authenticate"] = trusted_actor
+        if phase == "record":
+            options["resolve_subject_profiles"] = lambda ids: []
+        return original_router(**options)
+
+    monkeypatch.setattr(conftest, "build_workflow_router", with_blank_trusted_name)
+    w.reopen()
+    if phase == "record":
+        ident = record(w, pid, fields)["object_id"]
+    elif phase == "receive":
+        receive(w, pid, ident, received_quantity="0", note="现场缺料")
+    elif phase == "resolve":
+        w.command(pid, "material_handoff.resolve", actor_name="warehouse",
+                  handoff_id=ident, resolution="缺料已补送")
+    else:
+        w.command(pid, "material_handoff.cancel", actor_name="warehouse",
+                  handoff_id=ident, reason="交接错录")
+
+    value = detail(w, pid, ident)["value"]
+    if phase == "record":
+        assert value["sender_name"] == str(USERS["warehouse"])
+        assert value["receiver_name"] == str(USERS["production"])
+    else:
+        fact = value[{"receive": "receipt", "resolve": "resolution", "cancel": "cancellation"}[phase]]
+        assert fact["actor_name"] == str(USERS[actor_name])
+        assert fact["actor_id"] == str(USERS[actor_name])
+    assert value["state"] == {
+        "record": "pending", "receive": "disputed", "resolve": "resolved", "cancel": "cancelled",
+    }[phase]
+    for actor in ("owner", "warehouse", "production"):
+        for route in (f"/projects/{pid}/objects/material_handoff", "/objects/material_handoff",
+                      f"/tasks?project_id={pid}"):
+            response = w.client(actor).get(BASE + route)
+            assert response.status_code == 200, response.text
+    tasks = w.client("production" if phase == "record" else "warehouse").get(
+        f"{BASE}/tasks?project_id={pid}"
+    ).json()["items"]
+    handoff_tasks = [t for t in tasks if t["target"]["kind"] == "material_handoff"]
+    assert len(handoff_tasks) == (1 if phase in {"record", "receive"} else 0)
