@@ -17,6 +17,8 @@ from . import (  # noqa: F401 - trusted domain registration
     freeze,
     introduction,
     laboratory,
+    material_handoff_reader,
+    material_handoffs,
     orders,
     ownership,
     progress,
@@ -123,7 +125,8 @@ class WorkflowService:
         return None
 
     def _save(
-        self, tx, actor, operation, payload, result, project_id, action, object_id
+        self, tx, actor, operation, payload, result, project_id, action, object_id,
+        *, occurred_at=None, recorded_at=None,
     ):
         tx.execute(
             "INSERT INTO operations VALUES (?,?,?,?,?)",
@@ -143,8 +146,8 @@ class WorkflowService:
                 str(actor.user_id),
                 action,
                 str(object_id),
-                now,
-                now,
+                occurred_at or now,
+                recorded_at or now,
                 canonical(payload),
             ),
         )
@@ -342,6 +345,16 @@ class WorkflowService:
                 and not delivery.can_resolve_issue(tx, actor, project_id)
             ):
                 value.allowed_actions.remove("delivery.resolve_issue")
+            handoff_applicable = value.mode == "oem"
+            value.allowed_actions = [
+                a for a in value.allowed_actions
+                if not a.startswith("material_handoff.") or handoff_applicable
+            ]
+            if (
+                "material_handoff.receive" in value.allowed_actions
+                and not material_handoffs.project_receive_capable(tx, actor, project_id)
+            ):
+                value.allowed_actions.remove("material_handoff.receive")
             if include_progress:
                 value.progress = self._progress(tx, actor, project_id)
                 value.tasks, value.tasks_truncated = self._tasks(
@@ -427,6 +440,12 @@ class WorkflowService:
             tx, actor, item.project_id
         ):
             candidates.remove("delivery.resolve_issue")
+        if item.kind == ObjectKind.material_handoff:
+            handoff = tx.execute(
+                "SELECT * FROM material_handoffs WHERE project_id=? AND id=?",
+                (str(item.project_id), str(item.id)),
+            ).fetchone()
+            candidates = material_handoffs.read_actions(tx, actor, item.project_id, handoff)
         item.next_actions = list(dict.fromkeys(a for a in candidates if a in allowed))
         item.action_capabilities = [
             ActionCapability(action=a) for a in item.next_actions
@@ -472,19 +491,32 @@ class WorkflowService:
             return [], False
         pid = str(project_id)
         tasks = []
+        handoff_authorized = bool(
+            effective_permissions(tx, actor, project_id).roles & material_handoffs.RECEIVE_ROLES
+            and material_handoffs.applicable(tx, project_id)
+        )
         # Explicit responsibility rows are selected in SQL before materialization.
         for r in tx.execute(
             """SELECT i.title,i.owner_id,i.owner_name,i.shipment_id id,'shipment' kind,'acceptance' category FROM acceptance_issues i
             WHERE i.project_id=? AND i.owner_id=? AND i.required=1 AND NOT EXISTS(SELECT 1 FROM acceptance_resolutions r WHERE r.issue_id=i.id)
             UNION ALL SELECT d.reason,d.owner_id,d.owner_name,d.exchange_id,'exchange','source' FROM exchange_discrepancies d JOIN exchanges e ON e.id=d.exchange_id
             WHERE d.project_id=? AND d.owner_id=? AND d.resolves_seq IS NULL AND e.phase NOT IN ('accepted','posted') AND d.reason<>'Authority rejected request' AND NOT EXISTS(SELECT 1 FROM exchange_discrepancies r WHERE r.resolves_seq=d.seq)
+            UNION ALL SELECT 'Awaiting designated receiver',h.receiver_id,json_extract(h.payload_json,'$.receiver_name'),h.id,'material_handoff','business'
+            FROM material_handoffs h WHERE h.project_id=? AND h.receiver_id=? AND h.state='pending' AND ?
+            UNION ALL SELECT 'Receipt discrepancy requires sender resolution',h.sender_id,json_extract(h.payload_json,'$.sender_name'),h.id,'material_handoff','business'
+            FROM material_handoffs h WHERE h.project_id=? AND h.sender_id=? AND h.state='disputed' AND ?
             ORDER BY category,id LIMIT 51""",
-            (pid, str(actor.user_id), pid, str(actor.user_id)),
+            (pid, str(actor.user_id), pid, str(actor.user_id),
+             pid, str(actor.user_id), handoff_authorized, pid, str(actor.user_id), handoff_authorized),
         ):
-            target = self._actions(
-                tx,
-                actor,
-                ObjectSummary(
+            if r["kind"] == "material_handoff":
+                row = tx.execute(
+                    "SELECT * FROM material_handoffs WHERE project_id=? AND id=?",
+                    (pid, r["id"]),
+                ).fetchone()
+                target = material_handoff_reader.summary(tx, pid, row)
+            else:
+                target = ObjectSummary(
                     id=r["id"],
                     kind=r["kind"],
                     project_id=pid,
@@ -492,8 +524,10 @@ class WorkflowService:
                     state="blocked",
                     version=version,
                     blocking_reasons=[r["title"]],
-                ),
-            )
+                )
+            target = self._actions(tx, actor, target)
+            if r["kind"] == "material_handoff" and not target.next_actions:
+                continue
             tasks.append(
                 OwnedTask(
                     category=r["category"],
@@ -739,12 +773,15 @@ class WorkflowService:
         payload = {"project_id": str(project_id), **command.model_dump(mode="json")}
         profiles = None
         profile_error = None
-        if command.action == "delivery.accept" and command.issues:
+        if (
+            command.action == "delivery.accept" and command.issues
+        ) or command.action == "material_handoff.record":
             # Policy before exposing even a scoped identity lookup.
             with self.store.transaction() as tx:
                 from .authorization import require_action
 
                 require_action(tx, actor, project_id, command.action)
+                material_handoffs.authorize(tx, actor, project_id, command)
                 row = require_project(tx, actor, project_id)
                 replay = self._replay(tx, actor, command.operation_id, payload)
                 if replay is not None:
@@ -766,7 +803,9 @@ class WorkflowService:
                 profiles = self.member_profiles(
                     actor,
                     project_id,
-                    list(dict.fromkeys(i.owner_id for i in command.issues)),
+                    list(dict.fromkeys(i.owner_id for i in command.issues))
+                    if command.action == "delivery.accept"
+                    else list(dict.fromkeys([actor.user_id, command.receiver_id])),
                 )
             except Exception as exc:
                 # A competing identical request may have committed during host I/O.
@@ -782,6 +821,7 @@ class WorkflowService:
                 raise DomainError("FORBIDDEN", 403, "Action permission denied")
             introduction.authorize(actor, command)
             delivery.authorize(tx, actor, project_id, command)
+            material_handoffs.authorize(tx, actor, project_id, command)
             if command.action == "release.decide":
                 quality.authorize_release(tx, actor, project_id, command)
             self.exchange_service.authorize(tx, actor, project_id, command)
@@ -826,6 +866,12 @@ class WorkflowService:
             tx.execute(
                 "UPDATE projects SET version=version+1 WHERE id=?", (str(project_id),)
             )
+            handoff_audit_times = {}
+            if command.action.startswith("material_handoff."):
+                handoff_audit_times = dict(
+                    occurred_at=(getattr(command, "occurred_at", None) or context.now).isoformat(),
+                    recorded_at=context.now.isoformat(),
+                )
             self._save(
                 tx,
                 actor,
@@ -835,6 +881,7 @@ class WorkflowService:
                 project_id,
                 command.action,
                 mutation.object_id,
+                **handoff_audit_times,
             )
         if isinstance(
             command,

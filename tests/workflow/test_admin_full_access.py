@@ -61,7 +61,8 @@ def test_admin_sees_existing_and_new_projects_without_active_grants(workflow, ac
         # Resolve is contextual and appears only with a real unresolved issue.
         assert set(detail.json()["allowed_actions"]) == set(
             COMMAND_REGISTRY._entries
-        ) - {"delivery.resolve_issue"}
+        ) - {"delivery.resolve_issue", "material_handoff.record", "material_handoff.receive",
+             "material_handoff.resolve", "material_handoff.cancel"}
         assert detail.json()["release_kinds"] == [
             "manufacturing",
             "quality",

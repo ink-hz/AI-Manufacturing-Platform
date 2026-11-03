@@ -303,6 +303,14 @@ class WorkflowStore:
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=21")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 21:
+                from .material_handoff_schema import HANDOFF_SCHEMA
+
+                for statement in HANDOFF_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=22")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1
                 or version[0][0] != SCHEMA_VERSION

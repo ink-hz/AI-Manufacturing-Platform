@@ -35,6 +35,10 @@ BUSINESS_QUALIFICATIONS = frozenset(
 WorkflowAction = Literal[
     "authority.register",
     "authority.verify",
+    "material_handoff.record",
+    "material_handoff.receive",
+    "material_handoff.resolve",
+    "material_handoff.cancel",
     "arrival.record",
     "arrival.match",
     "test_plan.publish",
