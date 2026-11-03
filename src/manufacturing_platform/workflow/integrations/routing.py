@@ -108,6 +108,56 @@ def route(profile: ProfileId, action: str) -> str:
     return _ROUTES[action]
 
 
+def route_request(tx, project_id, request):
+    """Choose only a new intent's route; existing physical streams stay pinned."""
+    profile = profile_for(tx, project_id)
+    if request.typed_payload.kind == "stock_proof":
+        return request.system
+    if profile == "legacy-erp-v1":
+        return "erp"
+    p = request.typed_payload
+    work_orders = {str(p.work_order_id)} if hasattr(p, "work_order_id") else set()
+    if p.kind == "ship":
+        work_orders.update(str(wid) for _, _, wid in p.units)
+    elif p.kind == "freeze":
+        for uid in p.unit_ids:
+            row = tx.execute(
+                "SELECT work_order_id FROM units WHERE project_id=? AND id=?",
+                (str(project_id), str(uid)),
+            ).fetchone()
+            if row:
+                work_orders.add(row[0])
+        for lid in p.lot_ids:
+            work_orders.update(
+                row[0]
+                for row in tx.execute(
+                    "SELECT DISTINCT work_order_id FROM reservations WHERE project_id=? AND material_lot_id=? AND authority_receipt_id IS NOT NULL",
+                    (str(project_id), str(lid)),
+                )
+            )
+    pinned = set()
+    for wid in work_orders:
+        row = tx.execute(
+            "SELECT source_system FROM work_orders WHERE project_id=? AND id=?",
+            (str(project_id), wid),
+        ).fetchone()
+        old = tx.execute(
+            "SELECT 1 FROM exchanges WHERE project_id=? AND system='erp' AND json_extract(request_json,'$.typed_payload.work_order_id')=? LIMIT 1",
+            (str(project_id), wid),
+        ).fetchone()
+        if (row and row[0].strip().casefold() == "erp") or old:
+            pinned.add(wid)
+    if pinned:
+        if pinned != work_orders:
+            raise DomainError(
+                "PRECONDITION_FAILED",
+                409,
+                "Separate legacy ERP and core authority scopes before creating an exchange",
+            )
+        return "erp"
+    return route(profile, request.action)
+
+
 class SystemRegistry:
     """Server composition only; construction and capability reads never open sources."""
 

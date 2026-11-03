@@ -262,7 +262,6 @@ def apply(service, tx, context, row, request, receipt):
 
 
 def authority_apply(tx, request, h, sequence, fault_name):
-    from datetime import UTC, datetime
 
     from .exchange_models import ExternalReceipt
 
@@ -348,7 +347,7 @@ def execution_lots(tx, pid, wid, modes):
 
     plan = current_plan_id(tx, pid, wid)
     rows = tx.execute(
-        """SELECT DISTINCT r.material_lot_id FROM reservations r JOIN requirements old ON old.id=r.requirement_id AND old.project_id=r.project_id JOIN requirements current ON current.lineage_id=old.lineage_id AND current.project_id=old.project_id WHERE r.project_id=? AND r.work_order_id=? AND current.plan_id=? AND (current.execution_scope='common' OR current.execution_scope IN (SELECT value FROM json_each(?))) AND r.authority_receipt_id IS NOT NULL AND r.confirmed_atoms>0 ORDER BY r.material_lot_id LIMIT 501""",
+        """SELECT DISTINCT r.material_lot_id FROM effective_reservations r JOIN requirements old ON old.id=r.requirement_id AND old.project_id=r.project_id JOIN requirements current ON current.lineage_id=old.lineage_id AND current.project_id=old.project_id WHERE r.project_id=? AND r.work_order_id=? AND current.plan_id=? AND (current.execution_scope='common' OR current.execution_scope IN (SELECT value FROM json_each(?))) AND r.authority_receipt_id IS NOT NULL AND r.confirmed_atoms>0 ORDER BY r.material_lot_id LIMIT 501""",
         (str(pid), str(wid), str(plan), json.dumps(modes)),
     ).fetchall()
     if len(rows) > 500:

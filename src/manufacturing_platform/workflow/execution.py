@@ -314,6 +314,10 @@ def start_production(tx, context, command: StartProduction):
 
 
 def interrupt_production(tx, context, command: InterruptProduction):
+    return _interrupt_production(tx, context, command)
+
+
+def _interrupt_production(tx, context, command, *, object_id=None):
     wo = own(tx, "work_orders", context.project_id, command.work_order_id)
     active = _active_interruption(tx, context.project_id, wo["id"])
     replaced = None
@@ -379,7 +383,14 @@ def interrupt_production(tx, context, command: InterruptProduction):
             for r in held
         ):
             fail("held start scope is not an accepted scope of this work order")
-        iid, eid = uuid4(), uuid4()
+        if (
+            object_id is not None
+            and tx.execute(
+                "SELECT 1 FROM interruptions WHERE id=?", (str(object_id),)
+            ).fetchone()
+        ):
+            fail("Interruption identity already exists")
+        iid, eid = object_id or uuid4(), uuid4()
     request = ExternalRequest(
         id=eid,
         system="erp",
@@ -650,6 +661,10 @@ def historical_use_changed(tx, project_id, wo, occurred_at):
 
 
 def record_execution(tx, context, command: RecordExecution):
+    return _record_execution(tx, context, command)
+
+
+def validate_execution(tx, context, command, *, trusted_fact=None):
     wo = own(tx, "work_orders", context.project_id, command.work_order_id)
     source = command.source
     key = source_key(source)
@@ -679,7 +694,12 @@ def record_execution(tx, context, command: RecordExecution):
     qualified_rework_id = None
     admitted = True
     try:
-        admit_records(tx, context, [record], object_type="execution", mode="manual")
+        if trusted_fact is None:
+            admit_records(tx, context, [record], object_type="execution", mode="manual")
+        else:
+            from .integrations.core_admission import validate_execution_admission
+
+            validate_execution_admission(tx, context, command, trusted_fact)
     except DomainError as exc:
         if exc.status in {401, 403}:
             raise
@@ -737,9 +757,15 @@ def record_execution(tx, context, command: RecordExecution):
             or command.firmware_version != revision.firmware_version
         ):
             reason = "station, SOP, program or firmware differs from fixed package"
-        elif not command.material_uses and route[command.station].material_consumption == "required":
+        elif (
+            not command.material_uses
+            and route[command.station].material_consumption == "required"
+        ):
             reason = "material usage links required"
-        elif command.material_uses and route[command.station].material_consumption == "none":
+        elif (
+            command.material_uses
+            and route[command.station].material_consumption == "none"
+        ):
             reason = "fixed route step declares no material consumption"
         else:
             proposed_by_lot = {}
@@ -758,7 +784,7 @@ def record_execution(tx, context, command: RecordExecution):
                     break
                 plan_id = current_plan_id(tx, context.project_id, wo["id"])
                 eligible = tx.execute(
-                    """SELECT COALESCE(SUM(r.confirmed_atoms),0) FROM reservations r JOIN requirements q ON q.id=r.requirement_id AND q.project_id=r.project_id WHERE r.project_id=? AND r.work_order_id=? AND r.material_lot_id=? AND r.authority_receipt_id IS NOT NULL AND q.material_id=? AND q.owner_id=? AND EXISTS (SELECT 1 FROM requirements current WHERE current.project_id=r.project_id AND current.plan_id=? AND current.work_order_id=r.work_order_id AND current.lineage_id=q.lineage_id AND current.execution_scope IN (?,'common'))""",
+                    """SELECT COALESCE(SUM(r.confirmed_atoms),0) FROM effective_reservations r JOIN requirements q ON q.id=r.requirement_id AND q.project_id=r.project_id WHERE r.project_id=? AND r.work_order_id=? AND r.material_lot_id=? AND r.authority_receipt_id IS NOT NULL AND q.material_id=? AND q.owner_id=? AND EXISTS (SELECT 1 FROM requirements current WHERE current.project_id=r.project_id AND current.plan_id=? AND current.work_order_id=r.work_order_id AND current.lineage_id=q.lineage_id AND current.execution_scope IN (?,'common'))""",
                     (
                         str(context.project_id),
                         wo["id"],
@@ -770,7 +796,7 @@ def record_execution(tx, context, command: RecordExecution):
                     ),
                 ).fetchone()[0]
                 eligible_all = tx.execute(
-                    """SELECT COALESCE(SUM(r.confirmed_atoms),0) FROM reservations r JOIN requirements q ON q.id=r.requirement_id AND q.project_id=r.project_id WHERE r.project_id=? AND r.work_order_id=? AND r.material_lot_id=? AND r.authority_receipt_id IS NOT NULL AND q.material_id=? AND q.owner_id=? AND EXISTS (SELECT 1 FROM requirements current WHERE current.project_id=r.project_id AND current.plan_id=? AND current.work_order_id=r.work_order_id AND current.lineage_id=q.lineage_id)""",
+                    """SELECT COALESCE(SUM(r.confirmed_atoms),0) FROM effective_reservations r JOIN requirements q ON q.id=r.requirement_id AND q.project_id=r.project_id WHERE r.project_id=? AND r.work_order_id=? AND r.material_lot_id=? AND r.authority_receipt_id IS NOT NULL AND q.material_id=? AND q.owner_id=? AND EXISTS (SELECT 1 FROM requirements current WHERE current.project_id=r.project_id AND current.plan_id=? AND current.work_order_id=r.work_order_id AND current.lineage_id=q.lineage_id)""",
                     (
                         str(context.project_id),
                         wo["id"],
@@ -836,6 +862,33 @@ def record_execution(tx, context, command: RecordExecution):
             correction_id = str(command.supersedes_event_id)
         else:
             reason = "correction requires admitted source evidence"
+    return (
+        wo,
+        source,
+        key,
+        unit,
+        record,
+        admitted,
+        reason,
+        qualified_rework_id,
+        correction_id,
+    )
+
+
+def _record_execution(tx, context, command, *, trusted_fact=None):
+    (
+        wo,
+        source,
+        key,
+        unit,
+        record,
+        admitted,
+        reason,
+        qualified_rework_id,
+        correction_id,
+    ) = validate_execution(tx, context, command, trusted_fact=trusted_fact)
+    if trusted_fact is not None and reason:
+        fail(reason)
     ident = str(uuid4())
     seq = tx.execute(
         "SELECT COALESCE(MAX(accepted_seq),0)+1 FROM execution_events"
@@ -872,7 +925,9 @@ def record_execution(tx, context, command: RecordExecution):
             ident,
             str(context.project_id),
             int(admitted),
-            record.model_dump_json(),
+            trusted_fact.model_dump_json()
+            if trusted_fact is not None
+            else record.model_dump_json(),
             str(command.supersedes_event_id) if command.supersedes_event_id else None,
         ),
     )
@@ -987,6 +1042,53 @@ def admitted_execution_source(tx, pid, e):
         "SELECT * FROM execution_admissions WHERE event_id=? AND project_id=?",
         (e["id"], str(pid)),
     ).fetchone()
+    if (
+        admission
+        and admission["admitted"]
+        and "payload" in json.loads(admission["record_json"])
+    ):
+        from .integrations.contracts import IntegrationFact
+        from .integrations.core_admission import (
+            execution_command,
+            validate_execution_admission,
+        )
+
+        try:
+            fact = IntegrationFact.model_validate_json(admission["record_json"])
+            context = SimpleNamespace(
+                project_id=UUID(str(pid)),
+                now=datetime.fromisoformat(e["recorded_at"]),
+                project_version=1,
+            )
+            command = execution_command(context, fact)
+            validate_execution_admission(tx, context, command, fact)
+            if (
+                str(fact.payload.unit.unit_id),
+                str(fact.payload.work_order_id),
+                fact.payload.unit.sn,
+                fact.payload.station,
+                fact.payload.route_version,
+                fact.payload.program_version,
+                fact.payload.firmware_version,
+                fact.payload.result,
+                fact.payload.occurred_at.isoformat(),
+            ) != (
+                e["unit_id"],
+                e["work_order_id"],
+                e["claimed_sn"],
+                e["station"],
+                e["route_version"],
+                e["program_version"],
+                e["firmware_version"],
+                e["result"],
+                e["occurred_at"],
+            ):
+                return None
+            if json.loads(e["source_json"]) != fact.source.model_dump(mode="json"):
+                return None
+            return fact.source
+        except (DomainError, ValueError):
+            return None
     if admission is None or admission["admitted"]:
         record = (
             ExecutionSourceRecord.model_validate_json(admission["record_json"])

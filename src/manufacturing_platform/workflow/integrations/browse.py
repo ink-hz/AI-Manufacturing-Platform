@@ -343,9 +343,17 @@ def fact(
         workflow_projected=projected is not None,
         sap_posted=True
         if key.system == "sap"
-        and key.object_type in {"accounting_entry", "completion_posting"}
-        and isinstance(origin, OperationOrigin)
-        and origin.operation_receipt.posted_at is not None
+        and getattr(record.payload, "posted_at", None) is not None
+        and (
+            (
+                isinstance(origin, OperationOrigin)
+                and origin.operation_receipt.phase == "accepted"
+            )
+            or (
+                isinstance(origin, InboxOrigin)
+                and origin.inbox_receipt.phase == "accepted"
+            )
+        )
         else None,
         pending_deliveries=sum(s.receipt is None for s in delivery_states),
         delivery_states=list(delivery_states),

@@ -171,9 +171,13 @@ def latest_reviews(tx, project_id, demand_id):
 
 
 def dispatch_register_order(tx, context, command: RegisterOrder):
+    source_ok(command.source, "order_line")
+    return _register_order(tx, context, command)
+
+
+def validate_order(tx, context, command):
     p = project(tx, context.project_id)
     demand = own(tx, "demands", context.project_id, command.demand_id)
-    source_ok(command.source, "order_line")
     source_conflict(tx, command.source)
     reviews = latest_reviews(tx, context.project_id, command.demand_id)
     blocking = [d for d in DIMENSIONS if reviews.get(d) != "approved"]
@@ -192,7 +196,12 @@ def dispatch_register_order(tx, context, command: RegisterOrder):
     ).fetchone()[0]
     if q + prior > demand["q_atoms"]:
         fail("Formal orders exceed reviewed firm demand")
-    ident = str(uuid4())
+    return q
+
+
+def _register_order(tx, context, command, *, object_id=None):
+    q = validate_order(tx, context, command)
+    ident = str(object_id or uuid4())
     tx.execute(
         "INSERT INTO order_lines VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (

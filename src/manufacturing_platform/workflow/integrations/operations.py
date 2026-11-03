@@ -92,6 +92,16 @@ FACT_POLICIES = MappingProxyType(
             for tag in spec.output_fact_types
         },
         "wms.qualification": FactPolicy("supply.inspect"),
+        "wms.consumption": FactPolicy("execution.record"),
+        "sap.variance_posting": FactPolicy("ownership.movement"),
+        "sap.receipt_posting": FactPolicy("ownership.movement"),
+        "sap.shipment_posting": FactPolicy("shipment.request"),
+        "mes.delivery_context": FactPolicy("shipment.request"),
+        "mes.test_request": FactPolicy("test_plan.publish"),
+        "mes.approval_request": FactPolicy(
+            "npi.review",
+            (("engineering", "npi.review"), ("quality", "nonconformance.disposition")),
+        ),
     }
 )
 
@@ -278,6 +288,14 @@ class IntegrationService:
                     "IDEMPOTENCY_CONFLICT", 409, "Intent identity already used"
                 )
         else:
+            if isinstance(value, SystemOperation) and value.system in {
+                "sap",
+                "wms",
+                "mes",
+            }:
+                from .core_preparation import prepare_core_effect
+
+                prepare_core_effect(tx, context, value)
             tx.execute(
                 "INSERT INTO integration_intents VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
@@ -308,7 +326,7 @@ class IntegrationService:
             if fact.payload.fact_type == "mes.delivery_context":
                 ancestor = tx.execute(
                     "SELECT fact_json FROM integration_projections WHERE project_id=? AND system=? AND object_type=? AND external_id=? AND version=?",
-                    identity(pid, fact.payload.release),
+                    identity(pid, fact.payload.releases[0]),
                 ).fetchone()
                 if not ancestor:
                     raise DomainError(
@@ -488,10 +506,51 @@ class IntegrationService:
                             conflict("Source fact scope mismatch")
         except (TimeoutError, OSError):
             phase = "unknown"
+        wire_observations = []
+        if isinstance(value, PinnedPull) and value.fact.source.system in {
+            "sap",
+            "wms",
+            "mes",
+        }:
+            from .core_authority import observed_wires
+
+            try:
+                source_operation_id = UUID(value.fact.source.external_id)
+            except ValueError:
+                source_operation_id = None
+            if source_operation_id:
+                wire_observations = observed_wires(
+                    self.registry,
+                    project_id,
+                    source_operation_id,
+                    value.fact.source.system,
+                )
+        elif receipt is not None and value.system in {"sap", "wms", "mes"}:
+            from .core_authority import observed_wires
+
+            wire_observations = observed_wires(
+                self.registry, project_id, value.operation_id, value.system
+            )
         # Persist observed receipt before any reauthorization/CAS can reject application.
         # This is internal durability only; a revoked caller receives no source evidence.
         with self.workflow.store.transaction(write=True) as tx:
             current = intent(tx, project_id, intent_id)
+            if wire_observations:
+                from .core_preparation import ensure_core_tables
+
+                ensure_core_tables(tx)
+                for exchange_id, raw in wire_observations:
+                    old_wire = tx.execute(
+                        "SELECT receipt_json FROM integration_core_receipts WHERE project_id=? AND exchange_id=?",
+                        (str(project_id), exchange_id),
+                    ).fetchone()
+                    if old_wire and old_wire[0] != raw:
+                        conflict("Original authority receipt changed")
+                    if not old_wire:
+                        tx.execute(
+                            "INSERT INTO integration_core_receipts VALUES (?,?,?)",
+                            (str(project_id), exchange_id, raw),
+                        )
             if receipt is not None:
                 attempt = tx.execute(
                     "SELECT COALESCE(MAX(attempt),0)+1 FROM integration_receipts WHERE project_id=? AND intent_id=?",
@@ -539,6 +598,35 @@ class IntegrationService:
                         current_project_version=project["version"],
                     ),
                 )
+            if phase == "rejected" and wire_observations:
+                from ..exchange_models import ExternalReceipt
+
+                rejection_context = CommandContext(
+                    actor,
+                    project_id,
+                    project["version"],
+                    business_time(tx),
+                    Dataset.model_validate(self.workflow.store.dataset),
+                    self.workflow.exchange_service,
+                )
+                changed = False
+                for exchange_id, raw in wire_observations:
+                    existing = tx.execute(
+                        "SELECT receipt_json FROM exchanges WHERE project_id=? AND id=?",
+                        (str(project_id), exchange_id),
+                    ).fetchone()
+                    if existing and existing[0] != raw:
+                        self.workflow.exchange_service.apply(
+                            tx,
+                            rejection_context,
+                            ExternalReceipt.model_validate_json(raw),
+                        )
+                        changed = True
+                if changed:
+                    tx.execute(
+                        "UPDATE projects SET version=version+1 WHERE id=?",
+                        (str(project_id),),
+                    )
             if phase == "accepted":
                 context = CommandContext(
                     actor,

@@ -309,7 +309,7 @@ def test_v2_database_migrates_without_losing_reviewed_order(workflow):
 
     with sqlite3.connect(workflow.paths.domain) as db:
         db.execute("PRAGMA foreign_keys=OFF")
-        for view in ("effective_supply_receipts", "effective_iqc_results"):
+        for view in ("effective_supply_receipts", "effective_iqc_results", "effective_reservations"):
             db.execute(f"DROP VIEW {view}")
         for table in ("source_corrections", "exchange_discrepancies", "source_confirmations", "exchange_receipts", "exchange_events", "exchanges"):
             db.execute(f"DROP TABLE {table}")

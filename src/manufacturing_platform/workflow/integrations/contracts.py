@@ -11,6 +11,8 @@ from .core_models import (
     AwareTime,
     ConnectorId,
     Digest,
+    MesCancelRemaining,
+    MesCancelRemainingFact,
     MesAssemble,
     MesAssembleFact,
     MesComplete,
@@ -38,6 +40,9 @@ from .core_models import (
     Name,
     ProfileId,
     SapBomRequest,
+    SapReceiptPosting,
+    SapVariancePosting,
+    SapShipmentPosting,
     SapPostCompletion,
     SapPostCompletionFact,
     SapPostMovement,
@@ -53,12 +58,15 @@ from .core_models import (
     SystemId,
     Text,
     WmsCustody,
+    WmsConsumption,
     WmsPick,
     WmsPickFact,
     WmsPutaway,
     WmsPutawayFact,
     WmsQualification,
     WmsReceive,
+    WmsReleaseReservation,
+    WmsReleaseReservationFact,
     WmsReceiveFact,
     WmsReserve,
     WmsReserveFact,
@@ -81,6 +89,8 @@ from .enterprise_models import (
     HrSapPublishEmployee,
     HrSapPublishEmployeeFact,
     MesApprovalRequest,
+    MesPrepare,
+    MesPreparation,
     OaDecideApproval,
     OaDecideApprovalFact,
     OaRequestApproval,
@@ -127,6 +137,7 @@ OperationPayload = Annotated[
     | SapPostMovement
     | SapPostCompletion
     | WmsReceive
+    | WmsReleaseReservation
     | WmsPutaway
     | WmsReserve
     | WmsPick
@@ -134,11 +145,13 @@ OperationPayload = Annotated[
     | WmsStocktake
     | WmsShip
     | MesInspect
+    | MesPrepare
     | MesStart
     | MesInterrupt
     | MesResume
     | MesSwitchRevision
     | MesPass
+    | MesCancelRemaining
     | MesAssemble
     | MesContain
     | MesRelease
@@ -175,6 +188,7 @@ FactPayload = Annotated[
     | SapPostMovementFact
     | SapPostCompletionFact
     | WmsReceiveFact
+    | WmsReleaseReservationFact
     | WmsPutawayFact
     | WmsReserveFact
     | WmsPickFact
@@ -182,11 +196,13 @@ FactPayload = Annotated[
     | WmsStocktakeFact
     | WmsShipFact
     | MesInspectFact
+    | MesPreparation
     | MesStartFact
     | MesInterruptFact
     | MesResumeFact
     | MesSwitchRevisionFact
     | MesPassFact
+    | MesCancelRemainingFact
     | MesAssembleFact
     | MesContainFact
     | MesReleaseFact
@@ -213,8 +229,12 @@ FactPayload = Annotated[
     | OverseasReceiveShipmentFact
     | OverseasReportReturnFact
     | BiRefreshFact
+    | SapShipmentPosting
+    | SapReceiptPosting
+    | SapVariancePosting
     | SapBomRequest
     | SapPurchaseRequirement
+    | WmsConsumption
     | WmsCustody
     | WmsQualification
     | MesProcessRequest

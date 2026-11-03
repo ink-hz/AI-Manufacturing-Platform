@@ -109,6 +109,10 @@ def remaining(tx, project_id, order_line_id) -> DeliveryBalance:
 
 
 def request_shipment(tx, context, command):
+    return _request_shipment(tx, context, command)
+
+
+def _request_shipment(tx, context, command, *, shipment_id=None):
     pid = context.project_id
     p, order = project(tx, pid), own(tx, "order_lines", pid, command.order_line_id)
     ids = list(map(str, command.unit_ids))
@@ -164,7 +168,14 @@ def request_shipment(tx, context, command):
     reasons = safety_reasons(tx, pid, ids)
     if reasons:
         fail("; ".join(reasons))
-    sid, eid = uuid4(), uuid4()
+    if (
+        shipment_id is not None
+        and tx.execute(
+            "SELECT 1 FROM shipments WHERE id=?", (str(shipment_id),)
+        ).fetchone()
+    ):
+        fail("Shipment identity already exists")
+    sid, eid = shipment_id or uuid4(), uuid4()
     from .freeze import consumed_lots
 
     payload = ShipPayload(

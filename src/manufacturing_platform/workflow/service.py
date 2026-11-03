@@ -97,12 +97,20 @@ class WorkflowService:
         object_registry=None,
         test_evidence_reader=None,
         resolve_subject_profiles=None,
+        configure_systems=None,
     ):
         self.store, self.resolve_subject = store, resolve_subject
         self.resolve_subject_profiles = resolve_subject_profiles
         self.system_registry = SystemRegistry(store)
+        if configure_systems is None:
+            from .integrations.core_systems import register_core
+
+            configure_systems = register_core
+        configure_systems(self.system_registry)
         self.exchange_service = exchanges.ExchangeService(self)
-        self.integration_service = integration_operations.IntegrationService(self, self.system_registry)
+        self.integration_service = integration_operations.IntegrationService(
+            self, self.system_registry
+        )
         self.test_evidence_reader = test_evidence_reader or quality
         self.store.bind_test_evidence_reader(self.test_evidence_reader)
         self.command_registry = (

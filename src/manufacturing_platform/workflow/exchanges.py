@@ -5,13 +5,12 @@ from .clock import business_time
 import base64
 import binascii
 import json
-from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
-from .adapters.mock import MockAuthorityAdapter, canonical, digest
+from .adapters.mock import MockAuthorityAdapter as MockAuthorityAdapter, canonical, digest
 from .authorization import require_action, require_project
 from .commands import COMMAND_REGISTRY, CommandContext
 from .contracts import (
@@ -293,7 +292,7 @@ def receipt_scope(tx, row, receipt):
                     return False
                 prior_q = 0
                 for prior in tx.execute(
-                    "SELECT e.project_id,b.value FROM reservations r JOIN exchanges e ON e.id=r.exchange_id,json_each(e.receipt_json,'$.details[0].stock_basis') b WHERE r.authority_receipt_id IS NOT NULL AND e.id<>? AND lower(trim(json_extract(b.value,'$.system')))=? AND trim(json_extract(b.value,'$.external_id'))=?",
+                    "SELECT e.project_id,r.id reservation_id,b.value FROM reservations r JOIN exchanges e ON e.id=r.exchange_id,json_each(e.receipt_json,'$.details[0].stock_basis') b WHERE r.authority_receipt_id IS NOT NULL AND e.id<>? AND lower(trim(json_extract(b.value,'$.system')))=? AND trim(json_extract(b.value,'$.external_id'))=?",
                     (row["id"], *key),
                 ):
                     b = json.loads(prior["value"])
@@ -306,10 +305,29 @@ def receipt_scope(tx, row, receipt):
                         or Decimal(b["source_quantity"]) != basis.source_quantity
                     ):
                         return False
+                    from .integrations.core_reservations import released_basis_atoms
+
                     prior_q += atoms(
                         Decimal(b["quantity"]), basis.unit, payload.unit, payload.scale
+                    ) - released_basis_atoms(
+                        tx,
+                        prior["project_id"],
+                        prior["reservation_id"],
+                        key[0],
+                        key[1],
+                        basis.source_version,
                     )
-                if prior_q + q > source_q:
+                from .integrations.core_reservations import released_basis_atoms
+
+                released = released_basis_atoms(
+                    tx,
+                    row["project_id"],
+                    payload.reservation_id,
+                    key[0],
+                    key[1],
+                    basis.source_version,
+                )
+                if released > q or prior_q + q - released > source_q:
                     return False
                 total += q
                 local = tx.execute(
@@ -402,15 +420,10 @@ class ExchangeService:
 
     def prepare(self, tx, context, request: ExternalRequest) -> UUID:
         authorize_policy(tx, context.actor, context.project_id, request.action)
-        from .integrations.routing import profile_for
+        from .integrations.routing import route_request
 
         request = request.model_copy(
-            update={
-                "system": self.workflow.system_registry.route(
-                    profile_for(tx, context.project_id),
-                    request.action,
-                ),
-            }
+            update={"system": route_request(tx, context.project_id, request)}
         )
         if request.project_id != context.project_id:
             fail("Exchange project mismatch")
@@ -475,6 +488,7 @@ class ExchangeService:
             return result
         adapter = self.adapter if row["system"] == "erp" else None
         receipt, records, problem, stock_proof = None, None, None, None
+        source_fact = None
         rejected_boundary = False
         try:
             if row["system"] != "erp":
@@ -614,6 +628,13 @@ class ExchangeService:
                         if isinstance(receipt, ExternalReceipt)
                         else receipt
                     )
+                    if (
+                        request.system == "mes"
+                        and request.action == "eco.switch"
+                        and request.typed_payload.new_work_order_id is not None
+                        and receipt.phase == "accepted"
+                    ):
+                        source_fact = adapter.source_fact(request)
         except (TimeoutError, OSError):
             receipt, records = None, None
             problem = "Authority response unavailable"
@@ -663,7 +684,9 @@ class ExchangeService:
                         receipt_hash=digest(receipt.model_dump(mode="json")),
                     )
                 else:
-                    self.apply(tx, context, public_receipt(receipt))
+                    self.apply(
+                        tx, context, public_receipt(receipt), source_fact=source_fact
+                    )
             elif records is not None:
                 pull = PullSource.model_validate_json(row["request_json"])
                 try:
@@ -780,7 +803,9 @@ class ExchangeService:
             ),
         )
 
-    def apply(self, tx, context, receipt: ExternalReceipt) -> MutationResult:
+    def apply(
+        self, tx, context, receipt: ExternalReceipt, *, source_fact=None
+    ) -> MutationResult:
         receipt = ExternalReceipt.model_validate(receipt.model_dump(mode="json"))
         row = tx.execute(
             "SELECT * FROM exchanges WHERE business_key=? AND project_id=?",
@@ -816,7 +841,9 @@ class ExchangeService:
         if request.action == "eco.switch":
             from .eco import apply_switch
 
-            return apply_switch(self, tx, context, row, request, receipt)
+            return apply_switch(
+                self, tx, context, row, request, receipt, source_fact=source_fact
+            )
         if request.action in {
             "production.start",
             "production.interrupt",
@@ -1083,6 +1110,17 @@ class ExchangeService:
                         current_resume_interruption(tx, context.project_id, payload)
                         is not None
                     )
+                from .freeze import unit_reasons, resume_held
+
+                if isinstance(payload, StartPayload):
+                    safe_to_start = safe_to_start and not any(
+                        unit_reasons(tx, context.project_id, uid)
+                        for uid, _ in payload.units
+                    )
+                else:
+                    safe_to_start = safe_to_start and not resume_held(
+                        tx, context.project_id, payload.work_order_id, payload.scope
+                    )
                 held = (
                     not plan_matches
                     or not safe_to_start
@@ -1180,7 +1218,7 @@ class ExchangeService:
         )
 
 
-def request_reservation(tx, context, command):
+def validate_reservation(tx, context, command, *, exclude_exchange_ids=()):
     req = own(tx, "requirements", context.project_id, command.requirement_id)
     lot = own(tx, "material_lots", context.project_id, command.lot_id)
     wo = own(tx, "work_orders", context.project_id, command.work_order_id)
@@ -1211,8 +1249,20 @@ def request_reservation(tx, context, command):
         """SELECT COALESCE(SUM(r.requested_atoms),0) FROM reservations r JOIN requirements prior ON prior.id=r.requirement_id JOIN exchanges e ON e.id=r.exchange_id WHERE r.project_id=? AND prior.lineage_id=? AND (e.phase IN ('requested','unknown','received','validated','approved') OR (e.phase='rejected' AND e.attempted=1 AND e.receipt_json IS NULL))""",
         (str(context.project_id), req["lineage_id"]),
     ).fetchone()[0]
+    for exchange_id in exclude_exchange_ids:
+        own_pending = tx.execute(
+            "SELECT requested_atoms FROM reservations WHERE project_id=? AND exchange_id=? AND authority_receipt_id IS NULL",
+            (str(context.project_id), str(exchange_id)),
+        ).fetchone()
+        if own_pending:
+            pending -= own_pending[0]
     if q + pending > atoms(bal.shortage, command.unit, lot["unit"], lot["scale"]):
         fail("Reservation exceeds unreserved requirement")
+    return req, lot, wo, q, plan
+
+
+def request_reservation(tx, context, command):
+    req, lot, wo, q, plan = validate_reservation(tx, context, command)
     ident, eid = uuid4(), uuid4()
     tx.execute(
         "INSERT INTO reservations(id,project_id,requirement_id,work_order_id,material_lot_id,requested_atoms,confirmed_atoms,unit,source_version,authority_receipt_id,created_at) VALUES (?,?,?,?,?,?,0,?,1,NULL,?)",
@@ -1508,7 +1558,7 @@ def summary(tx, pid, kind, row):
 
 
 def detail(tx, pid, kind, ident):
-    table = "exchanges" if kind == "exchange" else "reservations"
+    table = "exchanges" if kind == "exchange" else "effective_reservations"
     row = tx.execute(
         f"SELECT * FROM {table} WHERE project_id=? AND id=?", (str(pid), str(ident))
     ).fetchone()
@@ -1663,8 +1713,9 @@ def detail(tx, pid, kind, ident):
             material_lot_id=row["material_lot_id"],
             requested=amount(row["requested_atoms"], req["scale"]),
             confirmed=amount(row["confirmed_atoms"], req["scale"]),
+            released=amount(row["released_atoms"], req["scale"]),
             remaining=amount(
-                row["requested_atoms"] - row["confirmed_atoms"], req["scale"]
+                row["requested_atoms"] - row["original_confirmed_atoms"], req["scale"]
             ),
             unit=row["unit"],
             source_version=row["source_version"],
@@ -1726,7 +1777,7 @@ def register_reader(kind, table, model):
                 (
                     "SELECT * FROM exchanges WHERE project_id=? ORDER BY seq LIMIT ? OFFSET ?"
                     if kind == "exchange"
-                    else "SELECT r.* FROM reservations r JOIN exchanges e ON e.id=r.exchange_id WHERE r.project_id=? ORDER BY e.seq LIMIT ? OFFSET ?"
+                    else "SELECT r.* FROM effective_reservations r JOIN exchanges e ON e.id=r.exchange_id WHERE r.project_id=? ORDER BY e.seq LIMIT ? OFFSET ?"
                 ),
                 (str(pid), limit, offset),
             )

@@ -71,6 +71,12 @@ OPERATIONS: Mapping[str, OperationSpec] = MappingProxyType(
         "wms.putaway": OperationSpec(
             "wms", core.WmsPutaway, ("wms.putaway",), "ownership.movement"
         ),
+        "wms.release_reservation": OperationSpec(
+            "wms",
+            core.WmsReleaseReservation,
+            ("wms.reservation_release",),
+            "reservation.request",
+        ),
         "wms.reserve": OperationSpec(
             "wms", core.WmsReserve, ("wms.reservation",), "reservation.request"
         ),
@@ -89,22 +95,31 @@ OPERATIONS: Mapping[str, OperationSpec] = MappingProxyType(
         "mes.inspect": OperationSpec(
             "mes", core.MesInspect, ("mes.iqc",), "supply.inspect"
         ),
-        "mes.start": OperationSpec(
+        "mes.prepare": OperationSpec(
             "mes",
-            core.MesStart,
+            enterprise.MesPrepare,
             (
-                "mes.start",
+                "mes.preparation",
                 "mes.process_request",
                 "mes.test_request",
                 "mes.approval_request",
             ),
-            "production.start",
+            "work_order.register",
+        ),
+        "mes.start": OperationSpec(
+            "mes", core.MesStart, ("mes.start",), "production.start"
         ),
         "mes.interrupt": OperationSpec(
             "mes", core.MesInterrupt, ("mes.interruption",), "production.interrupt"
         ),
         "mes.resume": OperationSpec(
             "mes", core.MesResume, ("mes.resume",), "production.resume"
+        ),
+        "mes.cancel_remaining": OperationSpec(
+            "mes",
+            core.MesCancelRemaining,
+            ("mes.remaining_cancellation",),
+            "eco.switch",
         ),
         "mes.switch_revision": OperationSpec(
             "mes", core.MesSwitchRevision, ("mes.revision_switch",), "eco.switch"
@@ -127,7 +142,7 @@ OPERATIONS: Mapping[str, OperationSpec] = MappingProxyType(
         "mes.release": OperationSpec(
             "mes",
             core.MesRelease,
-            ("mes.release", "mes.delivery_context"),
+            ("mes.release",),
             "release.decide",
             variant_restrictions=(
                 "kind:manufacturing|quality; existing release.decide authorize hook",
@@ -273,7 +288,14 @@ EDGES: tuple[EdgeSpec, ...] = (
     EdgeSpec(
         "wms",
         "mes",
-        ("wms.receipt", "wms.qualification", "wms.pick", "wms.custody", "wms.shipment"),
+        (
+            "wms.receipt",
+            "wms.qualification",
+            "wms.pick",
+            "wms.custody",
+            "wms.shipment",
+            "wms.reservation_release",
+        ),
     ),
     EdgeSpec(
         "mes",
@@ -304,7 +326,16 @@ EDGES: tuple[EdgeSpec, ...] = (
     EdgeSpec("mes", "plc", ("mes.process_request",)),
     EdgeSpec("plc", "mes", ("plc.equipment", "plc.sample", "plc.readback")),
     EdgeSpec(
-        "sap", "bi", ("sap.order", "sap.accounting_entry", "sap.completion_posting")
+        "sap",
+        "bi",
+        (
+            "sap.order",
+            "sap.accounting_entry",
+            "sap.completion_posting",
+            "sap.receipt_posting",
+            "sap.shipment_posting",
+            "sap.variance_posting",
+        ),
     ),
     EdgeSpec("mes", "bi", ("mes.execution", "mes.completion")),
     EdgeSpec("product_test", "bi", ("product_test.test",)),

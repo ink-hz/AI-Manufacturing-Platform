@@ -24,6 +24,7 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
     ).fetchone()
     revision = fixed_revision(tx, project_id, row["revision_id"])
     from .agreements import applicable
+
     contract = applicable(tx, project_id, row["revision_id"], at=now)
     checks = []
 
@@ -146,7 +147,7 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
     material_ok = bool(applicable) and all(
         available(tx, project_id, req["id"], now).shortage == 0
         and tx.execute(
-            """SELECT COALESCE(SUM(v.confirmed_atoms),0) FROM reservations v
+            """SELECT COALESCE(SUM(v.confirmed_atoms),0) FROM effective_reservations v
                JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id
                JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id
                WHERE v.project_id=? AND prior.lineage_id=? AND v.work_order_id=?
@@ -250,7 +251,9 @@ def evaluate(tx, project_id, work_order_id, mode, now) -> ReadinessResult:
         ):
             reasons = bulk_reasons(tx, project_id, npi)
             add(
-                "npi", True, not reasons,
+                "npi",
+                True,
+                not reasons,
                 "; ".join(reasons) if reasons else "NPI approval is current",
                 [UUID(npi["id"])],
             )

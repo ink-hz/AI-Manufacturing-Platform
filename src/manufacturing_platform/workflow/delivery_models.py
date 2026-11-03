@@ -1,5 +1,6 @@
 """Typed shipment, signed receipt, acceptance, and independent closure facts."""
 
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
@@ -175,6 +176,7 @@ class OwnershipReconcile(WorkflowCommand, MaterialScope):
 
 
 class OwnershipBalance(StrictModel):
+    adjustment: Decimal = Field(default=Decimal(0), exclude_if=lambda v: v == 0)
     hold_reason: str | None = None
     received: NonnegativeQuantity
     consumed: NonnegativeQuantity

@@ -639,7 +639,7 @@ def test_v3_database_migrates_supply_without_touching_existing_orders(workflow):
     p, order, _, _ = workflow.order_workorder()
     with sqlite3.connect(workflow.paths.domain) as db:
         db.execute("PRAGMA foreign_keys=OFF")
-        for view in ("effective_supply_receipts", "effective_iqc_results"):
+        for view in ("effective_supply_receipts", "effective_iqc_results", "effective_reservations"):
             db.execute(f"DROP VIEW {view}")
         for table in ("source_corrections", "exchange_discrepancies", "source_confirmations", "exchange_receipts", "exchange_events", "exchanges"):
             db.execute(f"DROP TABLE {table}")
@@ -693,7 +693,7 @@ def test_v4_migration_orders_audited_plans_and_normalizes_supply_keys(workflow):
         source["external_id"] += " "
         db.execute("UPDATE plans SET source_json=?,source_system=?,source_type=?,source_external_id=? WHERE id=?",
                    (json.dumps(source), " ERP ", " Plan ", source["external_id"], plan_id))
-        for view in ("effective_supply_receipts", "effective_iqc_results"):
+        for view in ("effective_supply_receipts", "effective_iqc_results", "effective_reservations"):
             db.execute(f"DROP VIEW {view}")
         for table in ("source_corrections", "exchange_discrepancies", "source_confirmations", "exchange_receipts", "exchange_events", "exchanges"):
             db.execute(f"DROP TABLE {table}")
@@ -741,7 +741,7 @@ def test_v4_migration_fails_closed_on_historical_blank_source_key(workflow):
         source = json.loads(db.execute("SELECT source_json FROM plans WHERE id=?", (plan_id,)).fetchone()[0])
         source["system"] = " \t "
         db.execute("UPDATE plans SET source_json=? WHERE id=?", (json.dumps(source), plan_id))
-        for view in ("effective_supply_receipts", "effective_iqc_results"):
+        for view in ("effective_supply_receipts", "effective_iqc_results", "effective_reservations"):
             db.execute(f"DROP VIEW {view}")
         for table in ("source_corrections", "exchange_discrepancies", "source_confirmations", "exchange_receipts", "exchange_events", "exchanges"):
             db.execute(f"DROP TABLE {table}")

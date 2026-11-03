@@ -312,6 +312,44 @@ def admitted_quality_source(tx, pid, row, kind, payload=None):
 
     from .imports import record_scope, validate_record
 
+    if kind == "test" and row["source_system"] == "product_test":
+        from .integrations.contracts import IntegrationFact
+        from .integrations.core_admission import test_command, validate_test_admission
+
+        try:
+            original = tx.execute(
+                "SELECT fact_json FROM integration_projections WHERE project_id=? AND system='product_test' AND object_type='test' AND external_id=? AND version=?",
+                (
+                    str(pid),
+                    row["source_external_id"],
+                    json.loads(row["source_json"])["version"],
+                ),
+            ).fetchone()
+            if not original:
+                return None
+            fact = IntegrationFact.model_validate_json(original[0])
+            context = SimpleNamespace(
+                project_id=UUID(str(pid)),
+                now=datetime.fromisoformat(row["recorded_at"]),
+                project_version=1,
+            )
+            command = test_command(context, fact)
+            validate_test_admission(tx, context, command, fact, check_running=False)
+            if (
+                str(fact.payload.unit_id),
+                str(fact.payload.revision_id),
+                fact.payload.attempt,
+            ) != (row["unit_id"], row["revision_id"], row["attempt"]):
+                return None
+            if fact.source.model_dump(mode="json") != json.loads(
+                row["source_json"]
+            ) or [
+                m.model_dump(mode="json") for m in fact.payload.measurements
+            ] != json.loads(row["measurements_json"]):
+                return None
+            return fact.source
+        except (DomainError, ValueError, KeyError):
+            return None
     try:
         record = QualitySourceRecord(
             object_type=kind,
@@ -352,6 +390,10 @@ def admitted_quality_source(tx, pid, row, kind, payload=None):
 
 
 def record_test(tx, context, command):
+    return _record_test(tx, context, command)
+
+
+def validate_test(tx, context, command, *, trusted_fact=None):
     from .imports import admit_records
 
     pid = context.project_id
@@ -362,7 +404,12 @@ def record_test(tx, context, command):
         source=command.source,
         unit_ids=[command.unit_id],
     )
-    admit_records(tx, context, [record], object_type="test", mode="manual")
+    if trusted_fact is None:
+        admit_records(tx, context, [record], object_type="test", mode="manual")
+    else:
+        from .integrations.core_admission import validate_test_admission
+
+        validate_test_admission(tx, context, command, trusted_fact)
     key = source_key(command.source)
     if tx.execute(
         "SELECT 1 FROM quality_tests WHERE source_system=? AND source_type=? AND source_external_id=?",
@@ -445,6 +492,13 @@ def record_test(tx, context, command):
         program_version=spec.program_version,
         firmware_version=revision.firmware_version,
         equipment_check_id=UUID(equipment["id"]),
+    )
+    return pid, unit, key, scope, events, prior_test_id
+
+
+def _record_test(tx, context, command, *, trusted_fact=None):
+    pid, unit, key, scope, events, prior_test_id = validate_test(
+        tx, context, command, trusted_fact=trusted_fact
     )
     ident = str(uuid4())
     outcome = (
@@ -609,7 +663,7 @@ def complete_rework(tx, context, command):
     return MutationResult(object_type="rework", object_id=row["id"])
 
 
-def decide_release(tx, context, command):
+def validate_release(tx, context, command):
     pid = context.project_id
     authorize_release(tx, context.actor, pid, command)
     if len(set(command.unit_ids)) != len(command.unit_ids):
@@ -626,6 +680,7 @@ def decide_release(tx, context, command):
     if command.kind == "customer":
         project = project_row(tx, pid)
         from .agreements import applicable
+
         contract = applicable(tx, pid, command.revision_id)
         if (
             not all(
@@ -691,6 +746,12 @@ def decide_release(tx, context, command):
         fail(
             "approval requires measured final-good serials without open defects or scrap"
         )
+    return units
+
+
+def decide_release(tx, context, command):
+    units = validate_release(tx, context, command)
+    pid = context.project_id
     ident = str(uuid4())
     tx.execute(
         "INSERT INTO quality_releases(id,project_id,kind,decision,payload_json,actor_id,created_at,source_system,source_type,source_external_id) VALUES (?,?,?,?,?,?,?,?,?,?)",

@@ -16,7 +16,7 @@ TABLES = {
 }
 
 
-def value_for(kind, row):
+def value_for(kind, row, tx=None, pid=None):
     value = json.loads(row["payload_json"])
     if kind == "test_run" and row["finish_json"]:
         finish = json.loads(row["finish_json"])
@@ -36,6 +36,12 @@ def value_for(kind, row):
             state="removed" if row["removal_json"] else "installed",
             removal=json.loads(row["removal_json"]) if row["removal_json"] else None,
         )
+    if kind == "component_link" and value.get("source") is not None:
+        from .integrations.core_admission import admitted_component_source
+
+        value["source"] = (
+            admitted_component_source(tx, pid, row) if tx is not None else None
+        )
     return TABLES[kind][1].model_validate(value)
 
 
@@ -49,7 +55,7 @@ def unit_history(tx, pid, uid):
             )
         ],
         "components": [
-            value_for("component_link", r).model_dump(exclude={"kind"})
+            value_for("component_link", r, tx, pid).model_dump(exclude={"kind"})
             for r in tx.execute(
                 "SELECT * FROM component_links WHERE project_id=? AND unit_id=? ORDER BY seq",
                 (str(pid), str(uid)),
@@ -59,7 +65,7 @@ def unit_history(tx, pid, uid):
 
 
 def summary(tx, pid, kind, row):
-    value = value_for(kind, row)
+    value = value_for(kind, row, tx, pid)
     state = value.state
     blockers, actions = [], []
     unit = tx.execute(
@@ -143,7 +149,7 @@ def register(kind, table, model):
         ).fetchone()
         if not row:
             return None
-        value = value_for(kind, row)
+        value = value_for(kind, row, tx, pid)
         relations = []
         for field, target in [
             ("unit_id", "unit"),

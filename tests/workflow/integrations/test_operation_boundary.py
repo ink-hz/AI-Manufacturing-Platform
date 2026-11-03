@@ -548,6 +548,9 @@ def test_all_closed_fact_types_have_explicit_fixed_policy():
 
     tags = set(FACT_ADAPTER.json_schema()["discriminator"]["mapping"])
     assert set(FACT_POLICIES) == tags
+    from manufacturing_platform.workflow.integrations.operations import FactPolicy
+
+    assert all(isinstance(policy, FactPolicy) for policy in FACT_POLICIES.values())
     with pytest.raises(TypeError):
         FACT_POLICIES["fabricated.fact"] = "order.register"
 

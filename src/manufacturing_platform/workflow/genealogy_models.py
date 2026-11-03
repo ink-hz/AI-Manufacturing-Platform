@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from .contracts import StrictModel
+from .contracts import SourceRef, StrictModel
 
 Name = Annotated[str, Field(min_length=1, max_length=200, pattern=r"\S")]
 Text = Annotated[str, Field(min_length=1, max_length=2000, pattern=r"\S")]
@@ -26,6 +26,7 @@ class UnitAlias(Attribution):
 
 
 class ComponentHistory(Attribution):
+    source: SourceRef | None = Field(default=None, exclude_if=lambda v: v is None)
     id: UUID
     unit_id: UUID
     material_id: Name

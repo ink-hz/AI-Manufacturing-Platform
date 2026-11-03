@@ -254,11 +254,17 @@ class WorkflowStore:
                 # Reconstruct extant supported insertion order, not source chronology.
                 # Original business facts, operations and audit payloads are untouched.
                 for table in ("reviews", "handoffs", "readiness_checks"):
-                    columns = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+                    columns = {
+                        r[1] for r in conn.execute(f"PRAGMA table_info({table})")
+                    }
                     if "accepted_seq" not in columns:
-                        conn.execute(f"ALTER TABLE {table} ADD COLUMN accepted_seq INTEGER")
+                        conn.execute(
+                            f"ALTER TABLE {table} ADD COLUMN accepted_seq INTEGER"
+                        )
                         conn.execute(f"UPDATE {table} SET accepted_seq=rowid")
-                    conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {table}_acceptance_order ON {table}(project_id,accepted_seq)")
+                    conn.execute(
+                        f"CREATE UNIQUE INDEX IF NOT EXISTS {table}_acceptance_order ON {table}(project_id,accepted_seq)"
+                    )
                 conn.execute("UPDATE schema_version SET version=15")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             if len(version) == 1 and version[0][0] == 15:
@@ -328,10 +334,21 @@ class WorkflowStore:
                 != (self.dataset["id"], self.dataset["mode"], self.dataset["label"])
             ):
                 raise ValueError("workflow dataset mismatch")
+            # Task3 adds an undeployed, additive reservation release ledger to v23.
+            # Existing v23 datasets need the same initialization as fresh stores.
+            if not conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='view' AND name='effective_reservations'"
+            ).fetchone():
+                from .integrations.schema import initialize_reservation_releases
+
+                initialize_reservation_releases(conn)
             from . import quality
             from .execution import bind_test_reader
 
-            with bind_test_reader(conn, self._test_evidence_reader or quality), bind_business_clock(conn, self.business_clock):
+            with (
+                bind_test_reader(conn, self._test_evidence_reader or quality),
+                bind_business_clock(conn, self.business_clock),
+            ):
                 yield conn
             conn.commit()
         except BaseException:

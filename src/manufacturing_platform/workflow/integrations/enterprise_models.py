@@ -13,7 +13,13 @@ from ..introduction_models import ReviewCheck
 from .core_models import AwareTime, Name, PositiveAmount, SourceKey, Text, UnitScope
 
 
+class BomMaterial(StrictModel):
+    material_id: Name
+    per_unit: PositiveAmount
+
+
 class RevisionData(StrictModel):
+    bom_materials: list[BomMaterial] = Field(min_length=1, max_length=500)
     package_id: Name
     revision: Name
     customer_revision: Name
@@ -26,6 +32,8 @@ class RevisionData(StrictModel):
 
     @model_validator(mode="after")
     def unique(self):
+        if len({m.material_id for m in self.bom_materials}) != len(self.bom_materials):
+            raise ValueError("duplicate BOM material")
         if len({i.id for i in self.items}) != len(self.items) or len(
             {r.station for r in self.route_steps}
         ) != len(self.route_steps):
@@ -292,3 +300,25 @@ class SrmAnnounceArrivalFact(ArrivalData):
 
 class MesApprovalRequest(ApprovalRequestData):
     fact_type: Literal["mes.approval_request"] = "mes.approval_request"
+
+
+class PreparationData(StrictModel):
+    work_order_id: UUID
+    unit_ids: list[UUID] = Field(min_length=1, max_length=500)
+    test_plan_id: UUID
+    equipment_id: Name
+    approval_target: ApprovalTarget | None = None
+
+    @model_validator(mode="after")
+    def unique_units(self):
+        if len(set(self.unit_ids)) != len(self.unit_ids):
+            raise ValueError("Preparation requires distinct units")
+        return self
+
+
+class MesPrepare(PreparationData):
+    operation: Literal["mes.prepare"] = "mes.prepare"
+
+
+class MesPreparation(PreparationData):
+    fact_type: Literal["mes.preparation"] = "mes.preparation"

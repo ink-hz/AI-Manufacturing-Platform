@@ -58,7 +58,7 @@ def stock_evidence(tx, pid, lot):
     complete = True
     unknown = 0
     for r in tx.execute(
-        "SELECT e.*,v.id proof_reservation_id,v.confirmed_atoms FROM reservations v JOIN exchanges e ON e.id=v.exchange_id WHERE v.project_id=? AND v.material_lot_id=? AND v.authority_receipt_id IS NOT NULL",
+        "SELECT e.*,v.id proof_reservation_id,v.confirmed_atoms FROM effective_reservations v JOIN exchanges e ON e.id=v.exchange_id WHERE v.project_id=? AND v.material_lot_id=? AND v.authority_receipt_id IS NOT NULL",
         (str(pid), lot["id"]),
     ):
         receipt = ExternalReceipt.model_validate_json(r["receipt_json"])
@@ -79,8 +79,12 @@ def stock_evidence(tx, pid, lot):
                 ["receipt", b.system.strip().casefold(), b.external_id.strip()],
                 separators=(",", ":"),
             )
+            from .integrations.core_reservations import released_basis_atoms
+
             covered[key] = covered.get(key, 0) + material_atoms(
                 b.quantity, b.unit, lot["unit"], lot["scale"]
+            ) - released_basis_atoms(
+                tx, pid, r["proof_reservation_id"], b.system, b.external_id, b.source_version
             )
     for key, q in covered.items():
         evidence[key] = max(evidence.get(key, 0), q)
@@ -844,7 +848,7 @@ def receipt_scope(tx, row, receipt):
     )
 
 
-def apply_switch(service, tx, context, row, request, receipt):
+def apply_switch(service, tx, context, row, request, receipt, *, source_fact=None):
     from .exchanges import event
 
     payload = request.typed_payload
@@ -911,6 +915,16 @@ def apply_switch(service, tx, context, row, request, receipt):
                 "cutoff": receipt.occurred_at.isoformat(),
                 "evidence": f"Authority ECO creation receipt {receipt.receipt_id}",
             }
+            if request.system == "mes":
+                if (
+                    source_fact is None
+                    or source_fact.payload.fact_type != "mes.revision_switch"
+                    or source_fact.payload.replacement_work_order_id
+                    != payload.new_work_order_id
+                    or source_fact.project_id != context.project_id
+                ):
+                    fail("Actual MES replacement source required")
+                source = source_fact.source.model_dump(mode="json")
             scale = 10 ** project(tx, context.project_id)["unit_scale"]
             tx.execute(
                 "INSERT INTO work_orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -923,9 +937,9 @@ def apply_switch(service, tx, context, row, request, receipt):
                     wo["unit"],
                     wo["purpose"],
                     payload.new_trial_quantity * scale,
-                    request.system,
-                    "work_order",
-                    str(payload.new_work_order_id),
+                    source["system"],
+                    source["object_type"],
+                    source["external_id"],
                     receipt.source_version,
                     json.dumps(source),
                     wo["planned_start"],

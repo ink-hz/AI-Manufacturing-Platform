@@ -69,8 +69,13 @@ def balance(tx, pid, lot) -> OwnershipBalance:
         )
     }
     returned, scrapped = movements.get("return", 0), movements.get("raw_loss", 0)
-    residual = received - consumed - returned - scrapped
+    from .integrations.core_inventory import projected_adjustments
+
+    adjustment, source_returns = projected_adjustments(tx, pid, lot)
+    returned += source_returns
+    residual = received + adjustment - consumed - returned - scrapped
     return OwnershipBalance(
+        adjustment=amount(adjustment, lot["scale"]),
         **{
             key: amount(value, lot["scale"])
             for key, value in dict(
@@ -215,6 +220,7 @@ for model, handler in [(MaterialMovement, move), (OwnershipReconcile, reconcile)
 def material_hold(tx, pid, lot):
     """Actual movements never silently release still-accepted authority claims."""
     from .freeze import lot_hold
+
     containment = lot_hold(tx, pid, lot["id"])
     if containment:
         return containment
@@ -225,7 +231,7 @@ def material_hold(tx, pid, lot):
         return None
     current = balance(tx, pid, lot)
     reserved = tx.execute(
-        "SELECT COALESCE(SUM(confirmed_atoms),0) FROM reservations WHERE project_id=? AND material_lot_id=? AND authority_receipt_id IS NOT NULL",
+        "SELECT COALESCE(SUM(confirmed_atoms),0) FROM effective_reservations WHERE project_id=? AND material_lot_id=? AND authority_receipt_id IS NOT NULL",
         (str(pid), lot["id"]),
     ).fetchone()[0]
     consumed = atoms(current.consumed, lot["unit"], lot["unit"], lot["scale"])
@@ -282,7 +288,6 @@ def audit_evidence(tx, pid, object_id, audit, payload):
     from pydantic import ValidationError
 
     from .contracts import DomainError, ObjectEvidence
-    from .orders import _audit_evidence
 
     source_type = (
         (payload.get("source") or {}).get("object_type")

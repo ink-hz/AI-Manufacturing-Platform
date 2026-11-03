@@ -86,6 +86,36 @@ CREATE TABLE IF NOT EXISTS integration_network_cursors(
 INTEGRATION_SCHEMA += NETWORK_SCHEDULER_SCHEMA + ";\n"
 
 
+# Logical releases retain the original accepted receipt and physical stock.
+RESERVATION_RELEASE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS integration_reservation_releases(
+ project_id TEXT NOT NULL REFERENCES projects(id),
+ system TEXT NOT NULL, object_type TEXT NOT NULL, external_id TEXT NOT NULL, version INTEGER NOT NULL,
+ reservation_id TEXT NOT NULL REFERENCES reservations(id),
+ qualification_key TEXT NOT NULL, receipt_system TEXT NOT NULL, receipt_external_id TEXT NOT NULL,
+ receipt_version INTEGER NOT NULL, q_atoms INTEGER NOT NULL CHECK(q_atoms>0), payload_hash TEXT NOT NULL,
+ recorded_at TEXT NOT NULL,
+ PRIMARY KEY(project_id,system,object_type,external_id,version,reservation_id,qualification_key),
+ FOREIGN KEY(project_id,system,object_type,external_id,version) REFERENCES integration_projections(project_id,system,object_type,external_id,version) DEFERRABLE INITIALLY DEFERRED
+);
+CREATE TRIGGER IF NOT EXISTS reservation_release_no_update BEFORE UPDATE ON integration_reservation_releases
+BEGIN SELECT RAISE(ABORT,'immutable reservation release'); END;
+CREATE TRIGGER IF NOT EXISTS reservation_release_no_delete BEFORE DELETE ON integration_reservation_releases
+BEGIN SELECT RAISE(ABORT,'immutable reservation release'); END;
+CREATE TRIGGER IF NOT EXISTS reservation_release_no_replace BEFORE INSERT ON integration_reservation_releases
+WHEN EXISTS(SELECT 1 FROM integration_reservation_releases WHERE project_id=NEW.project_id AND system=NEW.system AND object_type=NEW.object_type AND external_id=NEW.external_id AND version=NEW.version AND reservation_id=NEW.reservation_id AND qualification_key=NEW.qualification_key)
+BEGIN SELECT RAISE(ABORT,'immutable reservation release'); END;
+CREATE VIEW IF NOT EXISTS effective_reservations AS
+SELECT r.id,r.project_id,r.requirement_id,r.work_order_id,r.material_lot_id,r.requested_atoms,
+ r.confirmed_atoms-COALESCE(d.released_atoms,0) confirmed_atoms,r.confirmed_atoms original_confirmed_atoms,
+ COALESCE(d.released_atoms,0) released_atoms,r.unit,r.source_version,r.authority_receipt_id,r.created_at,r.exchange_id,r.accepted_sequence
+FROM reservations r LEFT JOIN
+ (SELECT d.project_id,d.reservation_id,SUM(d.q_atoms) released_atoms FROM integration_reservation_releases d JOIN integration_projections p ON p.project_id=d.project_id AND p.system=d.system AND p.object_type=d.object_type AND p.external_id=d.external_id AND p.version=d.version AND p.payload_hash=d.payload_hash GROUP BY d.project_id,d.reservation_id) d
+ON d.project_id=r.project_id AND d.reservation_id=r.id;
+"""
+INTEGRATION_SCHEMA += RESERVATION_RELEASE_SCHEMA
+
+
 def migrate_integration_schema(tx):
     # sqlite executescript implicitly commits, so use complete statements within
     # the caller's existing migration transaction (including trigger bodies).
@@ -93,6 +123,18 @@ def migrate_integration_schema(tx):
 
     statement = ""
     for line in INTEGRATION_SCHEMA.splitlines(keepends=True):
+        statement += line
+        if complete_statement(statement):
+            tx.execute(statement)
+            statement = ""
+
+
+def initialize_reservation_releases(tx):
+    """Initialize the additive release ledger for existing pre-release v23 stores."""
+    from sqlite3 import complete_statement
+
+    statement = ""
+    for line in RESERVATION_RELEASE_SCHEMA.splitlines(keepends=True):
         statement += line
         if complete_statement(statement):
             tx.execute(statement)

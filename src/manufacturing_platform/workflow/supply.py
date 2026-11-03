@@ -3,7 +3,7 @@
 from .clock import business_time
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -146,6 +146,10 @@ def define_material(tx, context, command: DefineMaterial):
 
 def receive_plan(tx, context, command: ReceivePlan):
     source_ok(command.source, "plan", context.now, retain_bad_time=True)
+    return _receive_plan(tx, context, command)
+
+
+def validate_plan(tx, context, command):
     source_free(tx, "plans", command.source, versioned=True)
     reasons = []
     issue = cutoff_issue(command.source, context.now)
@@ -201,7 +205,12 @@ def receive_plan(tx, context, command: ReceivePlan):
             reasons.append("declared order input missing or inaccessible")
         elif order["source_version"] != version:
             reasons.append("order source version mismatch")
-    ident = str(uuid4())
+    return reasons, material_meta
+
+
+def _receive_plan(tx, context, command, *, object_id=None, requirement_ids=None):
+    reasons, material_meta = validate_plan(tx, context, command)
+    ident = str(object_id or uuid4())
     state = "rejected" if reasons else "confirmed"
     reason = "; ".join(dict.fromkeys(reasons))
     key = source_key(command.source)
@@ -232,7 +241,7 @@ def receive_plan(tx, context, command: ReceivePlan):
         ),
     )
     if state == "confirmed":
-        for req in command.requirements:
+        for index, req in enumerate(command.requirements):
             q, scale = material_meta[id(req)]
             previous = tx.execute(
                 """SELECT r.id,r.lineage_id FROM requirements r JOIN plans p ON p.id=r.plan_id
@@ -252,7 +261,11 @@ def receive_plan(tx, context, command: ReceivePlan):
             tx.execute(
                 "INSERT INTO requirements VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    str(uuid4()),
+                    str(
+                        requirement_ids[index]
+                        if requirement_ids is not None
+                        else uuid4()
+                    ),
                     str(context.project_id),
                     ident,
                     str(req.work_order_id),
@@ -472,7 +485,7 @@ def available(tx, project_id, requirement_id, now) -> MaterialBalance:
         (str(project_id), req["lineage_id"]),
     ).fetchone()
     reserved = tx.execute(
-        """SELECT COALESCE(SUM(v.confirmed_atoms),0) FROM reservations v
+        """SELECT COALESCE(SUM(v.confirmed_atoms),0) FROM effective_reservations v
            JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id
            WHERE v.project_id=? AND prior.lineage_id=? AND v.work_order_id=?
              AND v.authority_receipt_id IS NOT NULL""",
@@ -482,7 +495,7 @@ def available(tx, project_id, requirement_id, now) -> MaterialBalance:
 
     usable, movement_holds = 0, []
     for row in tx.execute(
-        "SELECT l.*,SUM(v.confirmed_atoms) confirmed FROM reservations v JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id WHERE v.project_id=? AND prior.lineage_id=? AND v.work_order_id=? AND v.authority_receipt_id IS NOT NULL GROUP BY l.id",
+        "SELECT l.*,SUM(v.confirmed_atoms) confirmed FROM effective_reservations v JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id WHERE v.project_id=? AND prior.lineage_id=? AND v.work_order_id=? AND v.authority_receipt_id IS NOT NULL GROUP BY l.id",
         (str(project_id), req["lineage_id"], req["work_order_id"]),
     ):
         hold = material_hold(tx, project_id, row)
@@ -900,7 +913,7 @@ def _page_balances(tx, project_id, rows):
         r["lineage_id"]: r["reserved"]
         for r in tx.execute(
             f"""SELECT prior.lineage_id,COALESCE(SUM(v.confirmed_atoms),0) reserved
-                FROM reservations v JOIN requirements prior
+                FROM effective_reservations v JOIN requirements prior
                   ON prior.id=v.requirement_id AND prior.project_id=v.project_id
                 WHERE prior.project_id=? AND prior.lineage_id IN ({slots}) AND v.authority_receipt_id IS NOT NULL
                 GROUP BY prior.lineage_id""",
@@ -911,7 +924,7 @@ def _page_balances(tx, project_id, rows):
 
     held_atoms, hold_reasons, hold_cache = {}, {}, {}
     for claim in tx.execute(
-        f"""SELECT l.*,prior.lineage_id,SUM(v.confirmed_atoms) confirmed FROM reservations v
+        f"""SELECT l.*,prior.lineage_id,SUM(v.confirmed_atoms) confirmed FROM effective_reservations v
             JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id
             JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id
             WHERE v.project_id=? AND prior.lineage_id IN ({slots}) AND v.authority_receipt_id IS NOT NULL

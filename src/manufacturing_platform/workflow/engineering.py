@@ -4,7 +4,6 @@ from .clock import business_time
 
 import hashlib
 import json
-from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from .commands import COMMAND_REGISTRY
@@ -159,10 +158,14 @@ def record_customer_approval(tx, context, command: RecordCustomerApproval):
 
 
 def register_work_order(tx, context, command: RegisterWorkOrder):
+    source_ok(command.source, "work_order")
+    return _register_work_order(tx, context, command)
+
+
+def validate_work_order(tx, context, command):
     p = project(tx, context.project_id)
     order = own(tx, "order_lines", context.project_id, command.order_line_id)
     own(tx, "engineering_revisions", context.project_id, command.revision_id)
-    source_ok(command.source, "work_order")
     if (
         order["state"] != "active"
         or tx.execute(
@@ -196,7 +199,12 @@ def register_work_order(tx, context, command: RegisterWorkOrder):
         source_key(command.source),
     ).fetchone():
         fail("external work order number already registered", "SOURCE_CONFLICT")
-    ident = str(uuid4())
+    return order, q, trial
+
+
+def _register_work_order(tx, context, command, *, object_id=None):
+    order, q, trial = validate_work_order(tx, context, command)
+    ident = str(object_id or uuid4())
     tx.execute(
         "INSERT INTO work_orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (

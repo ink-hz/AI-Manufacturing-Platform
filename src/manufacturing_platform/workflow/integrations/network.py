@@ -146,7 +146,10 @@ class MockNetwork:
                         receipt
                     ):
                         conflict("Consumer acknowledgment was not durably committed")
-                    producer.acknowledge(delivery.delivery_id, receipt)
+                    from .core_guards import project_guard
+
+                    with project_guard(self.registry, project_id):
+                        producer.acknowledge(delivery.delivery_id, receipt)
                 receipts.append(receipt)
                 duplicates += int(duplicate)
             except (OSError, TimeoutError, DomainError, ValidationError) as exc:

@@ -1,6 +1,7 @@
 """Typed boundary contracts. Only implemented authority actions can be submitted."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -449,6 +450,9 @@ class ExchangeValue(DomainValue):
 
 
 class ReservationValue(DomainValue):
+    released: NonnegativeQuantity = Field(
+        default=Decimal(0), exclude_if=lambda v: v == 0
+    )
     kind: Literal["reservation"] = "reservation"
     requirement_id: UUID
     work_order_id: UUID

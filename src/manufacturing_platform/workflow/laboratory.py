@@ -154,6 +154,10 @@ def start(tx, context, command):
 
 
 def finish(tx, context, command):
+    return _finish(tx, context, command)
+
+
+def _finish(tx, context, command, *, trusted_fact=None):
     row = own(tx, "test_runs", context.project_id, command.run_id)
     if row["finish_json"]:
         fail("finished run is immutable; start a new attempt")
@@ -191,7 +195,9 @@ def finish(tx, context, command):
             measurements=command.measurements,
             rework_order_id=run["rework_order_id"],
         )
-        result = quality.record_test(tx, context, test_command)
+        result = quality._record_test(
+            tx, context, test_command, trusted_fact=trusted_fact
+        )
         test = own(tx, "quality_tests", context.project_id, result.object_id)
         if (
             json.loads(test["scope_json"]) != scope
@@ -336,7 +342,7 @@ def confirm_calibration(tx, context, command):
     return MutationResult(object_type="calibration", object_id=row["id"])
 
 
-def install(tx, context, command):
+def validate_install(tx, context, command):
     own(tx, "units", context.project_id, command.unit_id)
     if command.lot_id:
         lot = own(tx, "material_lots", context.project_id, command.lot_id)
@@ -348,11 +354,23 @@ def install(tx, context, command):
         (str(context.project_id), command.material_id, key),
     ).fetchone():
         fail("component already has an active installation")
+
+
+def install(tx, context, command):
+    return _install(tx, context, command)
+
+
+def _install(tx, context, command, *, trusted_fact=None):
+    validate_install(tx, context, command)
+    key = sn_key(command.component_serial)
+    payload = business(command)
+    if trusted_fact is not None:
+        payload["source"] = trusted_fact.source.model_dump(mode="json")
     ident = insert(
         tx,
         "component_links",
         context,
-        business(command),
+        payload,
         unit_id=str(command.unit_id),
         material_id=command.material_id,
         serial_key=key,

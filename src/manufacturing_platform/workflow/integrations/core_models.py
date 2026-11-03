@@ -184,6 +184,7 @@ class AccountingData(StrictModel):
 
 
 class ReceiptData(StrictModel):
+    custodian: Name
     commitment_id: UUID
     material_lot_id: UUID
     lot_id: Name
@@ -212,6 +213,7 @@ class ReservationData(StrictModel):
 
 
 class StocktakeData(StrictModel):
+    quality_state: Literal["pending", "qualified"]
     material_lot_id: UUID
     owner_id: Name
     location: Name
@@ -229,19 +231,26 @@ class StocktakeData(StrictModel):
 class ShipmentData(UnitScope):
     order_line_id: UUID
     shipment_id: UUID
-    release: SourceKey
+    releases: list[SourceKey] = Field(min_length=1, max_length=500)
     amount: PositiveAmount
     destination: Name
     evidence: Text
 
     @model_validator(mode="after")
     def count(self):
+        if len({r.model_dump_json() for r in self.releases}) != len(
+            self.releases
+        ) or any(
+            (r.system, r.object_type) != ("mes", "release") for r in self.releases
+        ):
+            raise ValueError("distinct exact MES release sources required")
         if self.amount.quantity != len(self.units):
             raise ValueError("shipment quantity must equal unique unit count")
         return self
 
 
 class InspectionData(StrictModel):
+    manual_iqc_id: UUID | None = None
     receipt: SourceKey
     accepted: Amount
     rejected: Amount
@@ -268,6 +277,7 @@ class StartData(UnitScope):
 
 
 class InterruptData(StrictModel):
+    start_id: UUID | None = None
     work_order_id: UUID
     interruption_id: UUID
     reason: Text
@@ -283,6 +293,7 @@ class ResumeData(StrictModel):
 
 
 class SwitchData(UnitScope):
+    units: list[UnitIdentity] = Field(max_length=500)
     work_order_id: UUID
     eco_id: UUID
     from_revision_id: UUID
@@ -321,15 +332,21 @@ class AssemblyData(StrictModel):
 
 
 class ContainmentData(StrictModel):
-    work_order_id: UUID
+    work_order_id: UUID | None = None
     unit_ids: list[UUID] = Field(max_length=500)
     material_lot_ids: list[UUID] = Field(max_length=500)
     decision: Literal["frozen", "unfrozen"]
-    cause: SourceKey
+    cause: SourceKey | None = None
+    additional_causes: list[SourceKey] = Field(default_factory=list, max_length=500)
     evidence: Text
 
     @model_validator(mode="after")
     def scope(self):
+        causes = ([self.cause] if self.cause else []) + self.additional_causes
+        if len({c.model_dump_json() for c in causes}) != len(causes):
+            raise ValueError("duplicate containment cause")
+        if self.decision == "unfrozen" and not causes:
+            raise ValueError("release requires current hold sources")
         if not self.unit_ids and not self.material_lot_ids:
             raise ValueError("containment requires affected scope")
         if len(set(self.unit_ids)) != len(self.unit_ids) or len(
@@ -400,6 +417,7 @@ class SapPostMovement(AccountingData):
 
 
 class SapPostMovementFact(AccountingData):
+    posted_at: AwareTime | None = None
     fact_type: Literal["sap.accounting_entry"] = "sap.accounting_entry"
 
 
@@ -408,6 +426,7 @@ class SapPostCompletion(CompletionPostingData):
 
 
 class SapPostCompletionFact(CompletionPostingData):
+    posted_at: AwareTime | None = None
     fact_type: Literal["sap.completion_posting"] = "sap.completion_posting"
 
 
@@ -444,10 +463,12 @@ class WmsPickFact(MovementData):
 
 
 class WmsReturn(MovementData):
+    direction: Literal["to_warehouse", "to_supplier"]
     operation: Literal["wms.return"] = "wms.return"
 
 
 class WmsReturnFact(MovementData):
+    direction: Literal["to_warehouse", "to_supplier"]
     fact_type: Literal["wms.return"] = "wms.return"
 
 
@@ -504,6 +525,8 @@ class MesSwitchRevision(SwitchData):
 
 
 class MesSwitchRevisionFact(SwitchData):
+    replacement_work_order_id: UUID
+    remaining_amount: PositiveAmount
     fact_type: Literal["mes.revision_switch"] = "mes.revision_switch"
 
 
@@ -595,10 +618,115 @@ class MesDeliveryContext(UnitScope):
     fact_type: Literal["mes.delivery_context"] = "mes.delivery_context"
     work_order_id: UUID
     revision: SourceKey
-    release: SourceKey
+    releases: list[SourceKey] = Field(min_length=1, max_length=500)
     shipment: SourceKey
     quality_sources: list[SourceKey] = Field(min_length=1, max_length=500)
 
 
 class MesReturnRequirement(MovementData):
     fact_type: Literal["mes.return_requirement"] = "mes.return_requirement"
+
+
+class SapReceiptPosting(StrictModel):
+    """Received stock is accounted before qualification and cannot claim IQC."""
+
+    posted_at: AwareTime | None = None
+    fact_type: Literal["sap.receipt_posting"] = "sap.receipt_posting"
+    cause: SourceKey
+    material_lot_id: UUID
+    material_id: Name
+    owner_id: Name
+    amount: PositiveAmount
+    account: Name
+
+    @model_validator(mode="after")
+    def receipt_cause(self):
+        if (self.cause.system, self.cause.object_type) != ("wms", "receipt"):
+            raise ValueError("WMS receipt required")
+        return self
+
+
+class WmsConsumption(StrictModel):
+    fact_type: Literal["wms.consumption"] = "wms.consumption"
+    cause: SourceKey
+    work_order_id: UUID
+    unit_id: UUID
+    allocations: list[MaterialAllocation] = Field(min_length=1, max_length=200)
+
+
+class SapShipmentPosting(UnitScope):
+    posted_at: AwareTime | None = None
+    fact_type: Literal["sap.shipment_posting"] = "sap.shipment_posting"
+    cause: SourceKey
+    shipment_id: UUID
+    order_line_id: UUID
+    amount: PositiveAmount
+    account: Name
+
+    @model_validator(mode="after")
+    def physical_shipment(self):
+        if (self.cause.system, self.cause.object_type) != (
+            "wms",
+            "shipment",
+        ) or self.amount.quantity != len(self.units):
+            raise ValueError("Exact finished-unit shipment cause required")
+        return self
+
+
+class CancelRemainingData(StrictModel):
+    work_order_id: UUID
+    eco_id: UUID
+    retained_unit_ids: list[UUID] = Field(max_length=500)
+    evidence: Text
+
+    @model_validator(mode="after")
+    def unique_retained(self):
+        if len(set(self.retained_unit_ids)) != len(self.retained_unit_ids):
+            raise ValueError("Duplicate retained unit")
+        return self
+
+
+class MesCancelRemaining(CancelRemainingData):
+    operation: Literal["mes.cancel_remaining"] = "mes.cancel_remaining"
+
+
+class MesCancelRemainingFact(CancelRemainingData):
+    fact_type: Literal["mes.remaining_cancellation"] = "mes.remaining_cancellation"
+    remaining_amount: PositiveAmount
+
+
+class SapVariancePosting(StocktakeData):
+    posted_at: AwareTime | None = None
+    fact_type: Literal["sap.variance_posting"] = "sap.variance_posting"
+    account: Literal["raw-variance"] = "raw-variance"
+
+
+class ReservationReleaseData(StrictModel):
+    work_order_id: UUID
+    reservation: SourceKey
+    allocations: list[MaterialAllocation] = Field(min_length=1, max_length=500)
+    cause: SourceKey
+    evidence: Text
+
+    @model_validator(mode="after")
+    def original_scope(self):
+        if (self.reservation.system, self.reservation.object_type) != (
+            "wms",
+            "reservation",
+        ) or any(a.reservation != self.reservation for a in self.allocations):
+            raise ValueError("release requires exact original WMS reservation")
+        return self
+
+
+class ReleasedAllocation(MaterialAllocation):
+    receipt: SourceKey
+    reservation_id: UUID
+
+
+class WmsReleaseReservation(ReservationReleaseData):
+    operation: Literal["wms.release_reservation"] = "wms.release_reservation"
+
+
+class WmsReleaseReservationFact(ReservationReleaseData):
+    fact_type: Literal["wms.reservation_release"] = "wms.reservation_release"
+    allocations: list[ReleasedAllocation] = Field(min_length=1, max_length=500)

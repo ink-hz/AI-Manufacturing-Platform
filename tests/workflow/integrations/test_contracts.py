@@ -232,6 +232,16 @@ def valid_payload(tag):
     ]:
         if field in data:
             data[field].update(system=system, object_type=kind)
+    if tag == "wms.release_reservation":
+        data["reservation"].update(system="wms", object_type="reservation")
+        for allocation in data["allocations"]:
+            allocation["reservation"] = data["reservation"]
+            allocation["qualification"].update(
+                system="wms", object_type="qualification"
+            )
+    if tag == "wms.ship":
+        for release in data["releases"]:
+            release.update(system="mes", object_type="release")
     if tag == "sap.post_movement":
         data["cause"].update(system="wms", object_type="pick")
     if tag == "mes.contain":
@@ -263,6 +273,19 @@ def test_every_operation_and_primary_fact_roundtrip_and_rejects_wrong_pair(tag):
     fact_payload = value.payload.model_dump(mode="json")
     fact_payload.pop("operation")
     fact_type = spec.output_fact_types[0]
+    if tag == "wms.release_reservation":
+        for allocation in fact_payload["allocations"]:
+            allocation["reservation_id"] = str(uuid4())
+            allocation["receipt"] = dict(
+                system="wms",
+                object_type="receipt",
+                external_id="actual-receipt",
+                version=1,
+            )
+    if tag in {"mes.cancel_remaining", "mes.switch_revision"}:
+        fact_payload["remaining_amount"] = dict(quantity="1", unit="piece", scale=0)
+    if tag == "mes.switch_revision":
+        fact_payload["replacement_work_order_id"] = str(uuid4())
     fact = IntegrationFact(
         project_id=data["project_id"],
         source=dict(
