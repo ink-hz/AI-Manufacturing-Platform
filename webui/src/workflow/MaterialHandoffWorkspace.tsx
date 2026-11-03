@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { OEMWorkspaceProps } from './OEMWorkspace';
-import type { Grant, MaterialHandoffCommand, ObjectDetail, ObjectKind, ObjectSummary } from './types';
+import type { Grant, MaterialHandoffCommand, ObjectDetail, ObjectKind, ObjectSummary, WorkflowTarget } from './types';
 import { MaterialHandoffForms } from './forms/MaterialHandoffForms';
 import { MaterialHandoffTable } from './MaterialHandoffTable';
 import { hydrateHandoffPage, type HandoffRow } from './materialHandoffHydration';
@@ -11,7 +11,11 @@ const eligible = (m: Grant) => m.active && m.roles.some(r =>
   ['warehouse', 'supply', 'production', 'project_owner'].includes(r));
 type HandoffAction = MaterialHandoffCommand['action'];
 
-export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {currentUserId?: string}) {
+export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {
+  currentUserId?: string;
+  onHandoffAction?(): void;
+  onHandoffOpen?(target: WorkflowTarget): void;
+}) {
   const [items, setItems] = useState<Partial<Record<ObjectKind, ObjectSummary[]>>>({});
   const [totals, setTotals] = useState<Partial<Record<ObjectKind, number>>>({});
   const [rows, setRows] = useState<HandoffRow[]>([]);
@@ -118,6 +122,7 @@ export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {currentUserId?:
 
   function choose(next: HandoffAction, detail: ObjectDetail | null = null) {
     p.requestLeave(() => {
+      p.onHandoffAction?.();
       p.onSelectAction?.(next); setChosen(detail); setAction(next); setEpoch(old => old + 1);
     });
   }
@@ -151,7 +156,7 @@ export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {currentUserId?:
         <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{title}</button>)}
     </div>
     <p role="status">已读取 {(items.material_handoff || []).length} / {totals.material_handoff || 0} · 仅筛选已读取记录 · 当前显示 {visibleRows.length} 条{busy ? ' · 正在读取…' : ''}</p>
-    <MaterialHandoffTable rows={visibleRows} onOpen={p.onOpen} onRetry={retryRow} retryDisabled={busy || rows.some(row => row.loading)}
+    <MaterialHandoffTable rows={visibleRows} onOpen={p.onHandoffOpen || p.onOpen} onRetry={retryRow} retryDisabled={busy || rows.some(row => row.loading)}
       allowedActions={p.readOnly ? [] : p.project.allowed_actions}
       onAction={(next, detail) => choose(next as HandoffAction, detail)}/>
     {(items.material_handoff || []).length < (totals.material_handoff || 0) &&

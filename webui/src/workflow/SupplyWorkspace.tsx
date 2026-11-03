@@ -2,7 +2,7 @@ import { MaterialHandoffWorkspace } from "./MaterialHandoffWorkspace";
 import { OEMWorkspace, type OEMWorkspaceProps } from "./OEMWorkspace";
 import { AssistancePanel } from "./AssistancePanel";
 import { useEffect, useRef, useState } from "react";
-import type { WorkspaceProps, ObjectKind, ObjectSummary, CommandFields } from "./types";
+import type { WorkspaceProps, ObjectKind, ObjectSummary, CommandFields, WorkflowTarget } from "./types";
 import { ObjectTable } from "./OrdersWorkspace";
 import { SupplyForms } from "./forms/SupplyForms";
 import { label } from "./labels";
@@ -16,7 +16,14 @@ const actions: Record<string,string>={
   "supply.commit":"登记供应承诺","supply.receive":"登记到货",
   "supply.inspect":"登记来料检验",
 };
-export function SupplyWorkspace(p: OEMWorkspaceProps & {onReload?(): void; currentUserId?: string; supplyMode?: "handoff" | "legacy"; onSupplyMode?(mode: "handoff" | "legacy"): void}) {
+export function SupplyWorkspace(p: OEMWorkspaceProps & {
+  onReload?(): void;
+  currentUserId?: string;
+  supplyMode?: 'handoff' | 'legacy';
+  onSupplyMode?(mode: 'handoff' | 'legacy'): void;
+  onHandoffAction?(): void;
+  onHandoffOpen?(target: WorkflowTarget): void;
+}) {
   const initialMode = () => p.project.mode === 'oem' &&
     (!p.initialAction || p.initialAction.startsWith('material_handoff.')) ? 'handoff' : 'legacy';
   const [mode, setMode] = useState(() => p.initialAction ? initialMode() : p.supplyMode || initialMode());

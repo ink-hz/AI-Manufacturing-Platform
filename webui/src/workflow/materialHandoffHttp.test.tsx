@@ -90,3 +90,58 @@ it('persists actual React handoff/receipt/resolution forms with designated real 
  expect(host.querySelector('[aria-label="物料办理类型"] button[aria-pressed="true"]')?.textContent).toBe('物料交接');
  expect(await stockSnapshot()).toBe(before);
 },30000);
+
+it.each(['receive', 'resolve', 'cancel', 'lot'] as const)(
+  'retains the project workspace for an existing row %s transition', async transition => {
+    warnings=[];
+    await act(async()=>root.render(null));
+    transport(owner);
+    const p=await owner.api.createProject({...projectInput(),mode:'oem'});
+    for(const [session,roles] of [[warehouse,['warehouse']],[production,['production']]] as const) {
+      await owner.api.grant(p.id,session.identity.user_id,{
+        operation_id:crypto.randomUUID(),expected_version:(await owner.api.project(p.id)).version,
+        scope:{kind:'project',project_id:p.id},roles:[...roles],qualifications:[],active:true,evidence:'Synthetic direct-row grant',
+      });
+    }
+    async function command(session:Session,fields:CommandFields) {
+      transport(session);
+      return session.api.command(p.id,{...fields,operation_id:crypto.randomUUID(),expected_version:(await session.api.project(p.id)).version});
+    }
+    const now=new Date().toISOString();
+    const lot=await command(owner,{
+      action:'material.define',material_id:'direct-steel',lot_id:'LOT-DIRECT',owner_id:'Customer 1',unit:'kg',scale:3,expiry:'2027-12-01',
+      source:{system:'Isolated direct-row fixture',object_type:'material_lot',external_id:p.id,version:1,mode:'manual',occurred_at:now,collected_at:now,cutoff:null,evidence:'Synthetic lot'},
+    });
+    const handoff=await command(warehouse,{
+      action:'material_handoff.record',material_lot_id:lot.object_id,work_order_id:null,quantity:'1',unit:'kg',
+      from_location:'仓库 A',to_location:'线边 B',receiver_id:production.identity.user_id,occurred_at:null,note:null,
+    });
+    if(transition==='resolve') await command(production,{
+      action:'material_handoff.receive',handoff_id:handoff.object_id,received_quantity:'0',received_location:'线边 B',occurred_at:null,note:'实物短收',
+    });
+    const actor=transition==='receive'?production:warehouse;
+    transport(actor);
+    const access=await actor.api.bootstrap();
+    await act(async()=>root.render(<App key={transition} options={{...actor.options,bootstrap:access}}/>));
+    await settled(()=>!![...host.querySelectorAll('button')].find(b=>b.textContent==='计划与物料'));
+    await button('计划与物料');
+    await settled(()=>!!host.querySelector(`[aria-label="所属项目筛选"] option[value="${p.id}"]`));
+    await field('所属项目筛选',p.id);await button('进入项目办理');
+    await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.textContent?.includes('正在读取'));
+    if(transition==='lot') {
+      await button('LOT-DIRECT');
+      await settled(()=>host.querySelector('.wf-detail h3')?.textContent==='LOT-DIRECT');
+    } else {
+      if(transition==='resolve') await button('待处理差异');
+      await button(({receive:'确认接收',resolve:'处理差异',cancel:'取消交接'})[transition]);
+      if(transition==='resolve') await field('处理说明','已按原始记录核对差异');
+      if(transition==='cancel') await field('取消原因','实物交出前发现重复登记');
+      await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+      await settled(()=>!!host.querySelector('[aria-label="物料交接事实"]'));
+    }
+    await button('返回业务列表');
+    await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.textContent?.includes('正在读取'));
+    expect(host.querySelector('.wf-global-ledger')).toBeNull();
+    expect(host.querySelector('[aria-label="物料办理类型"] button[aria-pressed="true"]')?.textContent).toBe('物料交接');
+  },15000,
+);

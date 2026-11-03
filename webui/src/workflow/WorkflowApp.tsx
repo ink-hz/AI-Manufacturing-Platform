@@ -235,7 +235,14 @@ export function WorkflowApp({
     setBusy(true);
     requestLeave(() => setAccountAction(action));
   }
-  function open(t: WorkflowTarget) {
+  function captureHandoffWorkspaceOrigin(projectId: string) {
+    // A form entered through a global detail retains that detail's origin.
+    // Every direct project-table action/link uses this same boundary.
+    if (currentTask?.summary.kind === 'material_handoff' &&
+        handoffReturn.current?.projectId === projectId) return;
+    handoffReturn.current = {projectId, projectWorkspace: true};
+  }
+  function open(t: WorkflowTarget, fromHandoffWorkspace = false) {
     requestLeave(() => {
       const controller = new AbortController();
       openingRead.current = controller;
@@ -245,7 +252,9 @@ export function WorkflowApp({
         if (p.version < (projectVersions.current.get(p.id) || 0))
           throw new Error("项目版本已更新，请重试打开记录。");
         projectVersions.current.set(p.id, p.version);
-        if (t.kind === 'material_handoff' && (!target || !handoffReturn.current)) {
+        if (fromHandoffWorkspace) {
+          captureHandoffWorkspaceOrigin(t.projectId);
+        } else if (t.kind === 'material_handoff' && (!target || !handoffReturn.current)) {
           handoffReturn.current = {projectId: t.projectId, projectWorkspace: !!project && !target};
         } else if (!target && t.kind !== 'material_handoff') {
           handoffReturn.current = null;
@@ -609,12 +618,9 @@ export function WorkflowApp({
                     currentUserId={b.user.id}
                     supplyMode={supplyMode?.projectId === props.project.id ? supplyMode.mode : undefined}
                     onSupplyMode={mode => setSupplyMode({projectId: props.project.id, mode})}
-                    initialAction={chosenAction} onSelectAction={action => {
-                      if (action === 'material_handoff.record') {
-                        handoffReturn.current = {projectId: props.project.id, projectWorkspace: true};
-                      }
-                      setChosenAction(action);
-                    }} initialObject={currentTask}
+                    onHandoffAction={() => captureHandoffWorkspaceOrigin(props.project.id)}
+                    onHandoffOpen={target => open(target, true)}
+                    initialAction={chosenAction} onSelectAction={setChosenAction} initialObject={currentTask}
                     requestLeave={requestLeave}
                     onReload={() => setRefresh((r) => r + 1)}
                   />
