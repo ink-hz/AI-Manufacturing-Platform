@@ -20,6 +20,7 @@ import type {
   MutationAcknowledgement,
   ObjectDetail,
   ObjectKind,
+  MaterialHandoffFilter,
 } from "./types";
 import { WorkflowHome } from "./WorkflowHome";
 import { WorkflowProjects, ProjectForm, Members } from "./WorkflowProjects";
@@ -40,6 +41,7 @@ export function WorkflowApp({
 }) {
   const b = options.bootstrap!;
   const handoffReturn = useRef<{projectId: string; projectWorkspace: boolean} | null>(null);
+  const [handoffFilters, setHandoffFilters] = useState<Record<string, MaterialHandoffFilter>>({});
   const [supplyMode, setSupplyMode] = useState<{projectId: string; mode: 'handoff' | 'legacy'} | null>(null);
   const [ledgers, setLedgers] = useState(initialLedgerContexts);
   const [taskContext, setTaskContext] = useState<TaskContext>({projectId:"",offset:0});
@@ -616,6 +618,8 @@ export function WorkflowApp({
                   <SupplyWorkspace
                     {...props}
                     currentUserId={b.user.id}
+                    handoffFilter={handoffFilters[props.project.id] ?? 'pending'}
+                    onHandoffFilter={filter => setHandoffFilters(old => ({...old, [props.project.id]: filter}))}
                     supplyMode={supplyMode?.projectId === props.project.id ? supplyMode.mode : undefined}
                     onSupplyMode={mode => setSupplyMode({projectId: props.project.id, mode})}
                     onHandoffAction={() => captureHandoffWorkspaceOrigin(props.project.id)}

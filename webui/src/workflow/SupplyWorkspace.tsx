@@ -2,7 +2,7 @@ import { MaterialHandoffWorkspace } from "./MaterialHandoffWorkspace";
 import { OEMWorkspace, type OEMWorkspaceProps } from "./OEMWorkspace";
 import { AssistancePanel } from "./AssistancePanel";
 import { useEffect, useRef, useState } from "react";
-import type { WorkspaceProps, ObjectKind, ObjectSummary, CommandFields, WorkflowTarget } from "./types";
+import type { WorkspaceProps, ObjectKind, ObjectSummary, CommandFields, WorkflowTarget, MaterialHandoffFilter } from "./types";
 import { ObjectTable } from "./OrdersWorkspace";
 import { SupplyForms } from "./forms/SupplyForms";
 import { label } from "./labels";
@@ -19,6 +19,8 @@ const actions: Record<string,string>={
 export function SupplyWorkspace(p: OEMWorkspaceProps & {
   onReload?(): void;
   currentUserId?: string;
+  handoffFilter?: MaterialHandoffFilter;
+  onHandoffFilter?(filter: MaterialHandoffFilter): void;
   supplyMode?: 'handoff' | 'legacy';
   onSupplyMode?(mode: 'handoff' | 'legacy'): void;
   onHandoffAction?(): void;

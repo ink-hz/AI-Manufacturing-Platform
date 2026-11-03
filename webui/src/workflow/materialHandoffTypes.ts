@@ -1,4 +1,5 @@
 import type { SourceRef } from './types';
+export type MaterialHandoffFilter = 'pending' | 'disputed' | 'all';
 export type MaterialHandoffCommand =
  | {action:'material_handoff.record';material_lot_id:string;work_order_id:string|null;quantity:string;unit:string;from_location:string;to_location:string;receiver_id:string;occurred_at:string|null;note:string|null}
  | {action:'material_handoff.receive';handoff_id:string;received_quantity:string;received_location:string;occurred_at:string|null;note:string|null}

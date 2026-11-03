@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { OEMWorkspaceProps } from './OEMWorkspace';
-import type { Grant, MaterialHandoffCommand, ObjectDetail, ObjectKind, ObjectSummary, WorkflowTarget } from './types';
+import type { Grant, MaterialHandoffCommand, MaterialHandoffFilter, ObjectDetail, ObjectKind, ObjectSummary, WorkflowTarget } from './types';
 import { MaterialHandoffForms } from './forms/MaterialHandoffForms';
 import { MaterialHandoffTable } from './MaterialHandoffTable';
 import { hydrateHandoffPage, type HandoffRow } from './materialHandoffHydration';
@@ -13,6 +13,8 @@ type HandoffAction = MaterialHandoffCommand['action'];
 
 export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {
   currentUserId?: string;
+  handoffFilter?: MaterialHandoffFilter;
+  onHandoffFilter?(filter: MaterialHandoffFilter): void;
   onHandoffAction?(): void;
   onHandoffOpen?(target: WorkflowTarget): void;
 }) {
@@ -25,7 +27,12 @@ export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
-  const [filter, setFilter] = useState('pending');
+  const [localFilter, setLocalFilter] = useState<MaterialHandoffFilter>('pending');
+  const filter = p.handoffFilter ?? localFilter;
+  function selectFilter(value: MaterialHandoffFilter) {
+    setLocalFilter(value);
+    p.onHandoffFilter?.(value);
+  }
   const [action, setAction] = useState<HandoffAction | null>(
     p.initialAction?.startsWith('material_handoff.') ? p.initialAction as HandoffAction : null);
   const [epoch, setEpoch] = useState(0);
@@ -153,7 +160,7 @@ export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {
     {error && <p role="alert">{error}<button onClick={() => setRetry(old => old + 1)}>重试读取交接</button></p>}
     <div className="mf-tabs" aria-label="交接状态筛选">
       {([['pending', '待接收'], ['disputed', '待处理差异'], ['all', '全部记录']] as const).map(([value, title]) =>
-        <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{title}</button>)}
+        <button key={value} aria-pressed={filter === value} onClick={() => selectFilter(value)}>{title}</button>)}
     </div>
     <p role="status">已读取 {(items.material_handoff || []).length} / {totals.material_handoff || 0} · 仅筛选已读取记录 · 当前显示 {visibleRows.length} 条{busy ? ' · 正在读取…' : ''}</p>
     <MaterialHandoffTable rows={visibleRows} onOpen={p.onHandoffOpen || p.onOpen} onRetry={retryRow} retryDisabled={busy || rows.some(row => row.loading)}

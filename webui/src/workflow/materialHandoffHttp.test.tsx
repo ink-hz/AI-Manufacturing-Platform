@@ -145,3 +145,65 @@ it.each(['receive', 'resolve', 'cancel', 'lot'] as const)(
     expect(host.querySelector('[aria-label="物料办理类型"] button[aria-pressed="true"]')?.textContent).toBe('物料交接');
   },15000,
 );
+
+it.each(['disputed', 'all'] as const)('retains the project %s filter across returns and dirty remounts', async filter => {
+  warnings=[];
+  await act(async()=>root.render(null));
+  transport(owner);
+  const p=await owner.api.createProject({...projectInput(),mode:'oem'});
+  const other=await owner.api.createProject({...projectInput(),mode:'oem'});
+  await owner.api.grant(p.id,production.identity.user_id,{
+    operation_id:crypto.randomUUID(),expected_version:(await owner.api.project(p.id)).version,
+    scope:{kind:'project',project_id:p.id},roles:['production'],qualifications:[],active:true,evidence:'Synthetic filter receiver',
+  });
+  async function command(session:Session,fields:CommandFields) {
+    transport(session);
+    return session.api.command(p.id,{...fields,operation_id:crypto.randomUUID(),expected_version:(await session.api.project(p.id)).version});
+  }
+  const now=new Date().toISOString();
+  const lot=await command(owner,{
+    action:'material.define',material_id:'filter-steel',lot_id:'LOT-FILTER',owner_id:'Customer 1',unit:'kg',scale:3,expiry:'2027-12-01',
+    source:{system:'Isolated filter fixture',object_type:'material_lot',external_id:p.id,version:1,mode:'manual',occurred_at:now,collected_at:now,cutoff:null,evidence:'Synthetic lot'},
+  });
+  const handoff=await command(owner,{
+    action:'material_handoff.record',material_lot_id:lot.object_id,work_order_id:null,quantity:'1',unit:'kg',
+    from_location:'仓库 A',to_location:'线边 B',receiver_id:production.identity.user_id,occurred_at:null,note:null,
+  });
+  if(filter==='disputed') await command(production,{
+    action:'material_handoff.receive',handoff_id:handoff.object_id,received_quantity:'0',received_location:'线边 B',occurred_at:null,note:'实物短收',
+  });
+  transport(owner);
+  const access=await owner.api.bootstrap();
+  await act(async()=>root.render(<App key={'filter-'+filter} options={{...owner.options,bootstrap:access}}/>));
+  await settled(()=>!![...host.querySelectorAll('button')].find(b=>b.textContent==='计划与物料'));
+  await button('计划与物料');await button('物料交接');
+  await settled(()=>!!host.querySelector('[aria-label="本页交接状态筛选"]'));
+  await button('待接收');
+  await settled(()=>!!host.querySelector(`[aria-label="所属项目筛选"] option[value="${p.id}"]`));
+  await field('所属项目筛选',p.id);await button('进入项目办理');
+  await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.textContent?.includes('正在读取'));
+  const title=filter==='disputed'?'待处理差异':'全部记录';
+  const selectedFilter=()=>host.querySelector('[aria-label="交接状态筛选"] button[aria-pressed="true"]')?.textContent;
+  await button(title);
+  await act(async()=> (host.querySelector('tbody tr td:first-child button') as HTMLButtonElement).click());
+  await settled(()=>!!host.querySelector('[aria-label="物料交接事实"]'));
+  await button('返回业务列表');
+  await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.textContent?.includes('正在读取'));
+  expect(selectedFilter()).toBe(title);
+  expect(host.querySelectorAll('[aria-label="物料交接工作区"] tbody tr')).toHaveLength(1);
+  await button('LOT-FILTER');await settled(()=>host.querySelector('.wf-detail h3')?.textContent==='LOT-FILTER');
+  await button('返回业务列表');
+  await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.textContent?.includes('正在读取'));
+  expect(selectedFilter()).toBe(title);
+  await button('发起物料交接');await field('交出位置','未保存位置');await button('供应与到货');
+  await button('放弃并离开');await button('物料交接');
+  await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.textContent?.includes('正在读取'));
+  expect(selectedFilter()).toBe(title);
+  expect(host.querySelectorAll('[aria-label="物料交接工作区"] tbody tr')).toHaveLength(1);
+  await button('返回台账');await settled(()=>!!host.querySelector('[aria-label="本页交接状态筛选"]'));
+  expect(host.querySelector('[aria-label="本页交接状态筛选"] button[aria-pressed="true"]')?.textContent).toBe('待接收');
+  await field('所属项目筛选',other.id);await button('进入项目办理');
+  await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.textContent?.includes('正在读取'));
+  expect(selectedFilter()).toBe('待接收');
+  expect(host.querySelectorAll('[aria-label="物料交接工作区"] tbody tr')).toHaveLength(0);
+},15000);
