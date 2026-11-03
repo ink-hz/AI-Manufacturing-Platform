@@ -293,7 +293,7 @@ export function WorkflowApp({
       setResolve(false);
     } else if (
       [
-        "rma", "capa", "npi", "npi_issue", "reusable_asset", "asset_use", "test_plan", "test_run", "calibration", "component_link", "arrival", "authority_rule",
+        "material_handoff", "rma", "capa", "npi", "npi_issue", "reusable_asset", "asset_use", "test_plan", "test_run", "calibration", "component_link", "arrival", "authority_rule",
         "eco",
         "demand",
         "order_line",
@@ -593,6 +593,7 @@ export function WorkflowApp({
                 ) : workspace === "supply" ? (
                   <SupplyWorkspace
                     {...props}
+                    currentUserId={b.user.id}
                     initialAction={chosenAction} onSelectAction={setChosenAction} initialObject={currentTask}
                     requestLeave={requestLeave}
                     onReload={() => setRefresh((r) => r + 1)}

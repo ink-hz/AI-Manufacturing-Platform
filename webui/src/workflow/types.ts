@@ -1,3 +1,5 @@
+import type { MaterialHandoffCommand, MaterialHandoffValue } from "./materialHandoffTypes";
+export type * from "./materialHandoffTypes";
 import type { OEMCommands, OEMValue, UnitAlias, ComponentHistory } from "./oemTypes";
 export type * from "./oemTypes";
 import type { PackageItem } from "../collaboration/types";
@@ -25,6 +27,7 @@ export type WorkflowTarget = {
   id: string;
 };
 export type ObjectKind =
+  | "material_handoff"
   | "npi" | "npi_issue" | "reusable_asset" | "asset_use" | "test_plan" | "test_run" | "calibration" | "component_link" | "arrival" | "authority_rule"
   | "rma" | "capa"
   | "shipment" | "closure"
@@ -196,6 +199,7 @@ export type DeliveryCommand =
 export interface ShipmentReceiptDetail {key:string;unit_id:string;sn:string;work_order_id:string;order_line_id:string;box_id:string|null}
 export interface ContractAgreement {id:string;supersedes_agreement_id:string|null;revision_id:string;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string;project_version:number;recorded_at:string}
 export type CommandFields =
+  | MaterialHandoffCommand
   | OEMCommands
   | {action:"contract.agree";revision_id:string;supersedes_agreement_id:string|null;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string}
   | {action:"project.stage";stage:"S1"|"S2"|"S3"|"S4"|"S5"|"S6"|"S7"|"S8"|"S9";status:"pending"|"active"|"blocked"|"complete";reason:string}
@@ -379,6 +383,7 @@ export interface WorkOrderImpactPreview {
   }[];
 }
 export type DomainValue =
+  | MaterialHandoffValue
   | OEMValue
   | RmaValue | CapaValue
   | ShipmentValue

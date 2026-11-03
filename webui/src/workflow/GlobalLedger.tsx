@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { WorkflowApi } from './api';
-import type { ObjectPage, ProjectDetail, WorkflowTarget } from './types';
+import type { ObjectPage, ProjectDetail, WorkflowTarget, MaterialHandoffValue } from './types';
 import { businessModules, type BusinessModule, type LedgerContext } from './navigationContext';
 import { label } from './labels';
 import { StatusBadge, needsAttention } from './StatusBadge';
@@ -23,13 +23,26 @@ export function GlobalLedger({api,module,context,onContext,projects,refresh,onRe
   projects:ProjectDetail[];refresh:number;onRefresh():void;onOpen(target:WorkflowTarget):void;
   onProject(project:ProjectDetail, trace?:boolean):void;
 }) {
-  const [page,setPage]=useState<ObjectPage|null>(null),[error,setError]=useState('');
+  const [page,setPage]=useState<ObjectPage|null>(null),[error,setError]=useState(''),[handoffs,setHandoffs]=useState<{projectId:string;value:MaterialHandoffValue;batch:string}[]>([]);
   const config=businessModules[module], tab=config.tabs.find(t=>t.kind===context.kind)!;
+  const handoffState=context.handoffState||'all';
+  const visibleHandoffs=handoffs.filter(h=>handoffState==='all'||h.value.state===handoffState);
   const selected=projects.find(p=>p.id===context.projectId);
   useEffect(()=>{
-    const controller=new AbortController();let active=true;setPage(null);setError('');
+    const controller=new AbortController();let active=true;setPage(null);setHandoffs([]);setError('');
     api.ledger(context.kind,50,context.offset,context.projectId||undefined,controller.signal)
-      .then(value=>{if(active)setPage(value);}).catch(e=>{if(active)setError(String(e));});
+      .then(async value=>{
+        if(context.kind==='material_handoff'){
+          const facts=await Promise.all(value.items.map(async row=>{
+            const d=await api.object(row.project_id,'material_handoff',row.id,controller.signal);
+            if(d.value.kind!=='material_handoff')throw Error('交接记录类型不匹配');
+            const batch=await api.object(row.project_id,'material_lot',d.value.material_lot_id,controller.signal);
+            return {projectId:row.project_id,value:d.value,batch:batch.summary.title};
+          }));
+          if(active)setHandoffs(facts);
+        }
+        if(active)setPage(value);
+      }).catch(e=>{if(active)setError(String(e));});
     return ()=>{active=false;controller.abort();};
   },[api,module,context.kind,context.offset,context.projectId,refresh]);
   return <section className="wf-global-ledger wf-panel" aria-label={config.title}>
@@ -45,7 +58,8 @@ export function GlobalLedger({api,module,context,onContext,projects,refresh,onRe
     <p className="mf-meta">查看全部授权项目的业务记录；办理或追溯前请选择所属项目。</p>
     {error?<p role="alert">{error}<button onClick={onRefresh}>重试读取台账</button></p>:!page?<p role="status">正在读取{tab.title}…</p>:<>
       <div className="wf-ledger-summary" role="status"><strong>{tab.title}合计 {page.total} 条</strong><span>本页 {page.items.length} 条 · 本页需关注 {page.items.filter(needsAttention).length} 条</span></div>
-      {!page.items.length?<p>{page.total ? "当前页" : "当前范围"}暂无{tab.title}记录。{page.total > 0 && "请返回上一页。"}</p>:<div className="wf-table-scroll"><table><thead><tr>
+      {context.kind==='material_handoff'&&<><div className="mf-tabs" aria-label="本页交接状态筛选">{([['pending','待接收'],['disputed','待处理差异'],['all','全部记录']] as const).map(([state,title])=><button key={state} aria-pressed={handoffState===state} onClick={()=>onContext({...context,handoffState:state})}>{title}</button>)}</div><p>仅筛选本页已读取记录 · 本页读取 {page.items.length} 条 / 当前授权范围共 {page.total} 条 · 当前显示 {visibleHandoffs.length} 条</p></>}
+      {!page.items.length?<p>{page.total ? "当前页" : "当前范围"}暂无{tab.title}记录。{page.total > 0 && "请返回上一页。"}</p>:context.kind==='material_handoff'?<div className="wf-table-scroll"><table><thead><tr><th>交接记录</th><th>所属项目</th><th>物料批次</th><th>数量</th><th>位置</th><th>交出人 / 接收人</th><th>状态</th><th>来源</th></tr></thead><tbody>{visibleHandoffs.map(({projectId,value:h,batch})=><tr key={projectId+h.id}><td><button className="wf-text-link" onClick={()=>onOpen({projectId,kind:'material_handoff',id:h.id})}>{h.handoff_number}</button></td><td>{projects.find(p=>p.id===projectId)?.name||projectId}</td><td>{batch}</td><td>{h.quantity} {h.unit}{h.receipt&&<p>实收 {h.receipt.received_quantity} {h.unit}</p>}</td><td>{h.from_location} → {h.to_location}{h.receipt?<p>实际接收：{h.receipt.received_location}</p>:h.state==='pending'?'（送达位置待接收确认）':'（未确认接收）'}</td><td>{h.sender_name} / {h.receiver_name}</td><td><StatusBadge state={h.state} kind="material_handoff"/></td><td>人工登记</td></tr>)}</tbody></table></div>:<div className="wf-table-scroll"><table><thead><tr>
         <th>{tab.column}</th><th>客户</th><th>产品</th><th>所属项目</th><th>数量</th><th>状态</th><th>来源</th><th>阻断</th>
       </tr></thead><tbody>{page.items.map(row=>{const p=projects.find(p=>p.id===row.project_id);return <tr key={row.project_id+row.kind+row.id} className={needsAttention(row)?"wf-attention-row":undefined}>
         <td><button className="wf-text-link" onClick={()=>onOpen({projectId:row.project_id,kind:row.kind,id:row.id})}>{row.title}</button></td>

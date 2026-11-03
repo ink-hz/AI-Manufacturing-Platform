@@ -1,3 +1,4 @@
+import { MaterialHandoffDetails } from "./details/MaterialHandoffDetails";
 import { IntroductionDetails } from "./details/IntroductionDetails";
 import { LaboratoryDetails } from "./details/LaboratoryDetails";
 import { ArrivalAuthorityDetails } from "./details/ArrivalAuthorityDetails";
@@ -94,9 +95,22 @@ export function DetailContent({
   onOpen(t: WorkflowTarget): void;
 }) {
   const v = data.value;
+  const history = <>
+      {data.evidence.map((e, i) => (
+        <section key={i}><p>{e.reference}</p>{e.source&&<Source value={e.source}/>}</section>
+      ))}
+      <ol>
+        {data.history.map((h) => (
+          <li key={h.event_id}>
+            {h.occurred_at} · {label(h.action)} · 录入 {h.recorded_at}
+            {h.evidence.map((e,i)=><section key={i}><p>{e.reference}</p>{e.source&&<Source value={e.source}/>}</section>)}
+          </li>
+        ))}
+      </ol>
+  </>;
   return (
     <article className="wf-detail">
-      <h3>{objectTitle(data.summary)}</h3>
+      <h3>{v.kind === "material_handoff" ? v.handoff_number : objectTitle(data.summary)}</h3>
       <p>
         状态：<StatusBadge state={data.summary.state} kind={data.summary.kind} blocking={data.summary.blocking_reasons}/>{data.summary.source && <> · {sourceModeLabel(data.summary.source.mode)}</>}
       </p>
@@ -335,6 +349,7 @@ export function DetailContent({
       <IntroductionDetails data={data} onOpen={onOpen}/>
       <LaboratoryDetails data={data} api={api}/>
       <ArrivalAuthorityDetails data={data} onOpen={onOpen}/>
+      <MaterialHandoffDetails data={data} onOpen={onOpen}/>
       {v.kind === "unit" && <UnitPassport api={api} data={data} onOpen={onOpen}/>}
       <h4>关联记录</h4>
       {data.relations.map((r, i) => (
@@ -347,18 +362,7 @@ export function DetailContent({
           {label(r.kind)} · {label(r.relation)}
         </button>
       ))}
-      <h4>凭据与历史</h4>
-      {data.evidence.map((e, i) => (
-        <section key={i}><p>{e.reference}</p>{e.source&&<Source value={e.source}/>}</section>
-      ))}
-      <ol>
-        {data.history.map((h) => (
-          <li key={h.event_id}>
-            {h.occurred_at} · {label(h.action)} · 录入 {h.recorded_at}
-            {h.evidence.map((e,i)=><section key={i}><p>{e.reference}</p>{e.source&&<Source value={e.source}/>}</section>)}
-          </li>
-        ))}
-      </ol>
+      {v.kind === "material_handoff" ? <details className="wf-evidence-details"><summary>凭据与历史</summary>{history}</details> : <><h4>凭据与历史</h4>{history}</>}
     </article>
   );
 }

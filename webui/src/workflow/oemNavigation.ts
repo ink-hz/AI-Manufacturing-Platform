@@ -6,7 +6,7 @@ export function oemObjectWorkspace(kind: ObjectKind): OEMWorkspaceName | null {
     return "introduction";
   if (["test_plan", "test_run", "calibration", "component_link"].includes(kind))
     return "laboratory";
-  if (kind === "arrival") return "supply";
+  if (["arrival", "material_handoff"].includes(kind)) return "supply";
   if (kind === "authority_rule") return "exchange";
   return null;
 }
@@ -18,7 +18,7 @@ export function oemActionWorkspace(action: string): OEMWorkspaceName | null {
     action === "unit.alias"
   )
     return "laboratory";
-  if (prefix === "arrival") return "supply";
+  if (["arrival", "material_handoff"].includes(prefix)) return "supply";
   if (prefix === "authority") return "exchange";
   return null;
 }

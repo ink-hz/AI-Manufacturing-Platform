@@ -4,7 +4,7 @@ export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 /** Object states only: accepted/running never imply completion of the project. */
 export function statusTone(state: string, kind?: ObjectKind, blocking: readonly string[] = []): StatusTone {
   if (state === 'blocked' || state === 'rejected' || (['test','test_run'].includes(kind||'') && state === 'fail') || (kind === 'nonconformance' && state === 'open')) return 'danger';
-  if (blocking.length || ['aborted','invalid','unverified','unlinked','held', 'frozen', 'stopped', 'stop_requested', 'mes_accepted_held', 'partially_resumed', 'partial'].includes(state)) return 'warning';
+  if (blocking.length || ['disputed','aborted','invalid','unverified','unlinked','held', 'frozen', 'stopped', 'stop_requested', 'mes_accepted_held', 'partially_resumed', 'partial'].includes(state)) return 'warning';
   if (['cancelled', 'superseded', 'stop_superseded', 'draft', 'unknown', 'not_required', 'na'].includes(state)) return 'neutral';
   if (['complete', 'completed', 'closed', 'resolved', 'approved', 'verified'].includes(state) || (['test','test_run'].includes(kind||'') && state === 'pass')) return 'success';
   if (['pending', 'start_pending', 'rework'].includes(state) || (state === 'open' && ['rma', 'capa', 'eco', 'rework'].includes(kind || ''))) return 'warning';

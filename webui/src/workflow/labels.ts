@@ -1,5 +1,7 @@
 import type { ObjectKind, ObjectSummary } from "./types";
 export const labels: Record<string, string> = {
+  "Awaiting designated receiver":"等待指定接收人确认", "Receipt discrepancy requires sender resolution":"接收差异等待交出方处理",
+  material_handoff:"物料交接", "material_handoff.record":"发起物料交接", "material_handoff.receive":"确认接收", "material_handoff.resolve":"处理差异", "material_handoff.cancel":"取消交接",
   pass: "通过", fail: "不通过", completed: "已完成", manual: "人工登记",
   npi:"工程导入",npi_issue:"导入问题",reusable_asset:"可复用资产",asset_use:"资产采用",test_plan:"测试计划",test_run:"测试运行",calibration:"标定读回",component_link:"部件履历",arrival:"到件观察",authority_rule:"系统责任映射",
   "npi.open":"创建工程导入","npi.review":"记录导入评审","npi.trial":"登记导入试做证据","npi.issue":"登记导入问题","npi.resolve":"验证或刷新问题解决依据","npi.approve":"批准当前导入证据",
@@ -114,6 +116,7 @@ export const labels: Record<string, string> = {
 };
 export const label = (v: string) => labels[v] || v;
 export const objectStateLabel = (state: string, kind?: ObjectKind) =>
+  kind === "material_handoff" ? ({pending:"待接收",received:"已接收",disputed:"待处理差异",resolved:"差异已处理",cancelled:"已取消"} as Record<string,string>)[state] || label(state) :
   kind === "test_run" && state === "running" ? "运行登记中" : label(state);
 export const objectTitle = (v: ObjectSummary) =>
   v.kind === "revision"

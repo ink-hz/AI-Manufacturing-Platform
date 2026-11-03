@@ -54,6 +54,7 @@ export const businessModules: Record<
       { kind: "arrival", title: "到件观察", column: "到件编号" },
       { kind: "receipt", title: "到货", column: "到货编号" },
       { kind: "reservation", title: "预留", column: "预留编号" },
+      { kind: "material_handoff", title: "物料交接", column: "交接记录 · 批次 · 位置 · 双方" },
     ],
   },
   execution: {
@@ -87,6 +88,7 @@ export function isBusinessModule(view: ConsoleView): view is BusinessModule {
   return view in businessModules;
 }
 export interface LedgerContext {
+  handoffState?: "pending" | "disputed" | "all";
   kind: ObjectKind;
   projectId: string;
   offset: number;

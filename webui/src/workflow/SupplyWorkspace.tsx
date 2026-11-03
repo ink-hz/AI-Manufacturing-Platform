@@ -1,3 +1,4 @@
+import { MaterialHandoffWorkspace } from "./MaterialHandoffWorkspace";
 import { OEMWorkspace, type OEMWorkspaceProps } from "./OEMWorkspace";
 import { AssistancePanel } from "./AssistancePanel";
 import { useEffect, useRef, useState } from "react";
@@ -15,7 +16,16 @@ const actions: Record<string,string>={
   "supply.commit":"登记供应承诺","supply.receive":"登记到货",
   "supply.inspect":"登记来料检验",
 };
-export function SupplyWorkspace(p:OEMWorkspaceProps & {onReload?():void}){
+export function SupplyWorkspace(p:OEMWorkspaceProps & {onReload?():void;currentUserId?:string}){
+  const initialMode=()=>p.project.mode==='oem'&&(!p.initialAction||p.initialAction.startsWith('material_handoff.'))?'handoff':'legacy';
+  const [mode,setMode]=useState(initialMode);
+  useEffect(()=>{setMode(initialMode());},[p.project.id,p.initialAction]);
+  return <section>{p.project.mode==='oem'&&<div className="mf-tabs" aria-label="物料办理类型">
+    <button aria-pressed={mode==='handoff'} onClick={()=>p.requestLeave(()=>{p.onSelectAction?.(null);setMode('handoff');})}>物料交接</button>
+    <button aria-pressed={mode==='legacy'} onClick={()=>p.requestLeave(()=>{p.onSelectAction?.(null);setMode('legacy');})}>供应与到货</button>
+  </div>}{mode==='handoff'&&p.project.mode==='oem'?<MaterialHandoffWorkspace key={p.project.id} {...p}/>:<LegacySupplyWorkspace {...p}/>}</section>;
+}
+function LegacySupplyWorkspace(p:OEMWorkspaceProps & {onReload?():void}){
   const [items,setItems]=useState<Partial<Record<ObjectKind,ObjectSummary[]>>>({});
   const [totals,setTotals]=useState<Partial<Record<ObjectKind,number>>>({});
   const [loading,setLoading]=useState<Partial<Record<ObjectKind,boolean>>>({});
