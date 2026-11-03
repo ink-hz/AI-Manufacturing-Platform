@@ -13,11 +13,22 @@ let http:Awaited<ReturnType<typeof startHttpHost>>,host:HTMLDivElement,root:Root
 type Session=Awaited<ReturnType<Awaited<ReturnType<typeof startHttpHost>>['login']>>;
 let owner:Session,warehouse:Session,production:Session;
 let warnings:string[]=[];
+let activeReads=0;
 beforeAll(async()=>{http=await startHttpHost();owner=await http.login('owner');warehouse=await http.login('warehouse');production=await http.login('production');host=document.createElement('div');document.body.append(host);root=createRoot(host);},15000);
 afterEach(()=>{expect(warnings.filter(v=>v.includes('not wrapped in act'))).toEqual([]);});
 afterAll(async()=>{await act(async()=>root?.unmount());host?.remove();vi.unstubAllGlobals();vi.restoreAllMocks();await http?.close();});
-const transport=(s:Session)=>vi.stubGlobal('fetch',s.transport);
-async function settled(predicate:()=>boolean){const end=Date.now()+4000;while(!predicate()&&Date.now()<end)await act(async()=>{await new Promise(r=>setTimeout(r,15));});expect(predicate(),host.textContent||'').toBe(true);}
+const transport=(s:Session)=>vi.stubGlobal('fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+  activeReads++;
+  try { const response=await s.transport(input,init);await response.clone().arrayBuffer();return response; }
+  finally { activeReads--; }
+});
+async function settled(predicate:()=>boolean){
+  // A filtered ledger can hide rows whose detail/batch hydration is still in
+  // flight. Wait for response bodies and React effects, not only visible rows.
+  const end=Date.now()+4000;let quiet=0;
+  while(quiet<2&&Date.now()<end){await act(async()=>{await new Promise(r=>setTimeout(r,15));});quiet=predicate()&&activeReads===0?quiet+1:0;}
+  expect(predicate(),host.textContent||'').toBe(true);expect(activeReads).toBe(0);expect(quiet).toBe(2);
+}
 async function field(name:string,value:string){const e=host.querySelector(`[aria-label="${name}"]`) as HTMLInputElement;expect(e,name).toBeTruthy();await act(async()=>{Object.getOwnPropertyDescriptor(e.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value')!.set!.call(e,value);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));});}
 async function button(text:string){const b=[...host.querySelectorAll('button')].find(b=>b.textContent===text);expect(b,text).toBeTruthy();await act(async()=>b!.click());}
 const snapshotScript=`import json,sqlite3,sys

@@ -64,15 +64,7 @@ def test_all_operations_have_closed_typed_contract_and_policy(system, name):
     assert spec.output_fact_types
 
 
-def order_payload():
-    return dict(
-        operation="sap.release_order",
-        demand_id=str(uuid4()),
-        customer_id="C1",
-        product="OEM",
-        amount={"quantity": "2", "unit": "piece", "scale": 0},
-        due_date="2027-01-01",
-    )
+from .payloads import order_payload
 
 
 def operation(**overrides):

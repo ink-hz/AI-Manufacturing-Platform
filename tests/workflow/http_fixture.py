@@ -105,6 +105,65 @@ def build_app(root: Path):
             return await run_in_threadpool(adapter.submit, ExternalRequest.model_validate(body["fields"]["request"]))
         return getattr(adapter, body["action"])(**body["fields"])
 
+    @app.post("/fixture/network-fault")
+    async def network_fault(request: Request):
+        identity = authenticate(request, write=True)
+        if not identity["configuration_admin"] or clock is None:
+            raise HTTPException(403, "Owned clock-pinned fixture owner required")
+        from uuid import UUID
+        from manufacturing_platform.workflow.contracts import Actor
+        from manufacturing_platform.workflow.service import WorkflowService
+        from manufacturing_platform.workflow.store import WorkflowStore
+        body = await request.json()
+        if body.get("fault") != "timeout_after_commit":
+            raise HTTPException(422, "Unsupported fixture fault")
+        workflow = WorkflowService(WorkflowStore(str(root / "workflow.db"), str(root / "authority.db"), dict(id=dataset_id, mode="test", label=dataset_label), business_clock=lambda: clock), lambda uid: any(str(uid) == v["user_id"] for v in identities.values()))
+        pid = UUID(body["project_id"])
+        workflow.detail(Actor(**identity), pid)
+        workflow.system_registry.source_store(body["system"]).configure_fault(pid, UUID(body["intent_id"]), body["fault"])
+        return {"configured": True}
+
+    @app.post("/fixture/network")
+    async def network_fixture(request: Request):
+        identity = authenticate(request, write=True)
+        if not identity["configuration_admin"] or clock is None:
+            raise HTTPException(403, "Owned clock-pinned fixture owner required")
+        from uuid import UUID
+        from manufacturing_platform.workflow.contracts import Actor
+        from manufacturing_platform.workflow.service import WorkflowService
+        from manufacturing_platform.workflow.store import WorkflowStore
+        from manufacturing_platform.workflow.integrations.routing import assign_profile
+        if __package__:
+            from .integrations.support import MockRig
+            from .integrations.network_scenarios import synchronize
+        else:
+            from integrations.support import MockRig
+            from integrations.network_scenarios import synchronize
+        body = await request.json()
+        if body.get("scenario") not in {"empty", "supply", "execution"}:
+            raise HTTPException(422, "Unsupported owned fixture scenario")
+        rig = MockRig.__new__(MockRig)
+        rig.core = rig.network = True
+        rig.root, rig.mode = root, "test"
+        rig.project_id = UUID(body["project_id"])
+        rig.actor = rig.admin = Actor(**identity)
+        rig.workflow = WorkflowService(WorkflowStore(str(root / "workflow.db"), str(root / "authority.db"), dict(id=dataset_id, mode="test", label=dataset_label), business_clock=lambda: clock), lambda uid: any(str(uid) == v["user_id"] for v in identities.values()))
+        rig.registry = rig.workflow.system_registry
+        # Authorization precedes maintenance profile assignment; routing refuses
+        # reassignment and any project that already has business operations.
+        rig.workflow.detail(rig.actor, rig.project_id)
+        with rig.workflow.store.transaction(write=True) as tx:
+            assign_profile(tx, rig.project_id, "oem-network-v1")
+        rig.grant(["project_owner", "planner", "engineering", "production", "warehouse", "quality", "supply"], ["inspection", "disposition", "quality_release", "readiness_verification"])
+        refs = None
+        if body["scenario"] == "supply":
+            refs = rig.core_ready()
+        elif body["scenario"] == "execution":
+            refs = rig.start_ready()
+        synchronize(rig)
+        from fastapi.encoders import jsonable_encoder
+        return jsonable_encoder(dict(project_id=rig.project_id, business_clock=clock, refs=vars(refs) if refs else None))
+
     app.include_router(
         build_workflow_router(
             database_path=str(root / "workflow.db"),

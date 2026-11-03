@@ -1,5 +1,8 @@
 import type { ObjectKind, ObjectSummary } from "./types";
 export const labels: Record<string, string> = {
+  "mock_system.execute":"提交来源业务操作", "mock_system.query":"查询原操作结果", "mock_system.retry":"继续原操作", "integration.pull":"准入精确来源事实",
+  "connected-mock":"模拟已连接", unexercised:"尚未运行验证", unconfigured:"未配置", degraded:"消费或回执异常", modeled:"建模契约", legacy:"旧连接器",
+
   "Awaiting designated receiver":"等待指定接收人确认", "Receipt discrepancy requires sender resolution":"接收差异等待交出方处理",
   material_handoff:"物料交接", "material_handoff.record":"发起物料交接", "material_handoff.receive":"确认接收", "material_handoff.resolve":"处理差异", "material_handoff.cancel":"取消交接",
   pass: "通过", fail: "不通过", completed: "已完成", manual: "人工登记",

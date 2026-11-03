@@ -1,3 +1,4 @@
+import {SystemStepPanel} from './integrations/SystemStepPanel';
 import {useEffect,useRef,useState} from 'react';
 import type {CapaStepName,CapaValue,ObjectKind,ObjectSummary,RmaValue,ShipmentValue,TraceResult,WorkspaceProps} from './types';
 import {FeedbackForms,stepNames,type FeedbackAction} from './forms/FeedbackForms';
@@ -25,6 +26,7 @@ export function TraceWorkspace(p:Props){
  const units=Array.from(new Map([...(items.unit||[]),...tracedUnits].map(u=>[u.id,u])).values());
  return <section><h3>追溯、冻结与质量反馈</h3><OperationHelp><p>通过实际序列号或物料批次查找原始版本、物料消耗、检验和发货关系。</p></OperationHelp>{error&&<p role="alert">{error}</p>}<label>追溯依据<select aria-label="追溯依据" value={mode} onChange={e=>setMode(e.target.value as 'sn'|'lot')}><option value="sn">序列号反向追溯</option><option value="lot">物料批次影响范围</option></select></label>{mode==='sn'?<label>序列号<input aria-label="追溯序列号" value={sn} onChange={e=>setSn(e.target.value)}/></label>:picker('追溯物料批次','material_lot',lot,setLot)}<button disabled={searching||!(mode==='sn'?sn.trim():lot)} onClick={()=>p.requestLeave(()=>{setAction(null);void search();})}>查询追溯</button>
  {graph&&<section><h4>实际关联对象</h4>{graph.truncated&&<p role="status">结果已截断（最多 500 个对象），不能视为完整影响范围。请按序列号分批追溯。</p>}<table><thead><tr><th>类型</th><th>对象</th><th>原始客户</th></tr></thead><tbody>{graph.nodes.map(n=><tr key={n.kind+n.id}><td>{label(n.kind)}</td><td><button onClick={()=>p.onOpen({projectId:p.project.id,kind:n.kind,id:n.id})}>{n.title}</button></td><td>{n.customer_id||'—'}</td></tr>)}</tbody></table><ul>{graph.edges.map((e,i)=><li key={i}>{graph.nodes.find(n=>n.id===e.source_id&&n.kind===e.source_kind)?.title} → {label(e.relation)} → {graph.nodes.find(n=>n.id===e.target_id&&n.kind===e.target_kind)?.title}</li>)}</ul></section>}
+ <SystemStepPanel {...p} context="trace" selected={mode==='lot'&&lot?{project_id:p.project.id,kind:"material_lot",id:lot}:tracedUnits[0]||null}/>
  {allowed('freeze.request')&&<button onClick={()=>show('freeze.request')}>冻结或解冻受影响范围</button>}
  <h4>原始交付与 RMA</h4>{picker('原始发货','shipment',shipmentId,setShipmentId)}{shipment&&<p>实发 {shipment.shipped} · 客户签收 {shipment.signed} · 客户验收 {shipment.accepted}</p>}{allowed('rma.open')&&<button disabled={!shipment||shipment.shipped==='0'} onClick={()=>show('rma.open')}>登记客户 RMA</button>}
  {picker('质量反馈 RMA','rma',rmaId,id=>{setRmaId(id);setCapaId('');})}{picker('处理 CAPA','capa',capaId,id=>{setCapaId(id);setRmaId('');})}{capa&&<><p>CAPA {label(capa.state)}</p>{capa.blocking_reasons.map(r=><p key={r}>{r}</p>)}</>}

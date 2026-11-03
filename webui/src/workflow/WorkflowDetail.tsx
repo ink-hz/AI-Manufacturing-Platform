@@ -1,3 +1,4 @@
+import {ObjectSystemFacts} from './integrations/SystemFacts';
 import { MaterialHandoffDetails } from "./details/MaterialHandoffDetails";
 import { IntroductionDetails } from "./details/IntroductionDetails";
 import { LaboratoryDetails } from "./details/LaboratoryDetails";
@@ -346,6 +347,7 @@ export function DetailContent({
       {v.kind === "receipt" && v.corrections?.map(c=><p key={c.sequence}>追加纠正 · 到货 {c.received_delta} · 合格 {c.accepted_delta} · 拒收 {c.rejected_delta} · {c.evidence}</p>)}
       {v.kind === "receipt" && v.confirmations?.map(c=><section key={c.sequence}><h4>来源确认 · {label(c.source.mode)}</h4><p>外部签署人：{c.external_actor} · {c.signature}</p><Source value={c.source}/></section>)}
       {"source" in v && v.source && <Source value={v.source} />}
+      {api&&<ObjectSystemFacts api={api} target={{projectId:data.summary.project_id,kind:data.summary.kind,id:data.summary.id}} onOpen={onOpen}/>}
       <IntroductionDetails data={data} onOpen={onOpen}/>
       <LaboratoryDetails data={data} api={api}/>
       <ArrivalAuthorityDetails data={data} onOpen={onOpen}/>

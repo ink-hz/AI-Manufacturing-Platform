@@ -1,5 +1,6 @@
 """Serialize authorized, project-scoped observations. Source I/O belongs to service."""
 
+import json
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -448,3 +449,52 @@ def links(
         complete=len(rows) <= limit,
         link_cutoff=cutoff,
     )
+
+
+class IntentSummary(StrictModel):
+    source_key: SourceKey | None = None
+    intent_id: UUID
+    project_id: UUID
+    system: SystemId
+    operation: str
+    expected_version: int
+    phase: Literal["prepared", "pending", "unknown", "accepted", "rejected", "applied"]
+    created_at: str
+    source_committed: bool | None
+    receipt: SystemReceipt | None
+
+
+class IntentPage(StrictModel):
+    project_id: UUID
+    records: list[IntentSummary]
+    total: int
+    limit: int
+    offset: int
+
+
+def intents(tx, actor, project_id, registry, *, limit=50, offset=0):
+    authorize(tx, actor, project_id, registry)
+    if not 1 <= limit <= 200 or offset < 0:
+        raise DomainError("INVALID_PAGE", 422, "Invalid pagination")
+    pid = str(project_id)
+    total = tx.execute("SELECT COUNT(*) FROM integration_intents WHERE project_id=?", (pid,)).fetchone()[0]
+    rows = tx.execute(
+        "SELECT * FROM integration_intents WHERE project_id=? ORDER BY created_at,id LIMIT ? OFFSET ?",
+        (pid, limit, offset),
+    ).fetchall()
+    records = []
+    for row in rows:
+        saved = tx.execute(
+            "SELECT receipt_json FROM integration_receipts WHERE project_id=? AND intent_id=? ORDER BY attempt DESC LIMIT 1",
+            (pid, row["id"]),
+        ).fetchone()
+        receipt = SystemReceipt.model_validate_json(saved[0]) if saved else None
+        records.append(IntentSummary(
+            intent_id=row["id"], project_id=project_id, system=row["system"],
+            operation=row["operation"], expected_version=row["expected_version"],
+            phase=row["phase"], created_at=row["created_at"], receipt=receipt,
+            source_key=SourceKey.model_validate(json.loads(row["payload_json"])["command"]["source_key"]) if row["operation"] == "integration.pull" else None,
+            source_committed=(True if receipt and receipt.phase == "accepted" else
+                              False if receipt and receipt.phase == "rejected" else None),
+        ))
+    return IntentPage(project_id=project_id, records=records, total=total, limit=limit, offset=offset)

@@ -1,3 +1,4 @@
+import type {SystemDescriptor,SystemId,SourceKey,FactPage,FactDetail,FactLinkPage,IntentPage} from './integrations/types';
 import type {
   PublicAssetPage,
   AssistanceResult,
@@ -125,6 +126,11 @@ export function createWorkflowApi(
       ? ""
       : "&project_id=" + encodeURIComponent(projectId));
   return {
+    systems: (id:string, signal?:AbortSignal) => request<SystemDescriptor[]>(p(id)+"/systems", "GET", undefined, signal),
+    systemFacts: (id:string, system:SystemId, filters:{object_type:string;cursor?:number;limit?:number}, signal?:AbortSignal) => request<FactPage>(p(id)+"/systems/"+encodeURIComponent(system)+"/facts?"+new URLSearchParams({object_type:filters.object_type,cursor:String(filters.cursor||0),limit:String(filters.limit||50)}), "GET", undefined, signal),
+    systemFact: (id:string, key:SourceKey, signal?:AbortSignal) => request<FactDetail>(p(id)+"/systems/"+encodeURIComponent(key.system)+"/facts/"+encodeURIComponent(key.object_type)+"/"+encodeURIComponent(key.external_id)+"?version="+key.version, "GET", undefined, signal),
+    integrationLinks: (id:string, kind:ObjectKind, object:string, cursor=0, signal?:AbortSignal) => request<FactLinkPage>(p(id)+"/integration-links?"+new URLSearchParams({target_kind:kind,target_id:object,cursor:String(cursor),limit:'50'}), "GET", undefined, signal),
+    integrationIntents: (id:string, limit=50, offset=0, signal?:AbortSignal) => request<IntentPage>(p(id)+`/integration-intents?limit=${limit}&offset=${offset}`, "GET", undefined, signal),
     publicAssets: (limit = 50, offset = 0, signal?: AbortSignal) =>
       request<PublicAssetPage>(
         "/reusable-assets" + pageQuery(limit, offset),

@@ -1,3 +1,4 @@
+import {SystemStepPanel} from './integrations/SystemStepPanel';
 import { useEffect, useRef, useState } from 'react';
 import type { OEMWorkspaceProps } from './OEMWorkspace';
 import type { Grant, MaterialHandoffCommand, MaterialHandoffFilter, ObjectDetail, ObjectKind, ObjectSummary, WorkflowTarget } from './types';
@@ -141,6 +142,7 @@ export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {
   return <section aria-label="物料交接工作区">
     <h3>物料交接</h3>
     <p>人工登记 · 每笔交接分别确认数量与位置；同批次拆分记录不代表整批物料位置。待接收的送达位置尚未确认。</p>
+    <SystemStepPanel {...p} context="handoff" onOpen={p.onHandoffOpen||p.onOpen} selected={selected?.value.kind==='material_handoff'?{project_id:p.project.id,kind:"material_lot",id:selected.value.material_lot_id}:null}/>
     {!p.readOnly && p.project.allowed_actions.includes('material_handoff.record') &&
       <button onClick={() => choose('material_handoff.record')}>发起物料交接</button>}
     {permitted && <>

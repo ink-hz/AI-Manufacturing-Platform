@@ -1,53 +1,97 @@
-# Consolidated final-review fix wave
+# Final handoff polish and evidence report
 
-Status: DONE. Implementation commit `eb9a2f257193ac3ad194cbd27208be212296a29b`, based on `5b79f1b4c0c0f42e1c7efc459fce79fbac579597`. This report is committed separately so it can identify the exact implementation SHA.
+Status: DONE
+Code SHA: `14ec14bc74c05a5ba9814ff58a345c85fc036bc2`
+Code commit: `fix(ui): retain project handoff status filters`
+Documentation/head SHA: `40db85e4abeb7ad3c09d7cf95601d18f70b4c853`
+Documentation commit: `docs: record final handoff filter validation`
+Worktree: `/Users/neo/.codex/worktrees/a065/AI-Manufacturing-Platform`
+Review input: `.superpowers/sdd/final-review.md`.
 
-## Four findings resolved
+## Change and scope
 
-1. Added `manufacturing_task_sources`, keyed by stable project/task IDs and referencing readiness/item IDs. All project save paths persist links within the existing transaction and serialize task JSON without `source`, using copied response structures. `_read` and `_all` enrich current projections; get, project-task list, dashboard and update responses retain source navigation. Ordinary task receipts retain the old shape, while current replay adds `source:null`. Existing inline source references remain readable and migrate into the link table on aggregate saves. Old writers leave the additive table untouched. No API fields or routes changed.
-2. Creating mandatory readiness with no mandatory items now returns 422 before fact/event/receipt persistence. The client gives plain Chinese guidance before POST. Both correcting item applicability and explicitly choosing an optional record work through the existing request-reset flow. Optional readiness does not block completed projects.
-3. Selected system details show scoped authority/object type, business line, entry point and unfinished handoffs (draft/sent/returned) to that system. Authority and exact source-project handoff navigation use the existing dirty guard. Context remains outside disabled editing controls, including read-only and failed/frozen forms. No names or business facts are invented.
-4. Send and receive actions both mark evidence and event time required. Empty send does not POST; completed send retains existing local-time-to-UTC conversion and expected version.
+The final review had no Critical or Important issue, and one new Minor: a project-local disputed/all filter reset to pending after a detail unmounted its workspace. Added a closed MaterialHandoffFilter union and a project-ID-keyed filter map in WorkflowApp. Supply forwards the selected project's filter and setter to MaterialHandoffWorkspace. The workspace uses parent context when supplied and retains its existing local fallback for standalone uses. Its filter does not affect the separately stored global ledger context. An unseen project defaults to pending.
 
-## RED and focused GREEN
+The new real HTTP cases cover disputed and all filters through record detail → return, direct related-lot → return, accepted dirty-guard epoch remount and switching back to handoff mode. They also verify that the global pending filter remains independent and a different new project starts at pending. Existing direct-row receive/resolve/cancel/lot, newly created project detail chains and global detail/action/filter tests remain in the same focused run.
 
-Commands run from the manufacturing worktree unless noted:
+The code commit contains exactly five explicit code/test paths:
 
-- `PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/test_final_review.py`
-  - Initial RED: 5 failed, 1 passed. Actual archived old code failed with `ProjectDetail` validation errors on `tasks.*.source`; required/all-optional creation returned 200 instead of 422. Three atomic-table tests initially exposed the absent normalized table.
-  - Test harness corrections after the first implementation: supply all required fields to the real old stage writer; assert the private router's 503 storage response instead of expecting its caught SQLite exception. These did not change production behavior.
-  - Final focused GREEN: **7 passed**. Additional coverage proves old/current creation receipt replay and preservation of existing inline source references.
-- From `webui`: `npm test -- src/collaboration/product.test.tsx -t 'all optional checks|selected-system|independent send'`
-  - Initial RED: **5 failed**, reproducing empty send POST, mandatory/all-optional POST, and missing selected-system context.
-  - Expanded editable/read-only/frozen context coverage detected a nested dirty guard in the new handoff navigation; the final handler delegates to the existing guarded parent navigation once. Asynchronous destination assertions wait for the actual handoff detail.
-  - Final focused GREEN: **6 passed**, 41 skipped. Readiness correction follows the existing explicit reset flow; prior NA reset/attestation semantics remain unchanged.
+- `webui/src/workflow/materialHandoffTypes.ts`
+- `webui/src/workflow/MaterialHandoffWorkspace.tsx`
+- `webui/src/workflow/SupplyWorkspace.tsx`
+- `webui/src/workflow/WorkflowApp.tsx`
+- `webui/src/workflow/materialHandoffHttp.test.tsx`
 
-## Actual source compatibility proof
+After committing code and recording CODE_SHA, E30 was executed at that actual HEAD. The following separate documentation-only commit changes exactly `docs/oem-material-handoff-iteration-2026-11-03.md`, updating the current code reference, project filter outcome and precise frontend/bundle/E30 evidence while preserving the backend reuse and visual limitations, inherited debt and unique delivery archive. No supplemental patch, user-dirty source document, shell component, legacy HTTP test, backend source/test, preview file or node_modules path was changed/staged by this wave.
 
-Trusted fixture: `tests/fixtures/manufacturing-161292be.tar.gz` (13,429 bytes).
+## RED
 
-- Unmodified Git source from deployed commit `161292be7c01038cc7c25b5f36aea04577c19823`.
-- Exported with `git archive <commit> src/manufacturing_platform`, compressed deterministically with gzip mtime=0.
-- SHA256: `ae37d3d9ef165408616aeb8ee08a99c812a2acd6764d6308031ba82a3ddd6fea`.
-- Provenance is recorded alongside the fixture. Test checks pinned digest, rejects absolute/traversal/non-regular archive entries, and uses safe extraction. No network, new dependencies, private business data or altered mock old schema.
+```sh
+cd webui
+WORKFLOW_TEST_PYTHON=/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python npm test -- src/workflow/materialHandoffHttp.test.tsx --reporter=dot
+```
 
-The portable regression creates a legacy project/task with actual old source, then uses real current HTTP to create an ordinary new project/task and linked readiness issue, and performs core/stage/task writes on legacy data. Actual old `ProjectRepository.get`, `list`, `dashboard`, ordinary-task receipt replay, task update and stage update run against that SAME disposable SQLite database. Current HTTP then reads forward with the correct original source, updated task status, unchanged durable controls/history and blocked readiness aggregate. Flat task and dashboard source projections agree. Raw task JSON contains no `source` key; normalized links remain. Tests also inject failures independently at link, event and operation inserts and verify no task/link/audit/receipt survives, then retry the same UUID successfully once.
+Observed before implementation: **2 failed, 5 passed**, 3.29s. Disputed returned as 待接收 instead of 待处理差异; all returned as 待接收 instead of 全部记录. Both failures occurred at the actual post-detail filter assertion. Durable log: `.superpowers/sdd/final-fixes-red.log`.
 
-## Final verification
+An intermediate assertion was scoped to the handoff table after the administrator's project-progress table also rendered rows. This was a test selector correction; the production filter assertion already passed after the context fix.
 
-A single final pass was split by suite directory, with no repeated passing full suites:
+## GREEN
 
-- `PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests` — **206 passed** (199 existing + 7 new), 8.60s.
-- `PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q deploy/tests` — **54 passed**, 0.69s. This includes two concurrent root-owned deployment tests; the original deployment baseline was 52.
-- Total observed backend: **260 passed** = original 251 + this wave's 7 + root's 2.
-- From `webui`, `npm test` — **127 passed**, 7 files (122 existing + 5 new).
-- From `webui`, `npm run test:bundle` — TypeScript, Vite build and IIFE/scoped-CSS validation pass; 59 modules, JS 292.51 kB, CSS 17.68 kB.
-- `git diff --check` — clean. Implementation diff against baseline has no changes to docs, knowledge or handbook code/source. No new dependencies.
+```sh
+WORKFLOW_TEST_PYTHON=/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python npm test -- src/workflow/materialHandoff.test.tsx src/workflow/materialHandoffHttp.test.tsx --reporter=dot
+```
 
-## Preserved boundaries and handoff
+**2 files, 28 tests passed**, 3.63s: 21 component/navigation and 7 real authenticated HTTP tests. No warnings. Durable log: `.superpowers/sdd/final-fixes-focused.log`.
 
-All prior source navigation, read-only multi-item navigation, mounted CAS baseline, strict pending version bindings, independent fresh NA attestation and receiver history tests pass. Existing authorization/CSRF/no-store and UUID/CAS behavior is unchanged. No platform edits, production writes, browser automation, merges or deployment. Existing source handbook was not modified.
+```sh
+WORKFLOW_TEST_PYTHON=/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python npm test -- --exclude src/workflow/acceptanceNavigationHttp.test.tsx --reporter=dot
+```
 
-Root-owned concurrent `deploy/candidate_verify.py`, `deploy/release.py`, and `deploy/tests/test_candidate_previous_source.py` remain outside this implementation commit. Existing untracked `webui/node_modules` is untouched. Root owns review, exact-source build/candidate verification, merge and deployment.
+**31 files, 301 tests passed**, 14.08s. Existing warnings are confined to formHttp/oemFormsHttp; the handoff tests remain clean. Durable log: `.superpowers/sdd/final-fixes-frontend.log`.
 
-Remaining issues within this four-finding scope: none. Deliberate limit: candidate-era inline sources are preserved on reads and normalized when their aggregate is next saved; this is not a production-wide rewrite of untouched candidate databases. Newly generated project JSON is rollback compatible immediately.
+```sh
+npm run test:bundle
+```
+
+TypeScript, Vite, IIFE global and scoped CSS checks passed. **483.75 kB JS / 141.40 kB gzip**, Vite 512ms. Durable log: `.superpowers/sdd/final-fixes-bundle.log`.
+
+The above required checks passed before the explicit code commit; its source is exactly the verified state. No further frontend test rounds or changes followed.
+
+## E30 at the committed code SHA
+
+At actual HEAD `14ec14bc74c05a5ba9814ff58a345c85fc036bc2`, repository root:
+
+```sh
+TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform WORKFLOW_ACCEPTANCE_CASES=E30 PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/test_acceptance.py::test_e30
+```
+
+**1 passed in 2.85s**. `.superpowers/sdd/final-e30.log` records the actual execution SHA, exact command and raw pytest output. No backend suite was rerun.
+
+Backend unchanged-code verification:
+
+```sh
+git diff --exit-code 850b53b..14ec14bc74c05a5ba9814ff58a345c85fc036bc2 -- src tests
+```
+
+Exit **0**, empty output. The approved **92 passed, 25.63s** backend result was executed at `850b53b`; last backend change was `10bc873`. Its reuse through CODE_SHA is explicitly documented as unchanged-code evidence, not a backend rerun at CODE_SHA.
+
+## Documentation validation and separate commit
+
+After editing only the designated iteration document:
+
+```sh
+node .superpowers/sdd/task-3-doc-validate.mjs
+```
+
+Passed: **107 GFM tables, 44 Mermaid diagrams, 64 local links**, no errors, no baseline/current broken links, and prior source-document identifiers preserved. Output: `.superpowers/sdd/final-fixes-doc-validation.log`; structured result: `.superpowers/sdd/task-3-doc-validation.json`. The existing adapted validator was reused without changes. `git diff --check` and each staged diff check passed.
+
+The delivery document continues to identify `.superpowers/sdd/oem-handoff-2026-11-03/` as the controller's unique archive destination, preserving unrelated original reports. It retains visual acceptance at `c9ebc6b`, including desktop/390×844 coverage and the limit that receipt/discrepancy/cancel submission was tested by HTTP rather than visually. No fresh visual review or production integration is claimed.
+
+## Retained inherited debt and follow-up
+
+1. The shared-shell account name is truncated on the narrow viewport. Full identity remains available in record facts; no handoff control was blocked in the supplied visual evidence. Track a shared-shell identity disclosure/layout improvement separately. No shell refactor was attempted here.
+2. Existing formHttp/oemFormsHttp act warnings remain validation noise. Track their asynchronous test-boundary cleanup separately; neither new handoff test emits warnings. No unrelated legacy-test rewrite was attempted.
+
+## Self-review
+
+The project filter is a closed, presentation-only value keyed by project ID. It survives workspace/details unmounts and the existing dirty-dialog epoch remount without changing command fields, permissions, facts or operation lifecycle. Global ledger state remains separate, new projects default to pending, and the real HTTP tests prove both visible filters and retained rows. Existing origin callbacks remain unchanged. No backend or supplemental document delta was altered. After E30, the only committed change is the designated documentation update, so executable source remains CODE_SHA. No unresolved new correctness concern found; the two inherited debt items above remain candidly documented for follow-up.

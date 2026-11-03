@@ -13,6 +13,18 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
   const target = (kind: WorkflowTarget["kind"], id: string) =>
     id ? [{ projectId, kind, id }] : [];
   switch (draft.action) {
+    case "mock_system.execute": {
+      const v=draft.payload;
+      return [
+        ...('work_order_id' in v && v.work_order_id ? target('work_order',v.work_order_id):[]),
+        ...('revision_id' in v ? target('revision',v.revision_id):[]),
+        ...('order_line_id' in v ? target('order_line',v.order_line_id):[]),
+        ...('demand_id' in v ? target('demand',v.demand_id):[]),
+        ...('run_id' in v ? target('test_run',v.run_id):[]),
+        ...('unit_id' in v ? target('unit',v.unit_id):[]),
+        ...('units' in v ? v.units.slice(0,25).flatMap(u=>target('unit',u.unit_id)):[]),
+      ];
+    }
     case "npi.open":
     case "test_plan.publish":return target("revision",draft.revision_id);
     case "npi.review":case "npi.trial":case "npi.issue":case "npi.approve":case "asset.apply":return target("npi",draft.npi_id);
@@ -276,7 +288,7 @@ export function ConflictComparison({
       {data && (
         <>
           <h4>服务端当前项目版本：{data.project.version}</h4>
-          {onRebase && <><p>确认对照后，以当前版本继续保留的输入和来源快照；这将建立新的操作编号。</p><button type="button" disabled={data.project.version < Math.max(version, Number(error.fields.current_version) || version)} onClick={()=>onRebase(data.project.version)}>使用当前版本继续此草稿</button></>}
+          {onRebase && !draft?.action.startsWith("mock_system.") && draft?.action!=="integration.pull" && <><p>确认对照后，以当前版本继续保留的输入和来源快照；这将建立新的操作编号。</p><button type="button" disabled={data.project.version < Math.max(version, Number(error.fields.current_version) || version)} onClick={()=>onRebase(data.project.version)}>使用当前版本继续此草稿</button></>}
           <p>
             当前资料仅供对照；继续编辑与原样重试均保留草稿。放弃草稿并重新读取是独立操作。
           </p>

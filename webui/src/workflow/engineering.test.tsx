@@ -544,7 +544,7 @@ it("pages ECO and serial boundary selectors explicitly without object-detail sca
   expect(box.textContent).toContain("SN-1");
   expect(calls.filter(c=>c.includes("/objects/unit?"))).toHaveLength(2);
   expect(calls.filter(c=>c.includes("/objects/eco?"))).toHaveLength(2);
-  expect(calls.every(c=>c.includes("limit=50"))).toBe(true);
+  expect(calls.filter(c=>c.includes("/objects/")).every(c=>c.includes("limit=50"))).toBe(true);
 });
 
 it("I3 actual app navigates reserved split results to existing exchange, then opens accepted replacement",async()=>{

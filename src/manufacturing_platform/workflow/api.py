@@ -82,6 +82,8 @@ def build_workflow_router(
                         headers=exc.headers,
                     )
                 except (sqlite3.Error, OSError, ValueError):
+                    import traceback
+                    traceback.print_exc()
                     response = JSONResponse(
                         {"detail": "Workflow storage unavailable"}, status_code=503
                     )
@@ -244,6 +246,10 @@ def build_workflow_router(
         return service.objects(
             actor(request), project_id, ObjectKind.exchange, limit=limit, offset=offset
         )
+
+    @router.get("/projects/{project_id}/integration-intents")
+    def integration_intents(project_id: UUID, request: Request, limit: int = 50, offset: int = 0):
+        return service.integration_intents(actor(request), project_id, limit=limit, offset=offset)
 
     @router.get("/projects/{project_id}/integration-links")
     def integration_links(

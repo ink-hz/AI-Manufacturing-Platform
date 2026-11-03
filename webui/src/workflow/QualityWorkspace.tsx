@@ -1,3 +1,4 @@
+import {SystemStepPanel} from './integrations/SystemStepPanel';
 import { useEffect, useRef, useState } from 'react';
 import type { DomainValue, ObjectKind, ObjectSummary, ReleaseKind, WorkspaceProps } from './types';
 import { QualityForms } from './forms/QualityForms';
@@ -29,6 +30,7 @@ export function QualityWorkspace(p:Props){
   {unit&&<section><h4>测量历史 · {unit.first_pass===false?'首次未通过':unit.first_pass?'首次通过':'尚未测量'}</h4><p>{unit.scrapped?'不可逆报废':unit.final_good?'最终合格':'尚未最终合格'} · 最近 100 条，共 {unit.test_total||0} 次</p><ol>{(unit.tests||[]).map(t=><li key={t.id}><button onClick={()=>p.onOpen({projectId:p.project.id,kind:'test',id:t.id})}>第 {t.attempt} 次 · {label(t.outcome)} · {t.rework_order_id?'返工复测':'初始路线测试'}</button></li>)}</ol></section>}
   {revision&&<p>固定规范 {revision.test_spec.version} · 测试程序 {revision.test_spec.program_version} · 固件 {revision.firmware_version}</p>}
   {rework&&<section><h4>独立返工路线 {rework.route_id}</h4><ol>{rework.route_steps.map(s=><li key={s.station}>{s.station} · {s.instruction_version}</li>)}</ol><p>在生产执行中选择此返工单并追加真实工位来源记录，然后在此记录复测并完成返工。</p></section>}
+  <SystemStepPanel {...p} context="quality" selected={selected?{project_id:p.project.id,kind:"unit",id:selected}:null}/>
   {!p.readOnly&&<div className="mf-actions">{([['test.record','记录测试'],['nonconformance.open','登记不合格'],['nonconformance.disposition','不合格处置'],['rework.complete','完成返工']] as const).filter(([a])=>p.project.allowed_actions.includes(a)).map(([a,title])=><button key={a} disabled={(a==='test.record'&&!revision)||(a==='rework.complete'&&!rework)} onClick={()=>show(a)}>{title}</button>)}{(p.project.release_kinds||[]).map(k=><button key={k} onClick={()=>show('release.decide',k)}>{releaseTitles[k]}</button>)}</div>}
   {action&&<><button onClick={()=>show(null)}>放弃草稿并重新读取</button><QualityForms key={action+releaseKind+epoch} {...p} action={action} releaseKind={releaseKind} units={items.unit||[]} tests={items.test||[]} nonconformances={items.nonconformance||[]} reworks={items.rework||[]} unit={unit} revision={revision} rework={rework} onChanged={r=>{setAction(null);p.onChanged(r);}}/></>}
   {kinds.map(k=><section key={k}><h4>{titles[k]}</h4><ObjectTable items={items[k]||[]} onOpen={p.onOpen}/>{(items[k]||[]).length<(totals[k]||0)&&<button disabled={loading[k]} onClick={()=>void more(k)}>读取更多{titles[k]}（已读取 {(items[k]||[]).length} / {totals[k]}）</button>}</section>)}

@@ -1,3 +1,4 @@
+import {SystemStepPanel} from './integrations/SystemStepPanel';
 import { useEffect, useRef, useState } from "react";
 import type { DomainValue, ObjectKind, ObjectSummary, Readiness, WorkspaceProps } from "./types";
 import { ObjectTable } from "./OrdersWorkspace";
@@ -38,11 +39,12 @@ export function ExecutionWorkspace(p:Props){
   const show=(value:(typeof actions)[number]|null)=>p.requestLeave(()=>{setAction(value);setEpoch(x=>x+1);});
   return <section><h3>生产执行与序列号</h3><OperationHelp><p>开工分为首件试做与批量执行。待定请求占用序列号预算；MES 接受回执确认运行。所有工位与物料事件追加来源历史。</p></OperationHelp>
     {error&&<p role="alert">{error}</p>}
-    <label>查看工单<select aria-label="查看工单" value={selected} onChange={e=>{setSelected(e.target.value);setWorkOrder(null);setRevision(null);}}><option value="">请选择</option>{(items.work_order||[]).map(w=><option key={w.id} value={w.id}>{w.title}</option>)}</select></label>
+    <label>查看工单<select aria-label="查看工单" value={selected} onChange={e=>{const id=e.target.value;p.requestLeave(()=>{setSelected(id);setWorkOrder(null);setRevision(null);});}}><option value="">请选择</option>{(items.work_order||[]).map(w=><option key={w.id} value={w.id}>{w.title}</option>)}</select></label>
     {workOrder&&<><ReadinessCard title="试产准备" readiness={workOrder.trial_readiness}/><ReadinessCard title="量产准备" readiness={workOrder.bulk_readiness}/></>}
     {workOrder&&(workOrder.held_start_scopes||[]).length>0&&<section role="alert"><h4>MES 已接受，本地安全暂缓</h4><p>请为原开工范围请求 MES 停机。停机确认后修复准备条件、接收新计划并恢复同一批序列号；待停机期间仍占工单预算。</p><ul>{(workOrder.held_start_scopes||[]).map(s=><li key={s.id}>{s.mode==="trial"?"试产":"批量"} · {s.sns.join("、")} · <button onClick={()=>p.onOpen({projectId:p.project.id,kind:"exchange",id:s.exchange_id})}>查看 MES 开工回执</button></li>)}</ul></section>}
     {revision&&<section><h4>固定工程包 · {revision.package_id} / {revision.revision}</h4><p>测试规范 {revision.test_spec.version} · 程序 {revision.test_spec.program_version} · 固件 {revision.firmware_version}</p><ol>{revision.route_steps.map(s=><li key={s.station}>{s.station} · 作业指导 {s.instruction_version}</li>)}</ol></section>}
     {!p.readOnly&&<div className="mf-actions">{actions.filter(a=>p.project.allowed_actions.includes(a.action)).map(a=><button key={a.title} onClick={()=>show(a)}>{a.title}</button>)}</div>}
+    <SystemStepPanel {...p} context="execution" selected={selected?{project_id:p.project.id,kind:"work_order",id:selected}:null}/>
     {action&&<><button onClick={()=>show(null)}>放弃草稿并重新读取</button><ExecutionForms key={p.project.id+action.title+epoch} {...p} action={action.action} mode={action.mode} selectedWorkOrderId={selected} revision={revision} rejectedEvents={(workOrder?.execution_events||[]).filter(e=>e.status==="rejected")} heldStarts={workOrder?.held_start_scopes||[]} workOrders={items.work_order||[]} units={items.unit||[]} interruptions={items.interruption||[]} plans={items.plan||[]} lots={items.material_lot||[]} tests={items.test||[]} reworks={items.rework||[]} onChanged={r=>{setAction(null);p.onChanged(r);}}/></>}
     {kinds.map(k=><section key={k}><h4>{label(k)}</h4><ObjectTable items={items[k]||[]} onOpen={p.onOpen}/>{(items[k]||[]).length<(totals[k]||0)&&<button disabled={loading[k]} onClick={()=>void more(k)}>读取更多{label(k)}（已读取 {(items[k]||[]).length} / {totals[k]}）</button>}</section>)}
   </section>;

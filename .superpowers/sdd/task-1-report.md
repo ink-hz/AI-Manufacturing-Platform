@@ -1,76 +1,166 @@
-# Task 1 implementation report
+# Task 1 report — OEM material handoff backend
 
-Base MF source: `5a6554f8ff693eb3403fcf8ee3f19c1c20f4e902`. Tested canonical Platform source: `a2f15ce890c395bde540e964a41a39581fcaf35c`. Platform was read only; controller confirmed its three additional commits are ops/certificate-only and app bytes match deployed `cd041f30`. Controller owns release pinning and deployment.
+Status: DONE
+Base: `40271fd`
+Worktree: `/Users/neo/.codex/worktrees/a065/AI-Manufacturing-Platform`
+Commit: `15b51d4417479b175f8e6ffeea7836f4e0a0b0b4`
 
-## Metric definitions and producer ownership
+## Delivered behavior
 
-- 待交付项目: count projects with valid nonnegative decimal `summary.current_order_quantity > 0` and `remaining_to_ship > 0`; no numeric quantity summation. Decimal positivity is checked as strings to retain arbitrarily small positive quantities.
-- 当前可处理事项: `api.tasks(50,0,undefined,signal).total`; when truncated, display `≥ total` and explain per-project bounds/lower bound. Priority queue sorts only fetched page with explicit blocking/danger/warning priority and preserves API order on equal priority; shows at most six and discloses fetched/shown counts.
-- 未闭环不合格: sum `quality_summary.open_nonconformances` only if every scoped project has a valid safe nonnegative integer; invalid/missing quality yields unavailable, independently of delivery availability.
-- 制造工单: valid nonnegative safe integer `Dashboard.counts.work_order`, never registered units or in-progress count.
-- Both project-based aggregates require loaded current metadata and exact dashboard/project-ID membership, unique IDs, and a matching project_count. Empty verified scope gives zero; absent/loading/failed/mismatched scope gives `—` with explicit explanation. Refresh clears producer readiness and dashboard so old values cannot masquerade as current.
-- Delivery rows retain each project's original decimal strings and unit. No mixed-unit summation or inferred closure, overdue, shortage, WIP, rates, dates.
-- Dashboard and metadata remain independent producers. Home tasks own AbortController and active guard; changing owner/unmount/refresh aborts at API layer before late 401/403 handling. Home errors/retries remain independent from usable modules.
+Implemented the four registered actions `material_handoff.record`, `.receive`, `.resolve`, `.cancel` and the `material_handoff` object kind. Creation is OEM-only and requires warehouse/supply/production authorization. Receipt requires the exact designated receiver and a current warehouse/supply/production/project_owner role; administrators cannot sign for another identity. Sender or current project_owner/configuration_admin can resolve/cancel, still subject to live role and read-only policy.
 
-CSS inheritance inspected: manufacturing.css base -> console.css scoped shell -> workflow.css currently partly unscoped. All changed workflow CSS will be scoped under `.mf-root`; shared semantic tokens live in console root and status badges retain text plus inline SVG shapes.
+Authorization runs before operation replay. State validation runs inside handlers after replay, so a canonical replay survives subsequent state progression. Creation extends the existing bounded member-profile path: policy/replay/CAS checks precede trusted host I/O, I/O occurs outside workflow transactions, live membership/receiver roles are rechecked in the write transaction, and authorization/replay/CAS retain precedence over a competing profile-service failure. No client-provided display names or source evidence are accepted.
 
-## Implemented
+Receipt discrepancies (short, over, zero, or location deviation) require a nonblank note and become `disputed`. Original facts are retained when resolving/cancelling. Business time defaults to the trusted business clock, forbids future/backwards receipt times, and is preserved in the generated manual source and audit. Same-lot splits remain distinct records. Pending summary locations explicitly describe intended, unconfirmed destinations.
 
-- Deep blue-gray navigation, clear current-item stripe, pale page canvas, white business panels, 24px page titles/16px section headings/14px body/12px auxiliary text and 32px metric values. One primary home action is 处理待办; 新建项目 remains secondary with original permission handling.
-- Shared explicit `StatusBadge` semantics: unknown/cancelled/superseded neutral; accepted/running informational; actual completion/closed/resolved positive; open NCR/test failure dangerous; actual blockers and held/stopped conditions warning. Text remains present and SVG shapes distinguish roles without color. No title-based inference.
-- Four defined metrics replace the 24-item count grid. Home task read is independent of dashboard availability, with retry/error/loading/empty state. Queue displays at most six of the first fifty returned tasks, gives total/lower-bound/read/display disclosure and uses stable local status ordering.
-- Delivery shows up to six scoped projects, original decimal quantity strings and units, with filtered order-line ledger links. Quality metric selects the actual NCR tab. Four business shortcuts and at most six secondary real-record links retain exact object/project context without claiming recency.
-- Global ledgers/tasks show business title/focus, aggregate total separately from 本页 counts, shared badges, sparse first-column attention markers, text links, quieter source fields and tabular quantities. Shared ObjectTable, detail facts/readiness/events and project progress use the same grammar. Project/table wrappers scroll horizontally.
-- Missing, invalid, mismatched, pending and stale-version metadata produce unavailable metrics. Independent project producers and exact object resolution remain unchanged; home readiness adds a conservative freshness gate when a refreshed summary is older than a known project version.
-- All changed workflow rules are scoped under `.mf-root`. Responsive panels/cards collapse at 1200/600/360px; existing drawer/account/keyboard behavior stays intact. Reduced motion and high-contrast focus remain available. CSS specificity was reviewed against manufacturing.css and console.css; generic content buttons do not override dark sidebar styles.
+Only the new handoff table, existing project version, operation receipt, and audit are written. Stock, receipt, IQC, reservation, consumption, ownership-bearing material-lot rows, existing engineering `handoffs`, source correction/confirmation rows, and all authority tables are unchanged by every tested lifecycle path.
 
-## TDD evidence and validation
+## Interfaces and DTO
 
-Logs remain in `.superpowers/sdd/` (ignored local artifacts, available to controller; no private HTTP fixture data committed).
+Existing routes are reused:
 
-1. Initial missing-module RED is retained in `task-1-red-semantics.log`. Minimal neutral/null stubs then produced **6 failed assertions** in `task-1-red-semantics-assertions.log` (expected danger vs neutral, absent readable text, missing scope/counts, unsorted priority); implemented semantics/model produced **6/6 GREEN** in `task-1-green-semantics.log`.
-2. Home integration RED: `npm --prefix webui test -- src/workflow/homeHierarchy.test.tsx` produced **7 failures** before integration: no four metric cards, no actual task object entry, no owned task signal/retry. `task-1-red-home.log`. Home + existing workspace/global navigation then **51/51 GREEN**, `task-1-green-home.log`.
-3. Ledger RED: `npm --prefix webui test -- src/workflow/ledgerHierarchy.test.tsx` produced **2 failures** (missing page-scoped attention/status badge semantics). `task-1-red-ledger.log`. Ledger + home + workspace/global navigation **53/53 GREEN**, `task-1-green-ledger.log`.
-4. Freshness regression RED: a known project version 8 followed by refreshed list version 3 incorrectly left delivery aggregate available. **1 failed / 8 passed**, `task-1-red-freshness.log`. Root cause: producer readiness unconditionally set true while list reconciliation retained a cached version. Home freshness gating then **44/44 GREEN** with global navigation, `task-1-green-freshness.log`.
-5. Focused final regression: semantics/model/home/ledger/quality/delivery/navigation/global navigation/workspace/API/handbook **102/102**, 11 files, 1.60s, `task-1-focused-final.log`. Includes all owned home task module/identity/refresh/handbook cancellation cases and late 401 rejection protection; metadata pending/verified-empty/stale cases; original API/nav/handbook coverage.
-6. Initial plain full `npm --prefix webui test`: **234 passed / 1 failed** in 14.27s. The standalone `acceptanceNavigationHttp.test.tsx` correctly failed its prerequisite at line 15 because `WORKFLOW_HTTP_BASE` was absent. Preserved `task-1-full-frontend.log`; no test/source changes to suppress the bridge. Correct full unit invocation: `npm --prefix webui test -- --exclude src/workflow/acceptanceNavigationHttp.test.tsx`: **234/234, 25 files**, 12.87s, `task-1-full-frontend-final.log`. Actual fixture-backed E30 ran separately (below).
-7. Final descriptive project/type context on secondary record entries and heading specificity were followed by affected home/workspace **19/19**, `task-1-final-context.log`, and final strict TypeScript/Vite/IIFE/scoped CSS validation: `npm --prefix webui run test:bundle`, exit 0, `task-1-bundle-final.log`. No dependencies changed. Node v26.5.0, existing Vite v6.4.5.
-8. Actual local E30 command: `TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform WORKFLOW_ACCEPTANCE_CASES=E30 PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest tests/workflow/test_acceptance.py::test_e30 -q --basetemp=.superpowers/sdd/task-1-e30-tmp`: **1 passed in 2.66s**, `task-1-e30.log`. Real ReactDOM/jsdom + isolated loopback HTTP; original 6 assertions preserved (two editors, real 409, draft, full handbook SHA, restored context, single departure) plus all 4 global navigation assertions. Full frontend source was dirty relative to base during this precommit run, accurately recorded by manifest. Only final presentation labels/heading CSS were amended afterward and received focused/build checks.
+- `POST /projects/{project_id}/commands` with the four typed actions.
+- `GET /projects/{project_id}/objects/material_handoff` and `.../{id}`.
+- `GET /objects/material_handoff` for the global ledger.
+- Existing project/global tasks; pending belongs to receiver and disputed belongs to sender, category `business`.
+- Existing `GET /projects/{project_id}/members` continues to provide trusted `display_name`; no new directory endpoint.
 
-E30 private evidence path: `.superpowers/sdd/task-1-e30-tmp/test_e300/run-20261029T025434-60e23f5ee533496298daf48fce97f50b/E30/`. Handbook SHA: `8966c7d91be4387b67271449d1c25b3214a7587a149c26c40c3a39dd035e2dfd`. E30 manifest PF SHA matches actual canonical source above; root will use released CD source with identical app bytes for its final immutable candidate.
+Commands:
 
-## Contrast verification
+- `RecordMaterialHandoff`: `material_lot_id`, optional `work_order_id`, `quantity`, `unit`, `from_location`, `to_location`, `receiver_id`, optional `occurred_at`, `note`.
+- `ReceiveMaterialHandoff`: `handoff_id`, `received_quantity`, `received_location`, optional `occurred_at`, `note`.
+- `ResolveMaterialHandoff`: `handoff_id`, `resolution`.
+- `CancelMaterialHandoff`: `handoff_id`, `reason`.
 
-Calculated sRGB relative luminance from real tokens in `webui/src/console/console.css`, threshold 4.5:1 normal text; full values in `task-1-contrast.log`:
+`MaterialHandoff` provides `id`, `kind`, `state`, `material_lot_id`, nullable `work_order_id`, service-generated `handoff_number`, `quantity`, `unit`, `from_location`, `to_location`, `sender_id`, `sender_name`, `receiver_id`, `receiver_name`, `occurred_at`, `recorded_at`, `note`, `source`, nullable `receipt`, `resolution`, `cancellation`. The generated manual source's external identity is the handoff object ID.
 
-| Role | Foreground / background | Ratio |
-| --- | --- | --- |
-| Neutral | #455468 / #edf1f5 | 6.80:1 |
-| Information | #1e4fa3 / #eaf1ff | 6.85:1 |
-| Success | #14653d / #e9f6ee | 6.38:1 |
-| Warning | #8a4809 / #fff3dd | 6.35:1 |
-| Danger | #a62d35 / #fdecee | 6.04:1 |
-| Body / white | #182638 / #ffffff | 15.29:1 |
-| Muted / canvas | #5d6c80 / #f3f5f9 | 4.91:1 |
-| Navigation | #d2ddeb / #111d32 | 12.27:1 |
-| Navigation secondary | #aabbd0 / #111d32 | 8.61:1 |
-| Primary | #ffffff / #2563eb | 5.17:1 |
-| Selected navigation | #ffffff / #29466d | 9.58:1 |
+`receipt` provides `received_quantity`, `received_location`, `note`, `actor_id`, trusted `actor_name`, `occurred_at`, `recorded_at`. Resolution has `resolution`, actor ID/name, recorded time; cancellation has `reason`, actor ID/name, recorded time. Creation snapshots use trusted directory profiles. If a receiver name is unavailable, `receiver_name` retains the real receiver UUID string. Trusted Actor display name is used as the sender fallback and for receipt/resolution/cancellation actors; this can differ in capitalization from the directory snapshot.
 
-## Files and self-review
+`next_actions` and capability DTOs filter by state, current role, read-only status, OEM applicability, and party identity. Project-wide receive capability also requires a designated pending record. SQL task selection filters current authorization before its existing 51-row bound; normal task limits/truncation are preserved. Object pagination is SQL-scoped and ordered before projection. Detail history uses the existing bounded audit reader.
 
-- Shell: `webui/src/console/ConsoleShell.tsx`, `console.css`.
-- Workflow integration/views: `WorkflowApp.tsx`, `WorkflowHome.tsx`, `GlobalLedger.tsx`, `GlobalTasks.tsx`, `OrdersWorkspace.tsx`, `WorkflowDetail.tsx`, `WorkflowProjects.tsx`, `workflow.css`.
-- New focused modules: `StatusBadge.tsx`, `homePresentation.ts`.
-- New semantic/behavior coverage: `statusSemantics.test.tsx`, `homePresentation.test.ts`, `homeHierarchy.test.tsx`, `ledgerHierarchy.test.tsx`.
-- This report only; no backend, API protocol, schema, dependency, platform source or production data change. Root-owned `webui/node_modules` symlink is not staged, removed or modified.
-- Self-review fixed fresh-scope gating and CSS specificity; badge mapping uses real states and explicit kind/blocking facts. No mixed-unit totals, inferred shortage/WIP/overdue quantities, global risk ranking, or shipped-equals-closed claims.
-- Existing `WorkflowApp.tsx` and `WorkflowDetail.tsx` remain large files; modifications are narrow integration/status rendering only, with no unrelated restructuring.
+## Files
 
-## Limits and handoff
+New:
 
-Browser/Playwright/CUA/employee visual acceptance was not run. Contrast is calculated from source; responsive behavior and hierarchy are source-reviewed, not a claim of rendered visual QA. No production/network service operations occurred; loopback HTTP fixture only. Deployment, actual Linux 36-case candidate, released PF pin and current data preservation checks belong to controller. No implementation blockers remain.
+- `src/manufacturing_platform/workflow/material_handoff_models.py`: typed commands and read facts.
+- `src/manufacturing_platform/workflow/material_handoff_schema.py`: additive schema22 table/index definitions.
+- `src/manufacturing_platform/workflow/material_handoffs.py`: authorization and transitions only.
+- `src/manufacturing_platform/workflow/material_handoff_reader.py`: scoped projections and object registry composition.
+- `tests/workflow/test_material_handoffs.py`: 35 real HTTP/SQL/runtime tests.
+- `tests/workflow/fixtures/schema21.sql`: frozen actual schema21 boundary exported from base before implementation, so migration tests do not merely relabel a schema22 database.
 
-Final local build `webui/dist/manufacturing.js`: 399314 bytes; SHA256 `0d5b7809679ae3b7ed2e13c503086c0d9eb1dfeaa6fa1869f7f0841cb95f2a1b`.
+Modified:
 
-Final local build `webui/dist/manufacturing.css`: 33619 bytes; SHA256 `0e73755ba763e46d88a0c0d3e754ca057dd733f1a11c3c1ceeadc5be930a657f`.
+- `commands.py`, `contracts.py`: four action literals and object kind.
+- `schema.py`, `store.py`: fresh schema22 and transactional 21→22 migration.
+- `service.py`: trusted profile orchestration, party-aware capabilities, bounded responsibility tasks, handoff business audit timestamps; legacy action audit invocation shape preserved.
+- `tests/workflow/test_a1_extensions.py`, `test_admin_full_access.py`, `test_authority_assistance.py`: exact registry/schema/capability assertions reflecting the real additions.
+
+No frontend source or unrelated user documents were changed or staged. The existing frontend build was run solely to supply ignored `webui/dist` artifacts required by restart/PF-host tests.
+
+## RED evidence
+
+Command:
+
+```sh
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform python3.11 -m pytest -q tests/workflow/test_material_handoffs.py
+```
+
+Observed before production code:
+
+```text
+15 failed, 11 passed in 4.02s
+AssertionError: {"code":"UNSUPPORTED_ACTION","message":"Unsupported action",...}
+```
+
+The 11 passing cases were invalid-input cases already rejected by the unsupported-action boundary. All valid lifecycle/non-accounting/replay/migration cases failed for missing functionality. Raw local log: `/tmp/task1-red.log`.
+
+An additional executable test exposed broad project-level receive capability after the first implementation; its RED was `material_handoff.receive` incorrectly present for admin. This was corrected using a bounded designated-pending query. Test harness assumptions were also corrected to trigger lazy migration through the real API, and to distinguish the list's paginated query from scoped per-ID capability reads.
+
+## GREEN and regression evidence
+
+Focused:
+
+```sh
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform python3.11 -m pytest -q tests/workflow/test_material_handoffs.py
+```
+
+```text
+35 passed in 6.39s
+```
+
+Task-specified regression, with the existing sibling platform interpreter that contains the PF host dependencies:
+
+```sh
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/test_material_handoffs.py tests/workflow/test_arrivals.py tests/workflow/test_bounded_queries_history.py tests/workflow/test_admin_full_access.py tests/workflow/test_action_capabilities.py tests/workflow/test_restart.py
+```
+
+```text
+61 passed in 17.41s
+```
+
+Additional exact registry/schema regression:
+
+```sh
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform python3.11 -m pytest -q tests/workflow/test_a1_extensions.py tests/workflow/test_authority_assistance.py
+```
+
+```text
+23 passed in 5.19s
+```
+
+`git diff --check`: clean.
+
+Before the final regression, the task command using plain Homebrew `python3.11` showed `59 passed, 2 failed`: restart/PF-host first lacked `webui/dist`; after `npm run build` (successful), it exposed absent `cryptography` in that interpreter. Private PF stderr established the exact missing dependency. Parent supplied the existing platform virtualenv; the complete required regression then passed without changing dependencies. An extra legacy atomic-audit regression initially found that unconditional new keyword arguments broke its existing `*args` wrapper; only handoff actions now pass the new time keywords, and the existing atomic rollback test passes unchanged.
+
+## Self-review and concerns
+
+- Confirmed every new relational lookup uses both project and object identity in SQL.
+- Confirmed party authorization precedes replay; transition checks follow replay; revocation/read-only continue to reject old receipts.
+- Confirmed trusted host lookup is bounded to two identities and remains outside transactions using a real competing HTTP commit test; competing canonical replay precedes profile error, while actor revocation still rejects it.
+- Confirmed actual receipt facts cannot be replaced or cancelled after receipt; concurrent distinct receipt operations commit exactly one receipt.
+- Confirmed same-batch splits remain independent, pending destination is never described as actual arrival, and all short/over/zero/location discrepancies require explanation.
+- Confirmed project/global SQL list pagination and SQL task project/responsibility/limit boundaries by statement capture, including task truncation and role revocation.
+- Confirmed frozen schema21 upgrade preserves existing rows and engineering handoffs and adds schema22 support; restart reads persisted facts/tasks.
+- Confirmed there is no stock balance inference, inventory write, authority write, deployment, or real WMS/MES/ERP/PDA integration claim.
+- No unresolved implementation concerns. Full repository test suite was not requested or run; the required targeted regression and changed exact-registry/schema tests passed. PF-host tests require the sibling virtualenv plus built frontend assets, as recorded above.
+
+## Independent review fix — trusted blank actor names
+
+Review: `.superpowers/sdd/task-1-review.md`, one Important finding. Verified that `Actor.display_name` permits empty/whitespace strings while handoff sender/lifecycle DTO fields use nonempty `Name`; a successful command could therefore persist facts that detail, list, and task readers reject.
+
+Added eight real HTTP regressions with the trusted authentication callback supplying `""` or `" \t "`, covering creation with the directory unavailable, receipt, discrepancy resolution and cancellation. Assertions cover retained actor UUIDs, valid persisted names, detail reads, project/global list reads, and all applicable receiver/sender tasks.
+
+RED command:
+
+```sh
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/test_material_handoffs.py -k blank_trusted_actor_names
+```
+
+Observed before the fix:
+
+```text
+8 failed, 35 deselected in 1.76s
+AssertionError: {"code":"PROTOCOL_DENIED",...}
+assert 422 == 200
+```
+
+All eight commands succeeded first, then their committed detail projections failed. Local raw evidence: `/tmp/task1-review-red.log`.
+
+Minimal fix: a single `trusted_name(user_id, *names)` helper strips and selects the first usable trusted name, then falls back to the real UUID string. Creation prefers the directory snapshot, then trusted Actor display name for the sender. Receiver names and receipt/resolution/cancellation actor facts use the same fallback. Existing nonblank directory-name preference is preserved. The helper stays local to the handoff domain; shared service/authentication/schema/frontend code was not changed.
+
+Checked upstream bounds: `contracts.Actor.display_name` is capped at 200, and `delivery_models.MemberProfile.display_name` is capped at 200 and requires a non-whitespace character. These match handoff `Name`'s 200-character maximum. No truncation policy was introduced.
+
+GREEN command:
+
+```sh
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/test_material_handoffs.py
+```
+
+```text
+43 passed in 9.30s
+```
+
+`git diff --check`: clean. The complete handoff suite covers the locally shared fallback and all affected write/read paths; no unrelated shared code changed, so the earlier passing broader targeted regression was not repeated. Self-review checked that only service-authenticated names/IDs and already validated directory profiles enter the helper, UUID fallback preserves attribution, and replay/state/permission/accounting behavior is unchanged. No unresolved concerns.
+
+Fix commit: `10bc873` (`fix(workflow): retain handoff identities for blank trusted names`).

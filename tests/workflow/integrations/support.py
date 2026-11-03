@@ -19,7 +19,7 @@ from manufacturing_platform.workflow.integrations.store import canonical_hash
 from manufacturing_platform.workflow.service import WorkflowService
 from manufacturing_platform.workflow.store import WorkflowStore
 
-from .test_contracts import order_payload
+from .payloads import order_payload
 
 if TYPE_CHECKING:
     from .network_scenarios import ScenarioRefs

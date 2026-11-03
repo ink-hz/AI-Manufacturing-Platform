@@ -1,3 +1,4 @@
+import {SystemStepPanel} from './integrations/SystemStepPanel';
 import { useEffect, useRef, useState } from "react";
 import type {
   WorkspaceProps,
@@ -166,6 +167,7 @@ export function OrdersWorkspace(
   return (
     <section>
       <h3>{p.engineering ? "工程与固定版本工单" : "订单与需求"}</h3>
+      <SystemStepPanel {...p} context={p.engineering?"engineering":"orders"} selected={null}/>
       {error && <p role="alert">{error}</p>}
       <div className="mf-actions">
         {!p.readOnly &&

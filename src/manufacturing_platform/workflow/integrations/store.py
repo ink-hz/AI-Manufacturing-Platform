@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 from collections.abc import Callable
@@ -9,6 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from stat import S_ISLNK, S_ISREG
 from time import monotonic, sleep
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -82,18 +84,35 @@ class SystemStore:
         self.dataset_id, self.system, self.clock = dataset_id, system, clock
         self.path = self.root / dataset_id / f"{system}.sqlite3"
 
+    @staticmethod
+    def _entry_aliased(p: Path) -> bool:
+        # One atomic lstat per entry: the previous exists()/is_file()/stat() triple
+        # raced SQLite sidecar lifecycle and intermittently surfaced OSError or a
+        # stale anomalous link count as a 503. Absent entries are fine; a symlink or
+        # a regular file with an extra hard link is an alias.
+        try:
+            st = os.lstat(p)
+        except OSError:
+            return False
+        return S_ISLNK(st.st_mode) or (S_ISREG(st.st_mode) and st.st_nlink != 1)
+
     def _validate_path(self):
-        # Every existing component and SQLite sidecar must be a real local entry.
-        for p in (
-            *self.path.parents,
-            self.path,
-            Path(str(self.path) + "-wal"),
-            Path(str(self.path) + "-shm"),
-        ):
-            if p.is_symlink() or (
-                p.exists() and p.is_file() and p.stat().st_nlink != 1
-            ):
+        # Every existing path component must be a real local entry (no churn here:
+        # directories and the main database are never recycled by SQLite).
+        for p in (*self.path.parents, self.path):
+            if self._entry_aliased(p):
                 raise ValueError("aliased source database")
+        # SQLite creates and deletes -wal/-shm concurrently with readers. Only a
+        # STABLE alias observation rejects; a transient anomaly that disappears on
+        # immediate re-observation is normal sidecar churn, never a retry of any
+        # business operation.
+        for sidecar in (Path(str(self.path) + "-wal"), Path(str(self.path) + "-shm")):
+            for attempt in range(3):
+                if not self._entry_aliased(sidecar):
+                    break
+                if attempt == 2:
+                    raise ValueError("aliased source database")
+                sleep(0.005)
         if self.path.exists() and not self.path.is_file():
             raise ValueError("invalid source database")
 

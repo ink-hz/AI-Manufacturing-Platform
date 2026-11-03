@@ -6,7 +6,7 @@ import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createWorkflowApi } from './api';
 import type { CommandFields, ProjectCreate, WorkflowCommand } from './types';
-export async function startHttpHost() {
+export async function startHttpHost(config: {businessClock?:string} = {}) {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'workflow-http-')));
     const secret = randomUUID();
     const dataset_id = `http-form-${randomUUID()}`;
@@ -15,7 +15,7 @@ export async function startHttpHost() {
         dataset_id, dataset_mode: 'test', purpose: 'real HTTP component regression',
     }), { flag: 'wx' });
     await writeFile(join(root, 'fixture.json'), JSON.stringify({
-        secret, dataset_id, dataset_mode: 'test', dataset_label: 'Simulated component fixture',
+        secret, dataset_id, dataset_mode: 'test', dataset_label: 'Simulated component fixture', business_clock:config.businessClock,
     }), { mode: 0o600, flag: 'wx' });
     const cwd = resolve(process.cwd(), '..');
     const python = process.env.WORKFLOW_TEST_PYTHON || '/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python';
@@ -60,7 +60,14 @@ export async function startHttpHost() {
             const options = { apiBase: '/api/v1/manufacturing', csrfToken: session.csrf, readOnly: false };
             // The API resolves global fetch at request time; caller installs this transport.
             const api = createWorkflowApi(options);
-            return { api, transport, identity: session.identity, options };
+            const setupNetwork = async(projectId:string, scenario:'empty'|'supply'|'execution') => {
+                const r=await transport('/fixture/network',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({project_id:projectId,scenario})});
+                if(!r.ok)throw Error(await r.text());return r.json();
+            };
+            const configureNetworkFault=async(projectId:string,system:string,intentId:string)=>{
+                const r=await transport('/fixture/network-fault',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({project_id:projectId,system,intent_id:intentId,fault:'timeout_after_commit'})});if(!r.ok)throw Error(await r.text());
+            };
+            return { api, transport, identity: session.identity, options, setupNetwork, configureNetworkFault };
         }
         return { login, close, base, root };
     }

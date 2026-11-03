@@ -1,3 +1,4 @@
+import {ConnectedSystemsWorkspace} from './integrations/ConnectedSystemsWorkspace';
 import { OEMWorkspace, type OEMWorkspaceProps } from "./OEMWorkspace";
 import { useEffect, useRef, useState } from "react";
 import type { CommandFields, ExchangeValue, InboundKind, ObjectSummary, WorkspaceProps } from "./types";
@@ -27,6 +28,7 @@ export function ExchangeWorkspace(p:Props){
   const shared={...p,onChanged:changed};
   const canExchange=selected && selectedActions.includes(form==="dispatch"?"exchange.dispatch":form==="query"?"exchange.query":"exchange.reconcile");
   return <section>
+    <ConnectedSystemsWorkspace {...p}/>
     <h3>同步与回执</h3>
     <p role="status">{p.mode==="production"?"权威系统未接入 · 当前来源不可用":"模拟权威系统 · 独立库存与回执数据库"}</p>
     <OperationHelp><p>库存预留由权威系统原子接受。未知结果先查询；重发仍使用原业务键。收到、校验、批准、接受与过账分别记录。</p></OperationHelp>

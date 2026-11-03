@@ -772,6 +772,12 @@ class WorkflowService:
                 counts=counts,
             )
 
+    def integration_intents(self, actor, project_id, *, limit=50, offset=0):
+        from .integrations import browse
+
+        with self.store.transaction() as tx:
+            return browse.intents(tx, actor, project_id, self.system_registry, limit=limit, offset=offset)
+
     def integration_links(
         self, actor, project_id, target_kind, target_id, *, cursor=0, limit=50
     ):

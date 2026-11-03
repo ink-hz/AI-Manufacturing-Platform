@@ -1,3 +1,4 @@
+import {SystemStepPanel} from './integrations/SystemStepPanel';
 import { MaterialHandoffWorkspace } from "./MaterialHandoffWorkspace";
 import { OEMWorkspace, type OEMWorkspaceProps } from "./OEMWorkspace";
 import { AssistancePanel } from "./AssistancePanel";
@@ -95,6 +96,7 @@ function LegacySupplyWorkspace(p:OEMWorkspaceProps & {onReload?():void}){
   const available=Object.keys(actions).filter(a=>p.project.allowed_actions.includes(a as CommandFields["action"]));
   return <section>
     <h3>供应与物料</h3>
+    <SystemStepPanel {...p} context="supply" selected={p.initialObject?.summary||null}/>
     <OperationHelp><p>库存预留由权威系统原子接受。人工到货与检验只登记证据；确认预留以权威接受回执为准。</p></OperationHelp>
     {error&&<p role="alert">{error}</p>}
     <div className="mf-actions">{!p.readOnly&&available.map(a=><button key={a} onClick={()=>p.requestLeave(()=>{p.onSelectAction?.(a);setAction(a as CommandFields["action"]);setEpoch(x=>x+1);})}>{actions[a]}</button>)}</div>

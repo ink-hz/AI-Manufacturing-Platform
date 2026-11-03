@@ -114,6 +114,7 @@ export interface ProjectDetail extends Omit<ProjectCreate, "operation_id"> {
   summary: QuantitySummary;
 }
 export interface CommandResult {
+  integration?: import("./integrations/types").IntegrationStatus;
   current_project_version?: number | null;
   operation_id: string;
   project_id: string;
@@ -199,6 +200,7 @@ export type DeliveryCommand =
 export interface ShipmentReceiptDetail {key:string;unit_id:string;sn:string;work_order_id:string;order_line_id:string;box_id:string|null}
 export interface ContractAgreement {id:string;supersedes_agreement_id:string|null;revision_id:string;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string;project_version:number;recorded_at:string}
 export type CommandFields =
+  | import("./integrations/types").IntegrationCommand
   | MaterialHandoffCommand
   | OEMCommands
   | {action:"contract.agree";revision_id:string;supersedes_agreement_id:string|null;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string}
