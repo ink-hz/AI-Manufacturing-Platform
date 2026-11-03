@@ -8,7 +8,7 @@ export function ActionForms(p: WorkspaceProps & {
 }) {
     const [open, setOpen] = useState(false);
     if (p.detail)
-        return <section aria-label="当前对象可用动作"><h4>当前对象可用动作</h4>{p.detail.summary.action_capabilities?.flatMap(c => Object.entries(c.variants).map(([variant, state]) => <p key={c.action + variant}>{label(c.action)} · {label(variant)} · {state.ready === true ? "当前条件满足" : state.ready === false ? "当前受阻" : "选择具体范围后核验"} {state.blocking_reasons.join("；")}</p>))}{p.detail.summary.blocking_reasons.map(r => <p key={r}>{r}</p>)}{!p.readOnly && p.detail.summary.next_actions.filter(a => p.project.allowed_actions.includes(a as CommandFields['action'])).map(a => <button key={a} onClick={() => p.onChoose?.(a)}>前往处理：{label(a)}</button>)}</section>;
+        return <section aria-label="当前对象可用动作"><h4>当前对象可用动作</h4>{p.detail.summary.action_capabilities?.flatMap(c => Object.entries(c.variants).map(([variant, state]) => <p key={c.action + variant}>{label(c.action)} · {label(variant)} · {state.ready === true ? "当前条件满足" : state.ready === false ? "当前受阻" : "选择具体范围后核验"} {state.blocking_reasons.join("；")}</p>))}{p.detail.summary.blocking_reasons.map(r => <p key={r}>{p.detail!.summary.kind === "material_handoff" ? label(r) : r}</p>)}{!p.readOnly && p.detail.summary.next_actions.filter(a => p.project.allowed_actions.includes(a as CommandFields['action'])).map(a => <button key={a} onClick={() => p.onChoose?.(a)}>前往处理：{label(a)}</button>)}</section>;
     if (p.readOnly || !p.project.allowed_actions.includes('project.stage'))
         return null;
     return <details onToggle={e => { if (e.currentTarget.open)

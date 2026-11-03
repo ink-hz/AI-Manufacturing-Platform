@@ -351,8 +351,8 @@ export function DetailContent({
       <ArrivalAuthorityDetails data={data} onOpen={onOpen}/>
       <MaterialHandoffDetails data={data} onOpen={onOpen}/>
       {v.kind === "unit" && <UnitPassport api={api} data={data} onOpen={onOpen}/>}
-      <h4>关联记录</h4>
-      {data.relations.map((r, i) => (
+      {v.kind !== "material_handoff" && <h4>关联记录</h4>}
+      {(v.kind === "material_handoff" ? [] : data.relations).map((r, i) => (
         <button
           key={i}
           onClick={() =>

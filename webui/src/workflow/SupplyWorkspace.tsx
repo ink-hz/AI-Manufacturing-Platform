@@ -16,14 +16,40 @@ const actions: Record<string,string>={
   "supply.commit":"登记供应承诺","supply.receive":"登记到货",
   "supply.inspect":"登记来料检验",
 };
-export function SupplyWorkspace(p:OEMWorkspaceProps & {onReload?():void;currentUserId?:string}){
-  const initialMode=()=>p.project.mode==='oem'&&(!p.initialAction||p.initialAction.startsWith('material_handoff.'))?'handoff':'legacy';
-  const [mode,setMode]=useState(initialMode);
-  useEffect(()=>{setMode(initialMode());},[p.project.id,p.initialAction]);
-  return <section>{p.project.mode==='oem'&&<div className="mf-tabs" aria-label="物料办理类型">
-    <button aria-pressed={mode==='handoff'} onClick={()=>p.requestLeave(()=>{p.onSelectAction?.(null);setMode('handoff');})}>物料交接</button>
-    <button aria-pressed={mode==='legacy'} onClick={()=>p.requestLeave(()=>{p.onSelectAction?.(null);setMode('legacy');})}>供应与到货</button>
-  </div>}{mode==='handoff'&&p.project.mode==='oem'?<MaterialHandoffWorkspace key={p.project.id} {...p}/>:<LegacySupplyWorkspace {...p}/>}</section>;
+export function SupplyWorkspace(p: OEMWorkspaceProps & {onReload?(): void; currentUserId?: string; supplyMode?: "handoff" | "legacy"; onSupplyMode?(mode: "handoff" | "legacy"): void}) {
+  const initialMode = () => p.project.mode === 'oem' &&
+    (!p.initialAction || p.initialAction.startsWith('material_handoff.')) ? 'handoff' : 'legacy';
+  const [mode, setMode] = useState(() => p.initialAction ? initialMode() : p.supplyMode || initialMode());
+  const previousProject = useRef(p.project.id);
+
+  useEffect(() => {
+    const projectChanged = previousProject.current !== p.project.id;
+    previousProject.current = p.project.id;
+    // Clearing an action completes a local transition; it is not a request to
+    // replace the user's explicit mode with the OEM default.
+    if (projectChanged || p.initialAction) {
+      const next = initialMode();
+      setMode(next);
+      p.onSupplyMode?.(next);
+    }
+  }, [p.project.id, p.project.mode, p.initialAction]);
+
+  function selectMode(next: 'handoff' | 'legacy') {
+    p.requestLeave(() => {
+      p.onSelectAction?.(null);
+      p.onSupplyMode?.(next);
+      setMode(next);
+    });
+  }
+  return <section>
+    {p.project.mode === 'oem' && <div className="mf-tabs" aria-label="物料办理类型">
+      <button aria-pressed={mode === 'handoff'} onClick={() => selectMode('handoff')}>物料交接</button>
+      <button aria-pressed={mode === 'legacy'} onClick={() => selectMode('legacy')}>供应与到货</button>
+    </div>}
+    {mode === 'handoff' && p.project.mode === 'oem'
+      ? <MaterialHandoffWorkspace key={p.project.id} {...p}/>
+      : <LegacySupplyWorkspace {...p}/>}
+  </section>;
 }
 function LegacySupplyWorkspace(p:OEMWorkspaceProps & {onReload?():void}){
   const [items,setItems]=useState<Partial<Record<ObjectKind,ObjectSummary[]>>>({});

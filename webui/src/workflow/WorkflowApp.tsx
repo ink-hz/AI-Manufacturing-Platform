@@ -39,6 +39,8 @@ export function WorkflowApp({
   options: MountOptions;
 }) {
   const b = options.bootstrap!;
+  const handoffReturn = useRef<{projectId: string; projectWorkspace: boolean} | null>(null);
+  const [supplyMode, setSupplyMode] = useState<{projectId: string; mode: 'handoff' | 'legacy'} | null>(null);
   const [ledgers, setLedgers] = useState(initialLedgerContexts);
   const [taskContext, setTaskContext] = useState<TaskContext>({projectId:"",offset:0});
   const [denied, setDenied] = useState(false),
@@ -243,6 +245,11 @@ export function WorkflowApp({
         if (p.version < (projectVersions.current.get(p.id) || 0))
           throw new Error("项目版本已更新，请重试打开记录。");
         projectVersions.current.set(p.id, p.version);
+        if (t.kind === 'material_handoff' && (!target || !handoffReturn.current)) {
+          handoffReturn.current = {projectId: t.projectId, projectWorkspace: !!project && !target};
+        } else if (!target && t.kind !== 'material_handoff') {
+          handoffReturn.current = null;
+        }
         setProject(old => old?.id === p.id && old.version >= p.version ? old : p);
         setCreating(false);
         setTarget(t);
@@ -342,6 +349,7 @@ export function WorkflowApp({
       return;
     }
     requestLeave(() => {
+      handoffReturn.current = null;
       if (home && isBusinessModule(next)) setLedgers(old => ({...old, [next]: {kind: home.kind || initialLedgerContexts()[next].kind, projectId: home.projectId || "", offset: 0}}));
       if (home && next === "tasks") setTaskContext({projectId: "", offset: 0});
       setView(next);
@@ -538,7 +546,12 @@ export function WorkflowApp({
                           setDetail(null);
                           setCurrentTask(null);
                           setResolve(false);
-                          if (activeView !== "projects") setProject(null);
+                          if (handoffReturn.current?.projectId === target.projectId && handoffReturn.current.projectWorkspace) {
+                            setWorkspace('supply');
+                            setChosenAction(null);
+                            setSupplyMode({projectId: target.projectId, mode: 'handoff'});
+                          } else if (activeView !== "projects") setProject(null);
+                          handoffReturn.current = null;
                         })
                       }
                     >
@@ -594,7 +607,14 @@ export function WorkflowApp({
                   <SupplyWorkspace
                     {...props}
                     currentUserId={b.user.id}
-                    initialAction={chosenAction} onSelectAction={setChosenAction} initialObject={currentTask}
+                    supplyMode={supplyMode?.projectId === props.project.id ? supplyMode.mode : undefined}
+                    onSupplyMode={mode => setSupplyMode({projectId: props.project.id, mode})}
+                    initialAction={chosenAction} onSelectAction={action => {
+                      if (action === 'material_handoff.record') {
+                        handoffReturn.current = {projectId: props.project.id, projectWorkspace: true};
+                      }
+                      setChosenAction(action);
+                    }} initialObject={currentTask}
                     requestLeave={requestLeave}
                     onReload={() => setRefresh((r) => r + 1)}
                   />
