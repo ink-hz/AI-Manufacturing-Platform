@@ -4,7 +4,7 @@
 
 **Goal:** Make all fifteen documented/modelled OEM IT systems operate through independently persisted mock state, coherent source facts and the current workbench, preserving existing online data and preparing an authorized direct mock-platform release.
 
-**Architecture:** Add a closed typed integration package, server-owned profile routing, per-system SQLite state, durable causal outbox/inbox and trusted projectors into existing domains. Preserve the legacy ERP adapter and serialized contracts; expose source operations and evidence through the existing 系统协同 workspace. Append three versioned scenario graphs to the existing dataset; the global controller cuts over only after final review and candidate evidence.
+**Architecture:** Add a closed typed integration package, server-owned profile routing, per-system SQLite state, durable causal outbox/inbox and trusted projectors into existing domains. Preserve the legacy ERP adapter and serialized contracts; embed source responsibilities, business operations, receipts and blockers in the existing order/engineering/supply/execution/quality/laboratory/delivery/trace/home workflows; keep 系统协同 for adapter operations and recovery. Append three versioned scenario graphs to the existing dataset; the global controller cuts over only after final review and candidate evidence.
 
 **Tech Stack:** Python3.11+, FastAPI, Pydantic2, SQLite, pytest/httpx; existing React19/TypeScript/Vitest/Vite; current MF release controller and Linux candidate runtime. No new runtime service or dependency.
 
@@ -22,7 +22,7 @@
 - Release is MF-only: preserve actual PF source/static inventories, ordered 57 Compose inputs and 16 mounts at the audited baseline; recapture and repin if runtime changes.
 - Require existing 36 candidate cases plus new complete mock-network acceptance; candidate preparation is not deployment evidence.
 
-The user already approved scope and direct online deployment. Do not ask an execution-choice, scope, seed, or deploy-permission question. Seven implementation tasks below end in reviewable commits. Task7 ends at candidate/release preparation; the global controller performs the authorized cutover after its final review. The controller will separately commit the already authorized current handbook/document baseline after this plan commit; record that resulting SHA as Task1's actual base. Do not stage dirty docs as a side effect of implementation.
+The user already approved scope and direct online deployment. Do not ask an execution-choice, scope, seed, or deploy-permission question. Seven implementation tasks below end in reviewable commits. Task7 ends at candidate/release preparation; the global controller performs the authorized cutover after its final review. The latest user correction excludes their architecture/handbook/discussion documents from this work: do not make the formerly proposed dirty-document baseline commit or semantically edit those files. Release packaging may read existing required handbook text unchanged. Record the corrected internal-plan commit as Task1’s base; do not stage unrelated dirty docs.
 
 Read [the design](../specs/2026-11-03-it-system-mock-network-design.md) sections4–8 before implementation. `/tmp/it-mock-contract-audit.md`, `/tmp/it-mock-plan-decisions.md` and `/tmp/online-mock-release-readiness.md` are supplemental local evidence; the committed design contains their required contracts and live-baseline cautions.
 
@@ -42,7 +42,7 @@ Create `workflow/integrations/{__init__,contracts,core_models,enterprise_models,
 
 - `catalog.SYSTEM_IDS: tuple[str, ...]`, `catalog.OPERATIONS: Mapping[str, OperationSpec]`, `catalog.EDGES: tuple[EdgeSpec, ...]`; `OperationSpec` has system, input model, output fact types, underlying action and required target discriminator.
 - `routing.profile_for(tx, project_id: UUID) -> ProfileId`; missing row is `legacy-erp-v1`.
-- `routing.assign_profile(tx, project_id: UUID, profile: ProfileId) -> None`; server-only, demo/test, idempotent same value, rejects change after any existing domain command/exchange/integration intent; the project-creation audit itself does not prevent initial assignment.
+- `routing.assign_profile(tx, project_id: UUID, profile: ProfileId) -> None`; server-only, demo/test, idempotent same value, rejects change after any existing domain command/exchange/integration intent; the project-creation audit itself does not prevent initial assignment. This release initializes only the three maintenance-seeded projects through create→assign→domain-intents. Other public creations retain the legacy default and display legacy/unconfigured capabilities. Do not extend public ProjectCreate or change its canonical payload/hash/default test-mode ERP route.
 - `routing.route(profile: ProfileId, action: str) -> str`; legacy always `erp`; new profile maps reservation/stock proof toWMS, production/ECO/freeze toMES, shipment toWMS. SAP accounting occurs through the network once per physical fact.
 - `ConnectorId = SystemId | Literal['erp']` is used by descriptors; new operation/fact types admit only the fifteen `SystemId` values. `SystemOperation`, `SystemReceipt`, `IntegrationFact`, `SourceKey`, `SystemDescriptor`, `ProjectionResult`, `FactPage`, `NetworkDelivery`, `DeliveryReceipt`, `DeliveryBatch` follow design4 exactly. `CoreAuthorityAdapter` later implements old `AuthorityAdapter` via the new core state machines.
 - `ExecuteSystemOperation`, `QuerySystemOperation`, `RetrySystemOperation`, `PullIntegrationFact` extend `WorkflowCommand`; outer action literals are `mock_system.execute`, `mock_system.query`, `mock_system.retry`, `integration.pull`. Execute carries a discriminated operation payload; query/retry carry original intent UUID; pull carries a full SourceKey. No arbitrary dict payload.
@@ -203,36 +203,43 @@ Implement the three counting/evidence helper methods as reads through real store
 - [ ] Run `PYTHONPATH=src python3 -m pytest tests/workflow/integrations/test_enterprise_edges.py tests/workflow/integrations/test_test_external_edges.py tests/workflow/integrations/test_all_edges.py tests/workflow -q`; expected GREEN. This broad run is warranted by trusted changes to several established domains; record failures precisely, repair and rerun affected tests before repeating broad tests.
 - [ ] Commit exact task paths as `feat: connect enterprise test equipment and external mock systems`. Reviewer checks all15 systems and supporting edges, not only family-level tests.
 
-## Task 5: Operable connected-system frontend under existing collaboration
+## Task 5: Integrate system responsibilities and actions into existing business workflows
 
 **Files**
 
-Create `webui/src/workflow/integrations/types.ts`, `webui/src/workflow/integrations/{ConnectedSystemsWorkspace,SystemFacts,SystemOperationForm,CoreOperationFields,EnterpriseOperationFields,EvidenceOperationFields}.tsx`, and `webui/src/workflow/integrations/{connectedSystems,connectedSystemsHttp}.test.tsx`. Modify `webui/src/workflow/ExchangeWorkspace.tsx`, `api.ts`, `types.ts`, `labels.ts`, and `ConflictComparison.tsx` in the same workflow directory. Modify `webui/src/workflow/details/ArrivalAuthorityDetails.tsx` only for linking separate runtime descriptor. Avoid new top-level navigation or product redesign.
+Create `webui/src/workflow/integrations/types.ts`, `businessSteps.ts`, `{SystemStepPanel,ConnectedSystemsWorkspace,SystemFacts,SystemOperationForm,CoreOperationFields,EnterpriseOperationFields,EvidenceOperationFields}.tsx`, and `{businessSteps,businessJourneyHttp,connectedSystems}.test.tsx` in that integration directory. Modify existing `webui/src/workflow/{OrdersWorkspace,IntroductionWorkspace,SupplyWorkspace,MaterialHandoffWorkspace,ExecutionWorkspace,QualityWorkspace,LaboratoryWorkspace,DeliveryWorkspace,TraceWorkspace,WorkflowHome,ExchangeWorkspace}.tsx` only at small shared-panel/context mounting points. Modify existing `api.ts`, `types.ts`, `labels.ts`, and `ConflictComparison.tsx` in the workflow directory for typed API/form support. Reuse established object-detail source/evidence rendering; no fifteen top-level routes, vendor application rebuild or isolated all-systems business dashboard.
 
 **Interfaces**
 
 - API methods `systems(projectId)`, `systemFacts(projectId, system, filters)`, `systemFact(projectId, key)` match backend4.4 and use current error/auth handling.
-- `ConnectedSystemsWorkspace(props: OEMWorkspaceProps & {mode: DatasetMode})` uses existing API/dirty-state/requestLeave/onChanged/onOpen contracts. `SystemOperationForm` receives `SystemDescriptor`, selected operation, controlled domain choices and shared CommandForm submission; it never constructs a different operation ID for frozen retry.
-- TypeScript discriminated unions mirror backend operation/fact models. `CoreOperationFields`, `EnterpriseOperationFields`, `EvidenceOperationFields` render named fields per discriminator; no JSON textarea fallback. Source IDs and UUIDs are selected/read-only details, not business-input text boxes.
+- `BusinessContext = 'orders' | 'engineering' | 'introduction' | 'supply' | 'handoff' | 'execution' | 'quality' | 'laboratory' | 'delivery' | 'trace' | 'home'`.
+- `BusinessStepDefinition` includes `id`, `context`, `responsibleSystem`, `inputTypes`, `outputTypes`, `operationKind`, `receiptType`, `blockingDependencies`, and `nextStepIds`. `BUSINESS_STEPS: readonly BusinessStepDefinition[]` maps every design4.4 step. Read-only trace/home steps permit `operationKind: null`; BI refresh invokes the permitted derived-snapshot operation.
+- `SystemStepPanel(props: OEMWorkspaceProps & {context: BusinessContext; selected: ObjectRef | null})` resolves project/business context and source links, shows responsible system/input/output/next action/receipt/blocker, and invokes shared `SystemOperationForm`. `SystemOperationForm` receives descriptor, selected operation and controlled domain choices; it never creates another operation ID for frozen retry.
+- `ConnectedSystemsWorkspace(props: OEMWorkspaceProps & {mode: DatasetMode})` is diagnostic/operational: adapter capabilities/status/configuration, source inspection, receipt/query/retry/reconciliation. Daily business operation forms are discoverable and actionable inside their consuming business workspace.
+- TypeScript discriminated unions mirror backend operations/facts; three family field components render typed business fields, not JSON textareas. Binding source/object IDs from selected context is server-validated; no editable UUID business field.
 
-- [ ] Write failing React test for system selection, allowed operations and labeled source record selection, pending/retry state and linked business-detail navigation. Write HTTP-backed test using the normal workflow API host fixture to show actual operation→fact→pull→domain view.
-- [ ] Run `npm --prefix webui test -- src/workflow/integrations/connectedSystems.test.tsx src/workflow/integrations/connectedSystemsHttp.test.tsx`; expected RED missing module/rendered actions.
-- [ ] Implement API types and selectors from descriptors. Replace ERP default/freeform source pull choices in the connected-network panel with server-supplied supported system/type options; retain the old ERP exchange forms for legacy projects. Display typed source columns, pending acknowledgments, receipts, exact provenance and linked existing business objects.
-- [ ] Implement all operation-family fields: business reference choices, quantity/unit/owner/location, revision/approval target/decision, employee/shift/equipment, test plan/result/readback, shipment/signature and metric cutoff. Choose readable labels with external numbers; use source/detail links for technical metadata. Hide operations absent from capabilities/allowed policies; qualification failures remain explicit business requirements.
-- [ ] Add “模拟已连接 / 尚未演练 / 待回执 / 异常” runtime states, “规划系统（SRM）” and “建模示例” variants; legacy ERP stays separately labeled. An authority registration row never changes connection state. Do not label mock external claims as internally verified decisions.
-- [ ] Add tests: no manual UUID/JSON required, cross-project evidence absent, stale project conflict preserves draft and original UUID, timeout query recovers same operation, unauthorized quality action hidden/denied, dirty-form leave behavior, full15 visible with real facts, HR/PLC/BI typed auxiliary detail and domain navigation.
-- [ ] Verify representative HTTP test assertion using actual DOM labels:
+- [ ] Write failing component tests for `SystemStepPanel` showing system responsibility, required inputs, resulting object, next permitted action, receipt and blocker for each `BUSINESS_STEPS` definition. Write HTTP-backed journeys starting in real existing business workspaces, not a standalone system page.
+- [ ] Run `npm --prefix webui test -- src/workflow/integrations/businessSteps.test.tsx src/workflow/integrations/businessJourneyHttp.test.tsx`; expected RED missing integrated panels/actions.
+- [ ] Implement typed API and `businessSteps.ts`. Cover orders CRM→SAP; engineering PDM→OA and separate customer contractual approval→MES revision; supply SAP plan→WMS physical→MES IQC→WMS pick/manual handoff with SAP accounting per physical event; execution MES+HR+PLC; laboratory test+PLC readback→MES release; delivery WMS→SAP→customer/overseas; trace source aggregation; home BI readonly cutoff snapshot. Source-side ownership labels explicitly say “模拟契约”, not empirically verified field direction.
+- [ ] Implement the shared panel/form and mount it in existing workspaces. The order-versus-engineering modes in `OrdersWorkspace` use distinct context maps. HR/PLC evidence appears in execution/laboratory where it matters; BI appears on home with metric cutoff/formula/drilldown. Preserve existing tasks, object selectors, navigation, dirty drafts and business detail links.
+- [ ] Implement family fields for readable business references, quantities/unit/owner/location, revisions/approval targets/decisions, people/shifts/equipment, test/result/readback and shipment/signature. Present exact blockers beside the relevant next action. Context preselects the existing order/work order/lot/unit; server still rejects wrong project/version/source. No UUID or JSON entry is required.
+- [ ] Retain `ExchangeWorkspace` and diagnostic connected-system view for adapter state, pending receipts, query/retry/reconcile; do not move all day-to-day actions into it. Keep legacy ERP exchange forms. Runtime statuses distinguish mock connected/unexercised/pending/degraded; SRM is planned and HR/customer variants modeled. Authority registration alone never changes connectivity.
+- [ ] Add HTTP-backed journeyA from Orders: CRM demand→SAP formal order→PDM revision/OA/customer approval in engineering→MES work-order binding. JourneyB starts in Supply and performs SAP plan→WMS receipt→MES IQC→WMS pick/handoff→SAP accounting; assert source receipts and blocked shortage before recovery. JourneyC starts in Execution/Laboratory and covers HR/PLC eligibility→MES execution→product-test/PLC readback→MES release→WMS/SAP delivery→customer/overseas claims→home BI/trace links. These exercise at least three families and actual mutations/projections, not fetch-only cards.
+- [ ] Add authorization/conflict tests: qualified HR evidence does not grant platform quality rights, manual form rejects forged mock provenance, unauthorized actions hidden/denied, cross-project source absent, stale project conflict retains draft and UUID, unknown result queries the existing operation, dirty-form leave behavior preserved.
+- [ ] Use assertions against the integrated workspace, including:
 
 ```tsx
-expect(screen.getByText('规划系统（SRM）')).toBeTruthy();
-expect(screen.queryByLabelText('JSON')).toBeNull();
-expect(screen.queryByLabelText('UUID')).toBeNull();
-expect(screen.getByRole('button', {name: '查看业务对象'})).toBeTruthy();
+expect(within(supplyWorkspace).getByText('WMS 实物收货')).toBeTruthy();
+expect(within(supplyWorkspace).getByText('MES 检验回执')).toBeTruthy();
+expect(within(supplyWorkspace).getByText('待检物料不可配料')).toBeTruthy();
+expect(within(supplyWorkspace).queryByLabelText('JSON')).toBeNull();
+expect(within(supplyWorkspace).queryByLabelText('UUID')).toBeNull();
+expect(within(deliveryWorkspace).getByText('SAP 过账回执')).toBeTruthy();
 ```
 
-Test setup creates a normal authorized network project via the real HTTP fixture; mock fetch only in the pure component test, not HTTP-backed acceptance.
-- [ ] Run `npm --prefix webui test` and `npm --prefix webui run test:bundle`; expected fullGREEN/build/typecheck/bundle checks. Preserve dependency lock and current component styles unless a demonstrated missing layout requires a focused change.
-- [ ] Commit explicit Task5 frontend files as `feat: expose operable mock systems and source evidence in collaboration`.
+`SupplyWorkspace` and `DeliveryWorkspace` renders in the HTTP test supply these DOM roots; fixtures create a normal authorized network project through the real host fixture. Mock fetch only in pure component tests, not journey acceptance. Retain per-step workspace/source/receipt observations for Task6 coverage.
+- [ ] Run `npm --prefix webui test` and `npm --prefix webui run test:bundle`; expected fullGREEN/build/typecheck/bundle checks. Keep the current lock and visual conventions; small shared-panel mounts avoid duplicating full operation UI across workspaces.
+- [ ] Commit explicit Task5 frontend paths as `feat: integrate mock system steps into OEM business workspaces`. Reviewer rejects a result where all fifteen cards exist but business workspaces lack responsible systems, next actions, source receipts or blockers.
 
 ## Task 6: Durable coherent seed, preserved online portfolio and complete coverage report
 
@@ -245,7 +252,7 @@ Create `scripts/seed_it_mock_network.py`, `scripts/it_mock_network/{__init__,run
 - CLI `python3 scripts/seed_it_mock_network.py --workflow-db ABS --authority-db ABS --dataset-id ID --dataset-label LABEL --manifest ABS --owner-id VERIFIED_UUID [--verify-only]`; owner is repeatable if existing support permits, dataset must be demo/test and fixed existing metadata.
 - `NetworkSeed.run(*, verify_only: bool=False) -> SeedReceipt`; durable namespace `it-mock-20261103-v1`, deterministic per-step operation IDs, private atomically written manifest, captured source times and per-project versions. Assign the network profile immediately after new project creation and before its first domain command; persist this assignment in the seed manifest.
 - Scenario modules expose `populate(seed: NetworkSeed) -> ScenarioReceipt`; runner shared methods `project(key, title)`, `command(key, project, action, **fields)`, `execute(key, project, system, payload)`, `pull(key, project, source_key)`, `drain(key, project)`, `checkpoint(key, refs)` all record an intent before I/O and reconcile on restart.
-- `verify.verify_network(seed, *, complete: bool) -> CoverageReceipt`; schema/version/dataset/legacy baseline plus system operation counts, typed fact/projection links, direction-specific edge evidence, current actionable checkpoints and owner access. Coverage identifies seeded checkpoints separately from full candidate-completed scenarios.
+- `verify.verify_network(seed, *, complete: bool) -> CoverageReceipt`; schema/version/dataset/legacy baseline plus system operation counts, typed fact/projection links, direction-specific edge evidence, business-step/workspace/input/output/next-action/receipt/blocker coverage, current actionable checkpoints and owner access. Every BUSINESS_STEPS ID must appear in the scenario manifest with its business workspace and actual source/projection references; system-page presence alone is not coverage. Coverage identifies seeded checkpoints separately from full candidate-completed scenarios.
 
 - [ ] Write RED seed test on a copy of a legacy portfolio fixture: capture old project/SN/grant/audit/ERP row identities and stored JSON; run new seed; assert exactly three new owned projects, unchanged old rows, same dataset identity, all15 source identities with persistent operations and typed facts. Fixtures use test-only users; production CLI validates actual owner via authorized existing metadata.
 - [ ] Run `PYTHONPATH=src:. python3 -m pytest tests/workflow/integrations/test_seed.py -q`; expected RED missing importer. Implement private manifest durability and path/root/namespace checks, mode guard and owner validation. Missing manifest with existing namespace fails; unrelated workflow edits produce a conflict requiring recorded resume, never overwritten state.
@@ -265,11 +272,13 @@ def assert_complete_network(receipt):
     assert all(v.operations and v.facts and v.projections for v in receipt.systems.values())
     assert set(receipt.edges) == {edge.id for edge in EDGES}
     assert all(v.source_hash and v.consumer_receipt and v.frontend_ref for v in receipt.edges.values())
+    assert receipt.business_steps_complete
+    assert receipt.http_journey_family_count >= 3
     assert receipt.cross_project_denials > 0
     assert receipt.duplicate_postings == 0
 ```
 
-`CoverageReceipt` declares these typed fields in `scripts/it_mock_network/verify.py`; `frontend_ref` names a supported route/object reference proven by Task5 HTTP-backed tests, not a claim that a human browser was opened.
+`CoverageReceipt` declares these typed fields in `scripts/it_mock_network/verify.py`; `frontend_ref` names a business-workspace step/object reference proven by Task5 HTTP-backed journeys, not merely a system-card route and not a claim that a human browser was opened. The receipt includes `business_steps_complete: bool`, `http_journey_family_count: int`, and a step-indexed observation map linking context, responsible system, inputs/outputs, next action, blocker and receipt.
 - [ ] Run `PYTHONPATH=src:. python3 -m pytest tests/workflow/integrations/test_seed.py tests/workflow/integrations/test_network_acceptance.py -q`; expected GREEN. Run local CLI twice and verify-only on fresh private temporary DB copies with fixture owner; compare logical legacy snapshots and report manifest/system-store paths without credentials.
 - [ ] Commit exact task files as `feat: seed coherent OEM network scenarios without replacing legacy data`. Reviewer requires per-system and per-edge receipts, not aggregate count alone.
 
@@ -281,7 +290,7 @@ Create `deploy/it_mock_acceptance.py`, `deploy/tests/{test_it_mock_acceptance,te
 
 **Interfaces**
 
-- `it_mock_acceptance.run(fixture_root: Path, evidence_root: Path) -> AcceptanceReceipt`; deterministic socket/API tests + pinned React tests + seed/complete graph; receipt ID `it-mock-network-v1`, system/edge evidence, original36 independent result inventory.
+- `it_mock_acceptance.run(fixture_root: Path, evidence_root: Path) -> AcceptanceReceipt`; deterministic socket/API tests + pinned React business-workspace HTTP journeys across at least three families + seed/complete graph with every business step; receipt ID `it-mock-network-v1`, system/edge evidence, original36 independent result inventory.
 - Candidate fixture includes current integration tests/new scripts from exact committed MF SHA; production business export remains runtime source/assets/approved handbook files only. Existing36 case IDs and pass/fail semantics do not change.
 - Backup inventory derives initialized files from fixed catalog + configured workflow root, validates metadata/path uniqueness and backs them up as appUID alongside legacy/workflow/ERP. Records missing first-release stores without creating them. No arbitrary client path or cross-file atomicity assertion.
 - Release preparation uses existing controller `prepare` then `candidate`; cutover invocation is intentionally reserved to the global controller after final review. This is task ownership, not a new user approval gate.
@@ -308,8 +317,8 @@ Angle-bracket values are controller-produced exact private artifact identities, 
 
 ## Self-review and task completion evidence
 
-- [ ] Map every design section to task: constraints/profiles1; state/network/auth2; physical/accounting/execution3; all other systems/trusted test/auxiliary4; operable frontend5; three scenarios/legacy preservation6; candidate/release/recovery7.
+- [ ] Map every design section to task: constraints/profiles1; state/network/auth2; physical/accounting/execution3; all other systems/trusted test/auxiliary4; business-context integrated frontend5; three scenarios/legacy preservation6; candidate/release/recovery7.
 - [ ] Confirm fifteen system IDs plus legacy ERP, all direction-specific diagram edges and two modeled supporting edges have execution evidence.
 - [ ] Check exact interface names and closed unions across Python/TypeScript; no changed old JSON defaults, manual-provenance relaxation, implicit qualifications, bare cross-system sequence comparison or extra inventory posting.
 - [ ] Verify candidate fixtures contain new source tests/scripts and actual compiled frontend;36-case success cannot mask skipped new coverage.
-- [ ] Verify staged paths belong to each task; old reports, unrelated handbook drafts, source PPT/XLSX/mindle and node_modules stay untouched. Explicitly record Task1's documentation-baseline parent SHA and final reviewed release SHA.
+- [ ] Verify staged paths belong to each task; old reports, unrelated handbook drafts, source PPT/XLSX/mindle and node_modules stay untouched. Explicitly record Task1’s corrected internal-plan parent SHA and final reviewed release SHA. Do not create the canceled dirty-handbook baseline commit; user-maintained architecture/handbook/discussion documents remain untouched.
