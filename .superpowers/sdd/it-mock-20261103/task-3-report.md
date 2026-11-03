@@ -187,3 +187,79 @@ Ruff `check --select F` over all 48 explicitly owned Python paths: `All checks p
 - Checked actual two-process competing reservation proof, exact source22 golden replay, schema21/22 and existing23 initialization, original manual reconciliation, new-model closed union/policy coverage, current attestation resume, source-accepted held-start safety stop, and release/re-reservation physical/read-model conservation.
 - Core source modules are split by authority, admission, preparation, eligibility, context emission, inventory reading and logical reservation release. No whole-workflow preview/copy engine, generic extensibility framework, direct SQL fake business-state seed, or runtime enterprise prerequisite fallback was added.
 - Remaining family acceptance and replacement BOM synchronization are explicitly assigned above to Task4; no deployment or online dataset mutation is claimed.
+
+## Independent review fix wave — 2026-11-04
+
+Reviewed base: `315a9c54b43c49462ab9fb03c08a8ae81b696ae0`.
+Implementation fix commit: **`8ad09fdd3a492c06572c39e1491e83e6fbcd6165`** (`fix: enforce custody budgets and reject invalid source plans`). This appendix supersedes the earlier completeness assessment for the three Important findings in `task-3-review.md`; all three were reproduced and corrected in this single fix wave.
+
+### Fixes and exact changed interfaces
+
+1. Supplier returns now intersect three actual budgets: proposed **operation aggregate** grouped by lot/material/owner/unit/scale; exact qualification net-unreserved stock; and actual source location/custodian stock. The aggregate lot budget includes signed qualified variance and prior supplier returns. The qualification budget is accepted qualification minus original reservations plus immutable releases minus prior supplier returns. Stocktake has no qualification attribution, so no fictitious per-qualification loss is invented: exact qualification constraints are intersected with actual lot/location variance constraints. The same qualification budget is used for subsequent source reservations and the public CoreAuthorityAdapter's qualification selection, so returning qualificationA cannot later reserve A using free qualificationB, and the public facade selects actual available B.
+2. Warehouse return source must equal the actual matching pick destination, scoped by work order, reservation, qualification, lot/material/owner/dimensions. Its quantity is bounded by those actual picks minus actual MES consumption and prior warehouse returns. Destination must be a warehouse custody established by that qualification's actual receipt/warehouse-putaway lineage. Qualified putaway is restricted to warehouse custody; it cannot relocate line-side stock. Picks cannot classify already established warehouse custody as line-side for that qualification. Unknown return destination and unrelated warehouse source reject. Qualified stocktake also requires unambiguous warehouse location, preventing free warehouse stock from being used as a budget for removing line-side reserved stock. Names such as `warehouse`, `production`, `store-A`, or `operator-42` are not classifiers. No new generic location registry or operation was added.
+3. Trusted SAP plan validation consumes `supply.validate_plan()`'s returned reasons. Nonempty reasons raise a business rejection before any source plan/purchase requirement fact or outbox entry is emitted, and before any local plan/requirement is written. The public manual `plan.receive` handler still retains invalid input as rejected evidence. Source error receipts are durable, immutable and replayable; there is no accepted-source/rejected-domain split.
+
+New pure module `core_custody.py` (all calls use the existing guarded immutable SourceSnapshot; no I/O, new locks or writers):
+
+- `lot_scope(allocation)` and `same_allocation(left, right)` define exact physical dimensions plus qualification/reservation lineage.
+- `warehouse_custodies(observations, qualification_key) -> (warehouse_set, line_set)` derives custody tuples from real receipt, warehouse putaway and pick facts.
+- `validate_transfer_custody(payload, allocation, observations)` enforces warehouse/pick/return semantics and exact net outstanding picked allocation.
+- `qualification_unreserved(observations, allocation) -> Decimal` supplies the shared exact qualification budget for source reserve, supplier return and public facade selection.
+- `validate_supplier_return(payload, allocation, observations, balance)` enforces the aggregate lot and exact qualification limits; existing location validation supplies the remaining physical constraint.
+- `validate_warehouse_count(payload, observations)` keeps qualified variance outside line-side custody; ambiguous shared location names fail closed because StocktakeData has no custodian field.
+
+Changed paths in this fix wave only:
+
+- `src/manufacturing_platform/workflow/integrations/core_custody.py` (new)
+- `src/manufacturing_platform/workflow/integrations/core_wms.py`
+- `src/manufacturing_platform/workflow/integrations/core_authority.py`
+- `src/manufacturing_platform/workflow/integrations/core_projections.py`
+- `tests/workflow/integrations/test_core_flow.py`
+- `.superpowers/sdd/it-mock-20261103/task-3-report.md` (this appended verification record)
+
+No typed model, catalog, schema, legacy wire, public manual helper, Task4 code, deployment, or user document change was made. Existing accepted receipts are never edited. The previous gross `qualified - historical_picked` putaway bound was removed: the actual warehouse location/custody quantity is the correct bound after partial returns and repicks.
+
+### RED/GREEN evidence
+
+All runs used this worktree and the environment/interpreter below. Tests use actual commands/source facts and read assertions; no SQL fake business-state setup. Each new negative helper checks zero new producer facts/outbox entries, typed rejected receipt with empty source keys, byte-identical query/re-execute receipt, and unchanged source counts after replay. Plan variants additionally assert unchanged local plan/requirement counts. Physical return variants assert balances/locations/claims; the successful supplier return is replayed to SAP with exactly one posting.
+
+```sh
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/integrations/test_core_flow.py -k test_review
+# Initial RED: 8 failed, 49 deselected in 3.56s.
+# All eight incorrectly accepted: three split/exact-qualification supplier cases,
+# unrelated warehouse return, and four invalid order/revision/cutoff plan variants.
+
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/integrations/test_core_flow.py -k 'test_review_supplier_return_aggregate or test_review_supplier_return_spends or test_review_line_custody'
+# Expanded RED: 3 failed, 57 deselected in 1.78s. Observations: returned qualification was reservable using another
+# qualification's free balance, and line-to-warehouse putaway was accepted.
+# These were observed in the initial three-variant run; its third assertion used
+# an overly narrow error regex for a same-location variance already rejected by
+# the existing location guard. The aggregate variant was corrected as below.
+
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/integrations/test_core_flow.py -k 'test_review_supplier_return_aggregate or test_review_partial' --tb=short
+# With reviewed HEAD's core_wms.py temporarily restored and the fixed file
+# restored in finally: 2 failed, 59 deselected in 1.18s (both DID NOT RAISE).
+# Aggregate probe: two qualifications12, reserve6 each, move6 each to bin-B,
+# qualified loss2 at bin-B, supplier-return6 each from receiving. Each exact
+# qualification and receiving location has enough; only the full lot budget10
+# rejects proposed12. Valid5+5 subsequently succeeds once.
+# Partial probe: unknown warehouse return destination was incorrectly accepted.
+
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/integrations/test_core_flow.py -k test_review_qualified_variance --tb=short
+# RED: 1 failed, 61 deselected in 0.63s: line-side qualified loss incorrectly accepted.
+
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/integrations/test_core_flow.py -k test_review
+# Intermediate GREEN: 13 passed, 49 deselected in 5.98s.
+
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/integrations/test_core_flow.py -k test_review_supplier_return_spends --tb=short
+# Public facade extension RED: 1 failed, 61 deselected in 0.66s.
+# It selected already-returned qualificationA, so valid reservation12 was rejected
+# despite free qualificationB. Shared exact budget selection fixes this.
+
+PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/workflow/integrations/test_core_flow.py tests/workflow/integrations/test_core_compatibility.py tests/workflow/test_supply.py
+# FINAL GREEN after all implementation edits: 101 passed in 36.14s.
+```
+
+The final run includes the full core flow suite, exact original ERP wire/profile compatibility, manual invalid-plan rejected-evidence behavior, and the existing custody/release/consumption/accounting paths. The new positive multi-move proof uses differently named actual custodians, warehouse relocation, two picks for one reservation, partial return3, explicit release3, relocation and re-reservation/pick3; attempts to return six against only five outstanding old-allocation pieces reject despite eight physical pieces on that line. Final returns produce line-side0 and actual warehouse total12; releasing the new allocation and supplier-returning3 leaves reserved9/returned3/line-side0. No full571 rerun was needed for this focused fix package.
+
+Final Ruff `check --select F` on all five changed Python paths: `All checks passed!`. `git diff --check` and staged diff check: exit0/no output. Self-review checked aggregate versus per-qualification limits, source/location/reservation identity, partial/repeated arithmetic, unchanged immutable receipt replay, and preservation of manual-plan rejected-evidence semantics. The original explicit Task4 family/artifact/replacement-BOM boundaries remain unchanged.
