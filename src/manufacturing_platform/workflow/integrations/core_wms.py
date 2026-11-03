@@ -256,6 +256,9 @@ class WmsSystem(CoreSystem):
                 and f.payload.quality_state == p.quality_state
             )
             if p.quality_state == "qualified":
+                from .core_custody import validate_warehouse_count
+
+                validate_warehouse_count(p, observations)
                 expected = (
                     sum(
                         location_quantity(observations, f.source_key, p.location)
@@ -378,6 +381,9 @@ class WmsSystem(CoreSystem):
                 "Allocation owner/material/dimensions mismatch",
             )
             if p.operation in {"wms.pick", "wms.putaway", "wms.return"}:
+                from .core_custody import validate_transfer_custody
+
+                validate_transfer_custody(p, a, observations)
                 cause = observations.fact(p.cause)
                 require(
                     p.source_custody != p.destination_custody,
@@ -436,76 +442,22 @@ class WmsSystem(CoreSystem):
                     - balance.supplier_returned,
                     "Reservation exceeds qualified available quantity",
                 )
-                covered = sum(
-                    v.amount.quantity
-                    for f in observations.of_type("wms.reservation")
-                    for v in f.payload.allocations
-                    if v.qualification == a.qualification
-                )
-                from .core_reservations import released_quantity
+                from .core_custody import qualification_unreserved
 
-                covered -= sum(
-                    released_quantity(observations, f.source_key, a.qualification)
-                    for f in observations.of_type("wms.reservation")
-                )
                 proposed_scope = sum(
                     v.amount.quantity
                     for v in p.allocations
                     if v.qualification == a.qualification
                 )
                 require(
-                    covered + proposed_scope <= qualification.payload.accepted.quantity,
-                    "Reservation exceeds exact IQC qualification",
+                    proposed_scope <= qualification_unreserved(observations, a),
+                    "Reservation exceeds exact IQC qualification available quantity",
                 )
             elif p.operation == "wms.return":
-                observations.fact(p.cause)
-                if p.direction == "to_warehouse":
-                    require(
-                        a.reservation is not None and p.work_order_id is not None,
-                        "Warehouse return requires exact custody scope",
-                    )
-                    picked = sum(
-                        v.amount.quantity
-                        for f in observations.of_type("wms.pick")
-                        if f.payload.work_order_id == p.work_order_id
-                        for v in f.payload.allocations
-                        if v.reservation == a.reservation
-                        and v.material_lot_id == a.material_lot_id
-                        and v.qualification == a.qualification
-                    )
-                    consumed = sum(
-                        v.amount.quantity
-                        for f in observations.of_type("mes.execution")
-                        if f.payload.work_order_id == p.work_order_id
-                        for v in f.payload.material_uses
-                        if v.reservation == a.reservation
-                        and v.material_lot_id == a.material_lot_id
-                        and v.qualification == a.qualification
-                    )
-                    returned = sum(
-                        v.amount.quantity
-                        for f in observations.of_type("wms.return")
-                        if f.payload.direction == "to_warehouse"
-                        and f.payload.work_order_id == p.work_order_id
-                        for v in f.payload.allocations
-                        if v.reservation == a.reservation
-                        and v.material_lot_id == a.material_lot_id
-                        and v.qualification == a.qualification
-                    )
-                    require(
-                        a.amount.quantity <= picked - consumed - returned,
-                        "Return exceeds unconsumed physical custody",
-                    )
-                else:
-                    require(
-                        a.reservation is None
-                        and a.amount.quantity
-                        <= balance.qualified
-                        + balance.qualified_adjustment
-                        - balance.reserved
-                        - balance.supplier_returned,
-                        "Supplier return exceeds unreserved qualified stock",
-                    )
+                if p.direction == "to_supplier":
+                    from .core_custody import validate_supplier_return
+
+                    validate_supplier_return(p, a, observations, balance)
             elif p.operation == "wms.pick":
                 require(a.reservation is not None, "Pick requires exact reservation")
                 previous = [
@@ -561,11 +513,6 @@ class WmsSystem(CoreSystem):
                 require(
                     a.amount.quantity + used - returned <= allocated,
                     "Pick exceeds exact reservation",
-                )
-            else:
-                require(
-                    a.amount.quantity <= balance.qualified - balance.picked,
-                    "Putaway exceeds qualified warehouse stock",
                 )
 
     def consume_fact(self, tx, delivery, observations):

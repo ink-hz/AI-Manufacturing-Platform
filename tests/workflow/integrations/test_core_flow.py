@@ -2078,3 +2078,481 @@ def test_completion_cannot_substitute_an_older_passed_route_execution(rig):
     )
     rig.drain()
     assert rig.physical_balance(refs.lot).consumed == 2
+
+
+def assert_rejected_without_source_effects(rig, system, payload, match):
+    """Real command rejection, immutable source replay, and zero producer effects."""
+    from uuid import uuid4
+    from manufacturing_platform.workflow.integrations.contracts import SystemOperation
+
+    rig.drain()
+    adapter = rig.registry.adapter(system)
+
+    def counts():
+        with adapter.store.transaction() as tx:
+            return tuple(
+                tx.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE project_id=?",
+                    (str(rig.project_id),),
+                ).fetchone()[0]
+                for table in ("facts", "outbox")
+            )
+
+    before = counts()
+    opid = uuid4()
+    with pytest.raises(DomainError, match=match):
+        rig.execute(system, payload, operation_id=opid)
+    receipt = adapter.query(rig.project_id, opid)
+    assert receipt.phase == "rejected" and receipt.source_keys == []
+    original = receipt.model_dump_json()
+    with adapter.store.transaction() as tx:
+        operation = SystemOperation.model_validate_json(
+            tx.execute(
+                "SELECT payload_json FROM operations WHERE project_id=? AND id=?",
+                (str(rig.project_id), str(opid)),
+            ).fetchone()[0]
+        )
+    assert adapter.execute(operation).model_dump_json() == original
+    assert adapter.query(rig.project_id, opid).model_dump_json() == original
+    assert counts() == before
+
+
+def two_qualified_receipts(rig):
+    refs = rig.core_ready(quantity=12, received=12, accepted=12)
+    first = rig.registry.observe_fact(rig.project_id, refs.receipt)
+    second = rig.result_fact(
+        rig.execute(
+            "wms",
+            dict(
+                operation="wms.receive",
+                **first.payload.model_dump(mode="json", exclude={"fact_type"}),
+            ),
+        )
+    )
+    rig.execute(
+        "mes",
+        dict(
+            operation="mes.inspect",
+            receipt=second.source_key,
+            accepted=dict(quantity="12", unit="piece", scale=0),
+            rejected=dict(quantity="0", unit="piece", scale=0),
+            evidence="Actual second receipt inspection",
+        ),
+    )
+    rig.drain()
+    return refs, rig.registry.adapter("wms").facts(
+        rig.project_id, "qualification", 0, 200
+    ).records
+
+
+def return_allocation(refs, qualification, quantity, reservation=None):
+    return dict(
+        material_lot_id=refs.lot,
+        material_id="M",
+        owner_id="C",
+        amount=dict(quantity=str(quantity), unit="piece", scale=0),
+        qualification=qualification,
+        reservation=reservation,
+    )
+
+
+def supplier_return(allocations, cause):
+    return dict(
+        operation="wms.return",
+        direction="to_supplier",
+        allocations=allocations,
+        source_custody=dict(location="receiving", custodian="warehouse"),
+        destination_custody=dict(location="supplier", custodian="supplier"),
+        cause=cause,
+        evidence="Physical supplier return",
+    )
+
+
+@pytest.mark.parametrize(
+    "reserved,returned", [(12, (8, 8)), (12, (1, 0)), (6, (10, 10))]
+)
+def test_review_supplier_return_requires_aggregate_and_exact_qualification_capacity(
+    rig, reserved, returned
+):
+    refs, quals = two_qualified_receipts(rig)
+    rig.execute(
+        "wms",
+        dict(
+            operation="wms.reserve",
+            work_order_id=refs.work_order,
+            requirement_id=refs.requirement,
+            allocations=[return_allocation(refs, quals[0].source_key, reserved)],
+        ),
+    )
+    payload = supplier_return(
+        [
+            return_allocation(refs, q.source_key, n)
+            for q, n in zip(quals, returned)
+            if n
+        ],
+        quals[-1].payload.receipt,
+    )
+    assert_rejected_without_source_effects(rig, "wms", payload, "unreserved")
+    b = rig.physical_balance(refs.lot)
+    assert (b.qualified, b.reserved, b.supplier_returned) == (24, reserved, 0)
+
+
+def test_review_warehouse_return_cannot_relabel_other_warehouse_stock(rig):
+    refs = rig.core_ready(quantity=12, received=12, accepted=12)
+    picked = rig.pick_qualified(refs, quantity=6)
+    payload = picked.payload.model_dump(mode="json", exclude={"fact_type"})
+    payload.update(
+        operation="wms.return",
+        direction="to_warehouse",
+        source_custody=dict(location="receiving", custodian="warehouse"),
+        destination_custody=dict(location="bin-B", custodian="warehouse"),
+    )
+    assert_rejected_without_source_effects(rig, "wms", payload, "custody")
+    from manufacturing_platform.workflow.integrations.core_guards import (
+        SourceSnapshot,
+        project_guard,
+    )
+    from manufacturing_platform.workflow.integrations.core_wms import location_quantity
+
+    with project_guard(rig.registry, rig.project_id):
+        observations = SourceSnapshot(rig.registry, rig.project_id)
+        assert (
+            location_quantity(observations, refs.qualification, "line", "production")
+            == 6
+        )
+    assert rig.physical_balance(refs.lot).line_side == 6
+    assert rig.physical_balance(refs.lot).reserved == 6
+
+
+@pytest.mark.parametrize(
+    "invalid", ["order", "revision", "expired_cutoff", "future_cutoff"]
+)
+def test_review_invalid_sap_plan_rejects_before_source_and_local_requirements(
+    rig, invalid
+):
+    from uuid import uuid4
+    from datetime import timedelta
+
+    rig.core_ready()
+    plan = rig.registry.adapter("sap").facts(rig.project_id, "plan", 0, 200).records[-1]
+    payload = plan.payload.model_dump(mode="json", exclude={"fact_type"})
+    payload["requirements"][0]["requirement_id"] = str(uuid4())
+    if invalid == "order":
+        payload["input_order_versions"][0]["version"] = 999
+    elif invalid == "revision":
+        payload["input_revision_ids"] = [str(uuid4())]
+    else:
+        payload["cutoff"] = (
+            NOW + timedelta(days=-30 if invalid == "expired_cutoff" else 1)
+        ).isoformat()
+    with rig.workflow.store.transaction() as tx:
+        before = tuple(
+            tx.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE project_id=?",
+                (str(rig.project_id),),
+            ).fetchone()[0]
+            for table in ("plans", "requirements")
+        )
+    assert_rejected_without_source_effects(
+        rig,
+        "sap",
+        dict(operation="sap.publish_plan", **payload),
+        "version|revision|cutoff",
+    )
+    with rig.workflow.store.transaction() as tx:
+        after = tuple(
+            tx.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE project_id=?",
+                (str(rig.project_id),),
+            ).fetchone()[0]
+            for table in ("plans", "requirements")
+        )
+    assert before == after
+
+
+def test_review_supplier_return_aggregate_includes_unattributed_lot_variance(rig):
+    refs, quals = two_qualified_receipts(rig)
+    allocations = [return_allocation(refs, q.source_key, 6) for q in quals]
+    rig.execute(
+        "wms",
+        dict(
+            operation="wms.putaway",
+            allocations=allocations,
+            source_custody=dict(location="receiving", custodian="warehouse"),
+            destination_custody=dict(location="bin-B", custodian="warehouse"),
+            cause=quals[0].source_key,
+            evidence="Actual warehouse relocation",
+        ),
+    )
+    rig.execute(
+        "wms",
+        dict(
+            operation="wms.reserve",
+            work_order_id=refs.work_order,
+            requirement_id=refs.requirement,
+            allocations=allocations,
+        ),
+    )
+    rig.execute(
+        "wms",
+        dict(
+            operation="wms.stocktake",
+            material_lot_id=refs.lot,
+            owner_id="C",
+            location="bin-B",
+            quality_state="qualified",
+            expected=dict(quantity="12", unit="piece", scale=0),
+            counted=dict(quantity="10", unit="piece", scale=0),
+            cause=quals[0].source_key,
+            evidence="Actual qualified loss in another warehouse location",
+        ),
+    )
+    invalid = supplier_return(allocations, quals[0].source_key)
+    assert_rejected_without_source_effects(rig, "wms", invalid, "unreserved")
+    valid = supplier_return(
+        [return_allocation(refs, q.source_key, 5) for q in quals], quals[0].source_key
+    )
+    returned = rig.result_fact(rig.execute("wms", valid))
+    rig.drain()
+    rig.replay_delivery(returned.source_key, "sap")
+    assert rig.sap_post_count(returned.source_key) == 1
+    assert rig.physical_balance(refs.lot).supplier_returned == 10
+
+
+def test_review_supplier_return_spends_exact_qualification_for_future_reservation(rig):
+    refs, quals = two_qualified_receipts(rig)
+    rig.execute(
+        "wms",
+        supplier_return(
+            [return_allocation(refs, quals[0].source_key, 12)], quals[0].source_key
+        ),
+    )
+    reserve = dict(
+        operation="wms.reserve",
+        work_order_id=refs.work_order,
+        requirement_id=refs.requirement,
+        allocations=[return_allocation(refs, quals[0].source_key, 1)],
+    )
+    assert_rejected_without_source_effects(
+        rig, "wms", reserve, "qualification|qualified"
+    )
+    public = rig.command(
+        "reservation.request",
+        work_order_id=str(refs.work_order),
+        requirement_id=str(refs.requirement),
+        lot_id=str(refs.lot),
+        quantity="12",
+        unit="piece",
+    )
+    rig.command("exchange.dispatch", exchange_id=str(public.exchange_id))
+    with rig.workflow.store.transaction() as tx:
+        assert (
+            tx.execute(
+                "SELECT phase FROM exchanges WHERE id=?", (str(public.exchange_id),)
+            ).fetchone()[0]
+            == "accepted"
+        )
+    current = (
+        rig.registry.adapter("wms")
+        .facts(rig.project_id, "reservation", 0, 200)
+        .records[-1]
+    )
+    assert current.payload.allocations[0].qualification == quals[1].source_key
+    b = rig.physical_balance(refs.lot)
+    assert (b.qualified, b.reserved, b.supplier_returned) == (24, 12, 12)
+
+
+def test_review_line_custody_cannot_relocate_through_warehouse_putaway(rig):
+    refs = rig.core_ready(quantity=12, received=12, accepted=12)
+    pick = rig.pick_qualified(refs, quantity=6)
+    payload = pick.payload.model_dump(mode="json", exclude={"fact_type"})
+    payload.update(
+        operation="wms.putaway",
+        source_custody=pick.payload.destination_custody,
+        destination_custody=dict(location="bin-B", custodian="warehouse"),
+    )
+    assert_rejected_without_source_effects(rig, "wms", payload, "warehouse custody")
+    assert rig.physical_balance(refs.lot).line_side == 6
+
+
+def test_review_partial_returns_relocation_release_and_multiple_picks_conserve_positions(
+    rig,
+):
+    refs = rig.core_ready(quantity=12, received=12, accepted=12)
+    qual = refs.qualification
+    stock = return_allocation(refs, qual, 6)
+    receiving = dict(location="receiving", custodian="warehouse")
+    bin_a = dict(location="bin-A", custodian="store-A")
+    bin_b = dict(location="bin-B", custodian="store-B")
+    line = dict(location="station-42", custodian="operator-42")
+    rig.execute(
+        "wms",
+        dict(
+            operation="wms.putaway",
+            allocations=[stock],
+            source_custody=receiving,
+            destination_custody=bin_a,
+            cause=qual,
+            evidence="Warehouse handover to real bin",
+        ),
+    )
+    reserved = rig.result_fact(
+        rig.execute(
+            "wms",
+            dict(
+                operation="wms.reserve",
+                requirement_id=refs.requirement,
+                work_order_id=refs.work_order,
+                allocations=[return_allocation(refs, qual, 12)],
+            ),
+        )
+    )
+
+    def movement(
+        operation,
+        quantity,
+        source,
+        destination,
+        reservation=reserved.source_key,
+        **extra,
+    ):
+        return rig.result_fact(
+            rig.execute(
+                "wms",
+                dict(
+                    operation=operation,
+                    work_order_id=refs.work_order,
+                    allocations=[return_allocation(refs, qual, quantity, reservation)],
+                    source_custody=source,
+                    destination_custody=destination,
+                    cause=reserved.source_key,
+                    evidence="Actual allocation custody move",
+                    **extra,
+                ),
+            )
+        )
+
+    movement("wms.pick", 4, receiving, line)
+    picked = movement("wms.pick", 4, bin_a, line)
+    bad = picked.payload.model_dump(mode="json", exclude={"fact_type"})
+    bad.update(
+        operation="wms.return",
+        direction="to_warehouse",
+        source_custody=line,
+        destination_custody=dict(location="unknown-destination", custodian="unknown"),
+    )
+    assert_rejected_without_source_effects(rig, "wms", bad, "warehouse custody")
+    returned = movement("wms.return", 3, line, bin_a, direction="to_warehouse")
+    rig.execute(
+        "wms",
+        dict(
+            operation="wms.release_reservation",
+            work_order_id=refs.work_order,
+            reservation=reserved.source_key,
+            allocations=[
+                a.model_dump(mode="json") for a in returned.payload.allocations
+            ],
+            cause=returned.source_key,
+            evidence="Explicit release of returned3",
+        ),
+    )
+    movement("wms.putaway", 3, bin_a, bin_b, reservation=None)
+    new = rig.result_fact(
+        rig.execute(
+            "wms",
+            dict(
+                operation="wms.reserve",
+                requirement_id=refs.requirement,
+                work_order_id=refs.work_order,
+                allocations=[return_allocation(refs, qual, 3)],
+            ),
+        )
+    )
+    movement("wms.pick", 3, bin_b, line, reservation=new.source_key)
+    bad["destination_custody"] = bin_a
+    bad["allocations"][0]["amount"]["quantity"] = "6"
+    assert_rejected_without_source_effects(rig, "wms", bad, "exact unconsumed")
+    assert rig.physical_balance(refs.lot).line_side == 8
+    movement("wms.return", 5, line, receiving, direction="to_warehouse")
+    movement(
+        "wms.return",
+        3,
+        line,
+        bin_b,
+        reservation=new.source_key,
+        direction="to_warehouse",
+    )
+    from manufacturing_platform.workflow.integrations.core_guards import (
+        SourceSnapshot,
+        project_guard,
+    )
+    from manufacturing_platform.workflow.integrations.core_wms import location_quantity
+
+    with project_guard(rig.registry, rig.project_id):
+        observations = SourceSnapshot(rig.registry, rig.project_id)
+        assert (
+            location_quantity(observations, qual, line["location"], line["custodian"])
+            == 0
+        )
+        assert (
+            sum(
+                location_quantity(observations, qual, c["location"], c["custodian"])
+                for c in (receiving, bin_a, bin_b)
+            )
+            == 12
+        )
+    balance = rig.physical_balance(refs.lot)
+    assert (balance.reserved, balance.line_side, balance.picked, balance.returned) == (
+        12,
+        0,
+        11,
+        11,
+    )
+    # Releasing the new allocation makes exactly that qualification quantity
+    # supplier-returnable; original reservations and other lineages stay intact.
+    last_return = (
+        rig.registry.adapter("wms").facts(rig.project_id, "return", 0, 200).records[-1]
+    )
+    rig.execute(
+        "wms",
+        dict(
+            operation="wms.release_reservation",
+            work_order_id=refs.work_order,
+            reservation=new.source_key,
+            allocations=[return_allocation(refs, qual, 3, new.source_key)],
+            cause=last_return.source_key,
+            evidence="Release second returned allocation",
+        ),
+    )
+    payload = supplier_return(
+        [return_allocation(refs, qual, 3)], last_return.source_key
+    )
+    payload["source_custody"] = bin_b
+    rig.execute("wms", payload)
+    balance = rig.physical_balance(refs.lot)
+    assert (balance.reserved, balance.supplier_returned, balance.line_side) == (9, 3, 0)
+
+
+def test_review_qualified_variance_cannot_spend_line_claim_using_free_warehouse_stock(
+    rig,
+):
+    refs = rig.core_ready(quantity=12, received=12, accepted=12)
+    rig.pick_qualified(refs, quantity=6)
+    payload = dict(
+        operation="wms.stocktake",
+        material_lot_id=refs.lot,
+        owner_id="C",
+        location="line",
+        quality_state="qualified",
+        expected=dict(quantity="6", unit="piece", scale=0),
+        counted=dict(quantity="5", unit="piece", scale=0),
+        cause=refs.qualification,
+        evidence="Line loss cannot use warehouse free budget",
+    )
+    assert_rejected_without_source_effects(rig, "wms", payload, "warehouse")
+    balance = rig.physical_balance(refs.lot)
+    assert (balance.line_side, balance.reserved, balance.qualified_adjustment) == (
+        6,
+        6,
+        0,
+    )

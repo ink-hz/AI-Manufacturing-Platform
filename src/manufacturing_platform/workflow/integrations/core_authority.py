@@ -322,30 +322,23 @@ class CoreAuthorityAdapter:
                 q = fact.payload
                 if q.material_lot_id != p.lot_id:
                     continue
-                used = sum(
-                    a.amount.quantity
-                    for f in observations.of_type("wms.reservation")
-                    for a in f.payload.allocations
-                    if a.qualification == fact.source_key
-                )
-                from .core_reservations import released_quantity
+                from .core_custody import qualification_unreserved
+                from .core_models import MaterialAllocation
 
-                used -= sum(
-                    released_quantity(observations, f.source_key, fact.source_key)
-                    for f in observations.of_type("wms.reservation")
+                allocation = dict(
+                    material_lot_id=p.lot_id,
+                    material_id=p.material_id,
+                    owner_id=p.owner_id,
+                    amount=dict(quantity=str(p.quantity), unit=p.unit, scale=p.scale),
+                    qualification=fact.source_key,
                 )
-                available = q.accepted.quantity - used
+                available = qualification_unreserved(
+                    observations, MaterialAllocation(**allocation)
+                )
                 take = min(remaining, available)
                 if take > 0:
-                    allocations.append(
-                        dict(
-                            material_lot_id=p.lot_id,
-                            material_id=p.material_id,
-                            owner_id=p.owner_id,
-                            amount=dict(quantity=str(take), unit=p.unit, scale=p.scale),
-                            qualification=fact.source_key,
-                        )
-                    )
+                    allocation["amount"]["quantity"] = str(take)
+                    allocations.append(allocation)
                     remaining -= take
             require(remaining == 0, "Reservation exceeds qualified available quantity")
             return dict(

@@ -109,7 +109,8 @@ def validate_fact(tx, context, fact):
         )
         engineering.validate_work_order(tx, context, command)
     elif p.fact_type == "sap.plan":
-        supply.validate_plan(tx, context, command)
+        reasons, _material_meta = supply.validate_plan(tx, context, command)
+        require(not reasons, "; ".join(dict.fromkeys(reasons)))
         for req in p.requirements:
             lot = tx.execute(
                 "SELECT scale FROM material_lots WHERE project_id=? AND material_id=? AND owner_id=?",
