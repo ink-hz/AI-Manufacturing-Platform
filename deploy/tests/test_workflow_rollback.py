@@ -1,5 +1,6 @@
 """Real read-only SQLite probes plus mocked Docker failure-ordering boundaries."""
 import copy
+import re
 import hashlib
 import json
 import os
@@ -203,7 +204,7 @@ def test_unconfigured_release_keeps_legacy_rollback(tmp_path,monkeypatch):
     assert 'probe' not in events and 'stop' not in events
 
 
-def test_actual_old_workflow_accepts_17_then_rejects_target_migrated_21_without_reset(tmp_path):
+def test_actual_old_workflow_accepts_17_then_rejects_migrated_target_without_reset(tmp_path):
     db,payload=probe_fixture(tmp_path);db.close()
     Path(payload['workflow']['database_path']).unlink()
     source=Path(payload['source_root']);repo=Path(__file__).parents[2]
@@ -221,14 +222,16 @@ with store.transaction() as connection:
         return subprocess.run([sys.executable,'-B','-c',code,str(root),json.dumps(payload['workflow'])],capture_output=True,text=True)
     old=store(source);assert old.returncode==0,old.stderr
     assert old.stdout.strip()=='17' and run_probe(payload)['compatible'] is True
+    current=re.search(r'SCHEMA_VERSION = (\d+)',(repo/'src/manufacturing_platform/workflow/schema.py').read_text()).group(1)
+    assert int(current)>17
     target=store(repo);assert target.returncode==0,target.stderr
-    assert target.stdout.strip()=='21' and run_probe(payload)['compatible'] is False
+    assert target.stdout.strip()==current and run_probe(payload)['compatible'] is False
     before=bytes_map(Path(payload['data_root']))
     old=store(source)
     assert old.returncode!=0 and 'workflow dataset mismatch' in old.stderr
     assert bytes_map(Path(payload['data_root']))['workflow.sqlite3']==before['workflow.sqlite3']
     with sqlite3.connect(payload['workflow']['database_path']) as connection:
-        assert connection.execute('SELECT version FROM schema_version').fetchall()==[(21,)]
+        assert connection.execute('SELECT version FROM schema_version').fetchall()==[(int(current),)]
 
 
 def test_future_maintenance_records_forward_only_schema_policy(tmp_path,monkeypatch):

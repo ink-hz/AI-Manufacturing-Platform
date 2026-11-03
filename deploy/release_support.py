@@ -29,6 +29,26 @@ def require(condition, code):
     if not condition:
         raise ValueError(code)
 
+def bind_mount_spec(options, source, target, readonly):
+    """Map reviewed compose bind options to a HostConfig mount spec.
+
+    Returns None for the create_host_path shorthand (Binds entry), otherwise the
+    explicit Mounts entry. Only `propagation: rprivate` is supported beyond
+    create_host_path: it matches both the engine default and the sole reviewed
+    production use; any other propagation or unknown option fails closed, and
+    create_host_path combined with propagation stays unsupported.
+    """
+    require(set(options)<={'create_host_path','propagation'},'replay_bind_options_unsupported')
+    propagation=options.get('propagation')
+    require(propagation in (None,'rprivate'),'replay_bind_propagation_unsupported')
+    if options.get('create_host_path',False):
+        require(propagation is None,'replay_bind_options_unsupported')
+        return None
+    value={'Type':'bind','Source':source,'Target':target,
+           'BindOptions':{'Propagation':propagation} if propagation else {}}
+    if readonly:value['ReadOnly']=True
+    return value
+
 def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
 
@@ -154,12 +174,9 @@ def replay_equivalence(config,api,image,probe,volume_info):
                               'Driver':'local','Mode':mode,'RW':not readonly,'Propagation':''})
         elif kind=='bind':
             options=volume.get('bind',{})
-            require(set(options)<={'create_host_path'},'replay_bind_options_unsupported')
-            if options.get('create_host_path',False):binds.append(source+':'+target+':'+mode)
-            else:
-                value={'Type':'bind','Source':source,'Target':target,'BindOptions':{}}
-                if readonly:value['ReadOnly']=True
-                mounts.append(value)
+            spec=bind_mount_spec(options,source,target,readonly)
+            if spec is None:binds.append(source+':'+target+':'+mode)
+            else:mounts.append(spec)
             effective.append({'Type':'bind','Source':source,'Destination':target,'Mode':mode if options.get('create_host_path',False) else '',
                               'RW':not readonly,'Propagation':'rprivate'})
         else:raise ValueError('replay_volume_type_unsupported')
