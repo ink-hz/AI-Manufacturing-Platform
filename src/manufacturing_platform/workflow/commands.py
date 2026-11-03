@@ -33,6 +33,10 @@ BUSINESS_QUALIFICATIONS = frozenset(
 
 
 WorkflowAction = Literal[
+    "mock_system.execute",
+    "mock_system.query",
+    "mock_system.retry",
+    "integration.pull",
     "authority.register",
     "authority.verify",
     "material_handoff.record",
