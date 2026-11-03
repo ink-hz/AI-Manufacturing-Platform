@@ -245,6 +245,65 @@ def build_workflow_router(
             actor(request), project_id, ObjectKind.exchange, limit=limit, offset=offset
         )
 
+    @router.get("/projects/{project_id}/integration-links")
+    def integration_links(
+        project_id: UUID,
+        target_kind: ObjectKind,
+        target_id: UUID,
+        request: Request,
+        cursor: int = 0,
+        limit: int = 50,
+    ):
+        return service.integration_links(
+            actor(request),
+            project_id,
+            target_kind,
+            target_id,
+            cursor=cursor,
+            limit=limit,
+        )
+
+    @router.get("/projects/{project_id}/systems")
+    def integration_systems(project_id: UUID, request: Request):
+        return service.integration_systems(actor(request), project_id)
+
+    @router.get("/projects/{project_id}/systems/{system}/facts")
+    def integration_facts(
+        project_id: UUID,
+        system: str,
+        object_type: str,
+        request: Request,
+        cursor: int = 0,
+        limit: int = 50,
+    ):
+        return service.integration_facts(
+            actor(request), project_id, system, object_type, cursor=cursor, limit=limit
+        )
+
+    @router.get(
+        "/projects/{project_id}/systems/{system}/facts/{object_type}/{external_id}"
+    )
+    def integration_fact(
+        project_id: UUID,
+        system: str,
+        object_type: str,
+        external_id: str,
+        request: Request,
+        version: int,
+    ):
+        from .integrations.contracts import SourceKey
+
+        return service.integration_fact(
+            actor(request),
+            project_id,
+            SourceKey(
+                system=system,
+                object_type=object_type,
+                external_id=external_id,
+                version=version,
+            ),
+        )
+
     @router.get("/projects/{project_id}/trace")
     def trace(project_id: UUID, request: Request, sn: str | None = None, material_lot_id: UUID | None = None, limit: int = 500):
         return service.trace(actor(request), project_id, sn=sn, material_lot_id=material_lot_id, limit=limit)

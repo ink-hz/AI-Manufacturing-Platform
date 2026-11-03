@@ -26,6 +26,8 @@ from . import (  # noqa: F401 - trusted domain registration
     stock_proofs,
     supply,
 )
+from .integrations import operations as integration_operations
+from .integrations.routing import SystemRegistry
 from .authorization import (
     effective_permissions,
     project_ids,
@@ -98,7 +100,9 @@ class WorkflowService:
     ):
         self.store, self.resolve_subject = store, resolve_subject
         self.resolve_subject_profiles = resolve_subject_profiles
+        self.system_registry = SystemRegistry(store)
         self.exchange_service = exchanges.ExchangeService(self)
+        self.integration_service = integration_operations.IntegrationService(self, self.system_registry)
         self.test_evidence_reader = test_evidence_reader or quality
         self.store.bind_test_evidence_reader(self.test_evidence_reader)
         self.command_registry = (
@@ -760,6 +764,131 @@ class WorkflowService:
                 counts=counts,
             )
 
+    def integration_links(
+        self, actor, project_id, target_kind, target_id, *, cursor=0, limit=50
+    ):
+        from .integrations import browse
+
+        with self.store.transaction() as tx:
+            return browse.links(
+                tx,
+                actor,
+                project_id,
+                self.object_registry,
+                target_kind,
+                target_id,
+                cursor=cursor,
+                limit=limit,
+            )
+
+    def integration_systems(self, actor, project_id):
+        from .integrations import browse
+        from .integrations.store import canonical_hash
+        from .integrations.contracts import SystemReceipt
+        from .exchange_models import ExternalReceipt
+
+        with self.store.transaction() as tx:
+            initial = browse.systems(tx, actor, project_id, self.system_registry)
+            legacy = tx.execute(
+                "SELECT business_key,receipt_json FROM exchanges WHERE project_id=? AND system='erp' AND receipt_json IS NOT NULL AND phase IN ('accepted','posted') ORDER BY seq DESC LIMIT 1",
+                (str(project_id),),
+            ).fetchone()
+        legacy_healthy = False
+        if (
+            legacy
+            and initial[0].profile == "legacy-erp-v1"
+            and initial[0].mode != "production"
+        ):
+            try:
+                adapter = self.exchange_service.adapter
+                observed = (
+                    adapter.query("erp", legacy["business_key"]) if adapter else None
+                )
+                legacy_healthy = observed is not None and canonical_hash(
+                    ExternalReceipt.model_validate(observed)
+                ) == canonical_hash(
+                    ExternalReceipt.model_validate_json(legacy["receipt_json"])
+                )
+            except (ValueError, OSError, DomainError):
+                pass
+        recorded = {
+            card.system: card.last_receipt for card in initial if card.last_receipt
+        }
+        healthy, network_pending = [], {}
+        for source in self.system_registry.existing_stores():
+            try:
+                network_pending[source.system] = source.pending_count(project_id)
+                last = recorded.get(source.system)
+                if last is not None:
+                    observed = self.system_registry.adapter(source.system).query(
+                        project_id, last.operation_id
+                    )
+                    if observed is not None and canonical_hash(
+                        SystemReceipt.model_validate(observed)
+                    ) == canonical_hash(last):
+                        healthy.append(source.system)
+            except (ValueError, OSError, DomainError):
+                pass
+        with self.store.transaction() as tx:
+            return browse.systems(
+                tx,
+                actor,
+                project_id,
+                self.system_registry,
+                healthy_systems=healthy,
+                network_pending=network_pending,
+                legacy_healthy=legacy_healthy,
+            )
+
+    def integration_facts(
+        self, actor, project_id, system, object_type, *, cursor=0, limit=50
+    ):
+        from .integrations import browse
+
+        with self.store.transaction() as tx:
+            browse.authorize(tx, actor, project_id, self.system_registry, system)
+        observation = self.system_registry.observe_page(
+            project_id, system, object_type, cursor, limit
+        )
+        with self.store.transaction() as tx:
+            return browse.facts(
+                tx,
+                actor,
+                project_id,
+                self.system_registry,
+                system,
+                object_type,
+                observation=observation,
+            )
+
+    def integration_fact(self, actor, project_id, key):
+        from .integrations import browse
+
+        with self.store.transaction() as tx:
+            browse.authorize(tx, actor, project_id, self.system_registry, key.system)
+        observation = self.system_registry.observe_fact(project_id, key)
+        if observation.project_id != project_id or observation.source_key != key:
+            raise DomainError("NOT_FOUND", 404, "Source fact not found")
+        predecessors = [
+            self.system_registry.observe_fact(project_id, k)
+            for k in observation.caused_by
+        ]
+        source_store = self.system_registry.source_store(key.system)
+        origin = source_store.origin(project_id, key)
+        delivery_states = source_store.delivery_states(project_id, key)
+        with self.store.transaction() as tx:
+            return browse.fact(
+                tx,
+                actor,
+                project_id,
+                self.system_registry,
+                key,
+                observation=observation,
+                predecessors=predecessors,
+                origin=origin,
+                delivery_states=delivery_states,
+            )
+
     def execute(
         self, actor: Actor, project_id: UUID, command: WorkflowCommand
     ) -> CommandResult:
@@ -770,6 +899,10 @@ class WorkflowService:
         self.detail(actor, project_id, include_progress=False)
         command = self.command_registry.parse(command)
         entry = self.command_registry.registration(command.action)
+        pull_observation = (
+            self.integration_service.preflight_pull(actor, project_id, command)
+            if isinstance(command, integration_operations.PullIntegrationFact) else None
+        )
         payload = {"project_id": str(project_id), **command.model_dump(mode="json")}
         profiles = None
         profile_error = None
@@ -825,15 +958,17 @@ class WorkflowService:
             if command.action == "release.decide":
                 quality.authorize_release(tx, actor, project_id, command)
             self.exchange_service.authorize(tx, actor, project_id, command)
+            self.integration_service.authorize(tx, actor, project_id, command)
+            if pull_observation is not None:
+                self.integration_service._admit_fact(tx, actor, project_id, pull_observation)
             replay = self._replay(tx, actor, command.operation_id, payload)
             if replay is not None:
-                return CommandResult.model_validate(
-                    {
-                        **replay,
-                        "replayed": True,
-                        "current_project_version": row["version"],
-                    }
+                replay_result = CommandResult.model_validate(
+                    {**replay, "replayed": True, "current_project_version": row["version"]}
                 )
+                if isinstance(command, integration_operations.COMMANDS):
+                    return self.integration_service.result(tx, replay_result)
+                return replay_result
             if row["version"] != command.expected_version:
                 raise DomainError(
                     "VERSION_CONFLICT",
@@ -852,7 +987,10 @@ class WorkflowService:
                 self.exchange_service,
                 profiles,
             )
-            mutation = entry.handler(tx, context, command)
+            mutation = (
+                self.integration_service.prepare(tx, context, command, observed_fact=pull_observation)
+                if pull_observation is not None else entry.handler(tx, context, command)
+            )
             if not isinstance(mutation, MutationResult):
                 raise TypeError("domain handler must return MutationResult")
             result = CommandResult(
@@ -883,6 +1021,8 @@ class WorkflowService:
                 mutation.object_id,
                 **handoff_audit_times,
             )
+        if isinstance(command, integration_operations.COMMANDS):
+            return self.integration_service.perform(actor, project_id, command, result)
         if isinstance(
             command,
             (exchanges.DispatchExchange, exchanges.QueryExchange, exchanges.PullSource),

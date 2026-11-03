@@ -388,13 +388,8 @@ authorize_policy = require_action
 class ExchangeService:
     def __init__(self, workflow):
         self.workflow = workflow
-        self.adapter = None
-        # A production configuration can be available locally while its source is unconnected.
-        if workflow.store.dataset["mode"] in {"test", "demo"}:
-            self.adapter = MockAuthorityAdapter(
-                workflow.store.authority_database_path, workflow.store.dataset["id"],
-                business_clock=workflow.store.business_clock
-            )
+        # Compatibility handle for legacy test/seeder callers; OEM routing never uses it.
+        self.adapter = workflow.system_registry.legacy_adapter()
 
     def authorize(self, tx, actor, project_id, command):
         if isinstance(command, (DispatchExchange, QueryExchange, ReconcileExchange)):
@@ -407,6 +402,16 @@ class ExchangeService:
 
     def prepare(self, tx, context, request: ExternalRequest) -> UUID:
         authorize_policy(tx, context.actor, context.project_id, request.action)
+        from .integrations.routing import profile_for
+
+        request = request.model_copy(
+            update={
+                "system": self.workflow.system_registry.route(
+                    profile_for(tx, context.project_id),
+                    request.action,
+                ),
+            }
+        )
         if request.project_id != context.project_id:
             fail("Exchange project mismatch")
         tx.execute(
@@ -422,7 +427,13 @@ class ExchangeService:
                 request.action,
                 request.system,
                 request.business_key,
-                self.adapter.mode if self.adapter else "unavailable",
+                (self.adapter.mode if self.adapter else "unavailable")
+                if request.system == "erp"
+                else (
+                    "mock"
+                    if self.workflow.store.dataset["mode"] in {"demo", "test"}
+                    else "unavailable"
+                ),
                 request.model_dump_json(),
                 digest(request.model_dump(mode="json")),
                 "requested",
@@ -462,17 +473,20 @@ class ExchangeService:
             authorize_policy(tx, actor, project_id, row["policy_action"])
         if row["phase"] in {"accepted", "posted"} and row["action"] != "source.pull":
             return result
+        adapter = self.adapter if row["system"] == "erp" else None
         receipt, records, problem, stock_proof = None, None, None, None
         rejected_boundary = False
         try:
-            if self.adapter is None:
+            if row["system"] != "erp":
+                adapter = self.workflow.system_registry.exchange_adapter(row["system"])
+            if adapter is None:
                 raise DomainError(
                     "SOURCE_UNAVAILABLE", 503, "Configured authority is not connected"
                 )
             if row["action"] == "stock_basis.reconcile":
                 from .exchange_models import StockBasisProof
 
-                query = getattr(self.adapter, "stock_basis", None)
+                query = getattr(adapter, "stock_basis", None)
                 if query is None:
                     raise DomainError(
                         "SOURCE_UNAVAILABLE",
@@ -488,7 +502,7 @@ class ExchangeService:
                 )
             elif row["action"] == "source.pull":
                 pull = PullSource.model_validate_json(row["request_json"])
-                snapshot = self.adapter.snapshot(pull.system, pull.object_type)
+                snapshot = adapter.snapshot(pull.system, pull.object_type)
                 snapshot = AuthoritySnapshot.model_validate(
                     snapshot.model_dump(mode="json")
                     if isinstance(snapshot, AuthoritySnapshot)
@@ -512,7 +526,7 @@ class ExchangeService:
                         "SOURCE_NOT_FOUND", 404, "Source record unavailable"
                     )
                 if (
-                    records[0].source.mode != self.adapter.mode
+                    records[0].source.mode != adapter.mode
                     or records[0].source.system.strip().casefold()
                     != pull.system.strip().casefold()
                 ):
@@ -522,7 +536,7 @@ class ExchangeService:
             else:
                 request = ExternalRequest.model_validate_json(row["request_json"])
                 # Even the first dispatch queries; a crash after submission can never blindly resend.
-                receipt = self.adapter.query(request.system, request.business_key)
+                receipt = adapter.query(request.system, request.business_key)
                 if receipt is None and isinstance(command, DispatchExchange):
                     if isinstance(request.typed_payload, (StartPayload, ResumePayload)):
                         from .execution import outbound_execution_ready
@@ -589,7 +603,7 @@ class ExchangeService:
                     else:
                         ready = True
                     if ready:
-                        receipt = self.adapter.submit(request)
+                        receipt = adapter.submit(request)
                     else:
                         problem = "Current readiness blocks authority submission; restore and dispatch this intent"
                 elif receipt is None:
@@ -636,7 +650,7 @@ class ExchangeService:
                 from .stock_proofs import apply_proof
 
                 try:
-                    apply_proof(tx, context, row, stock_proof, self.adapter.mode)
+                    apply_proof(tx, context, row, stock_proof, adapter.mode)
                 except DomainError as exc:
                     self._reject(tx, context, row, exc.message)
             elif receipt is not None:
@@ -661,7 +675,7 @@ class ExchangeService:
                         trusted=True,
                         system=pull.system,
                         external_id=pull.external_id,
-                        mode=self.adapter.mode,
+                        mode=adapter.mode,
                     )
                 except DomainError as exc:
                     self._reject(tx, context, row, exc.message)
@@ -683,7 +697,7 @@ class ExchangeService:
                             trusted=True,
                             system=pull.system,
                             external_id=pull.external_id,
-                            mode=self.adapter.mode,
+                            mode=adapter.mode,
                         )
                         event(
                             tx,
