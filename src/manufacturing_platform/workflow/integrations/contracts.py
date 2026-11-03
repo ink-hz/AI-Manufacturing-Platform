@@ -114,6 +114,8 @@ from .evidence_models import (
     BiRefreshFact,
     CustomerApproveRevision,
     CustomerApproveRevisionFact,
+    CustomerReceiveShipment,
+    CustomerReceiveShipmentFact,
     CustomerConfirmDelivery,
     CustomerConfirmDeliveryFact,
     CustomerMapSerial,
@@ -179,6 +181,7 @@ OperationPayload = Annotated[
     | PlcSample
     | PlcReadback
     | CustomerApproveRevision
+    | CustomerReceiveShipment
     | CustomerConfirmDelivery
     | CustomerMapSerial
     | OverseasReceiveShipment
@@ -232,6 +235,7 @@ FactPayload = Annotated[
     | PlcSampleFact
     | PlcReadbackFact
     | CustomerApproveRevisionFact
+    | CustomerReceiveShipmentFact
     | CustomerConfirmDeliveryFact
     | CustomerMapSerialFact
     | OverseasReceiveShipmentFact

@@ -898,9 +898,12 @@ class WorkflowService:
 
         with self.store.transaction() as tx:
             browse.authorize(tx, actor, project_id, self.system_registry, "product_test")
-        return resolve(
+        content = resolve(
             self.system_registry.source_store("product_test"), project_id, ref, checksum
         )
+        with self.store.transaction() as tx:
+            browse.authorize(tx, actor, project_id, self.system_registry, "product_test")
+        return content
 
     def integration_fact(self, actor, project_id, key):
         from .integrations import browse

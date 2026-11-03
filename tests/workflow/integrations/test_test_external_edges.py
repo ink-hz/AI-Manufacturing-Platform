@@ -422,6 +422,9 @@ def test_multi_work_order_claim_has_two_honest_derived_rmas_and_full_context(
             == claim.source.model_dump()
             for r in rows
         )
+        for row, other in ((rows[0], rows[1]), (rows[1], rows[0])):
+            swapped = dict(row, unit_id=other["unit_id"])
+            assert admitted_source(tx, rig.project_id, swapped) is None
     synchronize(rig)
     holds = (
         rig.registry.adapter("mes").facts(rig.project_id, "containment", 0, 200).records
@@ -771,3 +774,385 @@ def test_return_lineage_cannot_replace_same_claim_unit_with_another_rma(
             tx.execute("SELECT * FROM integration_return_units").fetchone() == original
         )
     tx.close()
+
+
+@pytest.mark.parametrize("boundary", ["service", "http"])
+@pytest.mark.parametrize("revocation", ["roles", "active"])
+def test_review_artifact_reauthorizes_after_source_read(
+    rig, monkeypatch, boundary, revocation
+):
+    from contextlib import contextmanager
+    from manufacturing_platform.workflow.contracts import GrantChange
+    from manufacturing_platform.workflow.integrations import test_artifacts
+    from .test_operation_boundary import http_client
+
+    refs = prepare_run(rig)
+    prepared = rig.result_fact(
+        rig.execute(
+            "product_test",
+            dict(
+                operation="product_test.prepare_artifact",
+                run_id=str(refs.run),
+                template="pass-v1",
+            ),
+        )
+    )
+    p = prepared.payload.prepared
+    original_resolve = test_artifacts.resolve
+    original_transaction = rig.workflow.store.transaction
+    depth = 0
+    resolved = []
+
+    @contextmanager
+    def tracked_transaction(*args, **kwargs):
+        nonlocal depth
+        with original_transaction(*args, **kwargs) as tx:
+            depth += 1
+            try:
+                yield tx
+            finally:
+                depth -= 1
+
+    def resolve_then_revoke(*args):
+        assert depth == 0, "Source I/O must remain outside workflow transactions"
+        content = original_resolve(*args)
+        resolved.append(content)
+        rig.workflow.change_grant(
+            rig.admin,
+            rig.project_id,
+            rig.actor.user_id,
+            GrantChange(
+                operation_id=uuid4(),
+                expected_version=rig.version(),
+                scope=dict(kind="project", project_id=rig.project_id),
+                roles=[] if revocation == "roles" else ["project_owner"],
+                qualifications=[],
+                active=revocation != "active",
+                evidence="Revoke current app grant during original artifact read",
+            ),
+        )
+        return content
+
+    monkeypatch.setattr(rig.workflow.store, "transaction", tracked_transaction)
+    monkeypatch.setattr(test_artifacts, "resolve", resolve_then_revoke)
+    if boundary == "service":
+        with pytest.raises(DomainError) as exc:
+            rig.workflow.integration_artifact(
+                rig.actor, rig.project_id, p.artifact_ref, p.artifact_checksum
+            )
+        assert (exc.value.code, exc.value.status) == ("NOT_FOUND", 404)
+    else:
+        with http_client(rig, monkeypatch) as client:
+            response = client.get(
+                f"/api/v1/manufacturing/workflow/projects/{rig.project_id}/systems/product_test/artifacts/{p.artifact_ref.artifact_id}"
+            )
+        assert response.status_code == 404, response.text
+        assert response.content != resolved[0]
+        assert "ETag" not in response.headers
+        assert p.artifact_checksum not in response.text
+    assert (
+        len(resolved) == 1
+        and hashlib.sha256(resolved[0]).hexdigest() == p.artifact_checksum
+    )
+    with pytest.raises(DomainError) as exc:
+        rig.workflow.integration_fact(rig.actor, rig.project_id, prepared.source_key)
+    assert exc.value.status == 404
+
+
+@pytest.mark.parametrize("scope", ["disjoint", "overlap", "aggregate_only"])
+def test_review_customer_acceptance_requires_exact_signed_serial_subset(rig, scope):
+    from .network_scenarios import multi_work_order_shipment
+
+    refs = multi_work_order_shipment(rig)
+    first, second = [u["unit_id"] for u in refs.units]
+    signature = None
+    if scope != "aggregate_only":
+        signature = rig.result_fact(
+            rig.execute(
+                "overseas",
+                claim_payload(
+                    refs,
+                    "overseas.receive_shipment",
+                    decision="partial",
+                    accepted_unit_ids=[first],
+                ),
+            )
+        )
+    if scope in {"overlap", "aggregate_only"}:
+        rig.command(
+            "delivery.sign",
+            shipment_id=str(refs.shipment.payload.shipment_id),
+            quantity="1" if scope == "overlap" else "2",
+            source=rig.manual_source("delivery_sign"),
+            external_signatory="Manual aggregate receipt",
+        )
+    invalid = claim_payload(
+        refs,
+        "customer.confirm_delivery",
+        decision="accepted" if scope == "overlap" else "partial",
+        **(
+            {}
+            if scope == "overlap"
+            else {"accepted_unit_ids": [second if scope == "disjoint" else first]}
+        ),
+    )
+    before = len(rig.rows("customer", "facts"))
+    operation_id = uuid4()
+    with pytest.raises(DomainError, match="signed serial"):
+        rig.execute("customer", invalid, operation_id=operation_id)
+    assert len(rig.rows("customer", "facts")) == before
+    assert (
+        rig.registry.adapter("customer").query(rig.project_id, operation_id).phase
+        == "rejected"
+    )
+    if signature:
+        accepted = rig.result_fact(
+            rig.execute(
+                "customer",
+                claim_payload(
+                    refs,
+                    "customer.confirm_delivery",
+                    decision="partial",
+                    accepted_unit_ids=[first],
+                ),
+            )
+        )
+        assert signature.source_key in accepted.caused_by
+        with pytest.raises(DomainError):
+            rig.execute(
+                "customer",
+                claim_payload(
+                    refs,
+                    "customer.confirm_delivery",
+                    decision="partial",
+                    accepted_unit_ids=[first],
+                ),
+            )
+    with rig.workflow.store.transaction() as tx:
+        assert (
+            tx.execute(
+                "SELECT count(*) FROM shipment_items WHERE shipment_id=?",
+                (str(refs.shipment.payload.shipment_id),),
+            ).fetchone()[0]
+            == 2
+        )
+        sums = dict(
+            tx.execute(
+                "SELECT action, sum(q_atoms) FROM delivery_facts WHERE shipment_id=? GROUP BY action",
+                (str(refs.shipment.payload.shipment_id),),
+            ).fetchall()
+        )
+        assert sums.get("accept", 0) == (1 if signature else 0)
+        assert sums["sign"] == (1 if scope == "disjoint" else 2)
+    if scope == "disjoint":
+        second_signature = rig.result_fact(
+            rig.execute(
+                "overseas",
+                claim_payload(
+                    refs,
+                    "overseas.receive_shipment",
+                    decision="partial",
+                    accepted_unit_ids=[second],
+                ),
+            )
+        )
+        final = rig.result_fact(
+            rig.execute(
+                "customer",
+                claim_payload(
+                    refs,
+                    "customer.confirm_delivery",
+                    decision="partial",
+                    accepted_unit_ids=[second],
+                ),
+            )
+        )
+        assert second_signature.source_key in final.caused_by
+        with rig.workflow.store.transaction() as tx:
+            assert dict(
+                tx.execute(
+                    "SELECT action,sum(q_atoms) FROM delivery_facts WHERE shipment_id=? GROUP BY action",
+                    (str(refs.shipment.payload.shipment_id),),
+                ).fetchall()
+            ) == {"sign": 2, "accept": 2}
+            assert (
+                tx.execute(
+                    "SELECT count(*) FROM shipment_items WHERE shipment_id=?",
+                    (str(refs.shipment.payload.shipment_id),),
+                ).fetchone()[0]
+                == 2
+            )
+
+
+def test_review_pending_signature_cannot_supply_serial_coverage(rig):
+    from .network_scenarios import multi_work_order_shipment
+
+    refs = multi_work_order_shipment(rig)
+    first = refs.units[0]["unit_id"]
+    rig.command(
+        "delivery.sign",
+        shipment_id=str(refs.shipment.payload.shipment_id),
+        quantity="1",
+        source=rig.manual_source("delivery_sign"),
+        external_signatory="Aggregate receipt without serial membership",
+    )
+    signature_id = uuid4()
+    rig.fault("overseas", signature_id, "timeout_after_commit")
+    pending = rig.execute(
+        "overseas",
+        claim_payload(
+            refs,
+            "overseas.receive_shipment",
+            decision="partial",
+            accepted_unit_ids=[first],
+        ),
+        operation_id=signature_id,
+    )
+    assert pending.integration.phase == "unknown"
+    receipt = rig.registry.adapter("overseas").query(rig.project_id, signature_id)
+    assert receipt.phase == "accepted"
+    assert rig.projection_count(receipt.source_keys[0]) == 0
+    accept = claim_payload(
+        refs, "customer.confirm_delivery", decision="partial", accepted_unit_ids=[first]
+    )
+    before = len(rig.rows("customer", "facts"))
+    with pytest.raises(DomainError, match="signed serial"):
+        rig.execute("customer", accept)
+    assert len(rig.rows("customer", "facts")) == before
+    rig.retry(signature_id)
+    assert rig.projection_count(receipt.source_keys[0]) == 1
+    accepted = rig.result_fact(rig.execute("customer", accept))
+    assert receipt.source_keys[0] in accepted.caused_by
+    assert (
+        rig.registry.adapter("overseas").query(rig.project_id, signature_id) == receipt
+    )
+    with rig.workflow.store.transaction() as tx:
+        assert dict(
+            tx.execute(
+                "SELECT action,sum(q_atoms) FROM delivery_facts WHERE shipment_id=? GROUP BY action",
+                (str(refs.shipment.payload.shipment_id),),
+            ).fetchall()
+        ) == {"sign": 2, "accept": 1}
+        assert (
+            tx.execute(
+                "SELECT count(*) FROM shipment_items WHERE shipment_id=?",
+                (str(refs.shipment.payload.shipment_id),),
+            ).fetchone()[0]
+            == 2
+        )
+
+
+def test_review_domestic_customer_sign_then_accept_needs_no_overseas_receipt(rig):
+    refs = shipped(rig)
+    signed = rig.result_fact(
+        rig.execute(
+            "customer",
+            claim_payload(refs, "customer.receive_shipment", decision="accepted"),
+        )
+    )
+    accepted = rig.result_fact(
+        rig.execute(
+            "customer",
+            claim_payload(refs, "customer.confirm_delivery", decision="accepted"),
+        )
+    )
+    assert signed.payload.fact_type == "customer.delivery_receipt"
+    assert signed.source_key in accepted.caused_by
+    assert (
+        not rig.registry.adapter("overseas")
+        .facts(rig.project_id, "delivery_receipt", 0, 200)
+        .records
+    )
+    rig.drain()
+    detail = rig.workflow.integration_fact(rig.actor, rig.project_id, signed.source_key)
+    assert detail.workflow_projected and detail.auxiliary_records[0].accepted_unit_ids
+    assert any(
+        d.consumer == "mes" and d.receipt and d.receipt.phase == "accepted"
+        for d in detail.delivery_states
+    )
+    with rig.workflow.store.transaction() as tx:
+        assert dict(
+            tx.execute(
+                "SELECT action,sum(q_atoms) FROM delivery_facts WHERE shipment_id=? GROUP BY action",
+                (str(refs.shipment.payload.shipment_id),),
+            ).fetchall()
+        ) == {"sign": 1, "accept": 1}
+        assert (
+            tx.execute(
+                "SELECT count(*) FROM shipment_items WHERE shipment_id=?",
+                (str(refs.shipment.payload.shipment_id),),
+            ).fetchone()[0]
+            == 1
+        )
+
+
+@pytest.mark.parametrize("first_system", ["customer", "overseas"])
+def test_review_mixed_signers_deduplicate_serials_and_cover_both_work_orders(
+    rig, first_system
+):
+    from .network_scenarios import multi_work_order_shipment
+
+    refs = multi_work_order_shipment(rig)
+    first, second = [u["unit_id"] for u in refs.units]
+    second_system = "overseas" if first_system == "customer" else "customer"
+    signed = rig.result_fact(
+        rig.execute(
+            first_system,
+            claim_payload(
+                refs,
+                first_system + ".receive_shipment",
+                decision="partial",
+                accepted_unit_ids=[first],
+            ),
+        )
+    )
+    before = len(rig.rows(second_system, "facts"))
+    with pytest.raises(DomainError, match="already confirmed"):
+        rig.execute(
+            second_system,
+            claim_payload(
+                refs,
+                second_system + ".receive_shipment",
+                decision="partial",
+                accepted_unit_ids=[first],
+            ),
+        )
+    assert len(rig.rows(second_system, "facts")) == before
+    operation_id = uuid4()
+    other = rig.result_fact(
+        rig.execute(
+            second_system,
+            claim_payload(
+                refs,
+                second_system + ".receive_shipment",
+                decision="partial",
+                accepted_unit_ids=[second],
+            ),
+            operation_id=operation_id,
+        )
+    )
+    rig.retry(operation_id)
+    accepted = rig.result_fact(
+        rig.execute(
+            "customer",
+            claim_payload(refs, "customer.confirm_delivery", decision="accepted"),
+        )
+    )
+    assert (
+        signed.source_key in accepted.caused_by
+        and other.source_key in accepted.caused_by
+    )
+    with rig.workflow.store.transaction() as tx:
+        assert dict(
+            tx.execute(
+                "SELECT action,sum(q_atoms) FROM delivery_facts WHERE shipment_id=? GROUP BY action",
+                (str(refs.shipment.payload.shipment_id),),
+            ).fetchall()
+        ) == {"sign": 2, "accept": 2}
+        assert (
+            tx.execute(
+                "SELECT count(*) FROM shipment_items WHERE shipment_id=?",
+                (str(refs.shipment.payload.shipment_id),),
+            ).fetchone()[0]
+            == 2
+        )

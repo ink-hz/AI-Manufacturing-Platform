@@ -239,6 +239,14 @@ class CustomerApproveRevisionFact(CustomerApprovalData):
     fact_type: Literal["customer.customer_approval"] = "customer.customer_approval"
 
 
+class CustomerReceiveShipment(DeliveryClaimData):
+    operation: Literal["customer.receive_shipment"] = "customer.receive_shipment"
+
+
+class CustomerReceiveShipmentFact(DeliveryClaimData):
+    fact_type: Literal["customer.delivery_receipt"] = "customer.delivery_receipt"
+
+
 class CustomerConfirmDelivery(DeliveryClaimData):
     operation: Literal["customer.confirm_delivery"] = "customer.confirm_delivery"
 
@@ -335,6 +343,7 @@ class ExternalClaimRecord(StrictModel):
     payload_hash: Digest
     claim: Annotated[
         CustomerConfirmDeliveryFact
+        | CustomerReceiveShipmentFact
         | OverseasReceiveShipmentFact
         | OverseasReportReturnFact,
         Field(discriminator="fact_type"),

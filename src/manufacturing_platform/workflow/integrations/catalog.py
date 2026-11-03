@@ -255,6 +255,12 @@ OPERATIONS: Mapping[str, OperationSpec] = MappingProxyType(
             ("customer.customer_approval",),
             "engineering.customer_approval",
         ),
+        "customer.receive_shipment": OperationSpec(
+            "customer",
+            evidence.CustomerReceiveShipment,
+            ("customer.delivery_receipt",),
+            "delivery.sign",
+        ),
         "customer.confirm_delivery": OperationSpec(
             "customer",
             evidence.CustomerConfirmDelivery,
@@ -331,6 +337,7 @@ EDGES: tuple[EdgeSpec, ...] = (
         (
             "customer.customer_approval",
             "customer.acceptance",
+            "customer.delivery_receipt",
             "customer.serial_mapping",
         ),
     ),

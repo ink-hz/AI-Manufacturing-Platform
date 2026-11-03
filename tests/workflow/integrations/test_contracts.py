@@ -33,7 +33,7 @@ EXPECTED = {
     "hr_dingtalk": "assign_shift",
     "product_test": "run calibrate",
     "plc": "set_state sample readback",
-    "customer": "approve_revision confirm_delivery map_serial",
+    "customer": "approve_revision receive_shipment confirm_delivery map_serial",
     "overseas": "receive_shipment report_return",
     "srm": "promise announce_arrival",
     "bi": "refresh",

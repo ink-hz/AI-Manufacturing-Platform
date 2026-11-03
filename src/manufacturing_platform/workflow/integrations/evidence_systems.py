@@ -160,28 +160,14 @@ class EvidenceSystem(CoreSystem):
             )
             causes.append(p.mes_session)
         if p.operation in {
-            "crm.open_return",
             "overseas.report_return",
             "overseas.receive_shipment",
             "customer.confirm_delivery",
+            "customer.receive_shipment",
         }:
-            from .external_claims import source_causes, accepted_units
+            from .external_claims import prepare_causes
 
-            causes.extend(source_causes(p, observations))
-            if p.operation in {
-                "overseas.receive_shipment",
-                "customer.confirm_delivery",
-            }:
-                tag = (
-                    "customer.acceptance"
-                    if p.operation == "customer.confirm_delivery"
-                    else "overseas.delivery_receipt"
-                )
-                for previous in observations.of_type(tag):
-                    require(
-                        not accepted_units(previous.payload) & accepted_units(p),
-                        "Serial already confirmed by counterparty",
-                    )
+            causes.extend(prepare_causes(p, observations))
         return [f.model_copy(update={"caused_by": causes}) for f in facts]
 
     def transition(self, tx, operation, facts, observations):

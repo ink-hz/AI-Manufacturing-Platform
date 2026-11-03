@@ -10,7 +10,8 @@ from .enterprise_admission import projected_fact
 from .store import canonical_hash, identity
 
 RETURN_TAGS = {"crm.return_claim", "overseas.return_claim"}
-DELIVERY_TAGS = {"customer.acceptance", "overseas.delivery_receipt"}
+SIGN_TAGS = {"customer.delivery_receipt", "overseas.delivery_receipt"}
+DELIVERY_TAGS = SIGN_TAGS | {"customer.acceptance"}
 
 
 def accepted_units(payload):
@@ -49,6 +50,67 @@ def source_causes(payload, observations):
         "Actual MES context required for every claimed unit/work order",
     )
     return causes
+
+
+def prepare_causes(payload, observations):
+    """Shared native claim lineage and per-counterparty serial deduplication."""
+    causes = source_causes(payload, observations)
+    tag = {
+        "overseas.receive_shipment": "overseas.delivery_receipt",
+        "customer.receive_shipment": "customer.delivery_receipt",
+        "customer.confirm_delivery": "customer.acceptance",
+    }.get(payload.operation)
+    if tag:
+        selected = accepted_units(payload)
+        duplicate_tags = SIGN_TAGS if tag in SIGN_TAGS else {tag}
+        for prior in observations.facts.values():
+            if prior.payload.fact_type not in duplicate_tags:
+                continue
+            require(
+                not accepted_units(prior.payload) & selected,
+                "Serial already confirmed by counterparty",
+            )
+        if tag == "customer.acceptance":
+            causes.extend(
+                prior.source_key
+                for prior in observations.facts.values()
+                if prior.payload.fact_type in SIGN_TAGS
+                and prior.payload.shipment == payload.shipment
+                and prior.payload.shipment_id == payload.shipment_id
+                and accepted_units(prior.payload) & selected
+            )
+    return causes
+
+
+def validate_signed_coverage(tx, context, fact):
+    """Aggregate manual quantities cannot attest which serialized units signed."""
+    p = fact.payload
+    selected, signed = accepted_units(p), set()
+    if not selected:
+        return
+    for row in tx.execute(
+        "SELECT * FROM delivery_facts WHERE project_id=? AND shipment_id=? AND action='sign'",
+        (str(context.project_id), str(p.shipment_id)),
+    ):
+        source = delivery.admitted_source(tx, context.project_id, row, "delivery_sign")
+        if source is None or source.mode != "mock":
+            continue
+        signature = projected_fact(
+            tx, context.project_id, source, kind="shipment", ident=p.shipment_id
+        )
+        q = signature.payload
+        if (
+            q.fact_type in SIGN_TAGS
+            and q.shipment == p.shipment
+            and q.shipment_id == p.shipment_id
+            and q.occurred_at <= p.occurred_at
+            and signature.source_key in fact.caused_by
+        ):
+            signed.update(accepted_units(q))
+    require(
+        selected <= signed,
+        "Accepted units require exact admitted signed serial coverage",
+    )
 
 
 def command(context, fact):
@@ -103,20 +165,25 @@ def validate(tx, context, fact):
 
             validate_rma(tx, context, unit.unit_id, p.shipment_id)
     if p.fact_type in DELIVERY_TAGS:
+        if p.fact_type == "customer.acceptance":
+            validate_signed_coverage(tx, context, fact)
         value = command(context, fact)
         if value:
             delivery.validate_delivery_fact(tx, context, value)
-        # Per-unit counts prevent a different external document accepting the same SN twice.
+        # Signed serials count once across both counterparties; acceptance is separate.
         from .contracts import IntegrationFact
 
+        duplicate_tags = SIGN_TAGS if p.fact_type in SIGN_TAGS else {p.fact_type}
         for row in tx.execute(
-            "SELECT fact_json FROM integration_projections WHERE project_id=? AND system=? AND object_type=?",
-            (str(context.project_id), fact.source.system, fact.source.object_type),
+            "SELECT fact_json FROM integration_projections WHERE project_id=?",
+            (str(context.project_id),),
         ):
             prior = IntegrationFact.model_validate_json(row[0])
+            if prior.payload.fact_type not in duplicate_tags:
+                continue
             require(
                 not accepted_units(prior.payload) & accepted_units(p),
-                "Serial already confirmed by this counterparty",
+                "Serial already confirmed by signed receipt or acceptance",
             )
 
 
@@ -174,6 +241,8 @@ def admitted_return(tx, pid, row, source):
             or p.fact_type not in RETURN_TAGS
             or fact.source.model_dump() != source.model_dump()
             or mapping["payload_hash"] != canonical_hash(fact)
+            or mapping["unit_id"] != row["unit_id"]
+            or str(uuid5(domain_id(fact), mapping["unit_id"])) != row["id"]
         ):
             return None
         if (row["source_system"], row["source_type"], row["source_external_id"]) != (

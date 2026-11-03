@@ -41,6 +41,7 @@ def validate_fact(tx, context, fact):
         )
     elif p.fact_type in {
         "customer.acceptance",
+        "customer.delivery_receipt",
         "overseas.delivery_receipt",
         "overseas.return_claim",
     }:
@@ -80,6 +81,7 @@ def auxiliary_record(fact):
         )
     if fact.payload.fact_type in {
         "customer.acceptance",
+        "customer.delivery_receipt",
         "overseas.delivery_receipt",
         "overseas.return_claim",
     }:
@@ -143,6 +145,7 @@ def project_fact(tx, context, fact):
         )
     if fact.payload.fact_type in {
         "customer.acceptance",
+        "customer.delivery_receipt",
         "overseas.delivery_receipt",
         "overseas.return_claim",
     }:
