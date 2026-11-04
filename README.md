@@ -78,6 +78,6 @@ AI-Manufacturing-Platform/
 
 项目支持列表/看板、交付目标、阶段推进和事项；工程资料包按版本核对与修订，交接有独立回执，生产准备可逐项核对并创建关联问题。“系统协同”明确系统/载体、数据归属和未完成交接；首页显示真实缺项待办。手册复用平台 Markdown/Mermaid 整篇连续阅读，旧流程现状保留为参考。平台人工核对与外部正式批准分开；真实 ERP/MRP/MES 接口需按厂商资料、契约和数据责任逐条接入。
 
-前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。当前版本与 42 项维护链见 [独立管理平台发布记录](docs/release-console-2026-10-27.md)；[架构产品化](docs/release-architecture-product-2026-10-27.md)、[手册连续阅读](docs/release-handbook-continuous-2026-10-27.md)、[产品重构](docs/release-product-v2-2026-10-27.md)和[首版](docs/release-2026-10-27.md)记录保留历史。
+前端构建和嵌入接口见 [webui/README.md](webui/README.md)。生产约束见 [部署审计](docs/deployment-audit.md)；`deploy/release.py` 按 `prepare → candidate → cutover` 执行，仅更新现有 API，保留完整旧 Compose 链。当前线上版本见[模拟源系统集成与物料交接发布](docs/release-it-mock-integrations-2026-11-04.md)（MF f7a420b、schema23、58 项维护链）；早期维护链见[独立管理平台发布记录](docs/release-console-2026-10-27.md)；[架构产品化](docs/release-architecture-product-2026-10-27.md)、[手册连续阅读](docs/release-handbook-continuous-2026-10-27.md)、[产品重构](docs/release-product-v2-2026-10-27.md)和[首版](docs/release-2026-10-27.md)记录保留历史。
 
 线上入口：[大制造工作台](https://agent.orbbec.com.cn/manufacturing)（初始开放平台 owner/admin）。
