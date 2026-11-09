@@ -28,7 +28,8 @@ def authorize(tx, actor, pid, command):
         fail("Expedites require an OEM project", 422)
 
 
-def open_case(tx, context, command):
+def validate_open_case(tx, context, command):
+    authorize(tx, context.actor, context.project_id, command)
     requirement = own(tx, "requirements", context.project_id, command.requirement_id)
     if tx.execute(
         "SELECT 1 FROM material_expedites WHERE project_id=? AND requirement_id=? "
@@ -36,7 +37,12 @@ def open_case(tx, context, command):
         (str(context.project_id), str(command.requirement_id)),
     ).fetchone():
         fail("An open expedite already exists for this requirement")
-    ident = str(uuid4())
+    return requirement
+
+
+def open_case(tx, context, command, *, source=None, object_id=None):
+    requirement = validate_open_case(tx, context, command)
+    ident = str(object_id or uuid4())
     profiles = context.subject_profiles or {}
     payload = business(command)
     payload.update(
@@ -52,7 +58,7 @@ def open_case(tx, context, command):
             context.actor.display_name,
         ),
         expedite_number="EX-" + ident.upper(),
-        source=dict(
+        source=source.model_dump(mode="json") if source is not None else dict(
             system="manual",
             object_type="material_expedite",
             external_id=ident,
@@ -179,11 +185,16 @@ def value(tx, pid, row):
 
 def summary(tx, pid, row):
     payload = json.loads(row["payload_json"])
+    source = payload["source"]
+    source_label = (
+        "manual" if source["mode"] == "manual"
+        else f"{source['system']}/{source['mode']}"
+    )
     return ObjectSummary(
         id=row["id"],
         project_id=pid,
         kind="material_expedite",
-        title=f"{payload['expedite_number']} · {payload['material_id']} · manual",
+        title=f"{payload['expedite_number']} · {payload['material_id']} · {source_label}",
         state=row["state"],
         version=1 + bool(row["closure_json"]),
         source=payload["source"],

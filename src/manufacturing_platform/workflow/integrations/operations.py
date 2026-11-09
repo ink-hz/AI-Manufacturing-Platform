@@ -93,6 +93,7 @@ FACT_POLICIES = MappingProxyType(
         },
         "pdm.bom_confirmation": FactPolicy("engineering.handoff"),
         "wms.qualification": FactPolicy("supply.inspect"),
+        "mes.shortage": FactPolicy("expedite.open"),
         "wms.consumption": FactPolicy("execution.record"),
         "sap.variance_posting": FactPolicy("ownership.movement"),
         "sap.receipt_posting": FactPolicy("ownership.movement"),

@@ -488,6 +488,20 @@ class WmsShipFact(ShipmentData):
     fact_type: Literal["wms.shipment"] = "wms.shipment"
 
 
+class ShortageData(StrictModel):
+    requirement_id: UUID
+    reason: Text
+    impact: Text
+
+
+class MesShortage(ShortageData):
+    operation: Literal["mes.shortage"] = "mes.shortage"
+
+
+class MesShortageFact(ShortageData):
+    fact_type: Literal["mes.shortage"] = "mes.shortage"
+
+
 class MesInspect(InspectionData):
     operation: Literal["mes.inspect"] = "mes.inspect"
 

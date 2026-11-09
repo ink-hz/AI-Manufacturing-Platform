@@ -148,7 +148,7 @@ class MesSystem(CoreSystem):
 
     def transition(self, tx, operation, facts, observations):
         p = operation.payload
-        if p.operation == "mes.prepare":
+        if p.operation in {"mes.prepare", "mes.shortage"}:
             return
         if p.operation == "mes.assemble":
             execution = observations.fact(p.execution).payload

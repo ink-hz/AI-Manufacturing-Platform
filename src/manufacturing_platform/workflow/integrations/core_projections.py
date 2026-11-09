@@ -26,6 +26,16 @@ def command_data(context):
 
 def translated(context, fact):
     p, base = fact.payload, command_data(context)
+    if p.fact_type == "mes.shortage":
+        from ..expedite_models import OpenExpedite
+
+        return OpenExpedite(
+            **base,
+            action="expedite.open",
+            requirement_id=p.requirement_id,
+            reason=p.reason,
+            impact=p.impact,
+        )
     if p.fact_type == "sap.order":
         return RegisterOrder(
             **base,
@@ -77,7 +87,11 @@ def validate_fact(tx, context, fact):
     project = orders.project(tx, context.project_id)
     require(fact.project_id == context.project_id, "Source project mismatch")
     command = translated(context, fact)
-    if p.fact_type == "sap.order":
+    if p.fact_type == "mes.shortage":
+        from ..expedite import validate_open_case
+
+        validate_open_case(tx, context, command)
+    elif p.fact_type == "sap.order":
         require(
             (p.customer_id, p.product, p.amount.unit, p.amount.scale)
             == (
@@ -307,7 +321,13 @@ def validate_fact(tx, context, fact):
 def project_fact(tx, context, fact):
     command = validate_fact(tx, context, fact)
     p, result, targets, auxiliary = fact.payload, None, [], []
-    if p.fact_type == "sap.order":
+    if p.fact_type == "mes.shortage":
+        from ..expedite import open_case
+
+        result = open_case(
+            tx, context, command, source=fact.source, object_id=domain_id(fact)
+        )
+    elif p.fact_type == "sap.order":
         result = orders._register_order(tx, context, command, object_id=domain_id(fact))
     elif p.fact_type == "sap.work_order":
         result = engineering._register_work_order(

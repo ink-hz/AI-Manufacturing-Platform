@@ -24,7 +24,7 @@ from manufacturing_platform.workflow.integrations.routing import route
 EXPECTED = {
     "sap": "release_order release_work_order publish_plan post_movement post_completion",
     "wms": "receive putaway reserve pick return stocktake ship",
-    "mes": "inspect start interrupt resume switch_revision pass assemble contain release complete",
+    "mes": "shortage inspect start interrupt resume switch_revision pass assemble contain release complete",
     "pdm": "publish_revision issue_change",
     "crm": "publish_demand open_return",
     "oa": "request_approval decide_approval",
@@ -485,3 +485,14 @@ def test_raw_artifact_project_matches_its_envelope(tag, envelope):
     payload["artifact_ref"]["project_id"] = str(uuid4())
     with pytest.raises(ValidationError, match="cross-project artifact"):
         model.model_validate(data)
+
+
+def test_shortage_catalog_uses_expedite_policy_and_existing_mes_wms_edge():
+    from manufacturing_platform.workflow.integrations.operations import FACT_POLICIES
+
+    assert OPERATIONS["mes.shortage"].underlying_action == "expedite.open"
+    assert OPERATIONS["mes.shortage"].output_fact_types == ("mes.shortage",)
+    assert FACT_POLICIES["mes.shortage"].action == "expedite.open"
+    assert [edge.fact_types for edge in EDGES if edge.id == "mes->wms"] == [
+        ("mes.iqc", "mes.containment", "mes.execution", "mes.return_requirement", "mes.shortage")
+    ]

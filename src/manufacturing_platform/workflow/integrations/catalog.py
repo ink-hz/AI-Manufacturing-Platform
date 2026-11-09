@@ -99,6 +99,9 @@ OPERATIONS: Mapping[str, OperationSpec] = MappingProxyType(
         "wms.ship": OperationSpec(
             "wms", core.WmsShip, ("wms.shipment",), "shipment.request"
         ),
+        "mes.shortage": OperationSpec(
+            "mes", core.MesShortage, ("mes.shortage",), "expedite.open"
+        ),
         "mes.inspect": OperationSpec(
             "mes", core.MesInspect, ("mes.iqc",), "supply.inspect"
         ),
@@ -319,7 +322,10 @@ EDGES: tuple[EdgeSpec, ...] = (
     EdgeSpec(
         "mes",
         "wms",
-        ("mes.iqc", "mes.containment", "mes.execution", "mes.return_requirement"),
+        (
+            "mes.iqc", "mes.containment", "mes.execution", "mes.return_requirement",
+            "mes.shortage",
+        ),
     ),
     EdgeSpec("mes", "oa", ("mes.approval_request",)),
     EdgeSpec("oa", "mes", ("oa.approval_decision",)),

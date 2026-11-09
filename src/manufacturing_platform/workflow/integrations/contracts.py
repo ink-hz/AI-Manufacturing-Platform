@@ -20,6 +20,8 @@ from .core_models import (
     MesContain,
     MesContainFact,
     MesDeliveryContext,
+    MesShortage,
+    MesShortageFact,
     MesInspect,
     MesInspectFact,
     MesInterrupt,
@@ -151,6 +153,7 @@ OperationPayload = Annotated[
     | WmsReturn
     | WmsStocktake
     | WmsShip
+    | MesShortage
     | MesInspect
     | MesPrepare
     | MesStart
@@ -204,6 +207,7 @@ FactPayload = Annotated[
     | WmsReturnFact
     | WmsStocktakeFact
     | WmsShipFact
+    | MesShortageFact
     | MesInspectFact
     | MesPreparation
     | MesStartFact
