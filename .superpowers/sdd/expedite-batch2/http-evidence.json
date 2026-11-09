@@ -1,17 +1,17 @@
 {
   "success": true,
-  "recorded_at": "2026-11-09T10:33:31.269363+00:00",
-  "preview_directory": "/Users/neo/.codex/worktrees/814b/expedite-http-verified",
-  "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "recorded_at": "2026-11-09T10:47:03.783143+00:00",
+  "preview_directory": "/Users/neo/.codex/worktrees/814b/expedite-http-finalenv",
+  "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
   "platform": "actual loopback HTTP service",
   "external_systems": "typed mock",
   "error": null,
   "steps": [
     {
       "step": "preview process",
-      "url": "http://127.0.0.1:61194",
+      "url": "http://127.0.0.1:57188",
       "actor": {
-        "id": "d6fbb209-d8c4-47b2-8a3c-58c6f3e1d441",
+        "id": "b242f128-60e4-480c-a02e-aa233332a45c",
         "display_name": "【模拟】本地预览管理员"
       },
       "configuration_admin": true,
@@ -20,7 +20,7 @@
     {
       "step": "HTTP create OEM project",
       "http_status": 200,
-      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "mode": "oem"
     },
     {
@@ -32,7 +32,7 @@
       "step": "demand.record",
       "http_status": 200,
       "object_type": "demand",
-      "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+      "object_id": "23e4824d-77da-4002-928d-1c3a032148bb",
       "project_version": 3,
       "integration": null,
       "network": null
@@ -41,7 +41,7 @@
       "step": "demand.review",
       "http_status": 200,
       "object_type": "demand",
-      "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+      "object_id": "23e4824d-77da-4002-928d-1c3a032148bb",
       "project_version": 4,
       "integration": null,
       "network": null
@@ -50,7 +50,7 @@
       "step": "demand.review",
       "http_status": 200,
       "object_type": "demand",
-      "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+      "object_id": "23e4824d-77da-4002-928d-1c3a032148bb",
       "project_version": 5,
       "integration": null,
       "network": null
@@ -59,7 +59,7 @@
       "step": "demand.review",
       "http_status": 200,
       "object_type": "demand",
-      "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+      "object_id": "23e4824d-77da-4002-928d-1c3a032148bb",
       "project_version": 6,
       "integration": null,
       "network": null
@@ -68,7 +68,7 @@
       "step": "demand.review",
       "http_status": 200,
       "object_type": "demand",
-      "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+      "object_id": "23e4824d-77da-4002-928d-1c3a032148bb",
       "project_version": 7,
       "integration": null,
       "network": null
@@ -77,7 +77,7 @@
       "step": "demand.review",
       "http_status": 200,
       "object_type": "demand",
-      "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+      "object_id": "23e4824d-77da-4002-928d-1c3a032148bb",
       "project_version": 8,
       "integration": null,
       "network": null
@@ -86,10 +86,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 9,
       "integration": {
-        "intent_id": "91abc4a8-c891-404b-9810-a4607d169a4b",
+        "intent_id": "ba5bdddf-741a-42d3-84d4-2e795ec6c88e",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -101,10 +101,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 11,
       "integration": {
-        "intent_id": "91abc4a8-c891-404b-9810-a4607d169a4b",
+        "intent_id": "ba5bdddf-741a-42d3-84d4-2e795ec6c88e",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -122,11 +122,11 @@
       "source": {
         "system": "sap",
         "object_type": "order",
-        "external_id": "91abc4a8-c891-404b-9810-a4607d169a4b",
+        "external_id": "ba5bdddf-741a-42d3-84d4-2e795ec6c88e",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.039683Z",
-        "collected_at": "2026-11-09T10:33:28.039683Z",
+        "occurred_at": "2026-11-09T10:47:00.459741Z",
+        "collected_at": "2026-11-09T10:47:00.459741Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -136,9 +136,9 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "order_line",
-          "id": "4c9d2731-0529-5234-8562-81e740ba2bb5"
+          "id": "daf4c520-350c-56fd-92e4-fffdc7e6cce9"
         }
       ]
     },
@@ -146,10 +146,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 12,
       "integration": {
-        "intent_id": "c6c424e1-ef2e-42c8-86c5-a571f64812fd",
+        "intent_id": "f70f5762-4dc7-4d67-b832-2be62fb54713",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -161,10 +161,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 14,
       "integration": {
-        "intent_id": "c6c424e1-ef2e-42c8-86c5-a571f64812fd",
+        "intent_id": "f70f5762-4dc7-4d67-b832-2be62fb54713",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -182,11 +182,11 @@
       "source": {
         "system": "pdm",
         "object_type": "revision",
-        "external_id": "c6c424e1-ef2e-42c8-86c5-a571f64812fd",
+        "external_id": "f70f5762-4dc7-4d67-b832-2be62fb54713",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.097086Z",
-        "collected_at": "2026-11-09T10:33:28.097086Z",
+        "occurred_at": "2026-11-09T10:47:00.562408Z",
+        "collected_at": "2026-11-09T10:47:00.562408Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -196,9 +196,9 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "revision",
-          "id": "42744e22-da99-42c7-9ab8-c8cc6016d1f4"
+          "id": "0cc54277-de4e-46d2-a99a-75ccce8ad554"
         }
       ]
     },
@@ -206,10 +206,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 15,
       "integration": {
-        "intent_id": "a6a1b57a-aa9e-40da-99ed-78b2427590ba",
+        "intent_id": "60385d23-01ce-424f-811f-ed82f99a7f89",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -221,10 +221,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 17,
       "integration": {
-        "intent_id": "a6a1b57a-aa9e-40da-99ed-78b2427590ba",
+        "intent_id": "60385d23-01ce-424f-811f-ed82f99a7f89",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -241,10 +241,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 18,
       "integration": {
-        "intent_id": "a6a1b57a-aa9e-40da-99ed-78b2427590ba",
+        "intent_id": "60385d23-01ce-424f-811f-ed82f99a7f89",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -262,11 +262,11 @@
       "source": {
         "system": "sap",
         "object_type": "work_order",
-        "external_id": "a6a1b57a-aa9e-40da-99ed-78b2427590ba",
+        "external_id": "60385d23-01ce-424f-811f-ed82f99a7f89",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.151989Z",
-        "collected_at": "2026-11-09T10:33:28.151989Z",
+        "occurred_at": "2026-11-09T10:47:00.626642Z",
+        "collected_at": "2026-11-09T10:47:00.626642Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -276,9 +276,9 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "work_order",
-          "id": "721688c7-092b-5298-bfd7-959cb960f7e3"
+          "id": "d49d5d55-6a48-5e2b-b06e-41a838663e9c"
         }
       ]
     },
@@ -286,7 +286,7 @@
       "step": "order.allocate",
       "http_status": 200,
       "object_type": "order_line",
-      "object_id": "4c9d2731-0529-5234-8562-81e740ba2bb5",
+      "object_id": "daf4c520-350c-56fd-92e4-fffdc7e6cce9",
       "project_version": 19,
       "integration": null,
       "network": null
@@ -295,7 +295,7 @@
       "step": "material.define",
       "http_status": 200,
       "object_type": "material_lot",
-      "object_id": "effac384-7420-4c96-b7d5-2d1aa7af9803",
+      "object_id": "8fcf4618-f548-4530-ac0e-016bdaf9232f",
       "project_version": 20,
       "integration": null,
       "network": null
@@ -304,10 +304,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 21,
       "integration": {
-        "intent_id": "789fd960-8320-41dc-b91f-11879c22c848",
+        "intent_id": "5df85278-b605-4358-b300-52dbeb2b6b31",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -319,10 +319,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 23,
       "integration": {
-        "intent_id": "789fd960-8320-41dc-b91f-11879c22c848",
+        "intent_id": "5df85278-b605-4358-b300-52dbeb2b6b31",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -340,11 +340,11 @@
       "source": {
         "system": "sap",
         "object_type": "plan",
-        "external_id": "789fd960-8320-41dc-b91f-11879c22c848",
+        "external_id": "5df85278-b605-4358-b300-52dbeb2b6b31",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.252369Z",
-        "collected_at": "2026-11-09T10:33:28.252369Z",
+        "occurred_at": "2026-11-09T10:47:00.747839Z",
+        "collected_at": "2026-11-09T10:47:00.747839Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -354,14 +354,14 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "plan",
-          "id": "61e863e3-fd4f-5741-9b97-aa9aee59f90a"
+          "id": "a0f4d7b8-733c-5379-8ad1-16e7c1a6d56d"
         },
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "requirement",
-          "id": "3f2cf0db-f2fd-42ee-bdd8-1637b625f9fe"
+          "id": "dd4d2543-7a9d-420c-8c84-594cd813d3ee"
         }
       ]
     },
@@ -369,10 +369,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 24,
       "integration": {
-        "intent_id": "95ffc69b-6ccb-4111-b8ce-9f59f3e3034d",
+        "intent_id": "0af83e75-626e-4453-8d81-fb903e1f7a17",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -384,10 +384,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 26,
       "integration": {
-        "intent_id": "95ffc69b-6ccb-4111-b8ce-9f59f3e3034d",
+        "intent_id": "0af83e75-626e-4453-8d81-fb903e1f7a17",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -405,11 +405,11 @@
       "source": {
         "system": "srm",
         "object_type": "promise",
-        "external_id": "95ffc69b-6ccb-4111-b8ce-9f59f3e3034d",
+        "external_id": "0af83e75-626e-4453-8d81-fb903e1f7a17",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.336183Z",
-        "collected_at": "2026-11-09T10:33:28.336183Z",
+        "occurred_at": "2026-11-09T10:47:00.850028Z",
+        "collected_at": "2026-11-09T10:47:00.850028Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -419,9 +419,9 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "commitment",
-          "id": "40fccf3e-80f6-4761-be50-6edfa134d8f0"
+          "id": "b4a54f3a-b41d-4639-b23a-c8ddc4096ac0"
         }
       ]
     },
@@ -429,10 +429,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 27,
       "integration": {
-        "intent_id": "01a53022-3f61-46f2-9d3e-e21206724c9d",
+        "intent_id": "2d8cbbbd-8a84-4e7c-b8a2-6b31b7087fc2",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -444,10 +444,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 29,
       "integration": {
-        "intent_id": "01a53022-3f61-46f2-9d3e-e21206724c9d",
+        "intent_id": "2d8cbbbd-8a84-4e7c-b8a2-6b31b7087fc2",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -465,11 +465,11 @@
       "source": {
         "system": "srm",
         "object_type": "arrival",
-        "external_id": "01a53022-3f61-46f2-9d3e-e21206724c9d",
+        "external_id": "2d8cbbbd-8a84-4e7c-b8a2-6b31b7087fc2",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.395552Z",
-        "collected_at": "2026-11-09T10:33:28.395552Z",
+        "occurred_at": "2026-11-09T10:47:00.921173Z",
+        "collected_at": "2026-11-09T10:47:00.921173Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -483,7 +483,7 @@
       "step": "expedite.open",
       "http_status": 200,
       "object_type": "material_expedite",
-      "object_id": "57d02d7d-6d98-492a-8e9d-4fceae268c56",
+      "object_id": "42e76ad8-09be-45d3-83e4-c04b579e336d",
       "project_version": 30,
       "integration": null,
       "network": null
@@ -497,7 +497,7 @@
       "step": "arrival.record",
       "http_status": 200,
       "object_type": "arrival",
-      "object_id": "0e6f2f9b-742a-4afe-9c37-79b950272468",
+      "object_id": "6bf0693f-2870-4915-8b41-21abccc11d9f",
       "project_version": 31,
       "integration": null,
       "network": null
@@ -506,10 +506,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 32,
       "integration": {
-        "intent_id": "84dd2768-a026-4b65-bdf8-a196fbd55e9a",
+        "intent_id": "2afb5a24-2227-4794-a089-3a8c1d8aa718",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -521,10 +521,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 34,
       "integration": {
-        "intent_id": "84dd2768-a026-4b65-bdf8-a196fbd55e9a",
+        "intent_id": "2afb5a24-2227-4794-a089-3a8c1d8aa718",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -541,10 +541,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 35,
       "integration": {
-        "intent_id": "84dd2768-a026-4b65-bdf8-a196fbd55e9a",
+        "intent_id": "2afb5a24-2227-4794-a089-3a8c1d8aa718",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -562,11 +562,11 @@
       "source": {
         "system": "wms",
         "object_type": "receipt",
-        "external_id": "84dd2768-a026-4b65-bdf8-a196fbd55e9a",
+        "external_id": "2afb5a24-2227-4794-a089-3a8c1d8aa718",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.488941Z",
-        "collected_at": "2026-11-09T10:33:28.488941Z",
+        "occurred_at": "2026-11-09T10:47:01.020554Z",
+        "collected_at": "2026-11-09T10:47:01.020554Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -576,9 +576,9 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "receipt",
-          "id": "d9534afa-4e59-488c-85ca-98ba384a1402"
+          "id": "6e0ea7e1-a954-4d66-afdc-1a7879c5403f"
         }
       ]
     },
@@ -586,7 +586,7 @@
       "step": "arrival.match",
       "http_status": 200,
       "object_type": "arrival",
-      "object_id": "0e6f2f9b-742a-4afe-9c37-79b950272468",
+      "object_id": "6bf0693f-2870-4915-8b41-21abccc11d9f",
       "project_version": 36,
       "integration": null,
       "network": null
@@ -595,10 +595,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 37,
       "integration": {
-        "intent_id": "925684b0-2076-4a91-bc7e-04cb2ddb0d99",
+        "intent_id": "aa7f01f8-26c4-4d98-8dad-3df17fccefc1",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -610,10 +610,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 39,
       "integration": {
-        "intent_id": "925684b0-2076-4a91-bc7e-04cb2ddb0d99",
+        "intent_id": "aa7f01f8-26c4-4d98-8dad-3df17fccefc1",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -630,10 +630,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 40,
       "integration": {
-        "intent_id": "925684b0-2076-4a91-bc7e-04cb2ddb0d99",
+        "intent_id": "aa7f01f8-26c4-4d98-8dad-3df17fccefc1",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -651,11 +651,11 @@
       "source": {
         "system": "mes",
         "object_type": "iqc",
-        "external_id": "925684b0-2076-4a91-bc7e-04cb2ddb0d99",
+        "external_id": "aa7f01f8-26c4-4d98-8dad-3df17fccefc1",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.573739Z",
-        "collected_at": "2026-11-09T10:33:28.573739Z",
+        "occurred_at": "2026-11-09T10:47:01.121432Z",
+        "collected_at": "2026-11-09T10:47:01.121432Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -665,15 +665,15 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "receipt",
-          "id": "d9534afa-4e59-488c-85ca-98ba384a1402"
+          "id": "6e0ea7e1-a954-4d66-afdc-1a7879c5403f"
         }
       ]
     },
     {
       "step": "receipt urgent flag and qualified responsibility",
-      "receipt_id": "d9534afa-4e59-488c-85ca-98ba384a1402",
+      "receipt_id": "6e0ea7e1-a954-4d66-afdc-1a7879c5403f",
       "blocking_reasons": [
         "Expedited: open expedite on linked requirement"
       ],
@@ -684,10 +684,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 41,
       "integration": {
-        "intent_id": "d2ded993-4e48-4526-a940-ee68149dc495",
+        "intent_id": "8ff9b5c2-569d-421b-9ffd-a9693b739f97",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -699,10 +699,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 43,
       "integration": {
-        "intent_id": "d2ded993-4e48-4526-a940-ee68149dc495",
+        "intent_id": "8ff9b5c2-569d-421b-9ffd-a9693b739f97",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -720,11 +720,11 @@
       "source": {
         "system": "wms",
         "object_type": "putaway",
-        "external_id": "d2ded993-4e48-4526-a940-ee68149dc495",
+        "external_id": "8ff9b5c2-569d-421b-9ffd-a9693b739f97",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.685927Z",
-        "collected_at": "2026-11-09T10:33:28.685927Z",
+        "occurred_at": "2026-11-09T10:47:01.251471Z",
+        "collected_at": "2026-11-09T10:47:01.251471Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -734,14 +734,14 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "material_lot",
-          "id": "effac384-7420-4c96-b7d5-2d1aa7af9803"
+          "id": "8fcf4618-f548-4530-ac0e-016bdaf9232f"
         },
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "work_order",
-          "id": "721688c7-092b-5298-bfd7-959cb960f7e3"
+          "id": "d49d5d55-6a48-5e2b-b06e-41a838663e9c"
         }
       ]
     },
@@ -749,10 +749,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 44,
       "integration": {
-        "intent_id": "ec19d027-e8a3-400e-97f1-e3e16115c6d2",
+        "intent_id": "02adf718-3431-48da-8f8c-9ca3770b07dc",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -764,10 +764,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 46,
       "integration": {
-        "intent_id": "ec19d027-e8a3-400e-97f1-e3e16115c6d2",
+        "intent_id": "02adf718-3431-48da-8f8c-9ca3770b07dc",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -785,11 +785,11 @@
       "source": {
         "system": "wms",
         "object_type": "reservation",
-        "external_id": "ec19d027-e8a3-400e-97f1-e3e16115c6d2",
+        "external_id": "02adf718-3431-48da-8f8c-9ca3770b07dc",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.735939Z",
-        "collected_at": "2026-11-09T10:33:28.735939Z",
+        "occurred_at": "2026-11-09T10:47:01.309565Z",
+        "collected_at": "2026-11-09T10:47:01.309565Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -799,9 +799,9 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "reservation",
-          "id": "caf64bac-2337-489c-981d-0c7bc0e4d4af"
+          "id": "05debd8c-d616-4b29-9809-4962f7a02218"
         }
       ]
     },
@@ -809,10 +809,10 @@
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 47,
       "integration": {
-        "intent_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+        "intent_id": "07cdddfc-e9c2-4eec-b862-b841ac55c9c2",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -824,10 +824,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 49,
       "integration": {
-        "intent_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+        "intent_id": "07cdddfc-e9c2-4eec-b862-b841ac55c9c2",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -844,10 +844,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 50,
       "integration": {
-        "intent_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+        "intent_id": "07cdddfc-e9c2-4eec-b862-b841ac55c9c2",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -865,11 +865,11 @@
       "source": {
         "system": "wms",
         "object_type": "pick",
-        "external_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+        "external_id": "07cdddfc-e9c2-4eec-b862-b841ac55c9c2",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:28.788353Z",
-        "collected_at": "2026-11-09T10:33:28.788353Z",
+        "occurred_at": "2026-11-09T10:47:01.371929Z",
+        "collected_at": "2026-11-09T10:47:01.371929Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -879,14 +879,14 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "material_lot",
-          "id": "effac384-7420-4c96-b7d5-2d1aa7af9803"
+          "id": "8fcf4618-f548-4530-ac0e-016bdaf9232f"
         },
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "work_order",
-          "id": "721688c7-092b-5298-bfd7-959cb960f7e3"
+          "id": "d49d5d55-6a48-5e2b-b06e-41a838663e9c"
         }
       ]
     },
@@ -894,10 +894,10 @@
       "step": "integration.pull",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 51,
       "integration": {
-        "intent_id": "0362a97f-d47a-46d8-bfbb-e2b97776ef1e",
+        "intent_id": "8131b4a2-bcee-47dd-aa97-74bc782d366c",
         "phase": "applied",
         "source_committed": null,
         "receipt_phase": null,
@@ -910,14 +910,14 @@
       "source_key": {
         "system": "wms",
         "object_type": "pick",
-        "external_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+        "external_id": "07cdddfc-e9c2-4eec-b862-b841ac55c9c2",
         "version": 1
       },
       "consumer_delivered": true,
       "sap_posting_key": {
         "system": "sap",
         "object_type": "accounting_entry",
-        "external_id": "c8dff1e6-3b56-5a74-a5ef-d3b67da87d0c",
+        "external_id": "7df20480-f882-5dd5-a15c-4cd692100bc0",
         "version": 1
       },
       "sap_posted": true,
@@ -925,9 +925,9 @@
     },
     {
       "step": "preview process",
-      "url": "http://127.0.0.1:61201",
+      "url": "http://127.0.0.1:57507",
       "actor": {
-        "id": "3abbc638-a1f8-5f58-b11f-bd8691b4ed0c",
+        "id": "6c1439fe-535d-5fa3-bc99-b2d37a2d7b89",
         "display_name": "【模拟维护】production"
       },
       "configuration_admin": false,
@@ -937,16 +937,16 @@
       "step": "material_handoff.record",
       "http_status": 200,
       "object_type": "material_handoff",
-      "object_id": "967054ec-2f68-4a65-8f31-c8a446d02097",
+      "object_id": "fa94db45-e7d0-413c-8509-344b7026cf5b",
       "project_version": 53,
       "integration": null,
       "network": null
     },
     {
       "step": "preview process",
-      "url": "http://127.0.0.1:61204",
+      "url": "http://127.0.0.1:57603",
       "actor": {
-        "id": "d6fbb209-d8c4-47b2-8a3c-58c6f3e1d441",
+        "id": "b242f128-60e4-480c-a02e-aa233332a45c",
         "display_name": "【模拟】本地预览管理员"
       },
       "configuration_admin": true,
@@ -956,7 +956,7 @@
       "step": "material_handoff.receive",
       "http_status": 200,
       "object_type": "material_handoff",
-      "object_id": "967054ec-2f68-4a65-8f31-c8a446d02097",
+      "object_id": "fa94db45-e7d0-413c-8509-344b7026cf5b",
       "project_version": 54,
       "integration": null,
       "network": null
@@ -965,7 +965,7 @@
       "step": "issue.mark",
       "http_status": 200,
       "object_type": "issue_mark",
-      "object_id": "e5b010bf-a6ec-47be-b54f-0039b72a20d3",
+      "object_id": "24cf70f9-e558-4ffc-8f5f-9bc5373bc346",
       "project_version": 55,
       "integration": null,
       "network": null
@@ -974,7 +974,7 @@
       "step": "issue.mark",
       "http_status": 200,
       "object_type": "issue_mark",
-      "object_id": "a03e8f45-351e-4554-888d-ed26a5ee289e",
+      "object_id": "bfc17fd6-6d16-4efc-a622-65da728ec73e",
       "project_version": 56,
       "integration": null,
       "network": null
@@ -983,7 +983,7 @@
       "step": "issue.mark",
       "http_status": 200,
       "object_type": "issue_mark",
-      "object_id": "b0cd8dce-2842-4fe7-a02b-078688b6f483",
+      "object_id": "ee039e7c-f25a-4a1c-ad4d-4110a2251ccd",
       "project_version": 57,
       "integration": null,
       "network": null
@@ -992,7 +992,7 @@
       "step": "issue.mark",
       "http_status": 200,
       "object_type": "issue_mark",
-      "object_id": "39b027e7-0beb-45c6-8369-9678a4d2b6a7",
+      "object_id": "863510f4-8d26-4b15-9a64-ced5445321be",
       "project_version": 58,
       "integration": null,
       "network": null
@@ -1001,11 +1001,11 @@
       "step": "four issue marks and all five milestones",
       "marks_total": 4,
       "milestones": {
-        "opened_at": "2026-11-09T10:33:28.454110Z",
-        "arrival_at": "2026-11-09T10:33:28.463482Z",
-        "receipt_at": "2026-11-09T10:33:28.493899Z",
-        "inspection_at": "2026-11-09T10:33:28.579451Z",
-        "handoff_at": "2026-11-09T10:33:30.274628Z"
+        "opened_at": "2026-11-09T10:47:00.986202Z",
+        "arrival_at": "2026-11-09T10:47:00.996545Z",
+        "receipt_at": "2026-11-09T10:47:01.026095Z",
+        "inspection_at": "2026-11-09T10:47:01.128665Z",
+        "handoff_at": "2026-11-09T10:47:02.885793Z"
       },
       "accounting_unchanged": true
     },
@@ -1013,24 +1013,24 @@
       "step": "expedite.close",
       "http_status": 200,
       "object_type": "material_expedite",
-      "object_id": "57d02d7d-6d98-492a-8e9d-4fceae268c56",
+      "object_id": "42e76ad8-09be-45d3-83e4-c04b579e336d",
       "project_version": 59,
       "integration": null,
       "network": null
     },
     {
       "step": "closed case clears flag and responsibility",
-      "case_id": "57d02d7d-6d98-492a-8e9d-4fceae268c56",
+      "case_id": "42e76ad8-09be-45d3-83e4-c04b579e336d",
       "accounting_unchanged": true
     },
     {
       "step": "mock_system.execute",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 60,
       "integration": {
-        "intent_id": "7d5133e9-cfc2-457f-b2bd-14ad00f2cbe9",
+        "intent_id": "3a781ef8-4823-444c-97d5-5165094fdef8",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -1042,10 +1042,10 @@
       "step": "mock_system.query",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 62,
       "integration": {
-        "intent_id": "7d5133e9-cfc2-457f-b2bd-14ad00f2cbe9",
+        "intent_id": "3a781ef8-4823-444c-97d5-5165094fdef8",
         "phase": "applied",
         "source_committed": true,
         "receipt_phase": "accepted",
@@ -1063,11 +1063,11 @@
       "source": {
         "system": "mes",
         "object_type": "shortage",
-        "external_id": "7d5133e9-cfc2-457f-b2bd-14ad00f2cbe9",
+        "external_id": "3a781ef8-4823-444c-97d5-5165094fdef8",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:30.364339Z",
-        "collected_at": "2026-11-09T10:33:30.364339Z",
+        "occurred_at": "2026-11-09T10:47:02.982502Z",
+        "collected_at": "2026-11-09T10:47:02.982502Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -1077,9 +1077,9 @@
       "sap_posted": null,
       "targets": [
         {
-          "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+          "project_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
           "kind": "material_expedite",
-          "id": "c917f929-412f-57a1-a77e-73f9975bcc16"
+          "id": "41becb66-22ff-570c-ac2d-b94c4178186f"
         }
       ]
     },
@@ -1087,10 +1087,10 @@
       "step": "integration.pull",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 63,
       "integration": {
-        "intent_id": "fe6c0cd1-804f-48b8-aae8-272d767fc8e7",
+        "intent_id": "4d5f3f12-91fe-4df1-8723-505a6c78748b",
         "phase": "applied",
         "source_committed": null,
         "receipt_phase": null,
@@ -1102,10 +1102,10 @@
       "step": "integration.pull",
       "http_status": 200,
       "object_type": "project",
-      "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "object_id": "00dcbbb7-9220-462c-8dbb-7ef56eb1b8e6",
       "project_version": 65,
       "integration": {
-        "intent_id": "135cccbf-b76c-4109-a8d4-14dbb93a10cd",
+        "intent_id": "4bfd01db-cf10-43bd-831f-6c11fd21220f",
         "phase": "applied",
         "source_committed": null,
         "receipt_phase": null,
@@ -1115,9 +1115,9 @@
     },
     {
       "step": "preview process",
-      "url": "http://127.0.0.1:61207",
+      "url": "http://127.0.0.1:57606",
       "actor": {
-        "id": "d6fbb209-d8c4-47b2-8a3c-58c6f3e1d441",
+        "id": "b242f128-60e4-480c-a02e-aa233332a45c",
         "display_name": "【模拟】本地预览管理员"
       },
       "configuration_admin": true,
@@ -1125,16 +1125,16 @@
     },
     {
       "step": "MES shortage replay and restart",
-      "case_id": "c917f929-412f-57a1-a77e-73f9975bcc16",
+      "case_id": "41becb66-22ff-570c-ac2d-b94c4178186f",
       "case_count": 2,
       "source": {
         "system": "mes",
         "object_type": "shortage",
-        "external_id": "7d5133e9-cfc2-457f-b2bd-14ad00f2cbe9",
+        "external_id": "3a781ef8-4823-444c-97d5-5165094fdef8",
         "version": 1,
         "mode": "mock",
-        "occurred_at": "2026-11-09T10:33:30.364339Z",
-        "collected_at": "2026-11-09T10:33:30.364339Z",
+        "occurred_at": "2026-11-09T10:47:02.982502Z",
+        "collected_at": "2026-11-09T10:47:02.982502Z",
         "cutoff": null,
         "evidence": "Source-owned committed mock fact"
       },
@@ -1142,7 +1142,7 @@
       "restart_readable": true
     }
   ],
-  "runner_command": "PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python scripts/verify_expedite_batch2.py --root /Users/neo/.codex/worktrees/814b/expedite-http-verified --platform-root /Users/neo/Developer/work/AI-Agent-Platform --output .superpowers/sdd/expedite-batch2/verified",
+  "runner_command": "PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python scripts/verify_expedite_batch2.py --root /Users/neo/.codex/worktrees/814b/expedite-http-finalenv --platform-root /Users/neo/Developer/work/AI-Agent-Platform --output .superpowers/sdd/expedite-batch2/finalenv > .superpowers/sdd/expedite-batch2/socket-final.log 2>&1",
   "process_exit_status": 0,
   "working_directory": "/Users/neo/.codex/worktrees/814b/AI-Manufacturing-Platform"
 }

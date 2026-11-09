@@ -13,7 +13,7 @@
 
 ## 验证与证据
 
-分主题专项验证：里程碑/责任待办72通过；发料标记/IQC/兼容231通过；MES欠料专项145通过、集成兼容343通过；preview专项25通过。最终全量结果记录在 `.superpowers/sdd/expedite-batch2/full-backend.log`，作为整体交付验收门。
+分主题专项验证：里程碑/责任待办72通过；发料标记/IQC/兼容231通过；MES欠料专项145通过、集成兼容343通过；preview专项25通过。最终全量：**1193 passed、35 skipped，零失败**（497.53秒），退出码0；结果记录在 `.superpowers/sdd/expedite-batch2/full-backend.log`。整分支独立审查通过，唯一证据格式小项已补齐。相同完整依赖环境下实际HTTP走查73步通过，退出码0。
 
 实际回环 TCP HTTP 走查覆盖：项目→SAP/PDM资料→SAP需求→SRM承诺/到货预告→开急料案→观察→WMS收货→匹配→MES IQC→标记/待办→WMS上架/预留/拣配→精确对应的SAP过账子事实→双人交接→四状态登记→五里程碑→关案→MES欠料再开案→重复投影→重启读取。新增急料/issue/派生读取的前后快照检查工作流数量表、legacy authority表以及WMS/SAP源事实。
 

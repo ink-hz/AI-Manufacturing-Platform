@@ -62,7 +62,7 @@ IQC 出结果、IQC 合格、WMS 入库上架、产线实收是不同事实。�
 
 本批收货列表及详情按“关联在办急料案”增加急料标记；保持现有 SQL 排序、分页和总数不变，使用本页有界查询避免 N+1。前端后续可做当前页分组，但不宣称全局置顶；跨分页优先级另立查询契约后实施。不给 iqc_results 加字段，不改变检验职责与判定。
 
-### 3.4 `material_issue_marks` 发料四状态（第二批实现）
+### 3.4 `issue_mark` 发料四状态（表 issue_marks，第二批实现）
 
 P13 的人工登记版，验证口径用：`issue.mark` 字段 `requirement_id: UUID`、`stage: Literal["printed","picked","receipted","posted"]`、`note: Text|null`、`occurred_at: AwareDatetime|null`。append-only；允许乱序与补录（补录是一等公民），不校验推进顺序，只如实留痕；四状态视图按需求聚合展示最新各状态时间。接口期由 WMS 回执（I3）喂 picked/receipted，SAP 喂 posted，人工登记停录。
 
