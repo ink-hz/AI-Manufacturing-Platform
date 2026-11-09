@@ -357,6 +357,76 @@ def test_cli_socket_host_uses_guarded_business_router(prepared):
         process.stderr.close()
 
 
+def test_preview_synthetic_actor_keeps_real_project_permissions(prepared):
+    preview, root, manifest = prepared
+    subject = next(s for s in manifest["synthetic_subjects"] if s["display_name"].endswith("production"))
+    app = preview.build_app(root, 19221, actor_id=subject["user_id"])
+    with TestClient(app, base_url="http://127.0.0.1:19221") as client:
+        response = client.get("/preview-bootstrap")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["user"]["displayName"] == subject["display_name"]
+        assert body["bootstrap"]["configuration_admin"] is False
+
+
+def test_preview_rejects_actor_outside_owned_synthetic_directory(prepared):
+    preview, root, _ = prepared
+    with pytest.raises(ValueError, match="synthetic"):
+        preview.build_app(root, 19221, actor_id=str(uuid4()))
+
+
+def test_owned_mock_source_storage_survives_preview_reopen(prepared):
+    from datetime import UTC, datetime
+    from manufacturing_platform.workflow.integrations.store import SystemStore
+
+    preview, root, manifest = prepared
+    store = SystemStore(root / "mock-systems", manifest["dataset"]["id"], "mes", clock=lambda: datetime.now(UTC))
+    with store.transaction(write=True):
+        pass
+    guards = store.path.parent / "guards"
+    guards.mkdir(exist_ok=True)
+    (guards / f"{uuid4()}.lock").touch(mode=0o600)
+    assert preview.load_owned(root)["dataset"] == manifest["dataset"]
+
+
+@pytest.mark.parametrize("name", ["foreign-dataset", "foreign.sqlite3", "guards/not-a-uuid.lock"])
+def test_preview_mock_storage_still_rejects_unlisted_entries(prepared, name):
+    preview, root, manifest = prepared
+    base = root / "mock-systems" / manifest["dataset"]["id"]
+    base.mkdir(parents=True, exist_ok=True)
+    entry = (root / "mock-systems" / name) if name == "foreign-dataset" else base / name
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    if name == "foreign-dataset":
+        entry.mkdir()
+    else:
+        entry.touch()
+    try:
+        with pytest.raises(ValueError, match="Unexpected preview"):
+            preview.load_owned(root)
+    finally:
+        entry.rmdir() if entry.is_dir() else entry.unlink()
+
+
+@pytest.mark.parametrize("alias", ["symlink", "hardlink"])
+def test_preview_mock_source_file_aliases_remain_forbidden(prepared, tmp_path, alias):
+    preview, root, manifest = prepared
+    base = root / "mock-systems" / manifest["dataset"]["id"]
+    base.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "outside.sqlite3"
+    target.write_bytes(b"outside sentinel")
+    linked = base / "hr_beisen.sqlite3"
+    if alias == "symlink":
+        linked.symlink_to(target)
+    else:
+        os.link(target, linked)
+    try:
+        with pytest.raises(ValueError):
+            preview.load_owned(root)
+        assert target.read_bytes() == b"outside sentinel"
+    finally:
+        linked.unlink()
+
+
 def test_exact_renderer_bundle_renders_gfm_and_releases_owned_roots(prepared):
     import subprocess
 

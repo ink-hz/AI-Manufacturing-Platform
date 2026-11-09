@@ -8,13 +8,14 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import secrets
 import socket
 import stat
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -99,16 +100,35 @@ def load_owned(root):
         or not manifest.get("complete")
     ):
         raise ValueError("Complete owned simulated preview manifest required")
+    mock_directories, mock_files, guard_directory = set(), set(), None
+    dataset_id = manifest["dataset"].get("id")
+    if isinstance(dataset_id, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}", dataset_id):
+        from manufacturing_platform.workflow.integrations.catalog import SYSTEM_IDS
+
+        scope = "mock-systems/" + dataset_id
+        guard_directory = scope + "/guards"
+        mock_directories = {"mock-systems", scope, guard_directory}
+        mock_files = {
+            scope + "/" + system + ".sqlite3" + suffix
+            for system in SYSTEM_IDS
+            for suffix in ("", "-wal", "-shm", "-journal")
+        }
     for entry in root.rglob("*"):
         name = entry.relative_to(root).as_posix()
         if entry.is_symlink():
             raise ValueError("Preview links are forbidden")
         if entry.is_dir():
-            if name not in DIRECTORIES:
+            if name not in DIRECTORIES | mock_directories:
                 raise ValueError("Unexpected preview directory")
-        elif name not in BASE_FILES | DB_SIDECARS:
-            raise ValueError("Unexpected preview file")
         else:
+            allowed_guard = False
+            if entry.parent.relative_to(root).as_posix() == guard_directory and entry.suffix == ".lock":
+                try:
+                    allowed_guard = str(UUID(entry.stem)) == entry.stem
+                except ValueError:
+                    pass
+            if name not in BASE_FILES | DB_SIDECARS | mock_files and not allowed_guard:
+                raise ValueError("Unexpected preview file")
             regular(entry)
     for name in BASE_FILES:
         regular(root / name)
@@ -239,7 +259,7 @@ SHELL = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta n
 </script></body></html>"""
 
 
-def build_app(root, port):
+def build_app(root, port, *, actor_id=None):
     if not isinstance(port, int) or not 1 <= port <= 65535:
         raise ValueError("An actual loopback port is required")
     root = safe_root(root)
@@ -247,14 +267,19 @@ def build_app(root, port):
     host = f"127.0.0.1:{port}"
     origin = "http://" + host
     csrf = secrets.token_urlsafe(32)
-    actor = {
+    subjects = {s["user_id"]: s for s in manifest["synthetic_subjects"]}
+    subjects[manifest["admin_id"]] = {
         "user_id": manifest["admin_id"],
         "display_name": "【模拟】本地预览管理员",
-        "read_only": False,
-        "configuration_admin": True,
     }
-    subjects = {s["user_id"]: s for s in manifest["synthetic_subjects"]}
-    subjects[actor["user_id"]] = {k: actor[k] for k in ("user_id", "display_name")}
+    selected = manifest["admin_id"] if actor_id is None else str(actor_id)
+    if selected not in subjects:
+        raise ValueError("Owned preview synthetic actor required")
+    actor = {
+        **subjects[selected],
+        "read_only": False,
+        "configuration_admin": selected == manifest["admin_id"],
+    }
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware("http")
@@ -312,7 +337,7 @@ def build_app(root, port):
             "readOnly": False,
             "user": {
                 "displayName": actor["display_name"],
-                "roleLabel": "【模拟】本地全权限",
+                "roleLabel": "【模拟】本地全权限" if actor["configuration_admin"] else "【模拟】项目角色权限",
             },
         }
 
@@ -325,7 +350,7 @@ def build_app(root, port):
     return app
 
 
-def serve(root, port=0):
+def serve(root, port=0, *, actor_id=None):
     root = safe_root(root)
     load_owned(root)
     with (root / "preview.lock").open("r+") as lock:
@@ -333,7 +358,7 @@ def serve(root, port=0):
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", port))
             actual = sock.getsockname()[1]
-            app = build_app(root, actual)
+            app = build_app(root, actual, actor_id=actor_id)
             print(
                 json.dumps(
                     {
@@ -357,6 +382,7 @@ def main():
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--platform-root", type=Path)
     parser.add_argument("--port", type=int, default=0)
+    parser.add_argument("--actor-id", help="Owned preview synthetic subject; grants remain enforced")
     args = parser.parse_args()
     if args.action == "prepare":
         if args.platform_root is None:
@@ -373,7 +399,7 @@ def main():
             )
         )
     else:
-        serve(args.root, args.port)
+        serve(args.root, args.port, actor_id=args.actor_id)
 
 
 if __name__ == "__main__":

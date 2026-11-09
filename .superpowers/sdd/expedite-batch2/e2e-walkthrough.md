@@ -1,0 +1,1508 @@
+# 急料批次②③真实 HTTP 数据流走查
+
+时间：2026-11-09T10:33:31.269363+00:00
+结果：通过；项目：e86e7a17-9c45-467d-bb15-6f7632ff2561
+
+平台运行 preview_manufacturing.py 的实际回环 socket 服务；未打通的外部 SAP/WMS/MES/PDM 使用类型化 mock。
+业务操作全部通过 HTTP；唯一直接维护步骤是在新项目任何业务意图之前绑定 demo 集成档案。
+交接发起与签收使用不同的清单内合成身份，切换通过重启 preview --actor-id 完成，不放松授权。
+原始响应关键字段见同目录 http-evidence.json；不记录 CSRF token。
+
+## preview process
+
+```json
+{
+  "step": "preview process",
+  "url": "http://127.0.0.1:61194",
+  "actor": {
+    "id": "d6fbb209-d8c4-47b2-8a3c-58c6f3e1d441",
+    "display_name": "【模拟】本地预览管理员"
+  },
+  "configuration_admin": true,
+  "external_systems": "mock"
+}
+```
+
+## HTTP create OEM project
+
+```json
+{
+  "step": "HTTP create OEM project",
+  "http_status": 200,
+  "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "mode": "oem"
+}
+```
+
+## demo maintenance profile assignment
+
+```json
+{
+  "step": "demo maintenance profile assignment",
+  "profile": "oem-network-v1",
+  "business_rows_written": false
+}
+```
+
+## demand.record
+
+```json
+{
+  "step": "demand.record",
+  "http_status": 200,
+  "object_type": "demand",
+  "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+  "project_version": 3,
+  "integration": null,
+  "network": null
+}
+```
+
+## demand.review
+
+```json
+{
+  "step": "demand.review",
+  "http_status": 200,
+  "object_type": "demand",
+  "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+  "project_version": 4,
+  "integration": null,
+  "network": null
+}
+```
+
+## demand.review
+
+```json
+{
+  "step": "demand.review",
+  "http_status": 200,
+  "object_type": "demand",
+  "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+  "project_version": 5,
+  "integration": null,
+  "network": null
+}
+```
+
+## demand.review
+
+```json
+{
+  "step": "demand.review",
+  "http_status": 200,
+  "object_type": "demand",
+  "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+  "project_version": 6,
+  "integration": null,
+  "network": null
+}
+```
+
+## demand.review
+
+```json
+{
+  "step": "demand.review",
+  "http_status": 200,
+  "object_type": "demand",
+  "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+  "project_version": 7,
+  "integration": null,
+  "network": null
+}
+```
+
+## demand.review
+
+```json
+{
+  "step": "demand.review",
+  "http_status": 200,
+  "object_type": "demand",
+  "object_id": "13085869-c997-476d-9cf3-2475d886a4d4",
+  "project_version": 8,
+  "integration": null,
+  "network": null
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 9,
+  "integration": {
+    "intent_id": "91abc4a8-c891-404b-9810-a4607d169a4b",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 11,
+  "integration": {
+    "intent_id": "91abc4a8-c891-404b-9810-a4607d169a4b",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 2,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## sap.release_order source evidence
+
+```json
+{
+  "step": "sap.release_order source evidence",
+  "source": {
+    "system": "sap",
+    "object_type": "order",
+    "external_id": "91abc4a8-c891-404b-9810-a4607d169a4b",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.039683Z",
+    "collected_at": "2026-11-09T10:33:28.039683Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "order_line",
+      "id": "4c9d2731-0529-5234-8562-81e740ba2bb5"
+    }
+  ]
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 12,
+  "integration": {
+    "intent_id": "c6c424e1-ef2e-42c8-86c5-a571f64812fd",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 14,
+  "integration": {
+    "intent_id": "c6c424e1-ef2e-42c8-86c5-a571f64812fd",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 2,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## pdm.publish_revision source evidence
+
+```json
+{
+  "step": "pdm.publish_revision source evidence",
+  "source": {
+    "system": "pdm",
+    "object_type": "revision",
+    "external_id": "c6c424e1-ef2e-42c8-86c5-a571f64812fd",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.097086Z",
+    "collected_at": "2026-11-09T10:33:28.097086Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "revision",
+      "id": "42744e22-da99-42c7-9ab8-c8cc6016d1f4"
+    }
+  ]
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 15,
+  "integration": {
+    "intent_id": "a6a1b57a-aa9e-40da-99ed-78b2427590ba",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 17,
+  "integration": {
+    "intent_id": "a6a1b57a-aa9e-40da-99ed-78b2427590ba",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 1,
+    "delivered": 2,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 18,
+  "integration": {
+    "intent_id": "a6a1b57a-aa9e-40da-99ed-78b2427590ba",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 1,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## sap.release_work_order source evidence
+
+```json
+{
+  "step": "sap.release_work_order source evidence",
+  "source": {
+    "system": "sap",
+    "object_type": "work_order",
+    "external_id": "a6a1b57a-aa9e-40da-99ed-78b2427590ba",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.151989Z",
+    "collected_at": "2026-11-09T10:33:28.151989Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "work_order",
+      "id": "721688c7-092b-5298-bfd7-959cb960f7e3"
+    }
+  ]
+}
+```
+
+## order.allocate
+
+```json
+{
+  "step": "order.allocate",
+  "http_status": 200,
+  "object_type": "order_line",
+  "object_id": "4c9d2731-0529-5234-8562-81e740ba2bb5",
+  "project_version": 19,
+  "integration": null,
+  "network": null
+}
+```
+
+## material.define
+
+```json
+{
+  "step": "material.define",
+  "http_status": 200,
+  "object_type": "material_lot",
+  "object_id": "effac384-7420-4c96-b7d5-2d1aa7af9803",
+  "project_version": 20,
+  "integration": null,
+  "network": null
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 21,
+  "integration": {
+    "intent_id": "789fd960-8320-41dc-b91f-11879c22c848",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 23,
+  "integration": {
+    "intent_id": "789fd960-8320-41dc-b91f-11879c22c848",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 4,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## sap.publish_plan source evidence
+
+```json
+{
+  "step": "sap.publish_plan source evidence",
+  "source": {
+    "system": "sap",
+    "object_type": "plan",
+    "external_id": "789fd960-8320-41dc-b91f-11879c22c848",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.252369Z",
+    "collected_at": "2026-11-09T10:33:28.252369Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "plan",
+      "id": "61e863e3-fd4f-5741-9b97-aa9aee59f90a"
+    },
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "requirement",
+      "id": "3f2cf0db-f2fd-42ee-bdd8-1637b625f9fe"
+    }
+  ]
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 24,
+  "integration": {
+    "intent_id": "95ffc69b-6ccb-4111-b8ce-9f59f3e3034d",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 26,
+  "integration": {
+    "intent_id": "95ffc69b-6ccb-4111-b8ce-9f59f3e3034d",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 2,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## srm.promise source evidence
+
+```json
+{
+  "step": "srm.promise source evidence",
+  "source": {
+    "system": "srm",
+    "object_type": "promise",
+    "external_id": "95ffc69b-6ccb-4111-b8ce-9f59f3e3034d",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.336183Z",
+    "collected_at": "2026-11-09T10:33:28.336183Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "commitment",
+      "id": "40fccf3e-80f6-4761-be50-6edfa134d8f0"
+    }
+  ]
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 27,
+  "integration": {
+    "intent_id": "01a53022-3f61-46f2-9d3e-e21206724c9d",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 29,
+  "integration": {
+    "intent_id": "01a53022-3f61-46f2-9d3e-e21206724c9d",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 2,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## srm.announce_arrival source evidence
+
+```json
+{
+  "step": "srm.announce_arrival source evidence",
+  "source": {
+    "system": "srm",
+    "object_type": "arrival",
+    "external_id": "01a53022-3f61-46f2-9d3e-e21206724c9d",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.395552Z",
+    "collected_at": "2026-11-09T10:33:28.395552Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": []
+}
+```
+
+## expedite.open
+
+```json
+{
+  "step": "expedite.open",
+  "http_status": 200,
+  "object_type": "material_expedite",
+  "object_id": "57d02d7d-6d98-492a-8e9d-4fceae268c56",
+  "project_version": 30,
+  "integration": null,
+  "network": null
+}
+```
+
+## general expedite responsibility
+
+```json
+{
+  "step": "general expedite responsibility",
+  "title": "急料待跟进",
+  "accounting_unchanged": true
+}
+```
+
+## arrival.record
+
+```json
+{
+  "step": "arrival.record",
+  "http_status": 200,
+  "object_type": "arrival",
+  "object_id": "0e6f2f9b-742a-4afe-9c37-79b950272468",
+  "project_version": 31,
+  "integration": null,
+  "network": null
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 32,
+  "integration": {
+    "intent_id": "84dd2768-a026-4b65-bdf8-a196fbd55e9a",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 34,
+  "integration": {
+    "intent_id": "84dd2768-a026-4b65-bdf8-a196fbd55e9a",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 1,
+    "delivered": 2,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 35,
+  "integration": {
+    "intent_id": "84dd2768-a026-4b65-bdf8-a196fbd55e9a",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 1,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## wms.receive source evidence
+
+```json
+{
+  "step": "wms.receive source evidence",
+  "source": {
+    "system": "wms",
+    "object_type": "receipt",
+    "external_id": "84dd2768-a026-4b65-bdf8-a196fbd55e9a",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.488941Z",
+    "collected_at": "2026-11-09T10:33:28.488941Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "receipt",
+      "id": "d9534afa-4e59-488c-85ca-98ba384a1402"
+    }
+  ]
+}
+```
+
+## arrival.match
+
+```json
+{
+  "step": "arrival.match",
+  "http_status": 200,
+  "object_type": "arrival",
+  "object_id": "0e6f2f9b-742a-4afe-9c37-79b950272468",
+  "project_version": 36,
+  "integration": null,
+  "network": null
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 37,
+  "integration": {
+    "intent_id": "925684b0-2076-4a91-bc7e-04cb2ddb0d99",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 39,
+  "integration": {
+    "intent_id": "925684b0-2076-4a91-bc7e-04cb2ddb0d99",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 1,
+    "delivered": 1,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 40,
+  "integration": {
+    "intent_id": "925684b0-2076-4a91-bc7e-04cb2ddb0d99",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 1,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## mes.inspect source evidence
+
+```json
+{
+  "step": "mes.inspect source evidence",
+  "source": {
+    "system": "mes",
+    "object_type": "iqc",
+    "external_id": "925684b0-2076-4a91-bc7e-04cb2ddb0d99",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.573739Z",
+    "collected_at": "2026-11-09T10:33:28.573739Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "receipt",
+      "id": "d9534afa-4e59-488c-85ca-98ba384a1402"
+    }
+  ]
+}
+```
+
+## receipt urgent flag and qualified responsibility
+
+```json
+{
+  "step": "receipt urgent flag and qualified responsibility",
+  "receipt_id": "d9534afa-4e59-488c-85ca-98ba384a1402",
+  "blocking_reasons": [
+    "Expedited: open expedite on linked requirement"
+  ],
+  "task_title": "急料已检验，待安排上线/关案",
+  "read_accounting_unchanged": true
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 41,
+  "integration": {
+    "intent_id": "d2ded993-4e48-4526-a940-ee68149dc495",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 43,
+  "integration": {
+    "intent_id": "d2ded993-4e48-4526-a940-ee68149dc495",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 0,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## wms.putaway source evidence
+
+```json
+{
+  "step": "wms.putaway source evidence",
+  "source": {
+    "system": "wms",
+    "object_type": "putaway",
+    "external_id": "d2ded993-4e48-4526-a940-ee68149dc495",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.685927Z",
+    "collected_at": "2026-11-09T10:33:28.685927Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": null,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "material_lot",
+      "id": "effac384-7420-4c96-b7d5-2d1aa7af9803"
+    },
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "work_order",
+      "id": "721688c7-092b-5298-bfd7-959cb960f7e3"
+    }
+  ]
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 44,
+  "integration": {
+    "intent_id": "ec19d027-e8a3-400e-97f1-e3e16115c6d2",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 46,
+  "integration": {
+    "intent_id": "ec19d027-e8a3-400e-97f1-e3e16115c6d2",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 0,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## wms.reserve source evidence
+
+```json
+{
+  "step": "wms.reserve source evidence",
+  "source": {
+    "system": "wms",
+    "object_type": "reservation",
+    "external_id": "ec19d027-e8a3-400e-97f1-e3e16115c6d2",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.735939Z",
+    "collected_at": "2026-11-09T10:33:28.735939Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": null,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "reservation",
+      "id": "caf64bac-2337-489c-981d-0c7bc0e4d4af"
+    }
+  ]
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 47,
+  "integration": {
+    "intent_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 49,
+  "integration": {
+    "intent_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 1,
+    "delivered": 3,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 50,
+  "integration": {
+    "intent_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 1,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## wms.pick source evidence
+
+```json
+{
+  "step": "wms.pick source evidence",
+  "source": {
+    "system": "wms",
+    "object_type": "pick",
+    "external_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:28.788353Z",
+    "collected_at": "2026-11-09T10:33:28.788353Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "material_lot",
+      "id": "effac384-7420-4c96-b7d5-2d1aa7af9803"
+    },
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "work_order",
+      "id": "721688c7-092b-5298-bfd7-959cb960f7e3"
+    }
+  ]
+}
+```
+
+## integration.pull
+
+```json
+{
+  "step": "integration.pull",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 51,
+  "integration": {
+    "intent_id": "0362a97f-d47a-46d8-bfbb-e2b97776ef1e",
+    "phase": "applied",
+    "source_committed": null,
+    "receipt_phase": null,
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## WMS pick causal SAP posting
+
+```json
+{
+  "step": "WMS pick causal SAP posting",
+  "source_key": {
+    "system": "wms",
+    "object_type": "pick",
+    "external_id": "56ec59a7-efd4-474b-8133-cb6f0e60d6dd",
+    "version": 1
+  },
+  "consumer_delivered": true,
+  "sap_posting_key": {
+    "system": "sap",
+    "object_type": "accounting_entry",
+    "external_id": "c8dff1e6-3b56-5a74-a5ef-d3b67da87d0c",
+    "version": 1
+  },
+  "sap_posted": true,
+  "workflow_projected": true
+}
+```
+
+## preview process
+
+```json
+{
+  "step": "preview process",
+  "url": "http://127.0.0.1:61201",
+  "actor": {
+    "id": "3abbc638-a1f8-5f58-b11f-bd8691b4ed0c",
+    "display_name": "【模拟维护】production"
+  },
+  "configuration_admin": false,
+  "external_systems": "mock"
+}
+```
+
+## material_handoff.record
+
+```json
+{
+  "step": "material_handoff.record",
+  "http_status": 200,
+  "object_type": "material_handoff",
+  "object_id": "967054ec-2f68-4a65-8f31-c8a446d02097",
+  "project_version": 53,
+  "integration": null,
+  "network": null
+}
+```
+
+## preview process
+
+```json
+{
+  "step": "preview process",
+  "url": "http://127.0.0.1:61204",
+  "actor": {
+    "id": "d6fbb209-d8c4-47b2-8a3c-58c6f3e1d441",
+    "display_name": "【模拟】本地预览管理员"
+  },
+  "configuration_admin": true,
+  "external_systems": "mock"
+}
+```
+
+## material_handoff.receive
+
+```json
+{
+  "step": "material_handoff.receive",
+  "http_status": 200,
+  "object_type": "material_handoff",
+  "object_id": "967054ec-2f68-4a65-8f31-c8a446d02097",
+  "project_version": 54,
+  "integration": null,
+  "network": null
+}
+```
+
+## issue.mark
+
+```json
+{
+  "step": "issue.mark",
+  "http_status": 200,
+  "object_type": "issue_mark",
+  "object_id": "e5b010bf-a6ec-47be-b54f-0039b72a20d3",
+  "project_version": 55,
+  "integration": null,
+  "network": null
+}
+```
+
+## issue.mark
+
+```json
+{
+  "step": "issue.mark",
+  "http_status": 200,
+  "object_type": "issue_mark",
+  "object_id": "a03e8f45-351e-4554-888d-ed26a5ee289e",
+  "project_version": 56,
+  "integration": null,
+  "network": null
+}
+```
+
+## issue.mark
+
+```json
+{
+  "step": "issue.mark",
+  "http_status": 200,
+  "object_type": "issue_mark",
+  "object_id": "b0cd8dce-2842-4fe7-a02b-078688b6f483",
+  "project_version": 57,
+  "integration": null,
+  "network": null
+}
+```
+
+## issue.mark
+
+```json
+{
+  "step": "issue.mark",
+  "http_status": 200,
+  "object_type": "issue_mark",
+  "object_id": "39b027e7-0beb-45c6-8369-9678a4d2b6a7",
+  "project_version": 58,
+  "integration": null,
+  "network": null
+}
+```
+
+## four issue marks and all five milestones
+
+```json
+{
+  "step": "four issue marks and all five milestones",
+  "marks_total": 4,
+  "milestones": {
+    "opened_at": "2026-11-09T10:33:28.454110Z",
+    "arrival_at": "2026-11-09T10:33:28.463482Z",
+    "receipt_at": "2026-11-09T10:33:28.493899Z",
+    "inspection_at": "2026-11-09T10:33:28.579451Z",
+    "handoff_at": "2026-11-09T10:33:30.274628Z"
+  },
+  "accounting_unchanged": true
+}
+```
+
+## expedite.close
+
+```json
+{
+  "step": "expedite.close",
+  "http_status": 200,
+  "object_type": "material_expedite",
+  "object_id": "57d02d7d-6d98-492a-8e9d-4fceae268c56",
+  "project_version": 59,
+  "integration": null,
+  "network": null
+}
+```
+
+## closed case clears flag and responsibility
+
+```json
+{
+  "step": "closed case clears flag and responsibility",
+  "case_id": "57d02d7d-6d98-492a-8e9d-4fceae268c56",
+  "accounting_unchanged": true
+}
+```
+
+## mock_system.execute
+
+```json
+{
+  "step": "mock_system.execute",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 60,
+  "integration": {
+    "intent_id": "7d5133e9-cfc2-457f-b2bd-14ad00f2cbe9",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## mock_system.query
+
+```json
+{
+  "step": "mock_system.query",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 62,
+  "integration": {
+    "intent_id": "7d5133e9-cfc2-457f-b2bd-14ad00f2cbe9",
+    "phase": "applied",
+    "source_committed": true,
+    "receipt_phase": "accepted",
+    "projection_applied": true
+  },
+  "network": {
+    "pending": 0,
+    "delivered": 1,
+    "duplicate": 0,
+    "failed": 0
+  }
+}
+```
+
+## mes.shortage source evidence
+
+```json
+{
+  "step": "mes.shortage source evidence",
+  "source": {
+    "system": "mes",
+    "object_type": "shortage",
+    "external_id": "7d5133e9-cfc2-457f-b2bd-14ad00f2cbe9",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:30.364339Z",
+    "collected_at": "2026-11-09T10:33:30.364339Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "source_accepted": true,
+  "consumer_delivered": true,
+  "workflow_projected": true,
+  "sap_posted": null,
+  "targets": [
+    {
+      "project_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+      "kind": "material_expedite",
+      "id": "c917f929-412f-57a1-a77e-73f9975bcc16"
+    }
+  ]
+}
+```
+
+## integration.pull
+
+```json
+{
+  "step": "integration.pull",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 63,
+  "integration": {
+    "intent_id": "fe6c0cd1-804f-48b8-aae8-272d767fc8e7",
+    "phase": "applied",
+    "source_committed": null,
+    "receipt_phase": null,
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## integration.pull
+
+```json
+{
+  "step": "integration.pull",
+  "http_status": 200,
+  "object_type": "project",
+  "object_id": "e86e7a17-9c45-467d-bb15-6f7632ff2561",
+  "project_version": 65,
+  "integration": {
+    "intent_id": "135cccbf-b76c-4109-a8d4-14dbb93a10cd",
+    "phase": "applied",
+    "source_committed": null,
+    "receipt_phase": null,
+    "projection_applied": true
+  },
+  "network": null
+}
+```
+
+## preview process
+
+```json
+{
+  "step": "preview process",
+  "url": "http://127.0.0.1:61207",
+  "actor": {
+    "id": "d6fbb209-d8c4-47b2-8a3c-58c6f3e1d441",
+    "display_name": "【模拟】本地预览管理员"
+  },
+  "configuration_admin": true,
+  "external_systems": "mock"
+}
+```
+
+## MES shortage replay and restart
+
+```json
+{
+  "step": "MES shortage replay and restart",
+  "case_id": "c917f929-412f-57a1-a77e-73f9975bcc16",
+  "case_count": 2,
+  "source": {
+    "system": "mes",
+    "object_type": "shortage",
+    "external_id": "7d5133e9-cfc2-457f-b2bd-14ad00f2cbe9",
+    "version": 1,
+    "mode": "mock",
+    "occurred_at": "2026-11-09T10:33:30.364339Z",
+    "collected_at": "2026-11-09T10:33:30.364339Z",
+    "cutoff": null,
+    "evidence": "Source-owned committed mock fact"
+  },
+  "accounting_unchanged": true,
+  "restart_readable": true
+}
+```

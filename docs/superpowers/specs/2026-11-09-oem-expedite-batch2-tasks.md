@@ -1,4 +1,4 @@
-# 任务书：急料主线批次②③——发料四状态、IQC 急料标记、mes.shortage、入库待办
+# 任务书：急料主线批次②③——发料四状态、IQC 急料标记、mes.shortage、责任待办
 
 日期：2026-11-09。执行者：Codex。依据：已接受的[急料主线设计](2026-11-09-oem-expedite-design.md)（§3.3、§3.4、§3.5）与[平台开发启动计划](../../platform-development-launch-plan-2026-11.md) §1 业务链层。批次①（material_expedite 生命周期＋推导里程碑，schema24）已于今日完成并合入 main（commit `24d5bcb`），本任务书在其之上继续。
 
@@ -63,6 +63,7 @@ P13 的人工登记验证版。每笔标记是一条不可覆盖的事实对象�
 - **新增**：输入模型（core_models，含 requirement 定位与 reason/impact 文本）；`catalog.py` 条目 `"mes.shortage"`（system="mes"，输出 fact type `"mes.shortage"`，underlying_action="expedite.open"）；`operations.py` FactPolicy 映射 `"mes.shortage": FactPolicy("expedite.open")`；core_mes 的 transition 产出该事实。
 - **边界**：消费产生的 expedite 与人工开案同对象同生命周期，SourceRef mode=mock、system=mes；**D-e 约束仍生效**——同需求已有在办案时，消费侧的行为参照既有事实消费对重复/冲突的处理惯例（研读后遵循，不自创）。
 - 相同 source key 的重放返回原投影；关案后重放也不得重开。不同事实遇到已有 open 案应按现有业务拒绝惯例处理，不能吞掉冲突或改变 D-e。必须接入 OperationPayload/FactPayload 联合类型、校验/投影及来源证据，不能仅增加目录项而没有平台效果。
+- 将 shortage 纳入既有 mes→wms 因果边，让仓库侧形成耐久消费回执（不产生实物/库存效果）；复用现有 outbox/inbox 协议测试同一投递重复消费，和平台相同 source key 重复投影分别验收。
 - **测试**：放 `tests/workflow/integrations/`，照该目录现有 mock 操作测试的结构：源操作→投递→消费→平台出现 open expedite 且 source 显示 mes/mock；重复投递不重复开案；非 OEM 项目的行为与既有集成对 422 类拒绝的惯例一致。
 - **钉死清单注意**：integrations 目录下若有操作目录全集/数量断言（搜 `OPERATIONS` 相关测试），显式补入 `mes.shortage`。
 

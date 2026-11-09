@@ -58,6 +58,7 @@
 **Files:** 新增 `scripts/verify_expedite_batch2.py`；验证记录 `.superpowers/sdd/expedite-batch2/e2e-walkthrough.md`；发布说明 `docs/oem-expedite-batch2-2026-11-09.md`。
 
 - [ ] 使用现有构建产物执行 preview prepare/serve，启动独立回环 socket 服务，不调用 TestClient 代替 TCP 走查。
+- [ ] preview serve 支持 `--actor-id` 选择该私有 preview 清单内的合成身份，只有清单内管理员拥有管理员权限；用真实进程切换验证双人交接，不增加生产会话或业务接口，不放松发起人与签收人必须不同的约束。
 - [ ] 脚本用 httpx 请求 bootstrap/项目/commands/objects/tasks/integration API；依修订任务书 E 顺序保存关键状态、ID、来源和幂等结果。
 - [ ] 对已存在 mock 数据流经 HTTP 验证 WMS/MES/SAP 原事实、投递及投影；来源为 mock，不声称外部真实接入。检查重启后读取与重复处理。
 - [ ] 完整运行下列命令，确认零失败，再做全分支审查；将走查记录和报告复制到用户工作区可访问位置。
