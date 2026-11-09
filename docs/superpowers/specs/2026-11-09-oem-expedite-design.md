@@ -1,0 +1,90 @@
+# OEM 急料主线与物料状态可见性设计
+
+日期：2026-11-09
+
+业务依据：OEM 痛点 P03/P08（仓库与 IQC 获取急料信息依赖 MC 人工传递）、P10（产线不能及时获得入库信息）、P13（配料进度不透明），以及[平台开发启动计划](../../platform-development-launch-plan-2026-11.md) §1 业务链层的缺口清单（急料标识、IQC 优先级、入库状态可见、发料四状态、等待分解）。"急料"概念当前在代码库零实现，本设计补齐它并为接口 I5（MES 工单欠料）预埋消费语义。
+
+## 1. 核心结果与本期边界
+
+回答四个问题：这颗料急不急、由谁认定、现在卡在哪一段、从认定到可用各段等了多久。
+
+急料案（expedite）是跨岗位协同事实，不是库存事实。开案、进展与关案不改变库存、IQC 合格量、预留、MRP 结果或 SAP 过账；齐套缺口的权威计算仍在既有 requirement/balance 逻辑。急料案只让"急"这件事有归属、有传递、有时间戳。
+
+四段等待（到货/身份/检验/仓配）从既有事实**推导**，不重复登记：到货段看 arrival 观察、身份段看 arrival 与 receipt 的匹配、检验段看 IQC 结果、仓配段看交接签收。缺哪个事实，对应段显示"未发生"，不编造时间。
+
+新写入仅用于 `mode=oem` 项目。历史项目与数据保持可读。不新增顶级导航。
+
+## 2. 口径决策点（11/11 对焦会确认，以下为先行默认）
+
+| # | 口径 | 默认 | 可改 |
+| --- | --- | --- | --- |
+| D-a | 谁有权开急料案 | MC（supply 角色）、项目负责人、平台管理员 | 对焦会可加产线/仓库 |
+| D-b | 急料分级 | 不分级，单级 | 现场证明需要再加 |
+| D-c | 解除条件 | 人工关案（合格入库不自动关——"料到了"与"不急了"是两回事） | 可改为检验合格自动提示待关 |
+| D-d | 挂靠对象 | 工单需求（requirement）；无需求挂靠的紧急来料走到货观察异常留痕，不开案 | 对焦会确认 |
+| D-e | 同一需求 | 同时最多一个在办急料案 | — |
+
+## 3. 对象及命令契约
+
+### 3.1 `material_expedite` 急料案
+
+共用现有命令的 `operation_id`、`expected_version`、可信 Actor、项目授权、CSRF、CAS、幂等及审计。
+
+**expedite.open** — 字段：`requirement_id: UUID`、`reason: Text`（为什么急：缺口、到期、客户影响）、`impact: Text`（影响哪个交付/工单，后果）。约束：需求归属同项目且项目为 OEM；同一需求已有在办案则拒绝（D-e）；工单与物料身份从需求带出，不重复输入。开案人身份与可信姓名快照按交接同规则保存。编号由服务端生成（`EX-` 前缀）。开案不等于缺口属实，齐套数字仍以权威计算为准。
+
+**expedite.progress** — 字段：`expedite_id: UUID`、`note: Text`。仅在办状态；追加进展说明（供应商答复、运单号、现场处置），append-only，不可覆盖。办理角色：supply/warehouse/production/project_owner——急料是跨岗位的，各岗位都能留进展。
+
+**expedite.close** — 字段：`expedite_id: UUID`、`outcome: Literal["fulfilled","false_alarm","superseded"]`、`reason: Text`。仅在办状态；开案人、supply、项目负责人或管理员可关。关案追加事实，不删除历史。
+
+### 3.2 状态、推导段与读接口
+
+状态：`open | closed`。
+
+详情值附带推导的里程碑（只读，查询时计算，不落库）：
+
+| 里程碑 | 推导来源 | 含义 |
+| --- | --- | --- |
+| `opened_at` | 开案事实 | 急料被认定 |
+| `arrival_at` | 关联收货的 arrival 匹配记录 | 实物到厂（观察） |
+| `receipt_at` | 需求→承诺→supply_receipts 首笔 | 身份核实完成、受控收货 |
+| `inspection_at` | 上述收货的首笔 iqc_results | 检验出结果 |
+| `handoff_at` | 上述批次的交接签收 | 到产线手上 |
+
+四段等待 = 相邻里程碑之差；任一缺失显示未发生。推导只认同项目、同需求链路上的事实，不跨需求借数。
+
+读接口使用现有项目对象列表、对象详情、全局台账与任务协议；分页排序在 SQL 完成。`next_actions` 服务端按角色、状态实时过滤（同交接的纪律：撤权或只读后不暴露可写动作）。在办急料案对 warehouse/supply/production/project_owner 构成任务可见性（P03/P08 的"系统化传递"）；检验里程碑达成后，案件摘要状态变化即 P10 的"入库可见"，本期不建独立推送通道。
+
+### 3.3 IQC 优先级（读侧，不新建对象)
+
+待检收货列表与检验相关待办按"关联在办急料案"置顶并带急料标记。实现为查询侧 JOIN，不给 iqc_results 加字段，不改变检验职责与判定。
+
+### 3.4 `material_issue_marks` 发料四状态（第二批实现）
+
+P13 的人工登记版，验证口径用：`issue.mark` 字段 `requirement_id: UUID`、`stage: Literal["printed","picked","receipted","posted"]`、`note: Text|null`、`occurred_at: AwareDatetime|null`。append-only；允许乱序与补录（补录是一等公民），不校验推进顺序，只如实留痕；四状态视图按需求聚合展示最新各状态时间。接口期由 WMS 回执（I3）喂 picked/receipted，SAP 喂 posted，人工登记停录。
+
+### 3.5 模拟源集成（I5 预埋）
+
+集成目录新增 `mes.shortage` 源操作：mock MES 发布工单欠料事实，消费动作映射 `expedite.open`（SourceRef 走既有来源证据链，mode=mock）。真实 MES 急料模块接入时同构替换。人工开案与源系统开案共用同一对象与生命周期，来源持续显示。
+
+## 4. 实现组织
+
+后端：`expedite_models.py`、`expedite_schema.py`、`expedite.py`（业务＋读者），注册到现有 command/object registry；service 层加 authorize 钩子与动作可见性过滤（与 material_handoffs 同模式）。schema23 以新增表前向迁移到 24：`material_expedites`（含"每需求至多一个在办案"的部分唯一索引）与 `expedite_progress`（append-only 进展表）。新建库包含同样表。
+
+前端（第三批）：急料类型、开案/进展/关案表单、台账与详情组件，放入"计划与物料"，复用草稿保护、冲突保留、项目过滤与权限处理；详情展示里程碑与四段等待。
+
+实现批次：①急料案生命周期＋推导里程碑＋测试（本批）；②发料四状态＋IQC 置顶（读侧）；③mock `mes.shortage` 消费；④前端。每批独立可发布。
+
+首期不做：急料分级、自动关案、独立推送/消息通道、SLA 计时承诺、与真实 MES 急料模块的任何连接声明。
+
+## 5. 需要验证的行为
+
+- 开案、进展、关案（三种 outcome）、重复开案拒绝（D-e）、关案后进展拒绝、非法状态迁移。
+- 跨项目需求、非 OEM 项目拒绝、无权角色开案/关案拒绝、撤权与只读后不可办理、CSRF、CAS、幂等重放返回原回执、并发开案唯一性。
+- 每一步不改变 material_lots/supply_receipts/iqc_results/reservations/requirements 及 authority 记录（与交接测试同款不动账断言）。
+- 里程碑推导：完整链路五个里程碑齐全；缺 arrival/缺 IQC/缺交接时对应段为未发生；多承诺多收货取首笔；不串需求。
+- schema23 升级后原数据保留；重启后案件与进展可读；分页不扫描无关项目。
+- 服务端 next_actions 按角色与状态过滤；在办案对相关角色可见，对无关项目成员不可见。
+
+## 6. 交付与实际接入
+
+本批交付可测试的软件流程、口径决策记录、迁移说明与回归证据。D-a~D-e 的默认口径在 11/11 对焦会逐条确认，确认结果若与默认不同，按增量修订处理。真实 MES 欠料接口（I5）、WMS 回执（I3）按[平台开发启动计划](../../platform-development-launch-plan-2026-11.md) §7 的接口层阶段推进，本批不声称任何真实系统已接入。
