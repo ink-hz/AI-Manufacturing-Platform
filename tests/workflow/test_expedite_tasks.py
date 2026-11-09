@@ -30,9 +30,12 @@ def expedite_tasks(w, pid, actor="supply"):
             if t["target"]["kind"] == "material_expedite"]
 
 
-def receipt(w, pid):
+def receipt(w, pid, commitment_id):
     with w.db() as tx:
-        return tx.execute("SELECT id FROM supply_receipts WHERE project_id=?", (pid,)).fetchone()[0]
+        return tx.execute(
+            "SELECT id FROM supply_receipts WHERE project_id=? AND commitment_id=? "
+            "ORDER BY created_at,id LIMIT 1", (pid, commitment_id),
+        ).fetchone()[0]
 
 
 def requirements(w, pid, extras, count=1):
@@ -88,7 +91,7 @@ def test_rematched_arrival_stops_contributing_to_old_requirement(workflow):
                            original_due="2026-12-01", current_due="2026-12-01",
                            source=w.source(str(uuid4()), object_type="commitment"))["object_id"]
     other = w.receive(pid, commitment, quantity="1", lot_id=extras["lot_id"])["object_id"]
-    observation = arrival(w, pid, receipt(w, pid), "2026-10-28T08:00:00+00:00")
+    observation = arrival(w, pid, receipt(w, pid, extras["id"]), "2026-10-28T08:00:00+00:00")
     assert detail(w, pid, ident)["value"]["milestones"]["arrival_at"]
     before = stock(w)
     w.command(pid, "arrival.match", actor_name="warehouse", arrival_id=observation,
@@ -101,11 +104,11 @@ def test_rematched_arrival_stops_contributing_to_old_requirement(workflow):
 
 def test_arrival_milestone_uses_earliest_event_instant_not_match_order(workflow):
     w = workflow
-    pid, rid, _ = setup(w)
+    pid, rid, extras = setup(w)
     ident = open_case(w, pid, rid)["object_id"]
-    arrival(w, pid, receipt(w, pid), "2026-10-28T02:00:00+00:00")
+    arrival(w, pid, receipt(w, pid, extras["id"]), "2026-10-28T02:00:00+00:00")
     earliest = "2026-10-28T09:00:00+08:00"
-    arrival(w, pid, receipt(w, pid), earliest)
+    arrival(w, pid, receipt(w, pid, extras["id"]), earliest)
     actual = detail(w, pid, ident)["value"]["milestones"]["arrival_at"]
     assert datetime.fromisoformat(actual) == datetime.fromisoformat(earliest)
 
