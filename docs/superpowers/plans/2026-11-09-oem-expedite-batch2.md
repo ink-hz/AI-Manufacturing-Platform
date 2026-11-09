@@ -67,4 +67,4 @@
 PYTHONPATH=src TEST_PLATFORM_SOURCE_ROOT=/Users/neo/Developer/work/AI-Agent-Platform /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/
 ```
 
-- [x] 按主题交付提交及验证结果，保持用户原材料不变；不部署或推送到生产。
+- [x] 按主题交付提交及验证结果，保持用户原材料不变；开发阶段未部署。开发验收后按用户追加上线授权发布，详见[发布记录](../../release-oem-expedite-2026-11-09.md)。

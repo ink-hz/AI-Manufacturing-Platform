@@ -15,7 +15,7 @@
    - `tests/workflow/test_a1_extensions.py` — 注册表动作全集（显式字符串集合）
    - `tests/workflow/test_admin_full_access.py:62` — allowed_actions 集合；上下文化动作（OEM-only）要加进排除集
    - schema 版本钉点：`test_material_handoffs.py`（==24）、`test_authority_assistance.py`（SCHEMA_VERSION==24）、`tests/workflow/integrations/test_profile_migration.py`（==24，future 探针现为 25）、`test_core_compatibility.py`、`test_operation_boundary.py`
-3. **schema 决策：留在 24，不开 25**。schema24 尚未发布（生产在 23），新建 `ISSUE_MARK_SCHEMA` 常量，fresh schema 与 23→24 迁移都执行。已经运行批次①的开发/preview schema24 库也须幂等补齐该表，不重建数据、不改版本。补冻结的真实 schema23 DDL/业务行直接升级测试；不能只把新建24库改版本号冒充23库。
+3. **本任务开工时的 schema 决策：留在 24，不开 25**。当时 schema24 尚未发布（生产在 23），新建 `ISSUE_MARK_SCHEMA` 常量，fresh schema 与 23→24 迁移都执行。已经运行批次①的开发/preview schema24 库也须幂等补齐该表，不重建数据、不改版本。补冻结的真实 schema23 DDL/业务行直接升级测试；不能只把新建24库改版本号冒充23库。开发验收后的正式发布状态见文末，不将开工时前提延用于后续批次。
 4. **实现模板**：`material_handoffs.py`（写路径＋authorize＋角色）、`expedite.py`（批次①，含 OEM applicable 复用、`actor_fact`/`trusted_name` 复用）、`arrival.py`（纯事实对象＋`laboratory.insert`）。通用件：`orders.own`（归属校验）、`quality.fail`（默认 409，显式 422=INVALID_COMMAND）、`laboratory.business/canonical/stamp/insert`、`authority.register_reader`。
 5. **service.py 两处挂点**：①`~L361` allowed_actions 的 OEM 过滤（已是 `startswith(("material_handoff.", "expedite."))`，新前缀往元组里加）；②`~L1005` authorize 钩子簇（`material_handoffs.authorize` / `expedite.authorize` 旁边加新模块的）。模块本身要加进 service.py 顶部的注册 import 列表。
 6. **测试夹具**：`workflow` fixture 全真 HTTP。`w.material_requirement(mode="oem", qualified="80")` 一步造出项目+需求+承诺+收货+IQC（`qualified="0"` 则无收货无检验）；`w.command(pid, action, actor_name=..., expected_status=...)`；`USERS` 固定身份；不动账断言照抄 `test_expedites.py::accounting`。
@@ -93,3 +93,7 @@ P13 的人工登记验证版。每笔标记是一条不可覆盖的事实对象�
 - [x] schema 仍为 24，新表并入 23→24 迁移；从真实 schema23 库升级的既有迁移测试通过
 - [x] E2E 走查记录完整，mes.shortage 开案的来源证据可见
 - [x] 未触碰范围外事项（webui、真实适配器、新导航）
+
+## 开发验收后的上线记录
+
+用户追加上线授权后，2026-11-09 已发布制造 `455fe48`，schema24 正式生效；正式候选36项、专项候选92项及生产数据/权限/运行时复核通过。后续表结构变更须重新评审迁移，不能继续按“24尚未发布”扩展。前端与真实外部接入范围不变。完整收据见[发布记录](../../release-oem-expedite-2026-11-09.md)。

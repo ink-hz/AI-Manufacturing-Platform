@@ -479,6 +479,8 @@ IT 材料证明已有 MES 具备 SN 级追溯：SFC 逐工序履历（工序、�
 
 在办急料从开案起进入 warehouse/supply/production/project_owner 的责任待办；有正合格量后对 production/supply 显示“已检验”提醒，关案后消失，派生不落库且按当前权限过滤。IQC 急料标记保持既有分页顺序，全局优先级另立契约。客供到料计划须核实客户来源，代采分别核实 SAP/SRM，不能以 SAP 在途概括所有供料模式。近期实施规格见[急料设计](superpowers/specs/2026-11-09-oem-expedite-design.md)与[任务书](superpowers/specs/2026-11-09-oem-expedite-batch2-tasks.md)。
 
+2026-11-09 已按用户追加授权发布本轮后端能力，schema23→24；平台与既有业务数据逐项保留。schema24 自此为已发布版本，后续表结构改动重新评审迁移；该发布不升级真实外部接口或现场验收状态。实际版本与验证证据见[发布记录](release-oem-expedite-2026-11-09.md)。
+
 ## 8. 数据结构：四层事实与口径
 
 ### 8.1 四层与写入规则

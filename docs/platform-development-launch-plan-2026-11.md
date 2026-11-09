@@ -8,6 +8,8 @@
 
 本轮 I1—I5 的 mock 覆盖、分阶段成功含义、R13 七项及真实接入门槛见[数据流与接口验证契约](material-dataflow-interface-contract-2026-11-09.md)。
 
+2026-11-09 发布进展：按用户追加上线授权，急料与发料协同后端已发布（制造 `455fe48`、schema24、85 动作／36 类对象），既有平台与业务数据保留；前端及真实外部接口仍按各自范围验收。见[发布记录](release-oem-expedite-2026-11-09.md)。
+
 ---
 
 ## 1. 目标定义："系统完全打通"到底指什么
@@ -57,8 +59,8 @@ flowchart TB
     subgraph host["Agent 平台（共享企业平台，已运行）"]
         API["platform-api 宿主<br/>身份 / 会话 / 制造路由白名单"]:::store
     end
-    subgraph mfg["制造工作流（/manufacturing，生产schema23／本轮开发schema24）"]
-        WF["工作流引擎<br/>81 业务动作 / 34 类对象"]:::exec
+    subgraph mfg["制造工作流（/manufacturing，已发布schema24）"]
+        WF["工作流引擎<br/>85 业务动作 / 36 类对象"]:::exec
         OBJ["业务对象<br/>到货观察 · 急料 · IQC任务<br/>入库/发料状态 · 交接(R06已上线)"]:::flow
         EVID["既有通用设施（直接复用）<br/>双时间 / 幂等 / 审计 / 来源证据"]:::qa
     end

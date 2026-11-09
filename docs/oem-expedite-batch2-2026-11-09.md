@@ -27,4 +27,6 @@ PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/pyt
 
 ## 验收边界
 
-本轮平台、数据库、授权、幂等与 HTTP 服务真实运行，未连接的外部系统是类型化 mock。源接受、消费送达、业务投影和 SAP 过账各有独立证据；IQC 合格不代表已上架，人工 posted 标记不代表真实 SAP 过账。I1 的真实采购/在途字段、客户供料来源及生产只读接入仍按[接口契约](material-dataflow-interface-contract-2026-11-09.md)核实。本轮不修改前端，不部署，不进行真实外部系统调用或 L3 写回。
+本轮平台、数据库、授权、幂等与 HTTP 服务真实运行，未连接的外部系统是类型化 mock。源接受、消费送达、业务投影和 SAP 过账各有独立证据；IQC 合格不代表已上架，人工 posted 标记不代表真实 SAP 过账。I1 的真实采购/在途字段、客户供料来源及生产只读接入仍按[接口契约](material-dataflow-interface-contract-2026-11-09.md)核实。本轮不修改前端，不进行真实外部系统调用或 L3 写回。
+
+开发验收后，用户追加上线授权；2026-11-09 已发布制造后端 `455fe48`，生产 schema23→24，36 项正式候选、92 项专项候选及上线后数据/权限/运行时保留性检查通过。schema24 现已发布，后续迁移须重新评审。实际镜像、维护入口及证据见[发布记录](release-oem-expedite-2026-11-09.md)。
