@@ -1,5 +1,15 @@
 # 急料批次②③真实 HTTP 数据流走查
 
+执行工作目录：`/Users/neo/.codex/worktrees/814b/AI-Manufacturing-Platform`
+
+实际执行命令：
+
+```sh
+PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python scripts/verify_expedite_batch2.py --root /Users/neo/.codex/worktrees/814b/expedite-http-verified --platform-root /Users/neo/Developer/work/AI-Agent-Platform --output .superpowers/sdd/expedite-batch2/verified
+```
+
+进程退出码：**0**（已核对实际执行工具返回值）。
+
 时间：2026-11-09T10:33:31.269363+00:00
 结果：通过；项目：e86e7a17-9c45-467d-bb15-6f7632ff2561
 

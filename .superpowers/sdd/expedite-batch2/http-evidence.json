@@ -1141,5 +1141,8 @@
       "accounting_unchanged": true,
       "restart_readable": true
     }
-  ]
+  ],
+  "runner_command": "PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python scripts/verify_expedite_batch2.py --root /Users/neo/.codex/worktrees/814b/expedite-http-verified --platform-root /Users/neo/Developer/work/AI-Agent-Platform --output .superpowers/sdd/expedite-batch2/verified",
+  "process_exit_status": 0,
+  "working_directory": "/Users/neo/.codex/worktrees/814b/AI-Manufacturing-Platform"
 }
