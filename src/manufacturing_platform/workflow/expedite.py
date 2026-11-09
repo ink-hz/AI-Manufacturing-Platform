@@ -1,5 +1,6 @@
 """Expedite cases route urgency across roles; balances stay with requirements."""
 import json
+from datetime import datetime
 from uuid import uuid4
 
 from .authority import register_reader
@@ -118,16 +119,21 @@ def milestones(tx, pid, payload):
     if not receipt:
         return result
     result["receipt_at"] = receipt["created_at"]
-    arrival = tx.execute(
+    arrivals = tx.execute(
         "SELECT a.payload_json FROM arrivals a JOIN arrival_matches m "
         "ON m.arrival_id=a.id AND m.project_id=a.project_id "
         "JOIN supply_receipts r ON r.id=m.receipt_id AND r.project_id=m.project_id "
         "JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id "
-        "WHERE m.project_id=? AND c.requirement_id=? ORDER BY m.seq LIMIT 1",
+        "WHERE m.project_id=? AND c.requirement_id=? "
+        "AND NOT EXISTS (SELECT 1 FROM arrival_matches newer "
+        "WHERE newer.project_id=m.project_id AND newer.arrival_id=m.arrival_id "
+        "AND newer.seq>m.seq)",
         scope,
-    ).fetchone()
-    if arrival:
-        result["arrival_at"] = json.loads(arrival["payload_json"])["source"]["occurred_at"]
+    )
+    result["arrival_at"] = min(
+        (json.loads(row["payload_json"])["source"]["occurred_at"] for row in arrivals),
+        key=datetime.fromisoformat, default=None,
+    )
     inspection = tx.execute(
         "SELECT i.created_at FROM iqc_results i JOIN supply_receipts r "
         "ON r.id=i.receipt_id AND r.project_id=i.project_id "
@@ -137,16 +143,19 @@ def milestones(tx, pid, payload):
     ).fetchone()
     if inspection:
         result["inspection_at"] = inspection["created_at"]
-    handoff = tx.execute(
+    handoffs = tx.execute(
         "SELECT h.receipt_json FROM material_handoffs h JOIN supply_receipts r "
         "ON r.material_lot_id=h.material_lot_id AND r.project_id=h.project_id "
         "JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id "
-        "WHERE h.project_id=? AND c.requirement_id=? AND h.receipt_json IS NOT NULL "
-        "ORDER BY h.seq LIMIT 1",
-        scope,
-    ).fetchone()
-    if handoff:
-        result["handoff_at"] = json.loads(handoff["receipt_json"])["occurred_at"]
+        "WHERE h.project_id=? AND c.requirement_id=? AND h.work_order_id=? "
+        "AND h.state IN ('received','resolved') "
+        "AND CAST(json_extract(h.receipt_json,'$.received_quantity') AS NUMERIC)>0",
+        (*scope, payload["work_order_id"]),
+    )
+    result["handoff_at"] = min(
+        (json.loads(row["receipt_json"])["occurred_at"] for row in handoffs),
+        key=datetime.fromisoformat, default=None,
+    )
     return result
 
 

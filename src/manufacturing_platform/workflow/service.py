@@ -505,10 +505,11 @@ class WorkflowService:
             return [], False
         pid = str(project_id)
         tasks = []
-        handoff_authorized = bool(
-            effective_permissions(tx, actor, project_id).roles & material_handoffs.RECEIVE_ROLES
-            and material_handoffs.applicable(tx, project_id)
-        )
+        roles = effective_permissions(tx, actor, project_id).roles
+        oem = material_handoffs.applicable(tx, project_id)
+        handoff_authorized = bool(roles & material_handoffs.RECEIVE_ROLES and oem)
+        expedite_authorized = bool(roles & expedite.PROGRESS_ROLES and oem)
+        qualified_reminder = bool(roles & {"production", "supply"})
         # Explicit responsibility rows are selected in SQL before materialization.
         for r in tx.execute(
             """SELECT i.title,i.owner_id,i.owner_name,i.shipment_id id,'shipment' kind,'acceptance' category FROM acceptance_issues i
@@ -519,9 +520,19 @@ class WorkflowService:
             FROM material_handoffs h WHERE h.project_id=? AND h.receiver_id=? AND h.state='pending' AND ?
             UNION ALL SELECT 'Receipt discrepancy requires sender resolution',h.sender_id,json_extract(h.payload_json,'$.sender_name'),h.id,'material_handoff','business'
             FROM material_handoffs h WHERE h.project_id=? AND h.sender_id=? AND h.state='disputed' AND ?
+            UNION ALL SELECT CASE WHEN ? AND EXISTS (
+                SELECT 1 FROM effective_iqc_results i
+                JOIN supply_receipts r ON r.id=i.receipt_id AND r.project_id=i.project_id
+                JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id
+                WHERE i.project_id=e.project_id AND c.requirement_id=e.requirement_id
+                AND i.accepted_atoms>0
+            ) THEN '急料已检验，待安排上线/关案' ELSE '急料待跟进' END,
+            NULL,'Current authorized responsibility',e.id,'material_expedite','business'
+            FROM material_expedites e WHERE e.project_id=? AND e.state='open' AND ?
             ORDER BY category,id LIMIT 51""",
             (pid, str(actor.user_id), pid, str(actor.user_id),
-             pid, str(actor.user_id), handoff_authorized, pid, str(actor.user_id), handoff_authorized),
+             pid, str(actor.user_id), handoff_authorized, pid, str(actor.user_id), handoff_authorized,
+             qualified_reminder, pid, expedite_authorized),
         ):
             if r["kind"] == "material_handoff":
                 row = tx.execute(
@@ -529,6 +540,12 @@ class WorkflowService:
                     (pid, r["id"]),
                 ).fetchone()
                 target = material_handoff_reader.summary(tx, pid, row)
+            elif r["kind"] == "material_expedite":
+                row = tx.execute(
+                    "SELECT * FROM material_expedites WHERE project_id=? AND id=?",
+                    (pid, r["id"]),
+                ).fetchone()
+                target = expedite.summary(tx, pid, row)
             else:
                 target = ObjectSummary(
                     id=r["id"],
@@ -540,7 +557,7 @@ class WorkflowService:
                     blocking_reasons=[r["title"]],
                 )
             target = self._actions(tx, actor, target)
-            if r["kind"] == "material_handoff" and not target.next_actions:
+            if r["kind"] in {"material_handoff", "material_expedite"} and not target.next_actions:
                 continue
             tasks.append(
                 OwnedTask(
