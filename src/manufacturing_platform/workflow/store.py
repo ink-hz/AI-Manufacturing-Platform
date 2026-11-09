@@ -326,6 +326,14 @@ class WorkflowStore:
                 migrate_integration_schema(conn)
                 conn.execute("UPDATE schema_version SET version=23")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 23:
+                from .expedite_schema import EXPEDITE_SCHEMA
+
+                for statement in EXPEDITE_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=24")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1
                 or version[0][0] != SCHEMA_VERSION

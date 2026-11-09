@@ -13,6 +13,7 @@ from . import (  # noqa: F401 - trusted domain registration
     engineering,
     exchanges,
     execution,
+    expedite,
     feedback,
     freeze,
     introduction,
@@ -360,7 +361,8 @@ class WorkflowService:
             handoff_applicable = value.mode == "oem"
             value.allowed_actions = [
                 a for a in value.allowed_actions
-                if not a.startswith("material_handoff.") or handoff_applicable
+                if not a.startswith(("material_handoff.", "expedite."))
+                or handoff_applicable
             ]
             if (
                 "material_handoff.receive" in value.allowed_actions
@@ -1005,6 +1007,7 @@ class WorkflowService:
             introduction.authorize(actor, command)
             delivery.authorize(tx, actor, project_id, command)
             material_handoffs.authorize(tx, actor, project_id, command)
+            expedite.authorize(tx, actor, project_id, command)
             if command.action == "release.decide":
                 quality.authorize_release(tx, actor, project_id, command)
             self.exchange_service.authorize(tx, actor, project_id, command)

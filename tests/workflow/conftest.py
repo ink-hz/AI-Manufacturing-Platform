@@ -333,10 +333,10 @@ WorkflowHarness.order_workorder = _order_workorder
 WorkflowHarness.object = _object
 
 
-def _material_requirement(self, *, required="100", qualified="80", unit="kg", scale=3, scope="trial"):
+def _material_requirement(self, *, required="100", qualified="80", unit="kg", scale=3, scope="trial", mode="internal"):
     from datetime import UTC, datetime, timedelta
 
-    p, order, wo, rev = self.order_workorder(quantity="5")
+    p, order, wo, rev = self.order_workorder(quantity="5", mode=mode)
     self.grant(p["id"], "supply", ["supply"])
     self.grant(p["id"], "quality", ["quality"], ["inspection"])
     now = datetime.now(UTC)
