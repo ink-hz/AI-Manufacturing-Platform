@@ -27,6 +27,8 @@
    ```
    基线：**1142 passed / 35 skipped，零失败**。收尾时全量必须回到零失败。
 
+8. **独立工作区的测试环境**：worktree 不携带被忽略的 `webui/node_modules`/`dist`。先在该工作区 `webui` 执行 `npm ci --no-audit --no-fund`，复用未改动前端的已构建 bundle 或按既有流程构建；Agent 平台渲染器依赖也须可用。后端全量的真实宿主 E29 会调用 Vitest，缺少 Vitest 是环境失败，不能通过删除场景、跳过测试或修改权限断言处理。
+
 ---
 
 ## Task 0：先修批次①有效事实与责任待办

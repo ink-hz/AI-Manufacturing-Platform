@@ -14,3 +14,5 @@
 文件：scripts/preview_manufacturing.py；scripts/verify_expedite_batch2.py；tests/workflow/test_preview_manufacturing.py；接口验证契约、文档口径补充、交付说明及此记录。
 
 整体full-backend.log和最终全分支审查是收尾门；本报告不把局部socket验证称作真实外部系统或现场业务验收。
+
+全量环境补充：第一次已提交代码的完整回归在 E29 两个真实宿主场景失败，授权矩阵断言本身已完成，失败原因是新 worktree 缺少被忽略的 Vitest 包。按锁文件在该工作区 webui 执行 npm ci（未改动原目录或任何跟踪文件），两场景覆盖重跑2通过，各自实际组件报告37通过、0失败。没有修改业务代码、权限或测试断言。最终完整回归将在依赖齐全的环境重跑，首轮失败日志另存并保留。
