@@ -3,7 +3,7 @@ from .laboratory_schema import LABORATORY_SCHEMA
 from .authority_schema import AUTHORITY_SCHEMA
 from .arrival_schema import ARRIVAL_SCHEMA
 from .material_handoff_schema import HANDOFF_SCHEMA
-from .expedite_schema import EXPEDITE_SCHEMA
+from .expedite_schema import EXPEDITE_SCHEMA, ISSUE_MARK_SCHEMA
 
 SCHEMA_VERSION = 24
 EXECUTION_SCHEMA = """
@@ -218,4 +218,4 @@ SCHEMA += AUTHORITY_SCHEMA + ARRIVAL_SCHEMA
 
 SCHEMA += HANDOFF_SCHEMA
 
-SCHEMA += EXPEDITE_SCHEMA
+SCHEMA += EXPEDITE_SCHEMA + ISSUE_MARK_SCHEMA

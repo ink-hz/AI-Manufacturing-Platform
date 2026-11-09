@@ -217,11 +217,13 @@ def build_workflow_router(
         request: Request,
         limit: int = 50,
         offset: int = 0,
+        requirement_id: UUID | None = None,
     ):
         if not 1 <= limit <= 200 or offset < 0:
             raise HTTPException(422, "Invalid pagination")
         return service.objects(
-            actor(request), project_id, kind, limit=limit, offset=offset
+            actor(request), project_id, kind, limit=limit, offset=offset,
+            requirement_id=requirement_id,
         )
 
     @router.get("/projects/{project_id}/objects/{kind}/{object_id}")

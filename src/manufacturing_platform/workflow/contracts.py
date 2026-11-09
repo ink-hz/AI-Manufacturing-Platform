@@ -238,6 +238,7 @@ class ObjectKind(str, Enum):
     authority_rule = "authority_rule"
     arrival = "arrival"
     material_handoff = "material_handoff"
+    issue_mark = "issue_mark"
     material_expedite = "material_expedite"
     test_plan = "test_plan"
     test_run = "test_run"

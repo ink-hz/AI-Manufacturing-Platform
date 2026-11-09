@@ -43,6 +43,7 @@ WorkflowAction = Literal[
     "material_handoff.receive",
     "material_handoff.resolve",
     "material_handoff.cancel",
+    "issue.mark",
     "expedite.open",
     "expedite.progress",
     "expedite.close",

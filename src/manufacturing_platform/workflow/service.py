@@ -17,6 +17,7 @@ from . import (  # noqa: F401 - trusted domain registration
     feedback,
     freeze,
     introduction,
+    issue_marks,
     laboratory,
     material_handoff_reader,
     material_handoffs,
@@ -361,7 +362,7 @@ class WorkflowService:
             handoff_applicable = value.mode == "oem"
             value.allowed_actions = [
                 a for a in value.allowed_actions
-                if not a.startswith(("material_handoff.", "expedite."))
+                if not a.startswith(("material_handoff.", "expedite.", "issue."))
                 or handoff_applicable
             ]
             if (
@@ -680,15 +681,26 @@ class WorkflowService:
         *,
         limit: int = 50,
         offset: int = 0,
+        requirement_id: UUID | None = None,
     ) -> ObjectPage:
         self._pagination(limit, offset)
         project_id = UUID(str(project_id))
         with self.store.transaction() as tx:
             require_project(tx, actor, project_id)
-            total = self.object_registry.count(tx, project_id, kind)
-            values = self.object_registry.summaries(
-                tx, project_id, kind, limit=limit, offset=offset
-            )
+            if requirement_id is not None:
+                if kind != ObjectKind.issue_mark:
+                    raise DomainError(
+                        "INVALID_COMMAND", 422,
+                        "requirement_id is only supported for issue_mark",
+                    )
+                total, values = issue_marks.requirement_page(
+                    tx, project_id, requirement_id, limit=limit, offset=offset
+                )
+            else:
+                total = self.object_registry.count(tx, project_id, kind)
+                values = self.object_registry.summaries(
+                    tx, project_id, kind, limit=limit, offset=offset
+                )
             return ObjectPage(
                 items=[self._actions(tx, actor, item) for item in values],
                 total=total,
@@ -1025,6 +1037,7 @@ class WorkflowService:
             delivery.authorize(tx, actor, project_id, command)
             material_handoffs.authorize(tx, actor, project_id, command)
             expedite.authorize(tx, actor, project_id, command)
+            issue_marks.authorize(tx, actor, project_id, command)
             if command.action == "release.decide":
                 quality.authorize_release(tx, actor, project_id, command)
             self.exchange_service.authorize(tx, actor, project_id, command)
@@ -1074,9 +1087,12 @@ class WorkflowService:
             tx.execute(
                 "UPDATE projects SET version=version+1 WHERE id=?", (str(project_id),)
             )
-            handoff_audit_times = {}
-            if command.action.startswith("material_handoff."):
-                handoff_audit_times = dict(
+            fact_audit_times = {}
+            if (
+                command.action.startswith("material_handoff.")
+                or command.action == "issue.mark"
+            ):
+                fact_audit_times = dict(
                     occurred_at=(getattr(command, "occurred_at", None) or context.now).isoformat(),
                     recorded_at=context.now.isoformat(),
                 )
@@ -1089,7 +1105,7 @@ class WorkflowService:
                 project_id,
                 command.action,
                 mutation.object_id,
-                **handoff_audit_times,
+                **fact_audit_times,
             )
         if isinstance(command, integration_operations.COMMANDS):
             return self.integration_service.perform(actor, project_id, command, result)

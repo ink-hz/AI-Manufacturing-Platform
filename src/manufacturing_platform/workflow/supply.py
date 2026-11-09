@@ -847,6 +847,8 @@ def _detail(tx, project_id, kind, object_id):
             amount(row["q_atoms"], lot["scale"]),
             row["unit"],
             row["source_json"],
+            reasons=[EXPEDITE_RECEIPT_REASON]
+            if row["id"] in expedited_receipts(tx, project_id, [row["id"]]) else [],
         )
         relations = [
             ObjectRelation(
@@ -975,6 +977,24 @@ def _page_balances(tx, project_id, rows):
     return balances
 
 
+EXPEDITE_RECEIPT_REASON = "Expedited: open expedite on linked requirement"
+
+
+def expedited_receipts(tx, project_id, receipt_ids):
+    """One project-scoped urgency query, bounded to the receipts being rendered."""
+    if not receipt_ids:
+        return set()
+    slots = ",".join("?" for _ in receipt_ids)
+    return {row[0] for row in tx.execute(
+        "SELECT r.id FROM supply_receipts r JOIN supply_commitments c "
+        "ON c.id=r.commitment_id AND c.project_id=r.project_id "
+        "JOIN material_expedites e ON e.requirement_id=c.requirement_id "
+        "AND e.project_id=c.project_id AND e.state='open' "
+        f"WHERE r.project_id=? AND r.id IN ({slots})",
+        (str(project_id), *receipt_ids),
+    )}
+
+
 def _page(kind, table):
     def count(tx, project_id):
         return tx.execute(
@@ -1005,7 +1025,8 @@ def _page(kind, table):
                 """SELECT sr.*,l.scale FROM effective_supply_receipts sr JOIN material_lots l ON l.id=sr.material_lot_id
                    WHERE sr.project_id=? ORDER BY sr.created_at,sr.id LIMIT ? OFFSET ?""",
                 (str(project_id), limit, offset),
-            )
+            ).fetchall()
+            urgent = expedited_receipts(tx, project_id, [row["id"] for row in rows])
         else:
             rows = tx.execute(
                 f"SELECT * FROM {table} WHERE project_id=? ORDER BY created_at,id LIMIT ? OFFSET ?",
@@ -1075,6 +1096,7 @@ def _page(kind, table):
                         amount(row["q_atoms"], row["scale"]),
                         row["unit"],
                         row["source_json"],
+                        reasons=[EXPEDITE_RECEIPT_REASON] if row["id"] in urgent else [],
                     )
                 )
         return result

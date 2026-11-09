@@ -23,3 +23,18 @@ CREATE TABLE IF NOT EXISTS expedite_progress(
 );
 CREATE INDEX IF NOT EXISTS expedite_progress_scope ON expedite_progress(project_id,expedite_id,seq);
 """
+
+# This remains part of the unpublished schema24 boundary.
+ISSUE_MARK_SCHEMA = """
+CREATE TABLE IF NOT EXISTS issue_marks(
+ seq INTEGER PRIMARY KEY AUTOINCREMENT,
+ id TEXT NOT NULL UNIQUE,
+ project_id TEXT NOT NULL REFERENCES projects(id),
+ requirement_id TEXT NOT NULL REFERENCES requirements(id),
+ work_order_id TEXT NOT NULL REFERENCES work_orders(id),
+ stage TEXT NOT NULL CHECK(stage IN ('printed','picked','receipted','posted')),
+ payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS issue_marks_page ON issue_marks(project_id,seq);
+CREATE INDEX IF NOT EXISTS issue_marks_requirement_page ON issue_marks(project_id,requirement_id,seq);
+"""

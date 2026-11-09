@@ -327,9 +327,9 @@ class WorkflowStore:
                 conn.execute("UPDATE schema_version SET version=23")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             if len(version) == 1 and version[0][0] == 23:
-                from .expedite_schema import EXPEDITE_SCHEMA
+                from .expedite_schema import EXPEDITE_SCHEMA, ISSUE_MARK_SCHEMA
 
-                for statement in EXPEDITE_SCHEMA.split(";"):
+                for statement in (EXPEDITE_SCHEMA + ISSUE_MARK_SCHEMA).split(";"):
                     if statement.strip():
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=24")
@@ -342,6 +342,15 @@ class WorkflowStore:
                 != (self.dataset["id"], self.dataset["mode"], self.dataset["label"])
             ):
                 raise ValueError("workflow dataset mismatch")
+            # Existing preview24 stores predate the additive issue fact table.
+            if not conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='issue_marks'"
+            ).fetchone():
+                from .expedite_schema import ISSUE_MARK_SCHEMA
+
+                for statement in ISSUE_MARK_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
             # Task3 adds an undeployed, additive reservation release ledger to v23.
             # Existing v23 datasets need the same initialization as fresh stores.
             if not conn.execute(
