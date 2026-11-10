@@ -29,7 +29,35 @@ TIMED_KINDS = {
 }
 
 
-class ProductionQuery(BaseModel):
+MissingField = Literal["stage_id", "software_id", "config_log_id", "software_version", "config_version", "device", "error_code"]
+MISSING_FIELDS = ("stage_id", "software_id", "config_log_id", "software_version", "config_version", "device", "error_code")
+ID_DIMENSIONS = frozenset({"stage_id", "software_id", "config_log_id"})
+
+
+def is_missing_dimension(field, value):
+    return value is None or value == "" or (field in ID_DIMENSIONS and type(value) in (int, str) and str(value) in {"0", "-1"})
+
+
+class MissingScope(BaseModel):
+    missing_fields: tuple[MissingField, ...] | None = Field(default=None, max_length=7)
+
+    @field_validator("missing_fields", mode="before")
+    @classmethod
+    def canonical_missing(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple)) or any(type(v) is not str or v not in MISSING_FIELDS for v in value) or len(set(value)) != len(value):
+            raise ValueError("invalid missing dimensions")
+        return tuple(field for field in MISSING_FIELDS if field in value) or None
+
+    @model_validator(mode="after")
+    def exclusive_missing(self):
+        if any(getattr(self, field, None) is not None for field in self.missing_fields or ()):
+            raise ValueError("missing dimension conflicts with exact value")
+        return self
+
+
+class ProductionQuery(MissingScope):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: SourceKind
     start: datetime | None = None
@@ -80,6 +108,9 @@ class ProductionQuery(BaseModel):
             raise ValueError("catalog does not accept a time range")
         if self.kind in TIMED_KINDS - {"evidence"} and self.before_id is not None:
             raise ValueError("source has no verified unique row key")
+        supported_missing = MISSING_FIELDS if self.kind.removesuffix("_statistics") in {"production", "stopover"} else ("device",) if self.kind == "evidence" else ()
+        if set(self.missing_fields or ()) - set(supported_missing):
+            raise ValueError("unsupported missing dimension")
         return self
 
 

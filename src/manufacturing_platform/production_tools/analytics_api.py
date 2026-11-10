@@ -10,10 +10,12 @@ from typing import get_args
 
 
 def _parse(request, *, overview=False):
-    allowed={'start','end','before_id'} if overview else {'start','end','view',*PRODUCTION_FIELDS}
+    allowed={'start','end','before_id'} if overview else {'start','end','view','missing_fields',*PRODUCTION_FIELDS}
     if set(request.query_params)-allowed or any(len(request.query_params.getlist(k))!=1 for k in request.query_params):
         raise error('SOURCE_INVALID_QUERY',422)
     values=dict(request.query_params)
+    if 'missing_fields' in values:
+        values['missing_fields']=values['missing_fields'].split(',') if values['missing_fields'] else []
     view=values.pop('view',None)
     before_id=values.pop('before_id',None)
     if not overview and view not in get_args(AnalysisView):

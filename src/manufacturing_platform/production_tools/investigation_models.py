@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
 
+from .contracts import MissingScope
+
 DecimalId = Annotated[StrictStr, Field(pattern=r'^[1-9][0-9]{0,19}$')]
 Text = Annotated[StrictStr, Field(min_length=1, max_length=200)]
 
@@ -44,7 +46,7 @@ class TimeRange(InputModel):
         return self
 
 
-class InvestigationContext(TimeRange):
+class InvestigationContext(TimeRange, MissingScope):
     view: Literal['overview', 'project', 'anomalies', 'activity', 'device', 'history', 'records', 'catalog', 'compare'] = 'anomalies'
     stage_id: DecimalId | None = None
     software_id: DecimalId | None = None

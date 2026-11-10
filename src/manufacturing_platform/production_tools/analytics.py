@@ -40,7 +40,7 @@ def _dimension(name,value):
 
 
 def aggregate(row, dimensions):
-    if not isinstance(row,dict) or any(key not in row for key in (*COUNT_FIELDS,'last_time',*dimensions)):
+    if not isinstance(row,dict) or any(key not in row for key in (*COUNT_FIELDS,'first_time','last_time',*dimensions)):
         raise error('SOURCE_SCHEMA_INVALID')
     counts={name: row[name] for name in COUNT_FIELDS}
     # SUM over no records can be NULL; count and distinct remain strict integer counts.
@@ -55,7 +55,10 @@ def aggregate(row, dimensions):
     item['key']=json.dumps(list(item.values()),ensure_ascii=False,separators=(',',':'))
     item.update({name:str(value) for name,value in counts.items()})
     item['unknown_records']=str(counts['records']-counts['pass_records']-counts['fail_records'])
+    item['first_time']=_timestamp(row['first_time'])
     item['last_time']=_timestamp(row['last_time'])
+    if item['first_time'] is not None and item['last_time'] is not None and datetime.fromisoformat(item['first_time'].replace('Z','+00:00')) > datetime.fromisoformat(item['last_time'].replace('Z','+00:00')):
+        raise error('SOURCE_SCHEMA_INVALID')
     return item
 
 
@@ -150,7 +153,7 @@ def analysis(source,scope,filters,view):
         if view=='errors':
             if any(item['fail_records']!=item['records'] for item in items):
                 raise error('SOURCE_SCHEMA_INVALID')
-            baseline=filters.model_copy(update={'status':None,'error_code':None})
+            baseline=filters.model_copy(update={'status':None,'error_code':None,'missing_fields':tuple(field for field in filters.missing_fields or () if field!='error_code') or None})
             denominators,denominator_reason=_groups(source,compile_analysis(scope,baseline,'denominator'),'denominator')
             index={(x['stage_id'],x['software_id']):x['records'] for x in denominators}
             for item in items:
@@ -160,8 +163,8 @@ def analysis(source,scope,filters,view):
                 if value is not None:
                     item['denominator_records']=value
             reason=reason or denominator_reason
-        elif filters.status is not None or filters.error_code is not None:
-            baseline=filters.model_copy(update={'status':None,'error_code':None})
+        elif filters.status is not None or filters.error_code is not None or 'error_code' in (filters.missing_fields or ()):
+            baseline=filters.model_copy(update={'status':None,'error_code':None,'missing_fields':tuple(field for field in filters.missing_fields or () if field!='error_code') or None})
             denominators,denominator_reason=_groups(source,compile_analysis(scope,baseline,view),view)
             index={item['key']:item['records'] for item in denominators}
             for item in items:
@@ -206,45 +209,104 @@ def availability(source,scope):
 
 
 def _zero():
-    return dict(key='[]',**{name:'0' for name in (*COUNT_FIELDS,'unknown_records')},last_time=None)
+    return dict(key='[]',**{name:'0' for name in (*COUNT_FIELDS,'unknown_records')},first_time=None,last_time=None)
 
 
-def overview(source,namespace,filters,*,before_id=None):
+def _block(source, read):
+    """Keep failure and completion metadata local to one independent page read."""
     from ..workflow.contracts import DomainError
-    page=source.projects(before_id=before_id)
-    ids=tuple(x['id'] for x in page['items'])
-    result=dict(items=[],captured_at=None,complete=not page['has_more'],limit=100,has_more=page['has_more'],next_before_id=page['next_before_id'],source_namespace=namespace)
-    statistics={}
-    trends={identifier:[] for identifier in ids}
-    latest={}
-    state='ready'
+
+    try:
+        value, reason = read()
+        return value, {
+            'state': 'partial' if reason else 'ready',
+            'captured_at': _timestamp(source.clock()),
+            'complete': reason is None,
+            'truncation_reason': reason,
+            'error': None,
+        }
+    except DomainError as exc:
+        known_errors = {
+            'SOURCE_UNAVAILABLE', 'SOURCE_SCHEMA_INVALID',
+            'SOURCE_LIMIT_EXCEEDED', 'SOURCE_BUSY',
+        }
+        return None, {
+            'state': 'unavailable',
+            'captured_at': _timestamp(source.clock()),
+            'complete': False,
+            'truncation_reason': None,
+            'error': exc.code if exc.code in known_errors else 'SOURCE_UNAVAILABLE',
+        }
+
+
+def overview(source, namespace, filters, *, before_id=None):
+    page = source.projects(before_id=before_id)
+    ids = tuple(item['id'] for item in page['items'])
+    result = {
+        'items': [],
+        'captured_at': None,
+        'complete': not page['has_more'],
+        'limit': 100,
+        'has_more': page['has_more'],
+        'next_before_id': page['next_before_id'],
+        'source_namespace': namespace,
+    }
     if ids:
         _acquire(source)
         try:
-            rows,reason=_groups(source,compile_analysis(None,filters,'overview',project_ids=ids),'overview')
-            for item in rows:
-                identifier=item.pop('source_project_id')
-                if identifier not in ids or identifier in statistics:
-                    raise error('SOURCE_SCHEMA_INVALID')
-                item['key']='[]'
-                statistics[identifier]=item
-            trend_rows,trend_reason=_groups(source,compile_analysis(None,filters,'overview_trend',project_ids=ids),'overview_trend')
-            for item in trend_rows:
-                identifier=item.pop('source_project_id')
-                if identifier not in ids:
-                    raise error('SOURCE_SCHEMA_INVALID')
-                item['key']=json.dumps([item['timestamp']],separators=(',',':'))
-                trends[identifier].append(item)
-            latest=_latest(source,ids)
-            result['complete']=result['complete'] and not reason and not trend_reason
-        except DomainError:
-            state='unavailable'
-            statistics={}
-            trends={identifier:[] for identifier in ids}
-            latest={}
-            result['complete']=False
+            def statistics_read():
+                statement = compile_analysis(None, filters, 'overview', project_ids=ids)
+                rows, reason = _groups(source, statement, 'overview')
+                statistics = {}
+                for item in rows:
+                    identifier = item.pop('source_project_id')
+                    if identifier not in ids or identifier in statistics:
+                        raise error('SOURCE_SCHEMA_INVALID')
+                    item['key'] = '[]'
+                    statistics[identifier] = item
+                return statistics, reason
+
+            def trend_read():
+                statement = compile_analysis(None, filters, 'overview_trend', project_ids=ids)
+                rows, reason = _groups(source, statement, 'overview_trend')
+                trends = {identifier: [] for identifier in ids}
+                for item in rows:
+                    identifier = item.pop('source_project_id')
+                    if identifier not in ids:
+                        raise error('SOURCE_SCHEMA_INVALID')
+                    item['key'] = json.dumps([item['timestamp']], separators=(',', ':'))
+                    trends[identifier].append(item)
+                return trends, reason
+
+            statistics, statistics_block = _block(source, statistics_read)
+            trends, trend_block = _block(source, trend_read)
+            latest, latest_block = _block(source, lambda: (_latest(source, ids), None))
         finally:
             source._slots.release()
-    result['items']=[item|dict(state=state,statistics=statistics.get(item['id'],_zero()) if state=='ready' else None,trend=trends[item['id']],latest_at=latest.get(item['id'])) for item in page['items']]
-    result['captured_at']=_timestamp(source.clock())
+
+        blocks = {
+            'statistics': statistics_block,
+            'trend': trend_block,
+            'latest': latest_block,
+        }
+        complete = all(block['complete'] for block in blocks.values())
+        result['complete'] = result['complete'] and complete
+        if complete:
+            state = 'ready'
+        elif all(block['state'] == 'unavailable' for block in blocks.values()):
+            state = 'unavailable'
+        else:
+            state = 'partial'
+        for project in page['items']:
+            identifier = project['id']
+            # Missing groups are observed zero only when the statistics read is complete.
+            absent = _zero() if statistics_block['complete'] else None
+            result['items'].append(project | {
+                'state': state,
+                'statistics': statistics.get(identifier, absent) if statistics is not None else None,
+                'trend': trends[identifier] if trends is not None else [],
+                'latest_at': latest.get(identifier) if latest is not None else None,
+                'blocks': blocks,
+            })
+    result['captured_at'] = _timestamp(source.clock())
     return result

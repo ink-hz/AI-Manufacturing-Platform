@@ -5,7 +5,7 @@ from itertools import combinations
 from functools import lru_cache
 from types import MappingProxyType
 
-from .contracts import ProductionQuery, ReadStatement, SourceScope, valid_source_id
+from .contracts import ProductionQuery, ReadStatement, SourceScope, valid_source_id, MISSING_FIELDS, ID_DIMENSIONS
 
 CATALOG_TABLES = {
     "software": "softwarelists",
@@ -31,7 +31,12 @@ ALL_FILTERS = (*PRODUCTION_FIELDS, "parent_id", "before_id", "tool_name")
 EVIDENCE_SQL = "SELECT id, projuectid, del, url FROM toolslogs WHERE del = 0 AND projuectid = %s AND id = %s LIMIT %s"
 
 
-def _template(kind, filters):
+def missing_predicate(field, native):
+    values = "'', '0', '-1'" if field in ID_DIMENSIONS else "''"
+    return f"({native} IS NULL OR {native} IN ({values}))"
+
+
+def _template(kind, filters, missing=()):
     statistics = kind.endswith("_statistics")
     base = kind.removesuffix("_statistics")
     if base in LOG_TABLES:
@@ -51,6 +56,8 @@ def _template(kind, filters):
         }
     for field in filters:
         sql += f" AND {fields[field]} {'<' if field == 'before_id' else '='} %s"
+    for field in missing:
+        sql += " AND " + missing_predicate(field, fields[field])
     if not statistics:
         sql += (
             " ORDER BY timestamp DESC LIMIT %s"
@@ -106,7 +113,7 @@ def compile_query(
     return ReadStatement(
         query.kind,
         "questdb" if log else "mysql",
-        _template(query.kind, filters),
+        _template(query.kind, filters, query.missing_fields or ()),
         tuple(params),
         1 if statistics else cap + 1,
     )
@@ -201,7 +208,7 @@ def validate_statement(statement: ReadStatement) -> None:
         templates = _approved_templates(statement.name)
         stats = statement.name.endswith("_statistics")
         valid = (
-            statement.sql in templates
+            _approved_query_sql(statement.name, statement.sql, templates)
             and statement.backend == ("questdb" if log else "mysql")
             and type(statement.max_rows) is int
             and (statement.max_rows == 1 if stats else 2 <= statement.max_rows <= 1001)
@@ -222,3 +229,26 @@ def _approved_templates(kind):
     """Immutable allowlist, computed once per source kind rather than per request."""
     names = allowed_filters(kind)
     return frozenset(_template(kind, subset) for length in range(len(names) + 1) for subset in combinations(names, length))
+
+
+def _approved_query_sql(kind, sql, templates):
+    """Strip only finite canonical missing predicates, then verify the legacy shape.
+
+    This avoids enumerating an exact/missing power set for each request.
+    """
+    supported = MISSING_FIELDS if kind.removesuffix("_statistics") in LOG_TABLES else ("device",) if kind == "evidence" else ()
+    stripped = sql
+    missing = []
+    for field in supported:
+        predicate = " AND " + missing_predicate(field, PRODUCTION_FIELDS[field])
+        if predicate in stripped:
+            if stripped.count(predicate) != 1 or f" AND {PRODUCTION_FIELDS[field]} = %s" in stripped:
+                return False
+            stripped = stripped.replace(predicate, "", 1)
+            missing.append(field)
+    if stripped not in templates:
+        return False
+    allowed = allowed_filters(kind)
+    fields = PRODUCTION_FIELDS if kind.removesuffix("_statistics") in LOG_TABLES else {"before_id":"id", "parent_id":PARENT_FIELDS.get(kind), "sn":"csn", "order_id":"orderid", "device":"devicename", "tool_name":"toolsname"}
+    exact = tuple(field for field in allowed if f" AND {fields[field]} {'<' if field == 'before_id' else '='} %s" in stripped)
+    return sql == _template(kind, exact, tuple(missing))

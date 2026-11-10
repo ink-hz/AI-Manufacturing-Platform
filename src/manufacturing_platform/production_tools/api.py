@@ -28,6 +28,8 @@ def _query(request, kind, allowed):
         raise error("SOURCE_INVALID_QUERY", 422)
     values = dict(request.query_params)
     values.pop("kind", None)
+    if "missing_fields" in values:
+        values["missing_fields"] = values["missing_fields"].split(",") if values["missing_fields"] else []
     for key in ("parent_id", "before_id"):
         if key in values:
             try:
@@ -79,7 +81,7 @@ def register_production_tools_routes(
             _query(
                 request,
                 kind,
-                {"kind", "start", "end", *PRODUCTION_FIELDS},
+                {"kind", "start", "end", "missing_fields", *PRODUCTION_FIELDS},
             ),
         )
 
@@ -107,7 +109,7 @@ def register_production_tools_routes(
             actor(request),
             source_project_id,
             _query(
-                request, "evidence", {"start", "end", "sn", "order_id", "before_id", "device", "tool_name"}
+                request, "evidence", {"start", "end", "sn", "order_id", "before_id", "device", "tool_name", "missing_fields"}
             ),
         )
 
@@ -123,7 +125,7 @@ def register_production_tools_routes(
             _query(
                 request,
                 kind + "_statistics",
-                {"kind", "start", "end", *PRODUCTION_FIELDS},
+                {"kind", "start", "end", "missing_fields", *PRODUCTION_FIELDS},
             ),
         )
 

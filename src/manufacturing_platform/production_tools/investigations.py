@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from ..workflow.clock import checked_time
 from ..workflow.contracts import DomainError
-from .contracts import ProductionQuery
+from .contracts import ProductionQuery, is_missing_dimension
 from .investigation_models import CreateHandoff, CreateInvestigation, ForkHandoff, UpdateInvestigation
 from .investigation_store import InvestigationStore, missing
 from .investigation_statistics import capture_impact, scope_filters
@@ -112,6 +112,12 @@ class InvestigationService:
             actual = next((descriptor[key] for key in aliases if descriptor.get(key) is not None), None)
             if actual is not None and str(actual) != str(context[name]):
                 raise error('SOURCE_INVALID_QUERY', 422)
+        for field in context.get('missing_fields') or ():
+            if not primary and field in {'device', 'error_code'}:
+                continue
+            actual = next((descriptor[key] for key in ALIASES[field] if key in descriptor), None)
+            if not is_missing_dimension(field, actual):
+                raise error('SOURCE_INVALID_QUERY', 422)
         when = _time(descriptor)
         if primary and when is not None and not datetime.fromisoformat(context['start'].replace('Z', '+00:00')) <= when < datetime.fromisoformat(context['end'].replace('Z', '+00:00')):
             raise error('SOURCE_INVALID_QUERY', 422)
@@ -140,6 +146,7 @@ class InvestigationService:
     def _check_log_context(self, context, descriptor):
         span = context.get('evidence_range') or context
         log_context = {key: value for key, value in context.items() if key != 'sn'}
+        log_context['missing_fields'] = [field for field in context.get('missing_fields') or () if field == 'device']
         log_context.update(start=span['start'], end=span['end'])
         self._check_context(log_context, {'descriptor': descriptor})
         if context.get('candidate_csn') is not None and descriptor.get('csn') != context['candidate_csn']:
@@ -147,7 +154,7 @@ class InvestigationService:
 
     def _log_scan(self, actor, project, ids, context):
         span = context.get('evidence_range') or context
-        query = ProductionQuery(kind='evidence', start=span['start'], end=span['end'], sn=context.get('candidate_csn'), order_id=context.get('order_id'))
+        query = ProductionQuery(kind='evidence', start=span['start'], end=span['end'], sn=context.get('candidate_csn'), order_id=context.get('order_id'), device=context.get('device'), missing_fields=[field for field in context.get('missing_fields') or () if field == 'device'])
         page = self.production.query(actor, project, query)
         found = {identifier: [] for identifier in ids}
         # Inspect every retained candidate (at most 1000); duplicate IDs never choose a row implicitly.
@@ -312,7 +319,7 @@ class InvestigationService:
             if when is None or not isinstance(sn, str):
                 return result | {'state': 'partial', 'error': 'EVENT_LOCATOR_INCOMPLETE'}
             # A microsecond interval isolates the source timestamp; never scan only the original window's first page.
-            query = ProductionQuery(kind=selected['source_kind'], start=when, end=when + timedelta(microseconds=1), sn=sn)
+            query = ProductionQuery(kind=selected['source_kind'], start=when, end=when + timedelta(microseconds=1), sn=sn, missing_fields=selected.get('filters', {}).get('missing_fields'))
             page = self.production.query(actor, project, query)
             candidates = []
             offset = 0

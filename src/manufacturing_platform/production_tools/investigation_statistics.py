@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..workflow.clock import checked_time
-from .contracts import ProductionQuery
+from .contracts import ProductionQuery, MissingScope
 from .investigation_models import DecimalId, Text, TimeRange
 
 Count = Annotated[str, Field(strict=True, pattern=r'^(0|[1-9][0-9]{0,19})$')]
@@ -18,11 +18,11 @@ CaptureState = Literal['available', 'partial', 'unavailable', 'unsupported_scope
 SCOPE_FIELDS = (
     'start', 'end', 'sn', 'order_id', 'device', 'status', 'stage_id',
     'software_id', 'software_version', 'config_log_id', 'config_version',
-    'error_code', 'barcode',
+    'error_code', 'barcode', 'missing_fields',
 )
 
 
-class ImpactFilters(TimeRange):
+class ImpactFilters(TimeRange, MissingScope):
     kind: Literal['production_statistics'] = 'production_statistics'
     sn: Text | None = None
     order_id: DecimalId | None = None
@@ -135,6 +135,10 @@ def _capture(production, actor, scope, filters, clock):
 def capture_impact(production, actor, scope, context, *, clock):
     requested = scope_filters(context)
     baseline_filters = {key: value for key, value in requested.items() if key not in {'status', 'error_code'}}
+    if baseline_filters.get('missing_fields'):
+        baseline_filters['missing_fields'] = [field for field in baseline_filters['missing_fields'] if field != 'error_code']
+        if not baseline_filters['missing_fields']:
+            baseline_filters.pop('missing_fields')
     # Failure retains the selected symptom/error scope, replacing result status only.
     failure_filters = requested | {'status': '2'}
     baseline = _capture(production, actor, scope, baseline_filters, clock)

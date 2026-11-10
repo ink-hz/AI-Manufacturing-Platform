@@ -58,6 +58,9 @@ class Reader:
             if isinstance(val, datetime):
                 val = val.replace(tzinfo=UTC)
             rows = [r for r in rows if (str(r.get(field)) == str(val) if op == '=' else r[field] >= val if op == '>=' else r[field] < val)]
+        for native,literals in re.findall(r"AND \((\w+) IS NULL OR \w+ IN \(([^)]+)\)\)",where):
+            missing_values=re.findall(r"'([^']*)'",literals)
+            rows=[row for row in rows if row.get(native) is None or str(row[native]) in missing_values]
         if "status = '2'" in where:
             rows = [r for r in rows if r.get('status') == '2']
         if 'max(timestamp) AS latest_at' in st.sql:
@@ -65,6 +68,8 @@ class Reader:
                 ids = dict.fromkeys(str(r['projuectid']) for r in rows)
                 return [dict(source_project_id=p, latest_at=max(r['timestamp'] for r in rows if str(r['projuectid'])==p)) for p in ids]
             return [{'latest_at': max((r['timestamp'] for r in rows), default=None)}]
+        if st.sql.startswith('SELECT *'):
+            return rows[:st.max_rows]
         assert 'count(*) AS records' in st.sql, st.sql
         self.used_aggregate_sql = True
         dims = re.findall(r'(workstagesid|softwareid|devicename|errorcode|version|configlogsid|cversion|projuectid) (?:END )?AS (\w+)', st.sql)
@@ -73,7 +78,7 @@ class Reader:
         for row in rows:
             def value(n,alias):
                 raw=row.get(n)
-                if f'CASE WHEN {n}' in st.sql and (raw is None or raw=='' or (alias in {'stage_id','software_id','config_log_id'} and str(raw) in {'0','-1'})):
+                if f'{n} IS NULL OR' in st.sql and (raw is None or raw=='' or (alias in {'stage_id','software_id','config_log_id'} and str(raw) in {'0','-1'})):
                     return None
                 return str(raw) if raw is not None else None
             values = tuple(value(n,alias) for n,alias in dims)
@@ -88,7 +93,7 @@ class Reader:
             item = dict(zip([alias for _,alias in dims] + (['timestamp'] if bucket else []), vals))
             item.update(records=len(group), distinct_sn=len({r['sn'] for r in group if r.get('sn')}), pass_records=sum(r.get('status')=='1' for r in group), fail_records=sum(r.get('status')=='2' for r in group))
             if ' AS failed_sn' in st.sql:
-                item.update(failed_sn=len({r['sn'] for r in group if r.get('sn') and r.get('status')=='2'}), last_time=max((r['timestamp'] for r in group), default=None))
+                item.update(failed_sn=len({r['sn'] for r in group if r.get('sn') and r.get('status')=='2'}), first_time=min((r['timestamp'] for r in group), default=None), last_time=max((r['timestamp'] for r in group), default=None))
             result.append(item)
         return result[:st.max_rows]
 
@@ -102,7 +107,7 @@ def test_full_interval_duplicates_unknown_and_missing_error():
     row = reader.rows[0]
     reader.rows = [row.copy() for _ in range(2500)] + [row | {'sn':'PASS','status':'1'}, row | {'sn':'','status':'?', 'errorcode':None}]
     result = source(reader).analysis(SCOPE, filters(), 'summary')
-    assert result['items'][0] | {} == dict(key='[]', records='2502', distinct_sn='2', pass_records='1', fail_records='2500', unknown_records='1', failed_sn='1', last_time='2026-11-09T22:00:00Z')
+    assert result['items'][0] | {} == dict(key='[]', records='2502', distinct_sn='2', pass_records='1', fail_records='2500', unknown_records='1', failed_sn='1', first_time='2026-11-09T22:00:00Z', last_time='2026-11-09T22:00:00Z')
     assert reader.used_aggregate_sql
     assert result['captured_at'] == '2026-11-10T00:00:00Z'
     assert result['complete']
@@ -147,7 +152,7 @@ def test_group_sentinel_and_exact_counts():
     assert result['truncation_reason'] == 'group_limit'
     r = Reader()
     huge = 99999999999999999999
-    r.select = lambda st: [dict(records=huge, distinct_sn=huge, pass_records=0, fail_records=huge, failed_sn=huge, last_time=NOW)]
+    r.select = lambda st: [dict(records=huge, distinct_sn=huge, pass_records=0, fail_records=huge, failed_sn=huge, first_time=NOW, last_time=NOW)]
     result = source(r).analysis(SCOPE, filters(), 'summary')
     assert result['items'][0]['records'] == str(huge)
 
@@ -155,7 +160,7 @@ def test_group_sentinel_and_exact_counts():
 @pytest.mark.parametrize('bad', [True, 1.5, '2', -1])
 def test_invalid_aggregate_counts_are_sanitized(bad):
     r = Reader()
-    r.select = lambda st: [dict(records=bad, distinct_sn=0, pass_records=0, fail_records=0, failed_sn=0, last_time=None)]
+    r.select = lambda st: [dict(records=bad, distinct_sn=0, pass_records=0, fail_records=0, failed_sn=0, first_time=None, last_time=None)]
     with pytest.raises(DomainError) as exc:
         source(r).analysis(SCOPE, filters(), 'summary')
     assert exc.value.code == 'SOURCE_SCHEMA_INVALID'
