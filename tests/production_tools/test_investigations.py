@@ -177,3 +177,36 @@ def test_new_draft_ttl_starts_after_source_validation(investigation):
     source.query = delayed_query
     draft = service.create(actor, '1', {'context':{**PARAMS, 'view':'anomalies'}, 'logs':['1']})
     assert datetime.fromisoformat(draft['expires_at']) == now[0] + timedelta(days=30)
+
+
+def test_writes_physically_remove_expired_metadata_in_bounded_batches(investigation):
+    from datetime import timedelta
+    import sqlite3
+    service, actor, _, now, draft, _ = investigation
+    # 102 drafts and one handoff will expire together; one cleanup must delete at most100.
+    for _ in range(101):
+        service.create(actor, '1', {'context':{**PARAMS, 'view':'anomalies'}})
+    expired_handoff = service.create_handoff(actor, '1', draft['id'], {'expected_version':1})
+    now[0] += timedelta(days=29)
+    retained_handoff = service.create_handoff(actor, '1', draft['id'], {'expected_version':1})
+    with sqlite3.connect(service.production.config.snapshot_path) as db:
+        snapshots_before = db.execute('SELECT * FROM snapshots').fetchall()
+    now[0] += timedelta(days=2)
+    with pytest.raises(DomainError) as caught:
+        service.get(actor, '1', draft['id'])
+    assert caught.value.status == 410
+    def expired_count():
+        with sqlite3.connect(service.store.path) as db:
+            return db.execute('SELECT COUNT(*) FROM investigations WHERE expires_at<=?', (now[0].isoformat(),)).fetchone()[0]
+    assert expired_count() == 103
+    service.create(actor, '1', {'context':{**PARAMS, 'view':'anomalies'}})
+    assert expired_count() == 3
+    assert service.get_handoff(actor, retained_handoff['id'])['id'] == retained_handoff['id']
+    service.create(actor, '1', {'context':{**PARAMS, 'view':'anomalies'}})
+    assert expired_count() == 0
+    for identifier, get in ((draft['id'], lambda ident: service.get(actor, '1', ident)), (expired_handoff['id'], lambda ident: service.get_handoff(actor, ident))):
+        with pytest.raises(DomainError) as caught:
+            get(identifier)
+        assert caught.value.status == 404
+    with sqlite3.connect(service.production.config.snapshot_path) as db:
+        assert db.execute('SELECT * FROM snapshots').fetchall() == snapshots_before

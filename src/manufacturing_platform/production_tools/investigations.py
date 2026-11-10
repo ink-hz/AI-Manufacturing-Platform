@@ -73,7 +73,7 @@ class InvestigationService:
     def __init__(self, production_service, *, path, clock, protected_paths=()):
         self.production = production_service
         self.clock = clock
-        self.store = InvestigationStore(path, protected_paths=(*protected_paths, *production_service.config.protected_paths, production_service.config.snapshot_path) if production_service.config else protected_paths) if path else None
+        self.store = InvestigationStore(path, clock=clock, protected_paths=(*protected_paths, *production_service.config.protected_paths, production_service.config.snapshot_path) if production_service.config else protected_paths) if path else None
 
     def _scope(self, actor, project, *, write=False):
         self.production._authorize(actor)

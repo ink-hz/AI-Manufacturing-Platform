@@ -7,6 +7,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+from ..workflow.clock import checked_time
 from ..workflow.contracts import DomainError
 from .store import _json, validate_snapshot_path
 
@@ -16,7 +17,8 @@ def missing():
 
 
 class InvestigationStore:
-    def __init__(self, path, *, protected_paths=()):
+    def __init__(self, path, *, clock, protected_paths=()):
+        self.clock = clock
         self.path = path
         self.protected_paths = tuple(protected_paths)
         validate_snapshot_path(path, self.protected_paths)
@@ -35,6 +37,7 @@ class InvestigationStore:
                     INSERT INTO metadata VALUES(1);
                     CREATE TABLE investigations(id TEXT PRIMARY KEY, kind TEXT NOT NULL, owner_id TEXT NOT NULL, scope_fingerprint TEXT NOT NULL, source_project_id TEXT NOT NULL, version INTEGER NOT NULL, expires_at TEXT NOT NULL, updated_at TEXT NOT NULL, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL);
                     CREATE INDEX investigations_owner ON investigations(kind, owner_id, source_project_id, updated_at);
+                    CREATE INDEX investigations_expiry ON investigations(expires_at, id);
                 ''')
             self._validate(conn)
         os.chmod(path, 0o600)
@@ -71,6 +74,12 @@ class InvestigationStore:
         return json.loads(row[4])
 
     def put(self, conn, payload, *, kind, fingerprint, insert=False):
+        # Cleanup shares the successful write transaction and never touches source snapshots.
+        # A fixed batch bounds maintenance work; each record's own expiry governs deletion.
+        conn.execute(
+            "DELETE FROM investigations WHERE id IN (SELECT id FROM investigations WHERE expires_at<=? ORDER BY expires_at,id LIMIT 100)",
+            (checked_time(self.clock).isoformat(),),
+        )
         encoded = _json(payload)
         values = (kind, payload['owner_id'], fingerprint, payload['source_project_id'], payload['version'], payload['expires_at'], payload.get('updated_at', payload['created_at']), encoded, hashlib.sha256(encoded.encode()).hexdigest(), payload['id'])
         if insert:
