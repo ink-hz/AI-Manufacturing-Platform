@@ -12,6 +12,7 @@ from ..workflow.contracts import DomainError
 from .contracts import ProductionQuery
 from .investigation_models import CreateHandoff, CreateInvestigation, ForkHandoff, UpdateInvestigation
 from .investigation_store import InvestigationStore, missing
+from .investigation_statistics import capture_impact, scope_filters
 from .source import error
 from .store import _fingerprint, _json
 
@@ -22,16 +23,17 @@ DESCRIPTOR_FIELDS = frozenset({
     'softwareversion', 'software_version', 'configid', 'configlogid', 'config_log_id',
     'configversion', 'config_version', 'devicename', 'device', 'orderid', 'order_id',
     'status', 'errorcode', 'error_code', 'projuectid',
+    'workstagesid', 'version', 'configlogsid', 'cversion', 'workselectid', 'toolsname', 'state',
 })
 ALIASES = {
-    'stage_id': ('stageid', 'stage_id', 'stage'),
+    'stage_id': ('workstagesid', 'stageid', 'stage_id', 'stage'),
     'software_id': ('softwareid', 'software_id'),
-    'software_version': ('softwareversion', 'software_version'),
-    'config_log_id': ('configlogid', 'config_log_id'),
-    'config_version': ('configversion', 'config_version'),
+    'software_version': ('version', 'softwareversion', 'software_version'),
+    'config_log_id': ('configlogsid', 'configlogid', 'config_log_id'),
+    'config_version': ('cversion', 'configversion', 'config_version'),
     'device': ('devicename', 'device'), 'error_code': ('errorcode', 'error_code'),
     'order_id': ('orderid', 'order_id'), 'barcode': ('barcode',),
-    'sn': ('sn', 'csn'), 'status': ('status',),
+    'sn': ('sn',), 'status': ('status',),
 }
 
 
@@ -135,9 +137,17 @@ class InvestigationService:
             return previous
         return selected
 
+    def _check_log_context(self, context, descriptor):
+        span = context.get('evidence_range') or context
+        log_context = {key: value for key, value in context.items() if key != 'sn'}
+        log_context.update(start=span['start'], end=span['end'])
+        self._check_context(log_context, {'descriptor': descriptor})
+        if context.get('candidate_csn') is not None and descriptor.get('csn') != context['candidate_csn']:
+            raise error('SOURCE_INVALID_QUERY', 422)
+
     def _log_scan(self, actor, project, ids, context):
         span = context.get('evidence_range') or context
-        query = ProductionQuery(kind='evidence', start=span['start'], end=span['end'], sn=context.get('sn'), order_id=context.get('order_id'))
+        query = ProductionQuery(kind='evidence', start=span['start'], end=span['end'], sn=context.get('candidate_csn'), order_id=context.get('order_id'))
         page = self.production.query(actor, project, query)
         found = {identifier: [] for identifier in ids}
         # Inspect every retained candidate (at most 1000); duplicate IDs never choose a row implicitly.
@@ -148,8 +158,8 @@ class InvestigationService:
                     if row.get('projuectid') is not None and str(row['projuectid']) != project:
                         raise error('SOURCE_INVALID_QUERY', 422)
                     descriptor = _descriptor(row)
-                    self._check_context({**context, 'start': span['start'], 'end': span['end']}, {'descriptor': descriptor})
-                    metadata = {'source_log_id': identifier, 'descriptor': descriptor, 'fingerprint': _hash(descriptor), 'fingerprint_version': 1, 'captured_at': page['captured_at'], 'filters': query.model_dump(mode='json', exclude_none=True), 'match_basis': 'project_and_context', 'state': 'unverified'}
+                    self._check_log_context(context, descriptor)
+                    metadata = {'source_log_id': identifier, 'descriptor': descriptor, 'fingerprint': _hash(descriptor), 'fingerprint_version': 1, 'captured_at': page['captured_at'], 'filters': query.model_dump(mode='json', exclude_none=True), 'match_basis': 'project_time_and_explicit_csn' if context.get('candidate_csn') else 'project_and_time', 'state': 'unverified'}
                     candidate = {'snapshot_id': page['snapshot_id'], 'offset': page['offset'] + offset, 'row': descriptor}
                     found[identifier].append((metadata, candidate))
             if not page['has_more']:
@@ -172,8 +182,9 @@ class InvestigationService:
         if comparison and not primary:
             raise error('SOURCE_INVALID_QUERY', 422)
         logs = self._logs(actor, scope.source_project_id, body.logs, context)
+        impact = capture_impact(self.production, actor, scope, context, clock=self.clock)
         now = checked_time(self.clock)
-        return {'id': str(uuid4()), 'source_namespace': scope.source_namespace, 'source_project_id': scope.source_project_id, 'owner_id': str(actor.user_id), 'version': 1, 'created_at': now.isoformat(), 'updated_at': now.isoformat(), 'expires_at': (now + timedelta(days=30)).isoformat(), 'origin_handoff_id': origin, 'context': context, 'primary': primary, 'comparison': comparison, 'logs': logs, 'note': body.note}
+        return {'id': str(uuid4()), 'source_namespace': scope.source_namespace, 'source_project_id': scope.source_project_id, 'owner_id': str(actor.user_id), 'version': 1, 'created_at': now.isoformat(), 'updated_at': now.isoformat(), 'expires_at': (now + timedelta(days=30)).isoformat(), 'origin_handoff_id': origin, 'context': context, 'primary': primary, 'comparison': comparison, 'logs': logs, 'note': body.note, 'impact': impact}
 
     @guarded
     def create(self, actor, project, body):
@@ -224,14 +235,15 @@ class InvestigationService:
             logs = self._logs(actor, project, body.logs, context)
         self._check_context(context, primary)
         self._check_context(context, comparison, primary=False)
-        if 'context' in changed and logs and any(log['filters'].get(key) != context.get(key) for log in logs for key in ('sn', 'order_id')):
+        if 'context' in changed and logs and any(log['filters'].get(query_key) != context.get(context_key) for log in logs for query_key, context_key in (('sn', 'candidate_csn'), ('order_id', 'order_id'))):
             raise error('SOURCE_INVALID_QUERY', 422)
         if 'context' in changed:
             span = context.get('evidence_range') or context
             for log in logs:
-                self._check_context({**context, 'start': span['start'], 'end': span['end']}, log)
+                self._check_log_context(context, log['descriptor'])
+        impact = capture_impact(self.production, actor, scope, context, clock=self.clock) if scope_filters(context) != scope_filters(old['context']) else old.get('impact')
         now = checked_time(self.clock)
-        result = old | {'context': context, 'primary': primary, 'comparison': comparison, 'logs': logs, 'note': body.note if 'note' in changed else old['note'], 'version': old['version'] + 1, 'updated_at': now.isoformat(), 'expires_at': (now + timedelta(days=30)).isoformat()}
+        result = old | {'impact': impact, 'context': context, 'primary': primary, 'comparison': comparison, 'logs': logs, 'note': body.note if 'note' in changed else old['note'], 'version': old['version'] + 1, 'updated_at': now.isoformat(), 'expires_at': (now + timedelta(days=30)).isoformat()}
         self._scope(actor, project, write=True)
         self.production._reauthorize(actor, project, scope)
         with self.store.transaction(write=True) as conn:
@@ -296,7 +308,7 @@ class InvestigationService:
                 if exc.status not in {404, 410}:
                     raise
             when = _time(descriptor)
-            sn = next((descriptor[key] for key in ('sn', 'csn') if descriptor.get(key)), None)
+            sn = descriptor.get('sn')
             if when is None or not isinstance(sn, str):
                 return result | {'state': 'partial', 'error': 'EVENT_LOCATOR_INCOMPLETE'}
             # A microsecond interval isolates the source timestamp; never scan only the original window's first page.
@@ -306,7 +318,7 @@ class InvestigationService:
             offset = 0
             for _ in range(11):
                 for index, row in enumerate(page['items']):
-                    if _time(row) == when and row.get('sn', row.get('csn')) == sn:
+                    if _time(row) == when and row.get('sn') == sn:
                         candidates.append({'snapshot_id': page['snapshot_id'], 'offset': offset + index, 'row': row})
                 if not page['has_more']:
                     break

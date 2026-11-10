@@ -29,8 +29,8 @@ class TimeRange(InputModel):
     @field_validator('start', 'end', mode='before')
     @classmethod
     def iso_time(cls, value):
-        if not isinstance(value, (str, datetime)):
-            raise ValueError('ISO timestamp required')
+        if not isinstance(value, (str, datetime)) or (isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})', value) is None):
+            raise ValueError('ISO timestamp with timezone required')
         return value
 
     @model_validator(mode='after')
@@ -56,6 +56,7 @@ class InvestigationContext(TimeRange):
     order_id: DecimalId | None = None
     barcode: Text | None = None
     sn: Text | None = None
+    candidate_csn: Text | None = None
     status: Literal['1', '2'] | None = None
     symptom: Annotated[StrictStr, Field(max_length=1000)] | None = None
     history_range: TimeRange | None = None

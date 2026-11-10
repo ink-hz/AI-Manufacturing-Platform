@@ -210,3 +210,153 @@ def test_writes_physically_remove_expired_metadata_in_bounded_batches(investigat
         assert caught.value.status == 404
     with sqlite3.connect(service.production.config.snapshot_path) as db:
         assert db.execute('SELECT * FROM snapshots').fetchall() == snapshots_before
+
+
+def test_native_descriptor_fields_validate_actual_stage_and_versions(investigation):
+    from manufacturing_platform.production_tools.contracts import ProductionQuery
+    service, actor, source, _, _, _ = investigation
+    source.rows = [{'timestamp':'2026-11-09T01:00:00Z', 'projuectid':'1', 'sn':'EVENT', 'workstagesid':'10', 'softwareid':'20', 'version':'3.1', 'configlogsid':'30', 'cversion':'4.2', 'workselectid':'40'}]
+    page = service.production.query(actor, '1', ProductionQuery(kind='production', **PARAMS))
+    selection = {'snapshot_id':page['snapshot_id'], 'offset':0}
+    context = {**PARAMS,'view':'anomalies','stage_id':'10','software_id':'20','software_version':'3.1','config_log_id':'30','config_version':'4.2'}
+    draft = service.create(actor, '1', {'context':context,'primary':selection})
+    assert {key: draft['primary']['descriptor'][key] for key in ('workstagesid','version','configlogsid','cversion','workselectid')} == {key:source.rows[0][key] for key in ('workstagesid','version','configlogsid','cversion','workselectid')}
+    for key, value in [('stage_id','11'),('software_version','3.2'),('config_log_id','31'),('config_version','4.3')]:
+        with pytest.raises(DomainError) as caught:
+            service.update(actor, '1', draft['id'], {'expected_version':1,'context':{**context,key:value}})
+        assert caught.value.status == 422
+
+
+def test_log_candidate_csn_is_explicit_and_never_inferred_from_event_sn(investigation):
+    service, actor, source, _, _, _ = investigation
+    source.rows = [{'id':1,'projuectid':1,'csn':'DIFFERENT-CSN','createtime':1794186000000,'toolsname':'Tool A','state':'ready'}]
+    draft = service.create(actor, '1', {'context':{**PARAMS,'view':'anomalies','sn':'EVENT-SN'}, 'logs':['1']})
+    evidence_query = next(query for query in reversed(source.calls) if query.kind == 'evidence')
+    assert evidence_query.sn is None
+    assert draft['logs'][0]['match_basis'] == 'project_and_time'
+    assert draft['logs'][0]['descriptor']['toolsname'] == 'Tool A'
+    assert draft['logs'][0]['descriptor']['state'] == 'ready'
+    explicit = service.create(actor, '1', {'context':{**PARAMS,'view':'anomalies','sn':'EVENT-SN','candidate_csn':'DIFFERENT-CSN'}, 'logs':['1']})
+    evidence_query = next(query for query in reversed(source.calls) if query.kind == 'evidence')
+    assert evidence_query.sn == 'DIFFERENT-CSN'
+    assert explicit['logs'][0]['match_basis'] == 'project_time_and_explicit_csn'
+    with pytest.raises(DomainError) as caught:
+        service.create(actor, '1', {'context':{**PARAMS,'view':'anomalies','candidate_csn':'WRONG'}, 'logs':['1']})
+    assert caught.value.status == 422
+
+
+@pytest.fixture
+def impact_source(investigation):
+    from manufacturing_platform.production_tools.contracts import SourceResult
+    service, actor, source, now, _, _ = investigation
+    original = source.query
+    source.statistics_count = 10000000000000000001
+    source.statistics_complete = True
+    def query(scope, query):
+        if query.kind != 'production_statistics':
+            return original(scope, query)
+        source.calls.append(query)
+        if source.failure:
+            raise source.failure
+        total = source.statistics_count
+        failed = query.status == '2'
+        row = {'records':3 if failed else total,'distinct_sn':2 if failed else 5,'pass_records':0 if failed else total-4,'fail_records':3,'raw_payload':{'must_not_persist':True}}
+        return SourceResult(query.kind, [row], now[0], query.model_dump(mode='json',exclude_none=True), source.statistics_complete, None if source.statistics_complete else 'row_limit', None)
+    source.query = query
+    return service, actor, source, now
+
+
+def test_impact_is_server_derived_exact_frozen_and_does_not_create_snapshots(impact_source):
+    import sqlite3
+    service, actor, source, now = impact_source
+    with sqlite3.connect(service.production.config.snapshot_path) as db:
+        before = db.execute('SELECT COUNT(*) FROM snapshots').fetchone()[0]
+    context = {**PARAMS,'view':'anomalies','device':'D','sn':'EVENT'}
+    draft = service.create(actor, '1', {'context':context})
+    impact = draft['impact']
+    assert impact['state'] == 'available'
+    assert impact['baseline']['counts']['records'] == '10000000000000000001'
+    assert impact['baseline']['counts']['unknown_records'] == '1'
+    assert impact['failure']['filters']['status'] == '2'
+    assert impact['failed_involved_sn']['numerator'] == '2'
+    assert impact['failed_involved_sn']['denominator'] == '5'
+    assert impact['failure_records']['denominator'] == '10000000000000000001'
+    assert all(query.kind == 'production_statistics' for query in source.calls[-3:])
+    with sqlite3.connect(service.production.config.snapshot_path) as db:
+        assert db.execute('SELECT COUNT(*) FROM snapshots').fetchone()[0] == before
+    assert 'must_not_persist' not in str(draft)
+    handoff = service.create_handoff(actor,'1',draft['id'],{'expected_version':1})
+    source.statistics_count = 999
+    calls = len(source.calls)
+    note_update = service.update(actor,'1',draft['id'],{'expected_version':1,'note':'later'})
+    assert note_update['impact'] == impact and len(source.calls) == calls
+    view_update = service.update(actor,'1',draft['id'],{'expected_version':2,'context':{**context,'view':'records'}})
+    assert view_update['impact'] == impact and len(source.calls) == calls
+    scope_update = service.update(actor,'1',draft['id'],{'expected_version':3,'context':{**context,'device':'NEW'}})
+    assert scope_update['impact']['baseline']['counts']['records'] == '999'
+    assert service.get_handoff(actor,handoff['id'])['impact'] == impact
+    assert service.fork(actor,handoff['id'],{})['impact'] == impact
+
+
+def test_impact_marks_unsupported_filters_without_broadening_and_source_failure(impact_source):
+    service, actor, source, _ = impact_source
+    draft = service.create(actor,'1',{'context':{**PARAMS,'view':'anomalies','error_code':'E-1','status':'1'}})
+    impact = draft['impact']
+    assert impact['state'] == 'unsupported_scope'
+    assert impact['baseline']['state'] == 'available'
+    assert 'status' not in impact['baseline']['filters'] and 'error_code' not in impact['baseline']['filters']
+    assert impact['selected']['state'] == 'unsupported_scope'
+    assert impact['selected']['filters']['error_code'] == 'E-1'
+    assert impact['failure']['filters']['error_code'] == 'E-1'
+    assert impact['failure']['filters']['status'] == '2'
+    assert impact['selected']['unsupported_filters'] == ['error_code']
+    source.failure = RuntimeError('private connection password')
+    updated = service.update(actor,'1',draft['id'],{'expected_version':1,'context':{**PARAMS,'view':'anomalies','device':'NEW'}})
+    assert updated['impact']['state'] == 'unavailable'
+    assert updated['impact']['baseline']['counts'] is None
+    assert 'password' not in str(updated)
+    assert updated['impact']['baseline']['filters']['device'] == 'NEW'
+
+
+def test_impact_preserves_partial_coverage_and_rejects_invalid_aggregates(impact_source):
+    service, actor, source, _ = impact_source
+    source.statistics_complete = False
+    draft = service.create(actor,'1',{'context':{**PARAMS,'view':'anomalies'}})
+    assert draft['impact']['state'] == 'partial'
+    assert draft['impact']['selected']['complete'] is False
+    source.statistics_complete = True
+    source.statistics_count = -1
+    draft = service.create(actor,'1',{'context':{**PARAMS,'view':'anomalies'}})
+    assert draft['impact']['state'] == 'partial'
+    assert draft['impact']['baseline']['state'] == 'unavailable'
+    assert draft['impact']['baseline']['counts'] is None
+
+
+@pytest.mark.parametrize('bad_value', [True, 1.5, '9', -1])
+def test_impact_rejects_coerced_counts_from_source(impact_source, bad_value):
+    from dataclasses import replace
+    service, actor, source, _ = impact_source
+    original = source.query
+    def invalid(scope, query):
+        result = original(scope, query)
+        return replace(result, items=[result.items[0] | {'records':bad_value}])
+    source.query = invalid
+    draft = service.create(actor,'1',{'context':{**PARAMS,'view':'anomalies'}})
+    assert draft['impact']['state'] == 'unavailable'
+    assert draft['impact']['selected']['error'] == 'SOURCE_SCHEMA_INVALID'
+    assert draft['impact']['selected']['counts'] is None
+
+
+def test_impact_rejects_counts_contradicting_requested_failure_status(impact_source):
+    from dataclasses import replace
+    service, actor, source, _ = impact_source
+    original = source.query
+    def inconsistent(scope, query):
+        result = original(scope, query)
+        if query.status == '2':
+            return replace(result, items=[{'records':3,'distinct_sn':2,'pass_records':1,'fail_records':2}])
+        return result
+    source.query = inconsistent
+    draft = service.create(actor,'1',{'context':{**PARAMS,'view':'anomalies'}})
+    assert draft['impact']['failure']['state'] == 'unavailable'
+    assert draft['impact']['failed_involved_sn']['numerator'] is None

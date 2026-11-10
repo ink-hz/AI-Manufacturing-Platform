@@ -5,6 +5,7 @@ from collections.abc import Callable
 from uuid import UUID
 
 from fastapi import APIRouter, Request
+from starlette.concurrency import run_in_threadpool
 
 from ..workflow.contracts import Actor
 from .api import BASE, PREFIX, SourceId
@@ -54,7 +55,8 @@ def register_investigation_routes(router: APIRouter, service, actor: Callable[[R
     async def create(source_project_id: SourceId, request: Request):
         current = actor(request)
         service.production._authorize(current)
-        return service.create(current, source_project_id, await _body(request))
+        body = await _body(request)
+        return await run_in_threadpool(service.create, current, source_project_id, body)
 
     @router.get(path + '/{investigation_id}')
     def get(source_project_id: SourceId, investigation_id: UUID, request: Request):
@@ -65,7 +67,8 @@ def register_investigation_routes(router: APIRouter, service, actor: Callable[[R
     async def update(source_project_id: SourceId, investigation_id: UUID, request: Request):
         current = actor(request)
         service.production._authorize(current)
-        return service.update(current, source_project_id, investigation_id, await _body(request))
+        body = await _body(request)
+        return await run_in_threadpool(service.update, current, source_project_id, investigation_id, body)
 
     @router.get(path + '/{investigation_id}/resolve')
     def resolve(source_project_id: SourceId, investigation_id: UUID, request: Request):
@@ -76,7 +79,8 @@ def register_investigation_routes(router: APIRouter, service, actor: Callable[[R
     async def handoff(source_project_id: SourceId, investigation_id: UUID, request: Request):
         current = actor(request)
         service.production._authorize(current)
-        return service.create_handoff(current, source_project_id, investigation_id, await _body(request))
+        body = await _body(request)
+        return await run_in_threadpool(service.create_handoff, current, source_project_id, investigation_id, body)
 
     @router.get(BASE + '/handoffs/{handoff_id}')
     def get_handoff(handoff_id: UUID, request: Request):
@@ -92,4 +96,5 @@ def register_investigation_routes(router: APIRouter, service, actor: Callable[[R
     async def fork(handoff_id: UUID, request: Request):
         current = actor(request)
         service.production._authorize(current)
-        return service.fork(current, handoff_id, await _body(request))
+        body = await _body(request)
+        return await run_in_threadpool(service.fork, current, handoff_id, body)

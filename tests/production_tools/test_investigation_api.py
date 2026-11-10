@@ -157,3 +157,54 @@ def test_store_failure_is_sanitized_without_traceback(workflow, capsys):
     assert 'private-connection-secret' not in response.text
     assert 'Traceback' not in capsys.readouterr().err
     assert workflow.client('admin').get(ROOT+'/status').json()['configured'] is True
+
+
+@pytest.mark.parametrize('start,end', [('1794182400','1794268800'), (1794182400,1794268800)])
+def test_timestamp_inputs_require_iso_with_explicit_timezone(workflow, start, end):
+    configure(workflow)
+    response = workflow.client('admin').post(PATH, json={'context':{'start':start,'end':end,'view':'anomalies'}})
+    assert response.status_code == 422
+
+
+def test_blocked_mutation_allows_another_request_to_progress():
+    import asyncio
+    from threading import Event
+    from types import SimpleNamespace
+    import httpx
+    from fastapi import APIRouter, FastAPI
+    from manufacturing_platform.production_tools.investigation_api import register_investigation_routes
+    entered, release = Event(), Event()
+    timed_out = []
+    class BlockingService:
+        production = SimpleNamespace(_authorize=lambda actor: None)
+        def create(self, actor, project, body):
+            entered.set()
+            timed_out.append(not release.wait(1))
+            return {'done':True}
+    app = FastAPI()
+    router = APIRouter()
+    register_investigation_routes(router, BlockingService(), lambda request: object())
+    app.include_router(router)
+    @app.get('/progress')
+    def progress():
+        return {'ok':True}
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            blocked = asyncio.create_task(client.post('/production-tools/projects/1/investigations', json={'context':CONTEXT}))
+            try:
+                assert await asyncio.to_thread(entered.wait, 1)
+                response = await asyncio.wait_for(client.get('/progress'), .5)
+                assert response.status_code == 200
+                assert timed_out == []
+            finally:
+                release.set()
+                await asyncio.wait_for(blocked, 2)
+    asyncio.run(exercise())
+
+
+def test_browser_cannot_supply_impact_counts(workflow):
+    configure(workflow)
+    client = workflow.client('admin')
+    assert client.post(PATH,json={'context':CONTEXT,'impact':{'counts':{'records':'100'}}}).status_code == 422
+    draft = create(workflow)
+    assert client.put(PATH+'/'+draft['id'],json={'expected_version':1,'impact':{'counts':{'records':'100'}}}).status_code == 422
