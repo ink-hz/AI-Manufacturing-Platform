@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse, Response
 
+from ..production_tools.contracts import ProductionToolsConfig
 from .assistance import AssistanceKind, AssistanceResult
 from .contracts import Actor, DomainError, GrantChange, ObjectKind, ProjectCreate
 from .security import log_denial
@@ -33,6 +34,7 @@ def build_workflow_router(
     test_evidence_reader=None,
     resolve_subject_profiles=None,
     business_clock=None,
+    production_tools: ProductionToolsConfig | None = None,
 ):
     store = WorkflowStore(database_path, authority_database_path, dataset, business_clock=business_clock)
     service = WorkflowService(
@@ -109,6 +111,16 @@ def build_workflow_router(
 
     def actor(request):
         return request.state.workflow_actor
+
+    from ..production_tools.api import register_production_tools_routes
+    from ..production_tools.service import ProductionToolsService
+
+    try:
+        production_service = ProductionToolsService(store, production_tools, clock=store.business_clock)
+    except (sqlite3.Error, OSError, ValueError):
+        # Optional connector misconfiguration must not disable workflow routes.
+        production_service = ProductionToolsService(store, None, clock=store.business_clock)
+    register_production_tools_routes(router, production_service, actor)
 
     async def parse(request, model):
         try:
