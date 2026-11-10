@@ -2685,3 +2685,229 @@ it("F5 failed add stays in the effective pending set for the next accepted add",
     await v.dispose();
   }
 });
+
+for (const startingPage of ["initial", "paged"] as const) {
+  it(`R6 same-SN fresh search from ${startingPage} rereads both production and stopover`, async () => {
+    let generation = "BEFORE";
+    const v = await view((u) =>
+      u.pathname.endsWith("/observations")
+        ? new Response(
+            JSON.stringify(
+              page(
+                [
+                  {
+                    ...fail,
+                    devicename: generation + "-" + u.searchParams.get("kind"),
+                  },
+                ],
+                { has_more: true, captured_count: 100 },
+              ),
+            ),
+          )
+        : undefined,
+    );
+    try {
+      await v.click("查看项目 A");
+      await v.click("查记录");
+      await v.click("查看 SN-A 履历");
+      await v.field("精确 SN", "SN-A");
+      if (startingPage === "paged") await v.click("下一页快照");
+      const before = v.requests.length;
+      generation = "AFTER";
+      await v.click("查询产测数据");
+      const reads = v.requests
+        .slice(before)
+        .filter((r) => r.url.pathname.endsWith("/observations"));
+      expect(reads.map((r) => r.url.searchParams.get("kind")).sort()).toEqual([
+        "production",
+        "stopover",
+      ]);
+      expect(reads.every((r) => r.url.searchParams.get("sn") === "SN-A")).toBe(
+        true,
+      );
+      expect(
+        v.requests
+          .slice(before)
+          .some((r) => r.url.pathname.includes("/snapshots/")),
+      ).toBe(false);
+      expect(v.host.textContent).toContain("AFTER-production");
+      expect(v.host.textContent).toContain("AFTER-stopover");
+      expect(v.host.textContent).not.toContain("BEFORE-");
+    } finally {
+      await v.dispose();
+    }
+  });
+}
+
+for (const [stage, tool, version] of [
+  ["70", null, null],
+  ["70", null, "EXPLICIT-V3"],
+  [null, "80", null],
+  [null, null, null],
+] as const) {
+  it(`R7 atomic advanced stage/tool edit ${stage}/${tool}/${version} preserves explicit predicates in source and saved context`, async () => {
+    const context = {
+      ...range,
+      view: "records",
+      stage_id: "7",
+      software_id: "8",
+      software_version: "OLD-V2",
+      config_log_id: "9",
+      config_version: "OLD-C2",
+    };
+    const v = await view(
+      (u) => {
+        if (
+          u.pathname.endsWith("/handoffs/" + handoffId) ||
+          u.pathname.endsWith("/fork")
+        )
+          return new Response(
+            JSON.stringify({
+              ...initialDraft(),
+              id: u.pathname.endsWith("/fork") ? draftId : handoffId,
+              context,
+            }),
+          );
+        if (
+          u.pathname.endsWith("/analysis") &&
+          u.searchParams.get("view") === "stages"
+        )
+          return new Response(
+            JSON.stringify({
+              ...block,
+              source_project_id: project.id,
+              items: [
+                {
+                  ...aggregate,
+                  stage_id: stage,
+                  software_id: tool,
+                  stage_name: stage ? "新阶段" : null,
+                  software_name: tool ? "新工具" : null,
+                },
+              ],
+            }),
+          );
+      },
+      { handoffId },
+    );
+    try {
+      await v.click("另存为我的调查");
+      await v.field(
+        "测试环节筛选",
+        `${stage || "missing"}|${tool || "missing"}`,
+      );
+      if (version) await v.field("软件版本", version);
+      await v.click("查询产测数据");
+      await v.click("重试保存");
+      const q = v.requests
+        .filter((r) => r.url.pathname.endsWith("/observations"))
+        .at(-1)!.url;
+      for (const [key, value] of [
+        ["stage_id", stage],
+        ["software_id", tool],
+      ] as const) {
+        expect(q.searchParams.get(key)).toBe(value);
+        expect(v.saved().context[key]).toBe(value || undefined);
+        if (value) {
+          expect(
+            q.searchParams.get("missing_fields")?.split(",") || [],
+          ).not.toContain(key);
+          expect(v.saved().context.missing_fields || []).not.toContain(key);
+        } else {
+          expect(q.searchParams.get("missing_fields")?.split(",")).toContain(
+            key,
+          );
+          expect(v.saved().context.missing_fields).toContain(key);
+        }
+      }
+      expect(q.searchParams.get("software_version")).toBe(version);
+      expect(v.saved().context.software_version).toBe(version || undefined);
+      expect(q.searchParams.has("config_log_id")).toBe(false);
+      expect(q.searchParams.has("config_version")).toBe(false);
+      expect(v.saved().context.config_log_id).toBeUndefined();
+      expect(v.saved().context.config_version).toBeUndefined();
+    } finally {
+      await v.dispose();
+    }
+  });
+}
+
+it("R7 version distribution preserves explicitly missing versions when both parent objects change", async () => {
+  const context = {
+    ...range,
+    view: "anomalies",
+    stage_id: "7",
+    software_id: "8",
+    software_version: "OLD-V2",
+    config_log_id: "9",
+    config_version: "OLD-C2",
+    error_code: "E1",
+  };
+  const v = await view(
+    (u) => {
+      if (
+        u.pathname.endsWith("/handoffs/" + handoffId) ||
+        u.pathname.endsWith("/fork")
+      )
+        return new Response(
+          JSON.stringify({
+            ...initialDraft(),
+            id: u.pathname.endsWith("/fork") ? draftId : handoffId,
+            context,
+          }),
+        );
+      if (
+        u.pathname.endsWith("/analysis") &&
+        u.searchParams.get("view") === "versions"
+      )
+        return new Response(
+          JSON.stringify({
+            ...block,
+            source_project_id: project.id,
+            items: [
+              {
+                ...aggregate,
+                software_id: "80",
+                software_version: null,
+                config_log_id: "90",
+                config_version: null,
+              },
+            ],
+          }),
+        );
+    },
+    { handoffId },
+  );
+  try {
+    await v.click("另存为我的调查");
+    const select = [...v.host.querySelectorAll("select")].find((s) =>
+      s.querySelector('option[value="versions"]'),
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        "value",
+      )!.set!.call(select, "versions");
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+    await v.click("限定版本 源未提供 / 源未提供");
+    await v.click("查记录");
+    await v.click("重试保存");
+    const q = v.requests
+      .filter((r) => r.url.pathname.endsWith("/observations"))
+      .at(-1)!.url;
+    expect(q.searchParams.get("software_id")).toBe("80");
+    expect(q.searchParams.get("config_log_id")).toBe("90");
+    expect(v.saved().context.software_id).toBe("80");
+    expect(v.saved().context.config_log_id).toBe("90");
+    for (const key of ["software_version", "config_version"]) {
+      expect(q.searchParams.has(key)).toBe(false);
+      expect(q.searchParams.get("missing_fields")?.split(",")).toContain(key);
+      expect(v.saved().context[key]).toBeUndefined();
+      expect(v.saved().context.missing_fields).toContain(key);
+    }
+  } finally {
+    await v.dispose();
+  }
+});

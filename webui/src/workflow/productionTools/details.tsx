@@ -233,7 +233,7 @@ export function Records(props: BoardProps) {
             s,
           );
     },
-    [api, l.projectId, l.scope, l.cursor, refresh],
+    [api, l.projectId, l.scope, l.cursor, l.readGeneration, refresh],
   );
   return (
     <ReadBlock label="测试记录" state={state}>
@@ -271,6 +271,7 @@ export function HistoryPage(props: BoardProps) {
       scope.end,
       scope.sn,
       l.cursor?.kind === "production" ? l.cursor : undefined,
+      l.readGeneration,
       refresh,
     ],
   );
@@ -301,6 +302,7 @@ export function HistoryPage(props: BoardProps) {
       scope.end,
       scope.sn,
       l.cursor?.kind === "stopover" ? l.cursor : undefined,
+      l.readGeneration,
       refresh,
     ],
   );

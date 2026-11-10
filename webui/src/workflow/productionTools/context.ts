@@ -116,35 +116,37 @@ export function removeScope(scope: Scope, key: string): Scope {
 /** A user edit replaces the predicate, including its missing-value alternative. */
 export function editScope(scope: Scope, edits: Partial<Scope>): Scope {
   let next = { ...scope };
-  if (edits.missing_fields) {
-    for (const key of edits.missing_fields) {
-      next = removeScope(next, key);
-      next.missing_fields = missingOrder.filter(
-        (k) => k === key || next.missing_fields?.includes(k),
-      );
-    }
-  }
-  for (const key of [
+  const predicates = [
     ...missingOrder,
     ...Object.keys(edits).filter(
       (k) =>
         !missingOrder.includes(k as MissingField) && k !== "missing_fields",
     ),
-  ]) {
-    if (!Object.prototype.hasOwnProperty.call(edits, key)) continue;
+  ].flatMap((key) => {
+    const exact = Object.prototype.hasOwnProperty.call(edits, key);
     const value = (edits as Record<string, unknown>)[key];
-    // Explicit missing from a drill takes precedence over an absent exact field.
+    const missing =
+      !!edits.missing_fields?.includes(key as MissingField) &&
+      (!exact || value === undefined);
+    return exact || missing ? [{ key, value, missing }] : [];
+  });
+  // Clear only inherited predicates first. Explicit children are reapplied below,
+  // even when a changed parent invalidates their old values in this same edit.
+  for (const { key, value, missing } of predicates) {
     if (
-      value === undefined &&
-      edits.missing_fields?.includes(key as MissingField)
-    )
-      continue;
-    if (
-      (next as unknown as Record<string, unknown>)[key] !== value ||
-      next.missing_fields?.includes(key as MissingField)
+      (scope as unknown as Record<string, unknown>)[key] !== value ||
+      !!scope.missing_fields?.includes(key as MissingField) !== missing
     )
       next = removeScope(next, key);
-    next = { ...next, [key]: value };
+  }
+  for (const { key, value, missing } of predicates) {
+    delete (next as unknown as Record<string, unknown>)[key];
+    next.missing_fields = next.missing_fields?.filter((k) => k !== key);
+    if (missing)
+      next.missing_fields = missingOrder.filter(
+        (k) => k === key || next.missing_fields?.includes(k),
+      );
+    else if (value !== undefined) next = { ...next, [key]: value };
   }
   return next;
 }
@@ -153,15 +155,13 @@ export function drill(
   item: Aggregate,
   fields: MissingField[],
 ): Scope {
-  let next = { ...scope };
+  const edits: Partial<Scope> = {};
   for (const key of fields) {
     const value = item[key];
-    next = editScope(
-      next,
-      value == null ? { missing_fields: [key] } : { [key]: value },
-    );
+    if (value == null) (edits.missing_fields ||= []).push(key);
+    else Object.assign(edits, { [key]: value });
   }
-  return next;
+  return editScope(scope, edits);
 }
 /** Cursor ownership follows the effective read, rather than individual buttons. */
 export function locationQueryKey(location: Location): string {
@@ -277,6 +277,7 @@ export interface Location {
     limit: number;
     kind?: "production" | "stopover";
   };
+  readGeneration?: number;
   scroll?: number;
   selectedStage?: boolean;
   selectedError?: boolean;

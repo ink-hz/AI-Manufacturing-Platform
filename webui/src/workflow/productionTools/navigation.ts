@@ -20,6 +20,7 @@ export function useProductionNavigation({
     accepted = useRef(0),
     native = useRef(0),
     session = useRef(crypto.randomUUID()),
+    readGeneration = useRef(0),
     busy = useRef(false),
     alive = useRef(true);
   const callbacks = useRef({ apply, snapshot, guard });
@@ -63,7 +64,13 @@ export function useProductionNavigation({
     commit(next, target);
   };
   async function go(next: Location, fresh = false) {
-    if (fresh) next = { ...next, cursor: undefined, inspected: undefined };
+    if (fresh)
+      next = {
+        ...next,
+        cursor: undefined,
+        inspected: undefined,
+        readGeneration: ++readGeneration.current,
+      };
     if (busy.current) return;
     busy.current = true;
     if (await callbacks.current.guard(next)) {
