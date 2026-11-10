@@ -215,7 +215,7 @@ def _object_options(options):
     return options
 
 
-def build_native_config(config_path: str, snapshot_path: str):
+def build_native_config(config_path: str, snapshot_path: str, *, investigation_path: str | None = None):
     """Load private trusted JSON. Raw credentials remain inside native readers only."""
     import json
     import os
@@ -278,12 +278,18 @@ def build_native_config(config_path: str, snapshot_path: str):
             allowed_object_host=host,
             clock=lambda: datetime.now(UTC),
         )
+        from .store import validate_snapshot_path
+        independent_path = investigation_path or snapshot_path + ".investigations.sqlite3"
+        validate_snapshot_path(snapshot_path, (config_path, independent_path))
+        validate_snapshot_path(independent_path, (config_path, snapshot_path))
         return ProductionToolsConfig(
             source,
             raw["source_namespace"],
             raw["revision"],
             raw["object_prefixes"],
             snapshot_path,
+            investigation_path,
+            (config_path,),
         )
     except Exception:  # noqa: BLE001 - Sanitize all SDK/private configuration errors.
         raise ValueError("invalid native source configuration") from None

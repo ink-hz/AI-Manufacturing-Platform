@@ -165,6 +165,8 @@ class ProductionToolsConfig:
     revision: str
     object_prefixes: Mapping[str, str]
     snapshot_path: str
+    investigation_path: str | None = None
+    protected_paths: tuple[str, ...] = ()
 
     def __post_init__(self):
         from types import MappingProxyType
@@ -179,4 +181,7 @@ class ProductionToolsConfig:
             raise ValueError("invalid object prefixes")
         if not isinstance(self.snapshot_path, str) or not self.snapshot_path.strip():
             raise ValueError("snapshot path required")
+        if self.investigation_path is not None and (not isinstance(self.investigation_path, str) or not self.investigation_path.strip()):
+            raise ValueError("investigation path required")
+        object.__setattr__(self, "protected_paths", tuple(self.protected_paths))
         object.__setattr__(self, "object_prefixes", MappingProxyType(copied))

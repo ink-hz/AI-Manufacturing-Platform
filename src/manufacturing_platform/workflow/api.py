@@ -119,7 +119,7 @@ def build_workflow_router(
         if production_tools is not None:
             from ..production_tools.store import validate_snapshot_path
             validate_snapshot_path(
-                production_tools.snapshot_path, (database_path, authority_database_path)
+                production_tools.snapshot_path, (database_path, authority_database_path, *production_tools.protected_paths, production_tools.investigation_path or production_tools.snapshot_path + ".investigations.sqlite3")
             )
         production_service = ProductionToolsService(
             production_tools, clock=store.business_clock
@@ -128,6 +128,20 @@ def build_workflow_router(
         # Optional connector misconfiguration must not disable workflow routes.
         production_service = ProductionToolsService(None, clock=store.business_clock)
     register_production_tools_routes(router, production_service, actor)
+    from ..production_tools.investigations import InvestigationService
+    from ..production_tools.investigation_api import register_investigation_routes
+
+    try:
+        configured = production_service.config
+        investigation_service = InvestigationService(
+            production_service,
+            path=(configured.investigation_path or configured.snapshot_path + ".investigations.sqlite3") if configured else None,
+            clock=store.business_clock,
+            protected_paths=(database_path, authority_database_path, *configured.protected_paths) if configured else (),
+        )
+    except (sqlite3.Error, OSError, ValueError):
+        investigation_service = InvestigationService(production_service, path=None, clock=store.business_clock)
+    register_investigation_routes(router, investigation_service, actor)
 
     async def parse(request, model):
         try:

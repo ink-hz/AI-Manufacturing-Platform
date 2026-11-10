@@ -15,13 +15,16 @@ from .contracts import (
     valid_source_id,
 )
 from .source import error
-from .store import SnapshotStore
+from .store import SnapshotStore, validate_snapshot_path
 
 
 class ProductionToolsService:
     def __init__(
         self, config: ProductionToolsConfig | None, *, clock: Callable[[], datetime]
     ):
+        if config:
+            independent = config.investigation_path or config.snapshot_path + ".investigations.sqlite3"
+            validate_snapshot_path(config.snapshot_path, (*config.protected_paths, independent))
         self.config = config
         self.snapshots = (
             SnapshotStore(config.snapshot_path, clock=clock) if config else None

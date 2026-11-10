@@ -253,17 +253,33 @@ def test_directory_twenty_digit_id_stays_exact(workflow):
     assert reader.calls[-1].params == (int(maximum), 101)
 
 
-def test_only_nine_native_get_routes_and_no_legacy_route(workflow):
+def test_exact_native_and_investigation_routes_and_no_legacy_route(workflow):
     native = {
         path: methods
         for path, methods in workflow.app.openapi()["paths"].items()
         if "/production-tools" in path
     }
-    assert len(native) == 9
-    assert all(
-        set(methods) == {"get"} and path.startswith(BASE)
-        for path, methods in native.items()
-    )
+    expected = {
+        "/status": {"get"},
+        "/projects": {"get"},
+        "/projects/{source_project_id}/status": {"get"},
+        "/projects/{source_project_id}/observations": {"get"},
+        "/projects/{source_project_id}/catalog/{kind}": {"get"},
+        "/projects/{source_project_id}/evidence": {"get"},
+        "/projects/{source_project_id}/statistics": {"get"},
+        "/projects/{source_project_id}/snapshots/{snapshot_id}": {"get"},
+        "/projects/{source_project_id}/evidence/{source_log_id}/content": {"get"},
+        "/projects/{source_project_id}/investigations": {"get", "post"},
+        "/projects/{source_project_id}/investigations/{investigation_id}": {"get", "put"},
+        "/projects/{source_project_id}/investigations/{investigation_id}/resolve": {"get"},
+        "/projects/{source_project_id}/investigations/{investigation_id}/handoffs": {"post"},
+        "/handoffs/{handoff_id}": {"get"},
+        "/handoffs/{handoff_id}/resolve": {"get"},
+        "/handoffs/{handoff_id}/fork": {"post"},
+    }
+    assert {path: set(methods) for path, methods in native.items()} == {
+        BASE + suffix: methods for suffix, methods in expected.items()
+    }
     project = workflow.create_project()
     assert (
         workflow.client()
