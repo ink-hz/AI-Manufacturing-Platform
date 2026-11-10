@@ -123,6 +123,7 @@ def test_statistics_normalize_nulls_and_ratio():
             "fail_records": 0,
             "unknown_records": 3,
             "record_pass_ratio": 0.25,
+            "consistency": "single_query",
         }
     ]
     empty = source(
@@ -410,6 +411,7 @@ def test_statistics_normalizes_only_present_null_sum_aliases():
             "fail_records": 0,
             "unknown_records": 5,
             "record_pass_ratio": 0.0,
+            "consistency": "single_query",
         }
     ]
 
@@ -512,3 +514,44 @@ def test_evidence_authorization_callback_exception_propagates_unchanged():
         src.evidence(binding(), 5, before_open=authorize)
     assert error.value is denial
     assert objects.keys == []
+
+
+@pytest.mark.parametrize("kind", ["production_statistics", "stopover_statistics"])
+def test_statistics_exposes_single_query_consistency(kind):
+    result = source(
+        [{"records": 1, "distinct_sn": 1, "pass_records": 1, "fail_records": 0}]
+    ).query(binding(), timed(kind))
+    assert result.items[0]["consistency"] == "single_query"
+
+
+@pytest.mark.parametrize("kind", ["production", "software"])
+def test_trusted_verification_cap_bounds_capture_and_sentinel(kind):
+    src = source([row(id=i) for i in (5, 4, 3)])
+    query = timed() if kind == "production" else ProductionQuery(kind=kind)
+    result = src.query(binding(), query, cap=1)
+    assert src.mysql.calls[0].max_rows == 2
+    assert src.mysql.calls[0].params[-1] == 2
+    assert len(result.items) == 1 and not result.complete
+    assert result.truncation_reason == "row_limit"
+    assert result.next_before_id == (5 if kind == "software" else None)
+    complete = source([row()]).query(binding(), query, cap=1)
+    assert len(complete.items) == 1 and complete.complete
+
+
+@pytest.mark.parametrize("cap", [0, 1001, True, "1"])
+def test_trusted_verification_cap_cannot_exceed_compiler_boundary(cap):
+    src = source([row()])
+    with pytest.raises(DomainError) as caught:
+        src.query(binding(), timed(), cap=cap)
+    assert caught.value.code == "SOURCE_INVALID_QUERY"
+    assert src.mysql.calls == []
+
+
+def test_top_level_native_exports_preserve_host_entry_points():
+    import manufacturing_platform as native
+    from manufacturing_platform.production_tools import (
+        validate_snapshot_path,
+    )
+
+    assert callable(native.build_native_config)
+    assert native.validate_snapshot_path is validate_snapshot_path

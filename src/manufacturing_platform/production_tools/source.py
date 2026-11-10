@@ -155,9 +155,11 @@ class NativeProductionSource:
         except Exception:  # noqa: BLE001 - Sanitize all SDK/private configuration errors.
             raise error() from None
 
-    def query(self, binding: SourceBinding, query: ProductionQuery) -> SourceResult:
+    def query(
+        self, binding: SourceBinding, query: ProductionQuery, *, cap: int = 1000
+    ) -> SourceResult:
         try:
-            statement = compile_query(binding, query)
+            statement = compile_query(binding, query, cap=cap)
         except ValueError:
             raise error("SOURCE_INVALID_QUERY", 422) from None
         if not self._slots.acquire(blocking=False):
@@ -192,8 +194,8 @@ class NativeProductionSource:
                     ):
                         raise error("SOURCE_SCHEMA_INVALID")
                     previous_id = row_id
-            reason = "row_limit" if len(rows) > 1000 else None
-            for row in rows[:1000]:
+            reason = "row_limit" if len(rows) > cap else None
+            for row in rows[:cap]:
                 candidate_redactions = set(redactions)
                 item = normalize(row, candidate_redactions)
                 if statistics:
@@ -225,6 +227,7 @@ class NativeProductionSource:
                             or item["distinct_sn"] > item["records"]
                         ):
                             raise ValueError()
+                        item["consistency"] = "single_query"
                         item["unknown_records"] = (
                             item["records"]
                             - item["pass_records"]
