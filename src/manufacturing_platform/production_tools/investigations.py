@@ -59,6 +59,21 @@ def _descriptor(row):
     return {key: value for key, value in row.items() if key in DESCRIPTOR_FIELDS and (value is None or type(value) in (str, int, float, bool)) and (not isinstance(value, str) or len(value) <= 200)}
 
 
+def _log_query(filters):
+    # Public capture IDs are decimal strings; the internal source query uses integers.
+    filters = dict(filters)
+    if isinstance(filters.get('before_id'), str) and filters['before_id'].isascii() and filters['before_id'].isdecimal():
+        filters['before_id'] = int(filters['before_id'])
+    return ProductionQuery.model_validate(filters)
+
+
+def _log_filters(query):
+    filters = query.model_dump(mode='json', exclude_none=True)
+    if 'before_id' in filters:
+        filters['before_id'] = str(filters['before_id'])
+    return filters
+
+
 def _time(row):
     value = next((row[key] for key in ('timestamp', 'time', 'createtime') if row.get(key) is not None), None)
     if type(value) is int or (isinstance(value, str) and value.isdecimal()):
@@ -152,9 +167,10 @@ class InvestigationService:
         if context.get('candidate_csn') is not None and descriptor.get('csn') != context['candidate_csn']:
             raise error('SOURCE_INVALID_QUERY', 422)
 
-    def _log_scan(self, actor, project, ids, context):
-        span = context.get('evidence_range') or context
-        query = ProductionQuery(kind='evidence', start=span['start'], end=span['end'], sn=context.get('candidate_csn'), order_id=context.get('order_id'), device=context.get('device'), missing_fields=[field for field in context.get('missing_fields') or () if field == 'device'])
+    def _log_scan(self, actor, project, ids, context=None, *, query=None):
+        if query is None:
+            span = context.get('evidence_range') or context
+            query = ProductionQuery(kind='evidence', start=span['start'], end=span['end'], sn=context.get('candidate_csn'), order_id=context.get('order_id'), device=context.get('device'), missing_fields=[field for field in context.get('missing_fields') or () if field == 'device'])
         page = self.production.query(actor, project, query)
         found = {identifier: [] for identifier in ids}
         # Inspect every retained candidate (at most 1000); duplicate IDs never choose a row implicitly.
@@ -165,8 +181,9 @@ class InvestigationService:
                     if row.get('projuectid') is not None and str(row['projuectid']) != project:
                         raise error('SOURCE_INVALID_QUERY', 422)
                     descriptor = _descriptor(row)
-                    self._check_log_context(context, descriptor)
-                    metadata = {'source_log_id': identifier, 'descriptor': descriptor, 'fingerprint': _hash(descriptor), 'fingerprint_version': 1, 'captured_at': page['captured_at'], 'filters': query.model_dump(mode='json', exclude_none=True), 'match_basis': 'project_time_and_explicit_csn' if context.get('candidate_csn') else 'project_and_time', 'state': 'unverified'}
+                    if context is not None:
+                        self._check_log_context(context, descriptor)
+                    metadata = {'source_log_id': identifier, 'descriptor': descriptor, 'fingerprint': _hash(descriptor), 'fingerprint_version': 1, 'captured_at': page['captured_at'], 'filters': _log_filters(query), 'match_basis': 'project_time_and_explicit_csn' if query.sn else 'project_and_time', 'state': 'unverified'}
                     candidate = {'snapshot_id': page['snapshot_id'], 'offset': page['offset'] + offset, 'row': descriptor}
                     found[identifier].append((metadata, candidate))
             if not page['has_more']:
@@ -174,13 +191,31 @@ class InvestigationService:
             page = self.production.snapshot(actor, project, UUID(page['snapshot_id']), offset=page['offset'] + len(page['items']), limit=100)
         return found, page['complete'] and not page['has_more']
 
-    def _logs(self, actor, project, ids, context):
-        if not ids:
-            return []
-        found, _ = self._log_scan(actor, project, ids, context)
-        if any(len(found[identifier]) != 1 for identifier in ids):
+    def _captured_log(self, actor, project, value):
+        page = self.production.snapshot(actor, project, value.snapshot_id, offset=value.offset, limit=1)
+        if page['source_kind'] != 'evidence' or len(page['items']) != 1:
             raise error('SOURCE_INVALID_QUERY', 422)
-        return [found[identifier][0][0] for identifier in ids]
+        row = page['items'][0]
+        if str(row.get('id', '')) != value.source_log_id or (row.get('projuectid') is not None and str(row['projuectid']) != project):
+            raise error('SOURCE_INVALID_QUERY', 422)
+        query = _log_query(page['filters'])
+        if query.kind != 'evidence':
+            raise error('SOURCE_INVALID_QUERY', 422)
+        descriptor = _descriptor(row)
+        return {
+            'source_log_id': value.source_log_id, 'snapshot_id': str(value.snapshot_id), 'offset': value.offset,
+            'descriptor': descriptor, 'fingerprint': _hash(descriptor), 'fingerprint_version': 1,
+            'captured_at': page['captured_at'], 'filters': _log_filters(query),
+            'match_basis': 'project_time_and_explicit_csn' if query.sn else 'project_and_time', 'state': 'unverified',
+        }
+
+    def _logs(self, actor, project, values, context, *, previous=()):
+        retained = {log['source_log_id']: log for log in previous}
+        new_ids = [value for value in values if isinstance(value, str) and value not in retained]
+        found, _ = self._log_scan(actor, project, new_ids, context) if new_ids else ({}, False)
+        if any(len(found[identifier]) != 1 for identifier in new_ids):
+            raise error('SOURCE_INVALID_QUERY', 422)
+        return [retained.get(value) or found[value][0][0] if isinstance(value, str) else self._captured_log(actor, project, value) for value in values]
 
     def _new(self, actor, scope, body, *, origin=None):
         context = body.context.model_dump(mode='json', exclude_none=True)
@@ -239,15 +274,9 @@ class InvestigationService:
         if comparison and not primary:
             raise error('SOURCE_INVALID_QUERY', 422)
         if 'logs' in changed:
-            logs = self._logs(actor, project, body.logs, context)
+            logs = self._logs(actor, project, body.logs, context, previous=logs)
         self._check_context(context, primary)
         self._check_context(context, comparison, primary=False)
-        if 'context' in changed and logs and any(log['filters'].get(query_key) != context.get(context_key) for log in logs for query_key, context_key in (('sn', 'candidate_csn'), ('order_id', 'order_id'))):
-            raise error('SOURCE_INVALID_QUERY', 422)
-        if 'context' in changed:
-            span = context.get('evidence_range') or context
-            for log in logs:
-                self._check_log_context(context, log['descriptor'])
         impact = capture_impact(self.production, actor, scope, context, clock=self.clock) if scope_filters(context) != scope_filters(old['context']) else old.get('impact')
         now = checked_time(self.clock)
         result = old | {'impact': impact, 'context': context, 'primary': primary, 'comparison': comparison, 'logs': logs, 'note': body.note if 'note' in changed else old['note'], 'version': old['version'] + 1, 'updated_at': now.isoformat(), 'expires_at': (now + timedelta(days=30)).isoformat()}
@@ -356,7 +385,19 @@ class InvestigationService:
         for saved in payload['logs']:
             resolved = {'source_log_id': saved['source_log_id'], 'descriptor': saved['descriptor'], 'candidates': [], 'complete': False}
             try:
-                found, complete = self._log_scan(actor, project, [saved['source_log_id']], payload['context'])
+                # Each reference owns its query. Sidebar searches are independent view state.
+                if saved.get('snapshot_id'):
+                    try:
+                        page = self.production.snapshot(actor, project, UUID(saved['snapshot_id']), offset=saved['offset'], limit=1)
+                        if len(page['items']) == 1 and str(page['items'][0].get('id', '')) == saved['source_log_id'] and _hash(_descriptor(page['items'][0])) == saved['fingerprint']:
+                            resolved.update(state='verified', complete=True, candidates=[{'snapshot_id':page['snapshot_id'], 'offset':saved['offset'], 'row':_descriptor(page['items'][0])}])
+                            logs.append(resolved)
+                            continue
+                    except DomainError as exc:
+                        if exc.status not in {404, 410}:
+                            raise
+                query = _log_query(saved['filters'])
+                found, complete = self._log_scan(actor, project, [saved['source_log_id']], query=query)
                 matches = found[saved['source_log_id']]
                 state = 'partial' if not complete else 'not_found' if not matches else 'ambiguous' if len(matches) > 1 else 'verified' if matches[0][0]['fingerprint'] == saved['fingerprint'] else 'changed'
                 resolved.update(state=state, complete=complete, candidates=[match[1] for match in matches])

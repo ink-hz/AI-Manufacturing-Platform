@@ -1,3 +1,4 @@
+import type { CapturedLog } from "./types";
 import { WorkflowError } from "../api";
 import { useState } from "react";
 import type { Api, BoardProps } from "./boards";
@@ -607,6 +608,7 @@ export function EventSidebar({
   onPrimary,
   onComparison,
   onLog,
+  logBusy,
   onEvidenceScope,
 }: {
   api: Api;
@@ -618,7 +620,8 @@ export function EventSidebar({
   readOnly: boolean;
   onPrimary: (e: ViewedEvent) => void;
   onComparison: (e: ViewedEvent) => void;
-  onLog: (id: string) => void;
+  onLog: (selection: CapturedLog) => void;
+  logBusy: boolean;
   onEvidenceScope: (range: Scope, csn: string) => void;
 }) {
   const [logs, setLogs] = useState(false),
@@ -769,13 +772,20 @@ export function EventSidebar({
                             type="button"
                             disabled={
                               readOnly ||
+                              logBusy ||
                               !investigation?.primary ||
                               investigation.logs.length >= 5 ||
                               investigation.logs.some(
                                 (x) => x.source_log_id === row.id,
                               )
                             }
-                            onClick={() => onLog(String(row.id))}
+                            onClick={() =>
+                              onLog({
+                                snapshot_id: page.snapshot_id,
+                                offset: page.offset + i,
+                                source_log_id: String(row.id),
+                              })
+                            }
                           >
                             加入调查 {row.id}
                           </button>

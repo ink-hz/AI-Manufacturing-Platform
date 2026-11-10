@@ -22,6 +22,7 @@ import {
 } from "./details";
 import {
   drill,
+  editScope,
   investigationContextFromLocation,
   fieldNames,
   localInput,
@@ -203,6 +204,7 @@ export function ProductionToolsWorkspace({
     onDirty,
   });
   const commitLocation = (next: Location) => {
+    investigation.retireMetadataRestore();
     setEvent(next.inspected || null);
     setValidation("");
     setSearch({});
@@ -227,10 +229,27 @@ export function ProductionToolsWorkspace({
       !investigation.dirty ||
       !!(await investigation.flush()),
   });
-  function go(next: Location, intent: "browse" | "scope" = "browse") {
+  function go(
+    next: Location,
+    intent: "browse" | "scope" | "search" = "browse",
+  ) {
+    for (const key of ["stage_id", "software_id"] as const) {
+      if (
+        next.scope[key] !== loc.scope[key] &&
+        next.labels[key] === loc.labels[key]
+      ) {
+        next = { ...next, labels: { ...next.labels } };
+        delete next.labels[key];
+        const name = next.labels[`${key}:${next.scope[key]}`];
+        if (name) next.labels[key] = name;
+      }
+    }
     if (next.scope !== loc.scope) next = { ...next, savedSymptom: undefined };
     if (next.projectId && next.projectId === investigationProject) {
-      if (intent === "scope" && next.scope !== loc.scope)
+      if (
+        (intent === "scope" || intent === "search") &&
+        next.scope !== loc.scope
+      )
         investigation.changeContext(investigationContextFromLocation(next));
       else if (
         ["history", "compare", "records", "device", "catalog"].includes(
@@ -251,7 +270,7 @@ export function ProductionToolsWorkspace({
             : {}),
         });
     }
-    void navigation.go(next);
+    void navigation.go(next, intent === "search");
   }
   const back = navigation.back;
   useEffect(() => {
@@ -287,8 +306,12 @@ export function ProductionToolsWorkspace({
     onOverviewRefresh: () => reread(),
   };
   function reread() {
-    if (loc.view === "overview" && !loc.inherited)
-      setLoc((old) => ({ ...old, scope: today() }));
+    investigation.retireMetadataRestore();
+    setLoc((old) => ({
+      ...old,
+      cursor: undefined,
+      ...(old.view === "overview" && !old.inherited ? { scope: today() } : {}),
+    }));
     setRefresh((n) => n + 1);
   }
   function board(view: "overview" | "anomalies" | "activity") {
@@ -568,22 +591,24 @@ export function ProductionToolsWorkspace({
             e.preventDefault();
             if (loc.view === "history") {
               if (lookup.trim())
-                go({
-                  ...loc,
-                  historySN: lookup.trim(),
-                  historyRange: loc.historyRange || {
-                    start: loc.scope.start,
-                    end: loc.scope.end,
+                go(
+                  {
+                    ...loc,
+                    historySN: lookup.trim(),
+                    historyRange: loc.historyRange || {
+                      start: loc.scope.start,
+                      end: loc.scope.end,
+                    },
                   },
-                });
+                  "search",
+                );
             } else
               go(
                 {
                   ...loc,
-                  scope: { ...loc.scope, ...search },
-                  cursor: undefined,
+                  scope: editScope(loc.scope, search),
                 },
-                "scope",
+                "search",
               );
           }}
         >
@@ -814,7 +839,8 @@ export function ProductionToolsWorkspace({
             else void investigation.choose("primary", e);
           }}
           onComparison={(e) => void investigation.choose("comparison", e)}
-          onLog={(id) => void investigation.addLog(id)}
+          logBusy={investigation.logBusy}
+          onLog={(selection) => void investigation.addLog(selection)}
           onEvidenceScope={(scope, csn) => {
             setLoc((old) => ({
               ...old,

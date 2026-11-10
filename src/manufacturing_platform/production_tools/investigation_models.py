@@ -79,17 +79,28 @@ class Selection(InputModel):
         return value
 
 
+class CapturedLog(Selection):
+    source_log_id: DecimalId
+
+
+LogInput = DecimalId | CapturedLog
+
+
+def log_ids(values):
+    return [value if isinstance(value, str) else value.source_log_id for value in values]
+
+
 class CreateInvestigation(InputModel):
     context: InvestigationContext
     primary: Selection | None = None
     comparison: Selection | None = None
-    logs: list[DecimalId] = Field(default_factory=list, max_length=5)
+    logs: list[LogInput] = Field(default_factory=list, max_length=5)
     note: Annotated[StrictStr, Field(max_length=4000)] = ''
 
     @field_validator('logs')
     @classmethod
     def unique_logs(cls, value):
-        if len(value) != len(set(value)):
+        if len(value) != len(set(log_ids(value))):
             raise ValueError('duplicate log IDs')
         return value
 
@@ -99,7 +110,7 @@ class UpdateInvestigation(InputModel):
     context: InvestigationContext | None = None
     primary: Selection | None = None
     comparison: Selection | None = None
-    logs: list[DecimalId] | None = Field(default=None, max_length=5)
+    logs: list[LogInput] | None = Field(default=None, max_length=5)
     note: Annotated[StrictStr, Field(max_length=4000)] | None = None
 
     @model_validator(mode='after')
@@ -107,7 +118,7 @@ class UpdateInvestigation(InputModel):
         for name in ('context', 'logs', 'note'):
             if name in self.model_fields_set and getattr(self, name) is None:
                 raise ValueError('field may not be null')
-        if self.logs is not None and len(self.logs) != len(set(self.logs)):
+        if self.logs is not None and len(self.logs) != len(set(log_ids(self.logs))):
             raise ValueError('duplicate log IDs')
         return self
 

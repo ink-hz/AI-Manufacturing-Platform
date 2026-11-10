@@ -460,11 +460,13 @@ def test_real_socket_admin_handoff_revision_history_and_expiry_journey(workflow)
             "history_sn": "INDEPENDENT",
             "history_range": PARAMS,
         }
+        evidence_page = call("GET", tools + "/evidence", params=PARAMS)
+        captured_log = {"snapshot_id": evidence_page["snapshot_id"], "offset": 0, "source_log_id": "1"}
         payload = {
             "context": context,
             "primary": select(0),
             "comparison": select(1),
-            "logs": ["1"],
+            "logs": [captured_log],
             "note": "A investigation",
         }
         for actor, expected in [("member", 403), ("readonly-admin", 503)]:
@@ -502,6 +504,7 @@ def test_real_socket_admin_handoff_revision_history_and_expiry_journey(workflow)
             json={
                 "expected_version": 1,
                 "note": "another tab",
+                "logs": ["1"],  # Existing ID callers retain the trusted captured reference.
                 "context": {**context, "history_sn": "HISTORY-B"},
             },
         )

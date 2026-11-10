@@ -138,7 +138,7 @@ def test_read_only_handoff_access_and_mutations(investigation):
     assert caught.value.status == 403
 
 
-def test_replacement_rejects_reusing_dependencies_and_context_rejects_out_of_range_logs(investigation):
+def test_replacement_rejects_reusing_dependencies_and_view_range_preserves_independent_logs(investigation):
     service, actor, source, _, draft, selection = investigation
     source.rows = [{'id':1, 'projuectid':1, 'csn':'SN-1', 'createtime':1794186000000}]
     updated = service.update(actor, '1', draft['id'], {'expected_version':1, 'logs':['1']})
@@ -146,9 +146,8 @@ def test_replacement_rejects_reusing_dependencies_and_context_rejects_out_of_ran
     with pytest.raises(DomainError) as caught:
         service.update(actor, '1', draft['id'], {'expected_version':2, 'primary':None, 'logs':['1']})
     assert caught.value.status == 422
-    with pytest.raises(DomainError) as caught:
-        service.update(actor, '1', draft['id'], {'expected_version':2, 'context':{**PARAMS,'view':'anomalies','evidence_range':{'start':'2026-11-09T03:00:00Z','end':PARAMS['end']}}})
-    assert caught.value.status == 422
+    changed = service.update(actor, '1', draft['id'], {'expected_version':2, 'context':{**PARAMS,'view':'anomalies','evidence_range':{'start':'2026-11-09T03:00:00Z','end':PARAMS['end']}}})
+    assert changed['logs'] == updated['logs']
 
 
 def test_log_revalidation_reports_missing_and_ambiguous_without_picking(investigation):
@@ -161,8 +160,10 @@ def test_log_revalidation_reports_missing_and_ambiguous_without_picking(investig
     source.rows = [row, row]
     resolved = service.resolve(actor, '1', draft['id'])['logs'][0]
     assert resolved['state'] == 'ambiguous' and len(resolved['candidates']) == 2
+    retained = service.update(actor, '1', draft['id'], {'expected_version':2, 'logs':['1']})
+    assert retained['logs'] == draft['logs']
     with pytest.raises(DomainError) as caught:
-        service.update(actor, '1', draft['id'], {'expected_version':2, 'logs':['1']})
+        service.create(actor, '1', {'context':draft['context'], 'logs':['1']})
     assert caught.value.status == 422
 
 
@@ -537,3 +538,86 @@ def test_history_subject_does_not_replace_primary_consistency(investigation):
             {"expected_version": 2, "context": {**context, "sn": "CONTRADICTORY"}},
         )
     assert exc.value.status == 422
+
+@pytest.mark.parametrize('continued', [False, True])
+def test_captured_log_uses_actual_narrowed_or_continued_query_and_bounded_own_revalidation(investigation, continued):
+    from datetime import timedelta
+    from manufacturing_platform.production_tools.contracts import ProductionQuery, SourceResult
+    service, actor, source, now, draft, _ = investigation
+    row = {'id':'42', 'projuectid':'1', 'csn':'LOG-CSN', 'createtime':1794186000000, 'devicename':'PC-NARROW', 'orderid':'19', 'url':'NEVER-PERSIST', 'content':'NEVER-PERSIST'}
+    queries = []
+    def query(scope, q):
+        queries.append(q)
+        narrow = q.device == 'PC-NARROW' and (not continued or q.before_id == 100)
+        rows = [row] if narrow else [{'id':str(2000-i),'projuectid':'1','createtime':1794186000000} for i in range(1000)]
+        return SourceResult(q.kind, rows, now[0], q.model_dump(mode='json',exclude_none=True), narrow, None if narrow else 'row_limit', None if narrow else 100)
+    source.query = query
+    q = ProductionQuery(kind='evidence', **PARAMS, device='PC-NARROW', order_id='19', tool_name='Tool', before_id=100 if continued else None)
+    broad = service.production.query(actor, '1', ProductionQuery(kind='evidence', **PARAMS))
+    assert broad['captured_count'] == 1000 and broad['complete'] is False
+    assert all(str(item['id']) != '42' for item in broad['items'])
+    if continued:
+        first = service.production.query(actor, '1', q.model_copy(update={'before_id':None}))
+        assert first['next_before_id'] == '100' and first['captured_count'] == 1000
+        q = q.model_copy(update={'before_id':int(first['next_before_id'])})
+    page = service.production.query(actor, '1', q)
+    captured = {'snapshot_id':page['snapshot_id'], 'offset':0, 'source_log_id':'42'}
+    count = len(queries)
+    saved = service.update(actor,'1',draft['id'],{'expected_version':1,'logs':[captured]})
+    assert len(queries) == count  # Save consumes the authorized immutable capture, never a broader scan.
+    log = saved['logs'][0]
+    assert log['filters'] == (q.model_dump(mode='json',exclude_none=True) | ({'before_id':'100'} if continued else {}))
+    assert log['state'] == 'unverified' and 'NEVER-PERSIST' not in str(saved)
+    assert log['snapshot_id'] == page['snapshot_id'] and log['offset'] == 0
+    changed_context = {**saved['context'], 'candidate_csn':'OTHER', 'evidence_range':{'start':'2026-11-09T03:00:00Z','end':PARAMS['end']}}
+    saved = service.update(actor,'1',draft['id'],{'expected_version':2,'context':changed_context,'logs':['42']})
+    assert saved['logs'][0] == log and len(queries) == count
+    assert service.resolve(actor,'1',draft['id'])['logs'][0]['state'] == 'verified'
+    assert len(queries) == count
+    now[0] += timedelta(hours=25)
+    resolved = service.resolve(actor,'1',draft['id'])['logs'][0]
+    assert resolved['state'] == 'verified'
+    log_queries = [query for query in queries[count:] if query.kind == 'evidence']
+    assert len(log_queries) == 1 and log_queries[0] == q
+    source.query = lambda scope, q: SourceResult(q.kind, [], now[0], q.model_dump(mode='json',exclude_none=True), False, 'row_limit', None)
+    assert service.resolve(actor,'1',draft['id'])['logs'][0]['state'] == 'partial'
+
+@pytest.mark.parametrize('fault', ['kind','id','offset','expired','duplicate','extra','bool','string_offset','project','snapshot_project','source_revision'])
+def test_captured_log_rejects_wrong_or_untrusted_capture(investigation, fault):
+    from datetime import timedelta
+    from manufacturing_platform.production_tools.contracts import ProductionQuery
+    service, actor, source, now, draft, _ = investigation
+    source.rows = [{'id':'42','projuectid':'2' if fault == 'project' else '1','createtime':1794186000000}]
+    page = service.production.query(actor,'2' if fault == 'snapshot_project' else '1',ProductionQuery(kind='production' if fault == 'kind' else 'evidence',**PARAMS))
+    if fault == 'source_revision':
+        from dataclasses import replace
+        service.production.config = replace(service.production.config, revision='changed')
+    candidate = {'snapshot_id':page['snapshot_id'],'offset':0,'source_log_id':'42'}
+    if fault == 'id': candidate['source_log_id'] = '43'
+    if fault == 'offset': candidate['offset'] = 1
+    if fault == 'extra': candidate['filters'] = PARAMS
+    if fault == 'bool': candidate['offset'] = True
+    if fault == 'string_offset': candidate['offset'] = '0'
+    if fault == 'expired': now[0] += timedelta(hours=25)
+    with pytest.raises(DomainError) as caught:
+        service.update(actor,'1',draft['id'],{'expected_version':1,'logs':[candidate,'42'] if fault == 'duplicate' else [candidate]})
+    assert caught.value.status in {404,422,410}
+    if fault != 'source_revision':
+        assert service.get(actor,'1',draft['id'])['logs'] == []
+
+
+def test_new_capture_never_revalidates_retained_log_against_different_sidebar_query(investigation):
+    from manufacturing_platform.production_tools.contracts import ProductionQuery
+    service, actor, source, _, draft, _ = investigation
+    def capture(identifier, device, csn):
+        source.rows = [{'id':identifier,'projuectid':'1','devicename':device,'csn':csn,'createtime':1794186000000}]
+        page = service.production.query(actor,'1',ProductionQuery(kind='evidence',device=device,sn=csn,**PARAMS))
+        return {'snapshot_id':page['snapshot_id'],'offset':0,'source_log_id':identifier}
+    first = capture('41','PC-FIRST','CSN-FIRST')
+    saved = service.update(actor,'1',draft['id'],{'expected_version':1,'logs':[first]})
+    second = capture('42','PC-SECOND','CSN-SECOND')
+    source.failure = RuntimeError('source offline after authorized captures')
+    saved_next = service.update(actor,'1',draft['id'],{'expected_version':2,'context':{**saved['context'],'candidate_csn':'CSN-SECOND'},'logs':['41',second]})
+    assert saved_next['logs'][0] == saved['logs'][0]
+    assert [log['filters']['sn'] for log in saved_next['logs']] == ['CSN-FIRST','CSN-SECOND']
+    assert [log['state'] for log in service.resolve(actor,'1',draft['id'])['logs']] == ['verified','verified']

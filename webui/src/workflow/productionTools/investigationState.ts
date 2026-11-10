@@ -4,6 +4,8 @@ import type { Api } from "./boards";
 import { matchesContext, errorText, localTime, queryScope } from "./context";
 import type {
   Investigation,
+  CapturedLog,
+  LogInput,
   InvestigationContext,
   InvestigationPatch,
   ViewedEvent,
@@ -40,7 +42,9 @@ export function useInvestigation({
     [dirty, setDirty] = useState(false),
     [conflict, setConflict] = useState<Investigation | null>(null),
     [localRecovered, setLocalRecovered] = useState(false),
-    [patchRevision, setPatchRevision] = useState(0);
+    [patchRevision, setPatchRevision] = useState(0),
+    [logBusy, setLogBusy] = useState(false);
+  const logOperation = useRef(false);
   const current = useRef<Investigation | null>(null),
     pending = useRef<InvestigationPatch>({}),
     active = useRef(new AbortController()),
@@ -106,6 +110,8 @@ export function useInvestigation({
     current.current = null;
     pending.current = {};
     pause.current = false;
+    logOperation.current = false;
+    setLogBusy(false);
     setDraft(null);
     setNote("");
     setDirty(false);
@@ -246,12 +252,19 @@ export function useInvestigation({
           setState("修订冲突：服务端版本与本机修改均已保留");
           try {
             if (current.current) {
+              const generation = restoreGeneration.current;
+              const owner = current.current.id;
               const server = await api.investigation(
                 projectRef.current,
                 current.current.id,
                 active.current.signal,
               );
-              if (token === epoch.current) setConflict(server);
+              if (
+                token === epoch.current &&
+                generation === restoreGeneration.current &&
+                current.current?.id === owner
+              )
+                setConflict(server);
             }
           } catch {}
         } else setState("保存失败：本机修改尚未保存，可重试");
@@ -328,16 +341,42 @@ export function useInvestigation({
     patch({ [which]: selection });
     const d = await flush(true);
   }
-  async function addLog(id: string) {
-    const d = current.current;
+  const logId = (log: LogInput) =>
+    typeof log === "string" ? log : log.source_log_id;
+  async function editLogs(edit: (logs: LogInput[]) => LogInput[] | null) {
     if (
-      !d?.primary ||
-      d.logs.length >= 5 ||
-      d.logs.some((x) => x.source_log_id === id)
+      readOnly ||
+      handoffRef.current ||
+      logOperation.current ||
+      !current.current?.primary
     )
       return;
-    patch({ logs: [...d.logs.map((x) => x.source_log_id), id] });
-    await flush(true);
+    const desired =
+      pending.current.logs ||
+      current.current.logs.map((log) => log.source_log_id);
+    const logs = edit(desired);
+    if (!logs) return;
+    // Guard synchronously before patch/await; every accepted operation owns its full list.
+    logOperation.current = true;
+    setLogBusy(true);
+    const owner = epoch.current;
+    try {
+      patch({ logs });
+      await flush(true);
+    } finally {
+      if (owner === epoch.current) {
+        logOperation.current = false;
+        setLogBusy(false);
+      }
+    }
+  }
+  async function addLog(selection: CapturedLog) {
+    await editLogs((logs) =>
+      logs.length >= 5 ||
+      logs.some((log) => logId(log) === selection.source_log_id)
+        ? null
+        : [...logs, selection],
+    );
   }
   async function restore(id: string, isHandoff = false) {
     if (dirty && !(await flush())) return;
@@ -375,41 +414,65 @@ export function useInvestigation({
     }
   }
   async function generate() {
-    const d = await flush(true);
-    if (!d) return;
+    const saving = flush(true);
+    const generation = restoreGeneration.current;
+    const signal = active.current.signal;
+    const d = await saving;
+    if (
+      !d ||
+      signal.aborted ||
+      generation !== restoreGeneration.current ||
+      Object.keys(pending.current).length
+    )
+      return;
     try {
       const h = await api.createProductionHandoff(
         d.source_project_id,
         d.id,
         d.version,
-        active.current.signal,
+        signal,
       );
+      if (
+        signal.aborted ||
+        generation !== restoreGeneration.current ||
+        current.current?.id !== d.id ||
+        current.current.version !== d.version
+      )
+        return;
       resolution.invalidate();
       setHandoff(h);
       handoffRef.current = h;
       setState("固定交接版本已生成");
       resolve(h, true);
     } catch (e) {
-      setError(`交接生成失败：${errorText(e)}`);
+      if (!signal.aborted && generation === restoreGeneration.current)
+        setError(`交接生成失败：${errorText(e)}`);
     }
   }
   async function fork() {
     if (readOnly || !handoffRef.current) return;
-    retireMetadataRestore();
+    const generation = retireMetadataRestore();
+    const owner = handoffRef.current.id;
+    const signal = active.current.signal;
     try {
-      const d = await api.forkProductionHandoff(
-        handoffRef.current.id,
-        active.current.signal,
-      );
+      const d = await api.forkProductionHandoff(owner, signal);
+      if (
+        signal.aborted ||
+        generation !== restoreGeneration.current ||
+        handoffRef.current?.id !== owner
+      )
+        return;
       setHandoff(null);
       handoffRef.current = null;
       pending.current = {};
+      setDirty(false);
       install(d);
       cache();
       onRestore(d);
       void resolve(d);
     } catch (e) {
-      setError(errorText(e));
+      if (!signal.aborted && generation === restoreGeneration.current)
+        setError(errorText(e));
     }
   }
   async function acceptServer() {
@@ -434,6 +497,8 @@ export function useInvestigation({
   }
   return {
     canStart,
+    logBusy,
+    retireMetadataRestore,
     browsingOtherScope:
       !!current.current &&
       canStart &&
@@ -476,20 +541,16 @@ export function useInvestigation({
       patch({ comparison: null });
       const d = await flush(true);
     },
-    removeLog: async (id: string) => {
-      patch({
-        logs:
-          current.current?.logs
-            .filter((x) => x.source_log_id !== id)
-            .map((x) => x.source_log_id) || [],
-      });
-      await flush(true);
-    },
+    removeLog: (id: string) =>
+      editLogs((logs) => logs.filter((log) => logId(log) !== id)),
     returnToSaved: () => {
+      retireMetadataRestore();
       if (current.current) onRestore(current.current);
     },
     newRange: async () => {
       if (dirty && !(await flush())) return;
+      if (Object.keys(pending.current).length) return;
+      retireMetadataRestore();
       current.current = null;
       setDraft(null);
       resolution.invalidate();

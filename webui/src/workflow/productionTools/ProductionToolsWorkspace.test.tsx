@@ -363,11 +363,13 @@ async function view(
           if (body.comparison)
             saved.comparison = selection(body.comparison.offset);
           if (body.logs)
-            saved.logs = body.logs.map((id: string) => ({
-              source_log_id: id,
-              state: "unverified",
-              descriptor: { csn: "OTHER-CSN" },
-            }));
+            saved.logs = body.logs.map(
+              (id: string | { source_log_id: string }) => ({
+                source_log_id: typeof id === "string" ? id : id.source_log_id,
+                state: "unverified",
+                descriptor: { csn: "OTHER-CSN" },
+              }),
+            );
         }
         drafts.set(sourceProject!, saved);
         return response(saved);
@@ -2019,6 +2021,666 @@ it("I4 newer local edit retires cached startup metadata too", async () => {
       (v.host.querySelector("textarea") as HTMLTextAreaElement).value,
     ).toBe("EDIT-DURING-STARTUP-RESTORE");
     expect(v.host.textContent).toContain("未保存修改");
+  } finally {
+    await v.dispose();
+  }
+});
+
+for (const transition of ["subject", "fresh", "same-subject-search"] as const) {
+  it(`F1 query-owned history cursor retires on ${transition}`, async () => {
+    const v = await view((u) =>
+      u.pathname.endsWith("/observations")
+        ? new Response(
+            JSON.stringify(
+              page(
+                u.searchParams.get("kind") === "stopover"
+                  ? []
+                  : [{ ...fail, sn: u.searchParams.get("sn") || "SN-A" }],
+                {
+                  has_more: u.searchParams.get("kind") !== "stopover",
+                  captured_count: 100,
+                },
+              ),
+            ),
+          )
+        : u.pathname.includes("/snapshots/") && transition === "fresh"
+          ? new Response("{}", { status: 410 })
+          : undefined,
+    );
+    try {
+      await v.click("查看项目 A");
+      await v.click("查记录");
+      await v.click("查看 SN-A 履历");
+      await v.click("下一页快照");
+      const n = v.requests.length;
+      if (transition !== "fresh") {
+        await v.field("精确 SN", transition === "subject" ? "SN-B" : "SN-A");
+        await v.click("查询产测数据");
+      } else await v.click("重新读取");
+      const reads = v.requests
+        .slice(n)
+        .filter((r) => r.url.pathname.endsWith("/observations"));
+      expect(
+        reads.some(
+          (r) =>
+            r.url.searchParams.get("kind") === "production" &&
+            r.url.searchParams.get("sn") ===
+              (transition === "subject" ? "SN-B" : "SN-A"),
+        ),
+      ).toBe(true);
+      expect(
+        v.requests.slice(n).some((r) => r.url.pathname.includes("/snapshots/")),
+      ).toBe(false);
+      if (transition === "subject")
+        expect(v.host.textContent).not.toContain("查看 SN-A 履历");
+    } finally {
+      await v.dispose();
+    }
+  });
+}
+
+for (const [key, label, value] of [
+  ["error_code", "错误码", "E2"],
+  ["device", "精确设备", "PC02"],
+  ["software_version", "软件版本", "v3"],
+  ["config_version", "配置版本", "c3"],
+] as const) {
+  it(`F2 normal exact ${key} edit replaces restored missing predicate in request and persisted context`, async () => {
+    const v = await view(
+      (u) =>
+        u.pathname.endsWith("/handoffs/" + handoffId) ||
+        u.pathname.endsWith("/fork")
+          ? new Response(
+              JSON.stringify({
+                ...initialDraft(),
+                id: u.pathname.endsWith("/fork") ? draftId : handoffId,
+                context: { ...range, view: "records", missing_fields: [key] },
+              }),
+            )
+          : undefined,
+      { handoffId },
+    );
+    try {
+      await v.click("另存为我的调查");
+      // Fork adopts the frozen query; fixture returns its stored draft by default.
+      await v.field(label, value);
+      await v.click("查询产测数据");
+      await v.click("重试保存");
+      const q = v.requests
+        .filter((r) => r.url.pathname.endsWith("/observations"))
+        .at(-1)!.url;
+      expect(q.searchParams.get(key)).toBe(value);
+      expect(
+        (q.searchParams.get("missing_fields") || "").split(","),
+      ).not.toContain(key);
+      expect(v.saved().context[key]).toBe(value);
+      expect(v.saved().context.missing_fields || []).not.toContain(key);
+    } finally {
+      await v.dispose();
+    }
+  });
+}
+
+for (const operation of ["fork", "generate"] as const) {
+  it(`F3 superseded ${operation} cannot adopt metadata or erase pending edits`, async () => {
+    let finish!: (r: Response) => void;
+    const forkId = "55555555-5555-4555-8555-555555555555";
+    const v = await view((u, i) =>
+      (
+        operation === "fork"
+          ? u.pathname.endsWith("/fork")
+          : u.pathname.endsWith("/handoffs") && i?.method === "POST"
+      )
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    try {
+      await v.click("查看项目 A");
+      await v.click("查记录");
+      await v.click("开始调查");
+      if (operation === "fork") {
+        await v.field("交接号或内部恢复链接", handoffId);
+        await v.click("读取交接");
+        await v.click("另存为我的调查");
+        await v.click("返回我的调查");
+      } else await v.click("生成交接摘要");
+      await v.field("观察事实和待确认事项", "NEW-LOCAL-EDIT");
+      await act(async () =>
+        finish(
+          new Response(
+            JSON.stringify({
+              ...initialDraft(),
+              id: operation === "fork" ? forkId : handoffId,
+              note: "OLD-HANDOFF",
+            }),
+          ),
+        ),
+      );
+      await flush();
+      const note = v.host.querySelector("textarea") as HTMLTextAreaElement;
+      expect(note.value).toBe("NEW-LOCAL-EDIT");
+      expect(note.disabled).toBe(false);
+      expect(JSON.stringify(Object.values(sessionStorage))).not.toContain(
+        forkId,
+      );
+      await v.click("重试保存");
+      const put = v.requests.filter((r) => r.init?.method === "PUT").at(-1)!;
+      expect(put.url.pathname).toContain(draftId);
+      expect(JSON.parse(String(put.init!.body)).note).toBe("NEW-LOCAL-EDIT");
+    } finally {
+      await v.dispose();
+    }
+  });
+}
+
+it("F4 actual candidate capture and F5 synchronous selection guard preserve accepted add/remove operations", async () => {
+  let finish!: (r: Response) => void;
+  let defer = false;
+  let pendingBody: any;
+  const v = await view((u, i) => {
+    if (u.pathname.endsWith("/evidence"))
+      return new Response(
+        JSON.stringify(
+          page(
+            [
+              { id: "101", csn: "C1" },
+              { id: "102", csn: "C2" },
+              { id: "103", csn: "C3" },
+            ],
+            { source_kind: "evidence", offset: 50 },
+          ),
+        ),
+      );
+    if (defer && i?.method === "PUT") {
+      pendingBody = JSON.parse(String(i.body));
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    }
+  });
+  const button = (id: string) =>
+    [...v.host.querySelectorAll("button")].find(
+      (b) => b.textContent === "加入调查 " + id,
+    )!;
+  try {
+    await v.click("查看项目 A");
+    await v.click("查记录");
+    await v.click("查看测试 1");
+    await v.click("设为调查对象");
+    await v.click("查找候选日志");
+    defer = true;
+    await v.click("加入调查 101");
+    expect(button("102").disabled).toBe(true);
+    expect(pendingBody.logs).toEqual([
+      { snapshot_id: snap, offset: 50, source_log_id: "101" },
+    ]);
+    await v.click("加入调查 102");
+    defer = false;
+    await act(async () =>
+      finish(
+        new Response(
+          JSON.stringify({
+            ...v.saved(),
+            version: v.saved().version + 1,
+            logs: [{ source_log_id: "101", descriptor: { csn: "C1" } }],
+          }),
+        ),
+      ),
+    );
+    await flush();
+    await v.click("加入调查 102");
+    expect(v.saved().logs.map((l: any) => l.source_log_id)).toEqual([
+      "101",
+      "102",
+    ]);
+    defer = true;
+    await v.click("移除日志 101");
+    expect(button("103").disabled).toBe(true);
+    const puts = v.requests.filter((r) => r.init?.method === "PUT").length;
+    await v.click("加入调查 103");
+    expect(v.requests.filter((r) => r.init?.method === "PUT")).toHaveLength(
+      puts,
+    );
+    defer = false;
+    await act(async () =>
+      finish(
+        new Response(
+          JSON.stringify({
+            ...v.saved(),
+            version: v.saved().version + 1,
+            logs: [{ source_log_id: "102", descriptor: { csn: "C2" } }],
+          }),
+        ),
+      ),
+    );
+    await flush();
+    await v.click("加入调查 103");
+    expect(v.saved().logs.map((l: any) => l.source_log_id)).toEqual([
+      "102",
+      "103",
+    ]);
+  } finally {
+    await v.dispose();
+  }
+});
+
+it("F1 paged anomaly changes scope without reusing capture and back restores exact paged location", async () => {
+  const v = await view((u) => {
+    if (
+      u.pathname.endsWith("/analysis") &&
+      u.searchParams.get("view") === "errors"
+    )
+      return new Response(
+        JSON.stringify({
+          ...block,
+          source_project_id: project.id,
+          items: ["E1", "E2"].map((error_code) => ({
+            ...aggregate,
+            key: error_code,
+            stage_id: "7",
+            software_id: "8",
+            error_code,
+          })),
+        }),
+      );
+    if (u.pathname.endsWith("/observations"))
+      return new Response(
+        JSON.stringify(
+          page([{ ...fail, errorcode: u.searchParams.get("error_code") }], {
+            has_more: true,
+            captured_count: 100,
+          }),
+        ),
+      );
+  });
+  try {
+    await v.click("查看项目 A");
+    await v.click("查看该范围异常");
+    await v.click("选择异常 E1");
+    await v.click("下一页快照");
+    const n = v.requests.length;
+    await v.click("选择异常 E2");
+    const reads = v.requests
+      .slice(n)
+      .filter((r) => r.url.pathname.endsWith("/observations"));
+    expect(reads.at(-1)!.url.searchParams.get("error_code")).toBe("E2");
+    expect(
+      v.requests.slice(n).some((r) => r.url.pathname.includes("/snapshots/")),
+    ).toBe(false);
+    await v.click("返回");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await flush();
+    expect(
+      v.requests
+        .filter((r) => r.url.pathname.includes("/snapshots/"))
+        .at(-1)!
+        .url.searchParams.get("offset"),
+    ).toBe("50");
+    expect(v.host.textContent).toContain("错误码：E1");
+  } finally {
+    await v.dispose();
+  }
+});
+
+for (const dimension of ["error", "device", "versions"] as const) {
+  it(`F2 exact to missing ${dimension} through normal drill persists exclusive predicates`, async () => {
+    const context = {
+      ...range,
+      view: "anomalies",
+      error_code: "E1",
+      device: "PC07",
+      software_id: "8",
+      software_version: "v2",
+      config_log_id: "9",
+      config_version: "c2",
+    };
+    const v = await view(
+      (u) => {
+        if (
+          u.pathname.endsWith("/handoffs/" + handoffId) ||
+          u.pathname.endsWith("/fork")
+        )
+          return new Response(
+            JSON.stringify({
+              ...initialDraft(),
+              id: u.pathname.endsWith("/fork") ? draftId : handoffId,
+              context,
+            }),
+          );
+        if (
+          u.pathname.endsWith("/analysis") &&
+          ["errors", "devices", "versions"].includes(
+            u.searchParams.get("view")!,
+          )
+        )
+          return new Response(
+            JSON.stringify({
+              ...block,
+              items: [
+                {
+                  ...aggregate,
+                  stage_id: "7",
+                  software_id: "8",
+                  error_code: null,
+                  device: null,
+                  software_version: null,
+                  config_log_id: "9",
+                  config_version: null,
+                },
+              ],
+            }),
+          );
+      },
+      { handoffId },
+    );
+    try {
+      await v.click("另存为我的调查");
+      if (dimension === "error") await v.click("选择异常 源未提供错误码");
+      else if (dimension === "device") await v.click("限定上位机 源未提供");
+      else {
+        const select = [...v.host.querySelectorAll("select")].find((s) =>
+          s.querySelector('option[value="versions"]'),
+        )!;
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(
+            HTMLSelectElement.prototype,
+            "value",
+          )!.set!.call(select, "versions");
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        await flush();
+        await v.click("限定版本 源未提供 / 源未提供");
+      }
+      await v.click("查记录");
+      await v.click("重试保存");
+      const q = v.requests
+        .filter((r) => r.url.pathname.endsWith("/observations"))
+        .at(-1)!.url;
+      for (const key of dimension === "error"
+        ? ["error_code"]
+        : dimension === "device"
+          ? ["device"]
+          : ["software_version", "config_version"]) {
+        expect(q.searchParams.has(key)).toBe(false);
+        expect(q.searchParams.get("missing_fields")?.split(",")).toContain(key);
+        expect(v.saved().context[key]).toBeUndefined();
+        expect(v.saved().context.missing_fields).toContain(key);
+      }
+    } finally {
+      await v.dispose();
+    }
+  });
+}
+
+it("F2 changing stage/tool through advanced control clears inherited dependent versions and missing flags", async () => {
+  const context = {
+    ...range,
+    view: "records",
+    stage_id: "70",
+    software_id: "80",
+    software_version: "old",
+    config_log_id: "90",
+    missing_fields: ["config_version"],
+  };
+  const v = await view(
+    (u) =>
+      u.pathname.endsWith("/handoffs/" + handoffId) ||
+      u.pathname.endsWith("/fork")
+        ? new Response(
+            JSON.stringify({
+              ...initialDraft(),
+              id: u.pathname.endsWith("/fork") ? draftId : handoffId,
+              context,
+            }),
+          )
+        : undefined,
+    { handoffId },
+  );
+  try {
+    await v.click("另存为我的调查");
+    await v.field("测试环节筛选", "7|8");
+    await v.click("查询产测数据");
+    await v.click("重试保存");
+    const q = v.requests
+      .filter((r) => r.url.pathname.endsWith("/observations"))
+      .at(-1)!.url;
+    expect(q.searchParams.get("stage_id")).toBe("7");
+    expect(q.searchParams.get("software_id")).toBe("8");
+    for (const key of ["software_version", "config_log_id", "config_version"]) {
+      expect(q.searchParams.has(key)).toBe(false);
+      expect(
+        q.searchParams.get("missing_fields")?.split(",") || [],
+      ).not.toContain(key);
+      expect(v.saved().context[key]).toBeUndefined();
+    }
+  } finally {
+    await v.dispose();
+  }
+});
+
+it("F5 five unique accepted logs disable additions without extra PUTs", async () => {
+  const v = await view((u) =>
+    u.pathname.endsWith("/evidence")
+      ? new Response(
+          JSON.stringify(
+            page(
+              Array.from({ length: 6 }, (_, i) => ({
+                id: String(101 + i),
+                csn: "C" + i,
+              })),
+              { source_kind: "evidence" },
+            ),
+          ),
+        )
+      : undefined,
+  );
+  try {
+    await v.click("查看项目 A");
+    await v.click("查记录");
+    await v.click("查看测试 1");
+    await v.click("设为调查对象");
+    await v.click("查找候选日志");
+    for (let i = 101; i <= 105; i++) await v.click("加入调查 " + i);
+    const count = v.requests.filter((r) => r.init?.method === "PUT").length;
+    await v.click("加入调查 106");
+    await v.click("加入调查 101");
+    expect(v.requests.filter((r) => r.init?.method === "PUT")).toHaveLength(
+      count,
+    );
+    expect(v.saved().logs.map((l: any) => l.source_log_id)).toEqual([
+      "101",
+      "102",
+      "103",
+      "104",
+      "105",
+    ]);
+  } finally {
+    await v.dispose();
+  }
+});
+
+it("F3 own save acknowledgement advances revision while preserving newer pending edit", async () => {
+  let finish!: (r: Response) => void;
+  let deferred = true;
+  const v = await view((u, i) =>
+    i?.method === "PUT" && deferred
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : undefined,
+  );
+  try {
+    await v.click("查看项目 A");
+    await v.click("开始调查");
+    await v.field("观察事实和待确认事项", "FIRST");
+    await v.click("重试保存");
+    await v.field("观察事实和待确认事项", "NEWER");
+    deferred = false;
+    await act(async () =>
+      finish(
+        new Response(
+          JSON.stringify({ ...v.saved(), version: 2, note: "FIRST" }),
+        ),
+      ),
+    );
+    await flush();
+    expect(
+      (v.host.querySelector("textarea") as HTMLTextAreaElement).value,
+    ).toBe("NEWER");
+    const cached = JSON.parse(
+      sessionStorage.getItem("production-investigation:admin-A:" + project.id)!,
+    );
+    expect(cached.pending.note).toBe("NEWER");
+    await v.click("重试保存");
+    const body = JSON.parse(
+      String(
+        v.requests.filter((r) => r.init?.method === "PUT").at(-1)!.init!.body,
+      ),
+    );
+    expect(body.expected_version).toBe(2);
+    expect(body.note).toBe("NEWER");
+    expect(v.saved().version).toBe(3);
+  } finally {
+    await v.dispose();
+  }
+});
+
+it("F3 same-project navigation retires a generated handoff adoption", async () => {
+  let finish!: (r: Response) => void;
+  const v = await view((u, i) =>
+    u.pathname.endsWith("/handoffs") && i?.method === "POST"
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : undefined,
+  );
+  try {
+    await v.click("查看项目 A");
+    await v.click("开始调查");
+    await v.click("生成交接摘要");
+    await v.click("查记录");
+    await act(async () =>
+      finish(
+        new Response(
+          JSON.stringify({
+            ...initialDraft(),
+            id: handoffId,
+            note: "OLD-GENERATED",
+          }),
+        ),
+      ),
+    );
+    await flush();
+    expect(
+      (v.host.querySelector("textarea") as HTMLTextAreaElement).disabled,
+    ).toBe(false);
+    expect(v.host.textContent).not.toContain("固定交接版本已生成");
+    expect(
+      JSON.parse(
+        sessionStorage.getItem(
+          "production-investigation:admin-A:" + project.id,
+        )!,
+      ).id,
+    ).toBe(draftId);
+  } finally {
+    await v.dispose();
+  }
+});
+
+it("F2 edited stage labels match the serialized scope after an earlier named drill", async () => {
+  const v = await view((u) =>
+    u.pathname.endsWith("/analysis") && u.searchParams.get("view") === "stages"
+      ? new Response(
+          JSON.stringify({
+            ...block,
+            source_project_id: project.id,
+            items: [
+              {
+                ...aggregate,
+                stage_id: "7",
+                stage_name: "无线测试",
+                software_id: "8",
+                software_name: "无线工具",
+              },
+              {
+                ...aggregate,
+                stage_id: "70",
+                stage_name: "新阶段",
+                software_id: "80",
+                software_name: "新工具",
+              },
+            ],
+          }),
+        )
+      : undefined,
+  );
+  try {
+    await v.click("查看项目 A");
+    await v.click("选择无线测试 · 无线工具");
+    await v.click("查记录");
+    await v.field("测试环节筛选", "70|80");
+    await v.click("查询产测数据");
+    expect(v.host.textContent).toContain("阶段：新阶段");
+    expect(v.host.textContent).toContain("工具：新工具");
+    const q = v.requests
+      .filter((r) => r.url.pathname.endsWith("/observations"))
+      .at(-1)!.url;
+    expect(q.searchParams.get("stage_id")).toBe("70");
+    expect(q.searchParams.get("software_id")).toBe("80");
+  } finally {
+    await v.dispose();
+  }
+});
+
+it("F5 failed add stays in the effective pending set for the next accepted add", async () => {
+  let failSave = true;
+  const v = await view((u, i) => {
+    if (u.pathname.endsWith("/evidence"))
+      return new Response(
+        JSON.stringify(
+          page(
+            [
+              { id: "101", csn: "A" },
+              { id: "102", csn: "B" },
+            ],
+            { source_kind: "evidence" },
+          ),
+        ),
+      );
+    if (i?.method === "PUT" && failSave)
+      return new Response("{}", { status: 503 });
+  });
+  try {
+    await v.click("查看项目 A");
+    await v.click("查记录");
+    await v.click("查看测试 1");
+    await v.click("设为调查对象");
+    await v.click("查找候选日志");
+    await v.click("加入调查 101");
+    expect(v.host.textContent).toContain("保存失败");
+    const cached = JSON.parse(
+      sessionStorage.getItem("production-investigation:admin-A:" + project.id)!,
+    );
+    expect(cached.pending.logs[0].source_log_id).toBe("101");
+    failSave = false;
+    await v.click("加入调查 102");
+    const body = JSON.parse(
+      String(
+        v.requests.filter((r) => r.init?.method === "PUT").at(-1)!.init!.body,
+      ),
+    );
+    expect(body.logs.map((log: any) => log.source_log_id)).toEqual([
+      "101",
+      "102",
+    ]);
+    expect(v.saved().logs.map((log: any) => log.source_log_id)).toEqual([
+      "101",
+      "102",
+    ]);
   } finally {
     await v.dispose();
   }

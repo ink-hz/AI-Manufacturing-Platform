@@ -235,11 +235,15 @@ export interface Investigation {
   origin_handoff_id?: string;
   origin_handoff_version?: number;
 }
+export interface CapturedLog extends Selection {
+  source_log_id: string;
+}
+export type LogInput = string | CapturedLog;
 export interface InvestigationPatch {
   context?: InvestigationContext;
   primary?: Selection | null;
   comparison?: Selection | null;
-  logs?: string[];
+  logs?: LogInput[];
   note?: string;
 }
 export interface Candidate extends Selection {

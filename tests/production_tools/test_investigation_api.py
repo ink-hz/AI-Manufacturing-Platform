@@ -208,3 +208,20 @@ def test_browser_cannot_supply_impact_counts(workflow):
     assert client.post(PATH,json={'context':CONTEXT,'impact':{'counts':{'records':'100'}}}).status_code == 422
     draft = create(workflow)
     assert client.put(PATH+'/'+draft['id'],json={'expected_version':1,'impact':{'counts':{'records':'100'}}}).status_code == 422
+
+
+def test_http_captured_log_strict_union_uses_authorized_snapshot_and_preserves_metadata(workflow):
+    configure(workflow)
+    from manufacturing_platform.production_tools.store import SnapshotStore
+    from manufacturing_platform.production_tools.contracts import SourceScope, SourceResult
+    store = SnapshotStore(workflow.production_tools.snapshot_path, clock=lambda: datetime.now(UTC))
+    sid = str(store.put(SourceScope('native','1','v1','project/'), SourceResult('evidence', [{'id':'42','projuectid':'1','createtime':1794186000000,'url':'DO-NOT-SAVE'}], datetime.now(UTC), {**PARAMS,'kind':'evidence','device':'PC-NARROW','before_id':100}, True,None,None)))
+    candidate = {'snapshot_id':sid,'offset':0,'source_log_id':'42'}
+    draft = create(workflow, logs=[candidate])
+    assert draft['logs'][0]['filters']['before_id'] == '100'
+    assert 'DO-NOT-SAVE' not in str(draft)
+    path = PATH+'/'+draft['id']
+    for logs in ([candidate,'42'], [{**candidate,'offset':True}], [{**candidate,'descriptor':{}}], [{**candidate,'source_log_id':42}]):
+        assert workflow.client('admin').put(path,json={'expected_version':1,'logs':logs}).status_code == 422
+    response = workflow.client('admin').put(path,json={'expected_version':1,'logs':['42']})
+    assert response.status_code == 200 and response.json()['logs'] == draft['logs']

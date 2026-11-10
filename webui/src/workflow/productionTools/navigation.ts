@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Location } from "./context";
+import { locationQueryKey, type Location } from "./context";
 /** Browser traversal is rolled back before a save/leave decision; UI and native history agree while blocked. */
 export function useProductionNavigation({
   userId,
@@ -40,7 +40,10 @@ export function useProductionNavigation({
     callbacks.current.apply(next);
   };
   const push = async (next: Location) => {
-    entries.current[accepted.current] = callbacks.current.snapshot();
+    const previous = callbacks.current.snapshot();
+    if (locationQueryKey(previous) !== locationQueryKey(next))
+      next = { ...next, cursor: undefined, inspected: undefined };
+    entries.current[accepted.current] = previous;
     entries.current = entries.current.slice(0, accepted.current + 1);
     entries.current.push(next);
     const target = accepted.current + 1;
@@ -59,7 +62,8 @@ export function useProductionNavigation({
     native.current = target;
     commit(next, target);
   };
-  async function go(next: Location) {
+  async function go(next: Location, fresh = false) {
+    if (fresh) next = { ...next, cursor: undefined, inspected: undefined };
     if (busy.current) return;
     busy.current = true;
     if (await callbacks.current.guard(next)) {

@@ -94,21 +94,57 @@ export function baseline(scope: Scope): Scope {
     missing_fields: rest.missing_fields?.filter((k) => k !== "error_code"),
   };
 }
+const dependencies: Record<string, string[]> = {
+  stage_id: [
+    "software_id",
+    "software_version",
+    "config_log_id",
+    "config_version",
+  ],
+  software_id: ["software_version"],
+  config_log_id: ["config_version"],
+};
 export function removeScope(scope: Scope, key: string): Scope {
   const next = { ...scope } as Scope & Record<string, unknown>;
-  delete next[key];
-  next.missing_fields = next.missing_fields?.filter((k) => k !== key);
-  if (key === "software_id") {
-    delete next.software_version;
-    next.missing_fields = next.missing_fields?.filter(
-      (k) => k !== "software_version",
-    );
+  const cleared = [key, ...(dependencies[key] || [])];
+  for (const field of cleared) delete next[field];
+  next.missing_fields = next.missing_fields?.filter(
+    (k) => !cleared.includes(k),
+  );
+  return next;
+}
+/** A user edit replaces the predicate, including its missing-value alternative. */
+export function editScope(scope: Scope, edits: Partial<Scope>): Scope {
+  let next = { ...scope };
+  if (edits.missing_fields) {
+    for (const key of edits.missing_fields) {
+      next = removeScope(next, key);
+      next.missing_fields = missingOrder.filter(
+        (k) => k === key || next.missing_fields?.includes(k),
+      );
+    }
   }
-  if (key === "config_log_id") {
-    delete next.config_version;
-    next.missing_fields = next.missing_fields?.filter(
-      (k) => k !== "config_version",
-    );
+  for (const key of [
+    ...missingOrder,
+    ...Object.keys(edits).filter(
+      (k) =>
+        !missingOrder.includes(k as MissingField) && k !== "missing_fields",
+    ),
+  ]) {
+    if (!Object.prototype.hasOwnProperty.call(edits, key)) continue;
+    const value = (edits as Record<string, unknown>)[key];
+    // Explicit missing from a drill takes precedence over an absent exact field.
+    if (
+      value === undefined &&
+      edits.missing_fields?.includes(key as MissingField)
+    )
+      continue;
+    if (
+      (next as unknown as Record<string, unknown>)[key] !== value ||
+      next.missing_fields?.includes(key as MissingField)
+    )
+      next = removeScope(next, key);
+    next = { ...next, [key]: value };
   }
   return next;
 }
@@ -119,15 +155,32 @@ export function drill(
 ): Scope {
   let next = { ...scope };
   for (const key of fields) {
-    next = removeScope(next, key);
     const value = item[key];
-    if (value === null || value === undefined)
-      next.missing_fields = missingOrder.filter(
-        (k) => k === key || next.missing_fields?.includes(k),
-      );
-    else next = { ...next, [key]: value };
+    next = editScope(
+      next,
+      value == null ? { missing_fields: [key] } : { [key]: value },
+    );
   }
   return next;
+}
+/** Cursor ownership follows the effective read, rather than individual buttons. */
+export function locationQueryKey(location: Location): string {
+  const scope =
+    location.view === "history"
+      ? {
+          start: (location.historyRange || location.scope).start,
+          end: (location.historyRange || location.scope).end,
+          sn: location.historySN,
+        }
+      : queryScope(location.scope);
+  return JSON.stringify([
+    location.projectId,
+    location.view,
+    Object.entries(scope)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => [k, Array.isArray(v) ? [...v].sort() : v]),
+  ]);
 }
 export function errorText(error: unknown) {
   if (error instanceof WorkflowError) {

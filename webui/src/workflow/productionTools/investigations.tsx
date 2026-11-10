@@ -333,7 +333,7 @@ export function InvestigationPanel({
               )?.state || "未核对"}
               <button
                 type="button"
-                disabled={readOnly || !!c.handoff || !c.canStart}
+                disabled={readOnly || !!c.handoff || !c.canStart || c.logBusy}
                 onClick={() => void c.removeLog(log.source_log_id)}
               >
                 移除日志 {log.source_log_id}
