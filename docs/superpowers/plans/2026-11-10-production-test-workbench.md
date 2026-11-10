@@ -15,7 +15,7 @@
 - The host mainline is `master` at `/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/admin-home-20261109`, initially `57060de1`; the platform root is an old feature branch and is not the integration baseline.
 - 首期继续只允许当前平台管理员访问。Read-only admins may read but cannot save/fork/generate handoffs. Recheck actor authorization and source fingerprints for every request.
 - 源系统业务写入为0。No external messages, live deployment, source initialization, SQL migrations, or new ordinary-user authorization.
-- Native config protocol stays 2 and `build_native_config(config_path, snapshot_path)` remains two-argument compatible. Existing six positional `ProductionToolsConfig` fields remain compatible.
+- Native config protocol stays 2 and `build_native_config(config_path, snapshot_path)` remains two-argument compatible. Existing five positional `ProductionToolsConfig` fields remain compatible.
 - Each source interval is timezone-aware, half-open, positive, and at most 31 days. Source IDs remain 1–20 digit decimal strings in public JSON/TypeScript. Preserve integer precision and repeated source events.
 - Existing source captures remain at most 1000 rows/2 MiB, 24-hour expiry, 100 unexpired captures/project. Analytics must aggregate in SQL, not compute totals from captured rows. Dashboard refreshes must not create observation snapshots.
 - Main event: 0 or 1. Comparison: 0 or 1, requires main. Log references: at most 5. Drafts expire 30 days after successful modification; immutable handoffs 30 days after creation. Retain only allowlisted event descriptors, original snapshot positions and canonical content fingerprints, never complete dynamic rows/config contents/object URLs/files.
@@ -182,11 +182,25 @@ it('opens project explanation before records and keeps investigation time on dri
 - [ ] Implement the workbench with scoped async cancellation, shared history/context and persisted investigation controls; no changes to unrelated manufacturing workflows.
 - [ ] Run relevant frontend API/navigation/journey tests, `npm run test:bundle`, then broader existing frontend once. Report any inherited warnings exactly. Commit Task 3 and task review.
 
+
+## Task3 review architecture correction
+
+The first independent review exposed multiple symptoms from shared responsibilities, rather than unrelated rendering defects. Display/navigation scope, persisted investigation scope and asynchronous verification ownership must be separate:
+
+- Navigation/back changes the displayed page and restores its local filters/position; it cannot silently rewrite an existing range investigation. Explicit filter edits and starting/replacing investigation scope use deliberate persistence actions, retaining main/dependency safeguards. The global overview exposes only scope actually used by its API; prior investigation scope stays available on return. Default live overview advances its end time, while historical selections and investigations stay fixed.
+- Every resolve/candidate result belongs to current account, project, draft/handoff identity/version and selections. A new main/comparison clears stale verified rows immediately; same-project newer resolutions invalidate older requests as well.
+- Browser back/forward is a transaction: accepted navigation aligns browser state, visible page and internal index; cancelled leave restores all three consistently.
+- Account-scoped resume locators restore the active project/draft/view without requiring project reselection. Failed first creation has no server ID, so its explicit local unsaved-state recovery must work independently of saved-draft IDs. Persist metadata/patches only, never raw observation rows.
+
+Fix all confirmed review findings in one wave, with targeted RED/GREEN for each trigger and a covering API/navigation/production run plus bundle. No ordinary-user access, raw-row persistence, source writes, new query fallbacks or silent scope broadening.
+
 ## Task 4: Platform host integration, end-to-end checks and delivery
 
 **Files:** In an isolated platform worktree based on `master`, update only manufacturing exact route registry, optional storage path validation and its integration tests. In MF add HTTP journey tests and `docs/verification/production-test-workbench-2026-11-10.md`, update product spec implementation status accurately.
 
-**Interfaces:** Host registry must enumerate every new method/path exactly, including POST/PUT investigation writes and GET analytics; unavailable router retains admin/no-store/read-only semantics. Do not loosen wildcard paths. Keep optional production failure from disabling other manufacturing routes. Derived investigation DB cannot alias workflow/domain/authority/snapshot/config files, including symlink/hardlink aliases.
+**Cross-layer correction:** Verify same-stage/tool comparison can retain a different software/config version from the selected symptom. Narrowly adjust comparison context validation (including missing-version scope) without relaxing main/source/project checks; record targeted RED/GREEN. Add optional bounded `context.history_sn` as the independent SN履历 subject, alongside history_range; exclude it from original scope/impact/primary validation and verify persistence/fork round-trip.
+
+**Interfaces:** Host registry must enumerate every new method/path exactly, including POST/PUT investigation writes and GET analytics; unavailable router retains admin/no-store/read-only semantics. Do not loosen wildcard paths. Reserve unavailable operations by exact method/path so a missing POST or PUT cannot intercept a released GET on the same path; production fallbacks retain administrator checks. Keep optional production failure from disabling other manufacturing routes. Derived investigation DB cannot alias workflow/domain/authority/snapshot/config files, including symlink/hardlink aliases.
 
 - [ ] Add host contract test comparing released router routes to host registry and admin/read-only/ordinary authorization for new endpoints; verify RED before host changes.
 - [ ] Integrate exact paths and path isolation. Preserve CSRF/Origin and authenticated real HTTP behavior.
@@ -197,7 +211,7 @@ it('opens project explanation before records and keeps investigation time on dri
 ## Progress
 
 - [x] Task 1 reviewed (`a1102ee`)
-- [ ] Task 2 reviewed
+- [x] Task 2 reviewed (`83cad73`)
 - [ ] Task 3 reviewed
 - [ ] Task 4 reviewed and integrated
 
