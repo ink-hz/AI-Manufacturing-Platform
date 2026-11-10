@@ -198,7 +198,7 @@ Fix all confirmed review findings in one wave, with targeted RED/GREEN for each 
 
 **Files:** In an isolated platform worktree based on `master`, update only manufacturing exact route registry, optional storage path validation and its integration tests. In MF add HTTP journey tests and `docs/verification/production-test-workbench-2026-11-10.md`, update product spec implementation status accurately.
 
-**Cross-layer correction:** Verify same-stage/tool comparison can retain a different software/config version from the selected symptom. Narrowly adjust comparison context validation (including missing-version scope) without relaxing main/source/project checks; record targeted RED/GREEN. Add optional bounded `context.history_sn` as the independent SN履历 subject, alongside history_range; exclude it from original scope/impact/primary validation and verify persistence/fork round-trip.
+**Cross-layer correction:** Verify same-stage/tool comparison can retain a different software/config version from the selected symptom. Narrowly adjust comparison context validation (including missing-version scope) without relaxing main/source/project checks; record targeted RED/GREEN. Add optional bounded `context.history_sn` as the independent SN履历 subject, alongside history_range; exclude it from original scope/impact/primary validation and verify persistence/fork round-trip. Add output-only `Resolution.binding={kind,id,version,primary_selection_id,comparison_selection_id}` from the actual resolved payload, so the frontend can reject results for another server revision or selected event; verify both draft and immutable handoff binding through HTTP.
 
 **Interfaces:** Host registry must enumerate every new method/path exactly, including POST/PUT investigation writes and GET analytics; unavailable router retains admin/no-store/read-only semantics. Do not loosen wildcard paths. Reserve unavailable operations by exact method/path so a missing POST or PUT cannot intercept a released GET on the same path; production fallbacks retain administrator checks. Keep optional production failure from disabling other manufacturing routes. Derived investigation DB cannot alias workflow/domain/authority/snapshot/config files, including symlink/hardlink aliases.
 
@@ -212,7 +212,7 @@ Fix all confirmed review findings in one wave, with targeted RED/GREEN for each 
 
 - [x] Task 1 reviewed (`a1102ee`)
 - [x] Task 2 reviewed (`83cad73`)
-- [ ] Task 3 reviewed
+- [x] Task 3 reviewed (`6aef6f5`)
 - [ ] Task 4 reviewed and integrated
 
 Plan coverage: role/private-access rules and durable objects are Task 1; native semantics and full-scope boards Task 2; every first-release page and user journey Task 3; actual host authorization and cross-layer delivery Task 4. Version-use board remains explicitly outside first release.
