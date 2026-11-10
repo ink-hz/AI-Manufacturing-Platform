@@ -402,3 +402,176 @@ def test_attachment_read_failure_is_sanitized_and_closed(workflow):
     assert response.status_code == 503
     assert "private-storage-address" not in response.text
     assert source.stream.closed
+
+
+def test_large_ids_survive_api_json_and_javascript_keyset_roundtrip(workflow):
+    import json
+    import sqlite3
+    import subprocess
+
+    from .test_lossless_paging import KeysetReader, native
+
+    large, maximum = 9007199254740993, 99999999999999999999
+    rows = [{"id": n, "projuectid": "1"} for n in range(large + 999, large - 2, -1)]
+    source = configure(workflow, workflow.create_project(), native(KeysetReader(rows)))
+    scope = next(iter(workflow.production_tools.bindings.values()))
+    path = f"{BASE}/{scope.project_id}/production-tools/catalog/software_versions"
+    response = workflow.client().get(
+        path, params={"parent_id": str(maximum), "before_id": str(maximum)}
+    )
+    assert response.status_code == 200, response.text
+    parsed = subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            """
+            let body = '';
+            for await (const chunk of process.stdin) body += chunk;
+            const page = JSON.parse(body);
+            process.stdout.write(JSON.stringify({
+                cursor: page.next_before_id,
+                cursorType: typeof page.next_before_id,
+                firstIdType: typeof page.items[0].id,
+                parent: page.filters.parent_id,
+                before: page.filters.before_id,
+            }));
+        """,
+        ],
+        input=response.text,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    wire = json.loads(parsed.stdout)
+    assert wire == {
+        "cursor": str(large),
+        "cursorType": "string",
+        "firstIdType": "string",
+        "parent": str(maximum),
+        "before": str(maximum),
+    }
+    assert source.mysql.calls[0].params == (1, maximum, maximum, 1001)
+    following = workflow.client().get(
+        path, params={"parent_id": wire["parent"], "before_id": wire["cursor"]}
+    )
+    assert following.status_code == 200, following.text
+    assert following.json()["items"][0]["id"] == "9007199254740992"
+    assert source.mysql.calls[1].params == (1, large, maximum, 1001)
+    with sqlite3.connect(workflow.production_tools.snapshot_path) as conn:
+        captured = [
+            json.loads(row[0])
+            for row in conn.execute("SELECT payload_json FROM snapshots")
+        ]
+    assert captured[0]["next_before_id"] == large
+    assert captured[0]["filters"]["parent_id"] == maximum
+    assert captured[0]["items"][-1]["id"] == large
+    snapshot = f"{BASE}/{scope.project_id}/production-tools/snapshots/{response.json()['snapshot_id']}"
+    assert workflow.client().get(snapshot).json() == response.json()
+
+
+@pytest.mark.parametrize("field", ["parent_id", "before_id"])
+@pytest.mark.parametrize(
+    "value", ["100000000000000000000", "0", "-1", "1.0", "１２", "01"]
+)
+def test_api_rejects_out_of_contract_source_ids_before_io(workflow, field, value):
+    project = workflow.create_project()
+    source = configure(workflow, project)
+    response = workflow.client().get(
+        url(project, "catalog/software_versions"), params={field: value}
+    )
+    assert response.status_code == 422
+    assert source.calls == []
+
+
+def test_public_api_preserves_large_statistics_and_measurements(workflow):
+    import json
+    import sqlite3
+
+    from .test_lossless_paging import KeysetReader, native
+
+    maximum, large = 99999999999999999999, 9007199254740993
+    reader = KeysetReader(
+        [
+            {
+                "records": maximum,
+                "distinct_sn": large,
+                "pass_records": maximum - 1,
+                "fail_records": 1,
+            }
+        ]
+    )
+    project = workflow.create_project()
+    configure(workflow, project, native(reader))
+    response = workflow.client().get(
+        url(project, "statistics"), params={**PARAMS, "kind": "production"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["items"] == [
+        {
+            "records": str(maximum),
+            "distinct_sn": str(large),
+            "pass_records": str(maximum - 1),
+            "fail_records": 1,
+            "unknown_records": 0,
+            "record_pass_ratio": (maximum - 1) / maximum,
+            "consistency": "single_query",
+        }
+    ]
+    reader.rows = [
+        {
+            "id": maximum,
+            "projuectid": "1",
+            "measurement": large,
+            "negative_measurement": -large,
+            "voltage": 12,
+            "ratio": 1.5,
+            "flag": True,
+            "nullable": None,
+            "api_token": "SECRET",
+        }
+    ]
+    response = workflow.client().get(
+        url(project, "observations"), params={**PARAMS, "kind": "production"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["items"] == [
+        {
+            "id": str(maximum),
+            "projuectid": "1",
+            "measurement": str(large),
+            "negative_measurement": str(-large),
+            "voltage": 12,
+            "ratio": 1.5,
+            "flag": True,
+            "nullable": None,
+        }
+    ]
+    assert response.json()["redacted_fields"] == ["api_token"]
+    with sqlite3.connect(workflow.production_tools.snapshot_path) as conn:
+        canonical = [
+            json.loads(row[0])
+            for row in conn.execute("SELECT payload_json FROM snapshots")
+        ]
+    assert canonical[0]["items"][0]["records"] == maximum
+    assert canonical[1]["items"][0]["measurement"] == large
+    assert "SECRET" not in response.text
+
+
+def test_full_twenty_digit_evidence_id_reaches_protected_download_exactly(workflow):
+    maximum = 99999999999999999999
+    project = workflow.create_project()
+    source = configure(workflow, project)
+
+    def evidence(binding, source_log_id, *, before_open=None):
+        assert type(source_log_id) is int and source_log_id == maximum
+        source.calls.append((binding, source_log_id))
+        if before_open:
+            before_open()
+        return EvidenceObject(BytesIO(b"exact evidence"), 14, "evidence.log")
+
+    source.evidence = evidence
+    response = workflow.client().get(url(project, f"evidence/{maximum}/content"))
+    assert response.status_code == 200
+    assert response.content == b"exact evidence"
+    assert source.calls[0][1] == maximum

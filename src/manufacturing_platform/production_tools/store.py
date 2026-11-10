@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from ..workflow.clock import checked_time
 from ..workflow.contracts import DomainError
 from .contracts import SourceBinding, SourceResult
+from .queries import CATALOG_TABLES
 from .source import MAX_BYTES, error, normalize
 
 
@@ -41,6 +42,33 @@ def _json(value):
         separators=(",", ":"),
         allow_nan=False,
     )
+
+
+def _public_value(value):
+    """Project exact observations to JSON values a JavaScript reader can retain."""
+    if type(value) is int and abs(value) > 9007199254740991:
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _public_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_public_value(item) for item in value]
+    return value
+
+
+def _public_row(row):
+    projected = _public_value(row)
+    if type(row.get("id")) is int:
+        projected["id"] = str(row["id"])
+    return projected
+
+
+def _retained_cursor(source_kind, items):
+    if source_kind not in CATALOG_TABLES:
+        return None
+    candidate = items[-1].get("id")
+    if type(candidate) is not int or candidate <= 0:
+        raise error("SOURCE_SCHEMA_INVALID")
+    return candidate
 
 
 def _fingerprint(binding):
@@ -163,7 +191,11 @@ class SnapshotStore:
             "filters": filters,
             "complete": result.complete and reason is None,
             "truncation_reason": reason,
-            "next_before_id": result.next_before_id,
+            "next_before_id": (
+                _retained_cursor(result.source_kind, items)
+                if len(result.items) > 1000
+                else result.next_before_id
+            ),
             "redacted_fields": sorted(redactions),
             "items": items,
         }
@@ -172,7 +204,9 @@ class SnapshotStore:
                 raise error("SOURCE_LIMIT_EXCEEDED", 422)
             items.pop()
             payload.update(
-                complete=False, truncation_reason="byte_limit", next_before_id=None
+                complete=False,
+                truncation_reason="byte_limit",
+                next_before_id=_retained_cursor(result.source_kind, items),
             )
         encoded = _json(payload)
         sid = uuid4()
@@ -257,14 +291,23 @@ class SnapshotStore:
                     "captured_at",
                     "complete",
                     "truncation_reason",
-                    "next_before_id",
-                    "filters",
                     "redacted_fields",
                 )
             } | {
                 "snapshot_id": str(snapshot_id),
                 "project_id": str(project_id),
-                "items": items[offset : offset + limit],
+                "items": [_public_row(item) for item in items[offset : offset + limit]],
+                "next_before_id": (
+                    str(payload["next_before_id"])
+                    if payload["next_before_id"] is not None
+                    else None
+                ),
+                "filters": {
+                    key: str(value)
+                    if key in {"parent_id", "before_id"} and type(value) is int
+                    else _public_value(value)
+                    for key, value in payload["filters"].items()
+                },
                 "offset": offset,
                 "limit": limit,
                 "captured_count": len(items),

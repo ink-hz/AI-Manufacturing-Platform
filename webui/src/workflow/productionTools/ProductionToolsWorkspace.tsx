@@ -13,7 +13,7 @@ function defaultRange() { const end = new Date(); return {start: localInput(new 
 function text(value: unknown): string { return value === undefined ? '—' : value === null ? 'null' : typeof value === 'object' ? JSON.stringify(value) : String(value); }
 function localTime(value: unknown) { const date = new Date(String(value)); return Number.isNaN(date.getTime()) ? text(value) : date.toLocaleString(); }
 function evidenceId(row: ProductionRow): string | null {
-  const id = typeof row.id === 'string' ? row.id : typeof row.id === 'number' && Number.isSafeInteger(row.id) ? String(row.id) : '';
+  const id = typeof row.id === 'string' ? row.id : '';
   return /^[1-9][0-9]{0,19}$/.test(id) ? id : null;
 }
 
@@ -25,8 +25,8 @@ export function ProductionToolsWorkspace({api, projects, initialProjectId}: {api
   const [catalog, setCatalog] = useState<CatalogKind>('software');
   const [draft, setDraft] = useState(defaultRange);
   const [applied, setApplied] = useState<TimeFilters>(() => ({start: new Date(draft.start).toISOString(), end: new Date(draft.end).toISOString()}));
-  const [parent, setParent] = useState<number>();
-  const [before, setBefore] = useState<number>();
+  const [parent, setParent] = useState<string>();
+  const [before, setBefore] = useState<string>();
   const [cursor, setCursor] = useState<{id: string; offset: number; limit: number} | null>(null);
   const [retry, setRetry] = useState(0);
   const [status, setStatus] = useState<ProductionStatus | null>(null);
@@ -77,9 +77,9 @@ export function ProductionToolsWorkspace({api, projects, initialProjectId}: {api
     const start = new Date(draft.start), end = new Date(draft.end);
     if (tab !== 'catalog' && (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start || end.getTime() - start.getTime() > 31 * 86400000)) { setValidation('请选择有效的开始和结束时间，范围须大于 0 且不超过 31 天。'); return; }
     const hasParent = catalog === 'software_versions' || catalog === 'config_versions';
-    if (tab === 'catalog' && hasParent && draft.parent && (!/^[1-9][0-9]*$/.test(draft.parent) || !Number.isSafeInteger(Number(draft.parent)))) { setValidation('父记录 ID 必须是有效正整数。'); return; }
+    if (tab === 'catalog' && hasParent && draft.parent && !/^[1-9][0-9]{0,19}$/.test(draft.parent)) { setValidation('父记录 ID 必须是有效正整数。'); return; }
     resetSource(); setValidation('');
-    if (tab === 'catalog') { setParent(hasParent && draft.parent ? Number(draft.parent) : undefined); setRetry(r => r + 1); }
+    if (tab === 'catalog') { setParent(hasParent && draft.parent ? draft.parent : undefined); setRetry(r => r + 1); }
     else setApplied({start: start.toISOString(), end: end.toISOString(), ...(draft.sn ? {sn: draft.sn} : {})});
   }
   function snapshot(offset: number) { if (!page) return; clear(); setCursor({id: page.snapshot_id, offset, limit: page.limit}); }

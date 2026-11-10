@@ -39,8 +39,12 @@ class ProductionQuery(BaseModel):
     order_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$")
     device: str | None = Field(default=None, min_length=1, max_length=200)
     status: Literal["1", "2"] | None = None
-    parent_id: int | None = Field(default=None, ge=1, strict=True)
-    before_id: int | None = Field(default=None, ge=1, strict=True)
+    parent_id: int | None = Field(
+        default=None, ge=1, le=99999999999999999999, strict=True
+    )
+    before_id: int | None = Field(
+        default=None, ge=1, le=99999999999999999999, strict=True
+    )
 
     @model_validator(mode="after")
     def bounded_window(self):

@@ -132,3 +132,36 @@ def test_window_is_bounded_in_elapsed_utc_time_across_dst():
 def test_binding_prefix_is_canonical(prefix):
     with pytest.raises(ValueError):
         SourceBinding("test", PROJECT, "fixture", "10001", "v1", prefix)
+
+
+@pytest.mark.parametrize(
+    "start_us,end_us,expected_ms",
+    [
+        (1, 1001, (1, 2)),
+        (0, 1000, (0, 1)),
+        (999, 1000, (1, 1)),
+        (-1001, -1, (-1, 0)),
+        (-1000, 0, (-1, 0)),
+        (-1, 1, (0, 1)),
+    ],
+)
+@pytest.mark.parametrize("base", [datetime(1970, 1, 1, tzinfo=UTC), NOW])
+def test_evidence_integer_millisecond_bounds_preserve_exact_half_open_interval(
+    start_us, end_us, expected_ms, base
+):
+    start = base + timedelta(microseconds=start_us)
+    end = base + timedelta(microseconds=end_us)
+    statement = compile_query(
+        binding(), ProductionQuery(kind="evidence", start=start, end=end)
+    )
+    epoch = datetime(1970, 1, 1, tzinfo=UTC)
+    base_ms = (base - epoch).days * 86400000
+    lower, upper = statement.params[1:3]
+    assert (lower - base_ms, upper - base_ms) == expected_ms
+    assert type(lower) is int and type(upper) is int
+    # Compare the actual predicates against representable source timestamps.
+    candidates = range(-2, 3)
+    assert [n for n in candidates if lower <= base_ms + n < upper] == [
+        n for n in candidates if start <= base + timedelta(milliseconds=n) < end
+    ]
+    validate_statement(statement)

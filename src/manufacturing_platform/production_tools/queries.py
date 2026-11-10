@@ -1,6 +1,6 @@
 """Fixed statement registry. No SQL identifiers come from input values."""
 
-from datetime import UTC
+from datetime import UTC, datetime
 from itertools import combinations
 
 from .contracts import ProductionQuery, ReadStatement, SourceBinding
@@ -65,6 +65,13 @@ def allowed_filters(kind):
     )
 
 
+def _ceil_epoch_milliseconds(date: datetime) -> int:
+    # Source timestamps are integer milliseconds; both half-open thresholds round up.
+    delta = date.astimezone(UTC) - datetime(1970, 1, 1, tzinfo=UTC)
+    microseconds = (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
+    return -(-microseconds // 1000)
+
+
 def compile_query(
     binding: SourceBinding, query: ProductionQuery, *, cap: int = 1000
 ) -> ReadStatement:
@@ -84,7 +91,7 @@ def compile_query(
             ]
         else:
             params += [
-                int(date.timestamp() * 1000) for date in (query.start, query.end)
+                _ceil_epoch_milliseconds(date) for date in (query.start, query.end)
             ]
     filters = tuple(name for name in allowed if getattr(query, name) is not None)
     params += [getattr(query, name) for name in filters]

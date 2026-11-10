@@ -8,15 +8,15 @@ export interface ProductionStatus {
 }
 export interface TimeFilters { start: string; end: string; sn?: string; order_id?: string }
 export interface ObservationFilters extends TimeFilters { kind: ObservationKind; device?: string; status?: '1' | '2' }
-export interface CatalogFilters { parent_id?: number; before_id?: number }
-export interface EvidenceFilters extends TimeFilters { before_id?: number }
+export interface CatalogFilters { parent_id?: string; before_id?: string }
+export interface EvidenceFilters extends TimeFilters { before_id?: string }
 export type ProductionRow = Record<string, unknown>;
 export interface ProductionStatistics extends ProductionRow {
-  records: number;
-  distinct_sn: number;
-  pass_records: number;
-  fail_records: number;
-  unknown_records: number;
+  records: number | string;
+  distinct_sn: number | string;
+  pass_records: number | string;
+  fail_records: number | string;
+  unknown_records: number | string;
   record_pass_ratio: number | null;
   consistency: 'single_query';
 }
@@ -30,7 +30,7 @@ export interface ProductionPage<Row = ProductionRow> {
   filters: Record<string, unknown>;
   complete: boolean;
   truncation_reason: string | null;
-  next_before_id: number | null;
+  next_before_id: string | null;
   redacted_fields: string[];
   offset: number;
   limit: number;

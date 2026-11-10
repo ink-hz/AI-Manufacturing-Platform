@@ -127,10 +127,18 @@ export function createWorkflowApi(
       ? ""
       : "&project_id=" + encodeURIComponent(projectId));
   const productionPath = (id: string) => p(id) + "/production-tools";
-  const productionQuery = (filters: object) => new URLSearchParams(
-    Object.entries(filters).filter(([, value]) => value !== undefined)
-      .map(([key, value]) => [key, String(value)]),
-  ).toString();
+  const productionQuery = (filters: object) => {
+    for (const [key, value] of Object.entries(filters)) {
+      if ((key === 'parent_id' || key === 'before_id') && value !== undefined
+        && (typeof value !== 'string' || !/^[1-9][0-9]{0,19}$/.test(value))) {
+        throw new Error("Invalid source filter ID");
+      }
+    }
+    return new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined)
+        .map(([key, value]) => [key, String(value)]),
+    ).toString();
+  };
   return {
     productionStatus: (id: string, signal?: AbortSignal) =>
       request<ProductionStatus>(productionPath(id) + "/status", "GET", undefined, signal),
@@ -146,7 +154,7 @@ export function createWorkflowApi(
       request<ProductionPage>(productionPath(id) + "/snapshots/" + encodeURIComponent(snapshotId) + "?" + productionQuery({offset, limit}), "GET", undefined, signal),
     productionEvidenceUrl: (id: string, sourceLogId: string) => {
       assert();
-      if (!/^[1-9][0-9]{0,19}$/.test(sourceLogId)) throw new Error("Invalid evidence ID");
+      if (typeof sourceLogId !== 'string' || !/^[1-9][0-9]{0,19}$/.test(sourceLogId)) throw new Error("Invalid evidence ID");
       return base + "/workflow" + productionPath(id) + "/evidence/" + encodeURIComponent(sourceLogId) + "/content";
     },
     systems: (id:string, signal?:AbortSignal) => request<SystemDescriptor[]>(p(id)+"/systems", "GET", undefined, signal),

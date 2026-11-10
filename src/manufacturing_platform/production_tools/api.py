@@ -1,5 +1,6 @@
 """Seven synchronous GET handlers on the workflow's protected route class."""
 
+import re
 from collections.abc import Callable
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -28,7 +29,7 @@ def _query(request, kind, allowed):
         if key in values:
             try:
                 text = values[key]
-                if not text.isascii() or not text.isdecimal():
+                if not re.fullmatch(r"[1-9][0-9]{0,19}", text):
                     raise ValueError()
                 values[key] = int(text)
             except ValueError:
