@@ -71,8 +71,8 @@ class ProductionQuery(BaseModel):
     order_id: str | None = Field(default=None, pattern=r'^[1-9][0-9]{0,19}$')
     device: str | None = Field(default=None, min_length=1, max_length=200)
     status: Literal['1', '2'] | None = None
-    parent_id: int | None = Field(default=None, ge=1)
-    before_id: int | None = Field(default=None, ge=1)
+    parent_id: int | None = Field(default=None, ge=1, le=99999999999999999999, strict=True)
+    before_id: int | None = Field(default=None, ge=1, le=99999999999999999999, strict=True)
 
     @model_validator(mode='after')
     def bounded_window(self):
@@ -657,3 +657,13 @@ Execute sequentially under the user's existing authorization. Each task's review
 Evidence authorization handoff: `ProductionSource.evidence` accepts optional `before_open`. Native source invokes it after the scoped MySQL lookup and URL/prefix validation, immediately before object-reader open; authorization exceptions propagate and no object is opened. The service passes a closure that reauthorizes live membership and the current binding. Test fakes honor the same callback. API repeats live authorization after bounded buffering and before response emission. This closes the existing design boundary between potentially slow metadata I/O and OSS opening.
 
 Snapshot composition handoff: `store.validate_snapshot_path(path: str, protected_paths: Iterable[str] = ()) -> None` is a reusable exported validator for absolute path and resolve/samefile separation. MF service supplies its known domain and authority paths. Host supplies the actual legacy, domain, authority and native secret-file paths before injecting config, inside the optional-connector boundary. Do not guess a legacy filename or add a router keyword solely for it. Direct unit tests supply explicit legacy paths; host integration tests cover actual configured aliases.
+
+### Lossless public page boundary (final review correction)
+
+`ProductionQuery.parent_id` / `before_id` and `SourceResult.next_before_id` remain exact Python integers. Parent/before input is a positive decimal ID with at most 20 digits (maximum `99999999999999999999`); API query text is validated before exact server-side integer conversion, and the direct query model enforces the same range. TypeScript filters, input state and source cursors keep decimal strings throughout URL encoding. No JavaScript `Number` conversion is permitted in source ID, parent or continuation paths.
+
+Canonical persisted snapshot JSON retains exact integer observations, filters and cursor values and its existing checksum. `SnapshotStore.get` produces a deterministic public projection without rewriting that payload: row primary integer `id` and non-null `next_before_id` are decimal strings, including small IDs; existing row string/null IDs remain unchanged. Effective `filters.parent_id` / `before_id` are decimal strings. All other integers with absolute value above `9007199254740991`, recursively including dynamic measurements and aggregate counts, become exact decimal text. Booleans, nulls, floats and safe non-ID integers retain their JSON types. Bounded `offset`, `limit` and `captured_count` remain numbers. Statistics counts therefore have public `number | string` types; `record_pass_ratio` remains the server-derived number or null.
+
+When the snapshot provenance envelope imposes additional byte/row trimming, MySQL catalog/evidence continuation is the last actually retained positive integer row ID, never the source's earlier boundary. A malformed retained ID is a sanitized `SOURCE_SCHEMA_INVALID`; QuestDB trimming never invents continuation. Captured time, effective filters, incompleteness, retention and immutable local paging remain unchanged.
+
+Evidence integer-millisecond `createtime` predicates preserve the exact accepted `[start,end)` interval: both bounds use the mathematical ceiling of epoch microseconds divided by 1000, computed with integer datetime arithmetic (including pre-epoch values). SQL templates, parameter types and the existing time-window limit remain unchanged.
