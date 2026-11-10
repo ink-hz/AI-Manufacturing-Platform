@@ -14,6 +14,8 @@
 
 页面先加载全局配置状态及产测项目目录，项目名称来自 MySQL `projuectlists`，不创建本平台项目。按源项目、时间、精确 SN、工具/设备及记录类型查询；保留四个页签、日志下载、记录统计和快照。项目列表按 ID 倒序，每页100条，有明确的继续读取按钮，不循环拉取全库。查询换项时清空旧数据并取消/忽略旧响应。
 
+独立产测视图显示「产测源数据 · 只读查询」，其他视图继续显示制造数据集的原有标签。该标识不声称实时连通或改变制造 demo 数据集；结果保留实际源命名空间、源项目 ID 和采集时间。
+
 路由继续由既有受保护制造宿主承载，前缀 `/api/v1/manufacturing/workflow/production-tools`，精确九条 GET：
 
 - `/status`：仅报告配置能力，不声称实时连通。
@@ -26,7 +28,7 @@
 - `/projects/{source_project_id}/statistics`。
 - `/projects/{source_project_id}/snapshots/{snapshot_id}`。
 
-源项目/源日志 ID 为1至20位十进制正整数字符串，不能按 JavaScript number 传输。查询参数白名单、重复参数拒绝及既有各类查询字段限制保持。旧 `/projects/{manufacturing_project_id}/production-tools/...` 路径撤除，不实现自动改路或虚拟绑定。
+源项目/源日志 ID 为1至20位十进制正整数字符串，不能按 JavaScript number 传输。查询参数白名单、重复参数拒绝及既有各类查询字段限制保持。全局与单项目状态均仅报告配置，不发源 I/O；实际记录查询与日志下载校验活跃源项目。旧 `/projects/{manufacturing_project_id}/production-tools/...` 路径撤除，不实现自动改路或虚拟绑定。
 
 ## 原生边界与配置 v2
 

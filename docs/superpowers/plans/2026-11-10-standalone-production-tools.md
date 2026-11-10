@@ -1,6 +1,6 @@
 # Standalone Production Tools Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Query real native production data as an admin without manufacturing project mappings.
 
@@ -28,7 +28,7 @@
 
 **Interfaces:** Implement the exact contracts in Global Constraints. `NativeProductionSource.projects(*,before_id=None)` returns the source directory page; `.project(source_project_id)` checks one active project. Service `.projects(actor, *, before_id=None)`, `.status(actor, source_project_id=None)`, `.query(actor, source_project_id, query)`, `.snapshot(actor, source_project_id, snapshot_id, *, offset=0,limit=50)`, `.evidence(actor, source_project_id, source_log_id)` expose admin-only reads. Keep existing query fields/row semantics. Public status/page use source_namespace/source_project_id, no manufacturing project_id.
 
-- [ ] Add a failing independent admin API regression with zero manufacture projects, using real FastAPI route/SQLite snapshot path and fake transport boundary only:
+- [x] Add a failing independent admin API regression with zero manufacture projects, using real FastAPI route/SQLite snapshot path and fake transport boundary only:
 
 ```python
 response = client.get('/api/v1/manufacturing/workflow/production-tools/projects', headers=admin)
@@ -39,10 +39,10 @@ assert client.get('/api/v1/manufacturing/workflow/projects', headers=admin).json
 
 Run `PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q tests/production_tools/test_standalone.py`; retain RED output (old router404).
 
-- [ ] Replace manufacturing binding contracts by SourceScope/configv2; add registered directory statements, directory normalization/ordering and bounded error behavior. Implement admin-only service, v2 source-bound snapshots and nine handlers; validate snapshot isolation against workflow paths in router initialization. Do not retain old project-bound production routes or create compatibility bindings. Update existing native tests to the new authorization contract while preserving transport/cursor/precision assertions. Add active/deleted/unknown source projects, malformed IDs, list continuation and directory failure cases.
-- [ ] Test denied ordinary member before transport calls, snapshot cross-project404, downgraded admin next request403, fingerprint expiry, no workflow table changes, unsupported capabilities, prefix/download bounds, strict configv2, rejecting legacy config/cache. Update socket regression to real host middleware and actual admin downgrade between requests, with no manufacture project setup requirement.
-- [ ] Update safe CLI to `--source-project <decimal-id>` and remove manufacturing dataset/project options. Update runbook with real source project selection, configv2, separate snapshots and enabled limits. No credentialed queries in subagent work.
-- [ ] Run `PYTHONPATH=src .../python -m pytest -q tests/production_tools tests/test_api.py --ignore=tests/production_tools/test_socket.py` once after focused GREEN (the native socket depends on PF Task3 whitelist and is mandatory at integration, not skipped or weakened); report passed/failed/errors/skips exactly. Run scoped Ruff if available and `git diff --check`; commit only owned paths. Report RED/GREEN, schema/version decisions and exact API JSON for frontend/host handoff.
+- [x] Replace manufacturing binding contracts by SourceScope/configv2; add registered directory statements, directory normalization/ordering and bounded error behavior. Implement admin-only service, v2 source-bound snapshots and nine handlers; validate snapshot isolation against workflow paths in router initialization. Do not retain old project-bound production routes or create compatibility bindings. Update existing native tests to the new authorization contract while preserving transport/cursor/precision assertions. Add active/deleted/unknown source projects, malformed IDs, list continuation and directory failure cases.
+- [x] Test denied ordinary member before transport calls, snapshot cross-project404, downgraded admin next request403, fingerprint expiry, no workflow table changes, unsupported capabilities, prefix/download bounds, strict configv2, rejecting legacy config/cache. Update socket regression to real host middleware and actual admin downgrade between requests, with no manufacture project setup requirement.
+- [x] Update safe CLI to `--source-project <decimal-id>` and remove manufacturing dataset/project options. Update runbook with real source project selection, configv2, separate snapshots and enabled limits. No credentialed queries in subagent work.
+- [x] Run `PYTHONPATH=src .../python -m pytest -q tests/production_tools tests/test_api.py --ignore=tests/production_tools/test_socket.py` once after focused GREEN (the native socket depends on PF Task3 whitelist and is mandatory at integration, not skipped or weakened); report passed/failed/errors/skips exactly. Run scoped Ruff if available and `git diff --check`; commit only owned paths. Report RED/GREEN, schema/version decisions and exact API JSON for frontend/host handoff.
 
 ### Task 2: Source-native UI and API client
 
@@ -50,10 +50,10 @@ Run `PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bi
 
 **Interfaces:** Add `productionProjects({before_id?},signal?)`; existing production client methods take source_project_id string and build `/production-tools/projects/{id}`. Global status is `productionStatus(undefined,signal)`, scoped status passes ID. Source pages include source_namespace/source_project_id. Source directory page contract from Task1. Workspace receives api only, no manufacturing projects/initial manufacturing ID.
 
-- [ ] Write focused failing tests: admin with zero manufacturing projects loads real source project names; ordinary member has no production navigation; selected source ID appears in all request paths. Run `cd webui && npx vitest run src/workflow/productionTools/ProductionToolsWorkspace.test.tsx` and retain RED.
-- [ ] Replace manufacturing selector by source-directory selector and explicit list continuation; surface global unconfigured versus source error, no-rows and forbidden states. Keep abort/generation protections on directory + observation changes and clear old source data immediately. Retain four tabs, parent/version filters, time/SN filters, add device filter where already supported, statistics semantics, snapshot/cursor precision and scoped evidence URLs.
-- [ ] Guard navigation/workspace using existing bootstrap configuration_admin; no bootstrap API grant widening. Update tests for pagination, directory failures, unknown/removed projects, big source IDs and ignored stale responses.
-- [ ] Run focused Vitest GREEN, all normal Vitest once using existing exclude rules, `npx tsc --noEmit`, `npm run bundle`; retain exact outputs, no browser use. Commit owned files and report.
+- [x] Write focused failing tests: admin with zero manufacturing projects loads real source project names; ordinary member has no production navigation; selected source ID appears in all request paths. Run `cd webui && npx vitest run src/workflow/productionTools/ProductionToolsWorkspace.test.tsx` and retain RED.
+- [x] Replace manufacturing selector by source-directory selector and explicit list continuation; surface global unconfigured versus source error, no-rows and forbidden states. Keep abort/generation protections on directory + observation changes and clear old source data immediately. Retain four tabs, parent/version filters, time/SN filters, add device filter where already supported, statistics semantics, snapshot/cursor precision and scoped evidence URLs.
+- [x] Guard navigation/workspace using existing bootstrap configuration_admin; no bootstrap API grant widening. Update tests for pagination, directory failures, unknown/removed projects, big source IDs and ignored stale responses.
+- [x] Run focused Vitest GREEN, all normal Vitest once using existing exclude rules, `npx tsc --noEmit`, `npm run test:bundle`; retain exact outputs, no browser use. Commit owned files and report.
 
 ### Task 3: PF exact host routing and configuration protocol
 
@@ -61,9 +61,9 @@ Run `PYTHONPATH=src /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bi
 
 **Interfaces:** Task1 module exports NATIVE_PRODUCTION_PROTOCOL2 and two-argument factory. Host still supplies optional production_tools to build_workflow_router; preserve general workflow/legacy compatibility behavior. Replace the production route whitelist by nine independent exact GET paths; no new mounts or environment key names.
 
-- [ ] Write failing host regression: new independent GET is resolved through real manufacturing auth; ordinary member denied by MF consumer, anonymous401; old production path is not allowed. Exact route set comparison must explicitly name all nine new entries.
-- [ ] Gate native compatibility on protocol2 and callable two-argument factory. Call `build_native_config(config_path,snapshot_path)` without manufacturing dataset; preserve private path/alias guards and sanitized unavailable isolation. Keep unknown routes, methods and malformed IDs closed through host/consumer contracts; do not loosen general matcher.
-- [ ] Run the existing four focused manufacturing host groups using PF baseline venv and `TEST_PLATFORM_SOURCE_ROOT` selecting this PF checkout. MF linked tests select the Task1 source. Run scoped lint/diff and commit only owned PF paths; report compatibility, test output and review package inputs.
+- [x] Write failing host regression: new independent GET is resolved through real manufacturing auth; ordinary member denied by MF consumer, anonymous401; old production path is not allowed. Exact route set comparison must explicitly name all nine new entries.
+- [x] Gate native compatibility on protocol2 and callable two-argument factory. Call `build_native_config(config_path,snapshot_path)` without manufacturing dataset; preserve private path/alias guards and sanitized unavailable isolation. Keep unknown routes, methods and malformed IDs closed through host/consumer contracts; do not loosen general matcher.
+- [x] Run the existing four focused manufacturing host groups using PF baseline venv and `TEST_PLATFORM_SOURCE_ROOT` selecting this PF checkout. MF linked tests select the Task1 source. Run scoped lint/diff and commit only owned PF paths; report compatibility, test output and review package inputs.
 
 ### Task 4: Integration, mainline and real-data acceptance (root)
 
