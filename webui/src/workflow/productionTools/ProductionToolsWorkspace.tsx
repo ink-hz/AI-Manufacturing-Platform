@@ -22,6 +22,7 @@ import {
 } from "./details";
 import {
   drill,
+  investigationContextFromLocation,
   fieldNames,
   localInput,
   localTime,
@@ -35,6 +36,8 @@ import {
 } from "./context";
 import { InvestigationPanel, useInvestigation } from "./investigations";
 import "./productionTools.css";
+import { useProductionNavigation } from "./navigation";
+import { activeProductionProject } from "./resume";
 export function validProductionHandoff(value: string | null) {
   return value &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -70,17 +73,17 @@ export function ProductionToolsWorkspace({
     [validation, setValidation] = useState(""),
     [filterNotice, setFilterNotice] = useState(""),
     [replacement, setReplacement] = useState<ViewedEvent | null>(null),
-    [leave, setLeave] = useState<(() => void) | null>(null),
+    [investigationProject, setInvestigationProject] = useState(() =>
+      handoffId ? "" : activeProductionProject(userId),
+    ),
     [lookup, setLookup] = useState(""),
     [search, setSearch] = useState<Partial<Scope>>({}),
     [range, setRange] = useState(() => ({
       start: localInput(loc.scope.start),
       end: localInput(loc.scope.end),
     }));
-  const historyRef = useRef<Location[]>([loc]),
-    historyIndex = useRef(0),
-    latestLoc = useRef(loc),
-    host = useRef<HTMLElement>(null);
+  const host = useRef<HTMLElement>(null),
+    latestLoc = useRef(loc);
   latestLoc.current = loc;
   const global = useRead(
     (s) => api.productionStatus(undefined, s),
@@ -136,6 +139,7 @@ export function ProductionToolsWorkspace({
     });
   }, [names.data]);
   const restoreLocation = useCallback((d: Investigation) => {
+    setInvestigationProject(d.source_project_id);
     setEvent(null);
     setLoc((old) => ({
       ...old,
@@ -165,136 +169,91 @@ export function ProductionToolsWorkspace({
       cursor: undefined,
     }));
   }, []);
-  const context: InvestigationContext = useMemo(
-    () => ({
-      ...loc.scope,
-      view: loc.view,
-      history_sn: loc.historySN || undefined,
-      symptom:
-        loc.savedSymptom ||
-        [
-          loc.labels.project || `源项目 ${loc.projectId}`,
-          loc.scope.stage_id
-            ? loc.labels[`stage_id:${loc.scope.stage_id}`] ||
-              loc.labels.stage_id
-            : undefined,
-          loc.scope.software_id
-            ? loc.labels[`software_id:${loc.scope.software_id}`] ||
-              loc.labels.software_id
-            : undefined,
-          loc.scope.error_code ? `错误码 ${loc.scope.error_code}` : undefined,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-          .slice(0, 1000),
-      recent_range: loc.recentRange,
-      evidence_range: loc.evidenceRange,
-      candidate_csn: loc.candidateCSN,
-      ...(loc.view === "history"
-        ? {
-            history_range: loc.historyRange || {
-              start: loc.scope.start,
-              end: loc.scope.end,
-            },
-          }
-        : {}),
-    }),
-    [
-      loc.scope,
-      loc.labels,
-      loc.view,
-      loc.historyRange,
-      loc.historySN,
-      loc.savedSymptom,
-      loc.recentRange,
-      loc.evidenceRange,
-      loc.candidateCSN,
-    ],
-  );
+  const restoreLocalLocation = (
+    context: InvestigationContext,
+    projectId: string,
+  ) => {
+    setInvestigationProject(projectId);
+    setEvent(null);
+    setLoc({
+      projectId,
+      view: context.view,
+      scope: queryScope(context),
+      labels: { project: `源项目 ${projectId}` },
+      historySN: context.history_sn,
+      historyRange: context.history_range,
+      recentRange: context.recent_range,
+      evidenceRange: context.evidence_range,
+      candidateCSN: context.candidate_csn,
+      savedSymptom: context.symptom,
+      inherited: true,
+    });
+  };
+  const context = useMemo(() => investigationContextFromLocation(loc), [loc]);
   const investigation = useInvestigation({
     api,
-    projectId: loc.projectId,
+    projectId: investigationProject,
     userId,
     readOnly,
     context,
     onRestore: restoreLocation,
+    onLocalRestore: (context, projectId) =>
+      restoreLocalLocation(context, projectId),
+    canStart: !!loc.projectId && loc.projectId === investigationProject,
     onDirty,
   });
-  const controllerRef = useRef(investigation);
-  controllerRef.current = investigation;
-  const navigate = (next: Location, push = true) => {
+  const commitLocation = (next: Location) => {
     setEvent(next.inspected || null);
     setValidation("");
     setSearch({});
-    const current = {
-      ...latestLoc.current,
-      scroll: host.current?.scrollTop || 0,
-      inspected: event || undefined,
-    };
-    historyRef.current[historyIndex.current] = current;
-    if (push) {
-      historyRef.current = historyRef.current.slice(
-        0,
-        historyIndex.current + 1,
-      );
-      historyRef.current.push(next);
-      historyIndex.current++;
-      window.history.pushState(
-        {
-          ...window.history.state,
-          productionWorkbench: { userId, index: historyIndex.current },
-        },
-        "",
-        window.location.href,
-      );
+    if (next.projectId && next.projectId !== investigationProject) {
+      setInvestigationProject(next.projectId);
+      investigation.detachHandoff();
     }
     setLoc(next);
   };
-  const go = (next: Location) => {
-    if (next.scope !== latestLoc.current.scope)
-      next = { ...next, savedSymptom: undefined };
-    if (next.projectId !== latestLoc.current.projectId) {
-      void (async () => {
-        if (investigation.dirty && !(await investigation.flush())) {
-          setLeave(() => () => navigate(next));
-          return;
-        }
-        investigation.closeHandoff();
-        navigate(next);
-      })();
-    } else navigate(next);
-  };
-  const back = () => {
-    if (historyIndex.current > 0) window.history.back();
-  };
-  useEffect(() => {
-    const onPop = (e: PopStateEvent) => {
-      const saved = e.state?.productionWorkbench;
-      if (!saved || saved.userId !== userId || !historyRef.current[saved.index])
-        return;
-      const next = historyRef.current[saved.index];
-      const apply = () => {
-        historyIndex.current = saved.index;
-        setEvent(next.inspected || null);
-        setLoc(next);
-      };
-      if (
-        next.projectId !== latestLoc.current.projectId &&
-        controllerRef.current.dirty
-      ) {
-        void controllerRef.current
-          .flush()
-          .then((d) => (d ? apply() : setLeave(() => apply)));
-      } else apply();
-    };
-    window.history.replaceState(
-      { ...window.history.state, productionWorkbench: { userId, index: 0 } },
-      "",
-      window.location.href,
-    );
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, [userId]);
+  const navigation = useProductionNavigation({
+    userId,
+    location: loc,
+    apply: commitLocation,
+    snapshot: () => ({
+      ...latestLoc.current,
+      scroll: host.current?.scrollTop || 0,
+      inspected: event || undefined,
+    }),
+    guard: async (next) =>
+      !next.projectId ||
+      next.projectId === investigationProject ||
+      !investigation.dirty ||
+      !!(await investigation.flush()),
+  });
+  function go(next: Location, intent: "browse" | "scope" = "browse") {
+    if (next.scope !== loc.scope) next = { ...next, savedSymptom: undefined };
+    if (next.projectId && next.projectId === investigationProject) {
+      if (intent === "scope" && next.scope !== loc.scope)
+        investigation.changeContext(investigationContextFromLocation(next));
+      else if (
+        ["history", "compare", "records", "device", "catalog"].includes(
+          next.view,
+        ) &&
+        next.scope === loc.scope
+      )
+        investigation.updateView({
+          view: next.view,
+          ...(next.historySN
+            ? {
+                history_sn: next.historySN,
+                history_range: next.historyRange || {
+                  start: next.scope.start,
+                  end: next.scope.end,
+                },
+              }
+            : {}),
+        });
+    }
+    void navigation.go(next);
+  }
+  const back = navigation.back;
   useEffect(() => {
     setRange({
       start: localInput(
@@ -321,10 +280,28 @@ export function ProductionToolsWorkspace({
     go,
     inspect: setEvent,
     refresh,
-    onRecent: (scope: Scope) =>
-      setLoc((old) => ({ ...old, recentRange: scope })),
+    onRecent: (scope: Scope) => {
+      setLoc((old) => ({ ...old, recentRange: scope }));
+      investigation.updateView({ recent_range: scope });
+    },
+    onOverviewRefresh: () => reread(),
   };
+  function reread() {
+    if (loc.view === "overview" && !loc.inherited)
+      setLoc((old) => ({ ...old, scope: today() }));
+    setRefresh((n) => n + 1);
+  }
   function board(view: "overview" | "anomalies" | "activity") {
+    if (view === "overview") {
+      go({
+        view: "overview",
+        projectId: "",
+        scope: { start: loc.scope.start, end: loc.scope.end },
+        labels: {},
+        inherited: true,
+      });
+      return;
+    }
     go({
       ...loc,
       view,
@@ -358,6 +335,7 @@ export function ProductionToolsWorkspace({
             cursor: undefined,
           }
         : { ...loc, scope, inherited: true, cursor: undefined },
+      loc.view === "history" ? "browse" : "scope",
     );
   }
   const activeDraft = investigation.handoff || investigation.draft;
@@ -394,7 +372,7 @@ export function ProductionToolsWorkspace({
           <button
             type="button"
             onClick={back}
-            disabled={historyIndex.current === 0}
+            disabled={navigation.index === 0}
           >
             返回
           </button>
@@ -516,7 +494,7 @@ export function ProductionToolsWorkspace({
         <button type="button" onClick={applyRange}>
           应用时间范围
         </button>
-        <button type="button" onClick={() => setRefresh((x) => x + 1)}>
+        <button type="button" onClick={reread}>
           重新读取
         </button>
         {directory.data?.has_more && directory.data.next_before_id && (
@@ -549,11 +527,14 @@ export function ProductionToolsWorkspace({
               onClick={() => {
                 if (key === "software_id" || key === "config_log_id")
                   setFilterNotice("对象条件已移除，相应版本条件同时清除。");
-                go({
-                  ...loc,
-                  scope: removeScope(loc.scope, key),
-                  cursor: undefined,
-                });
+                go(
+                  {
+                    ...loc,
+                    scope: removeScope(loc.scope, key),
+                    cursor: undefined,
+                  },
+                  "scope",
+                );
               }}
             >
               {label}：
@@ -569,19 +550,13 @@ export function ProductionToolsWorkspace({
       </div>
       {filterNotice && <p role="status">{filterNotice}</p>}
       {validation && <p role="alert">{validation}</p>}
-      {leave && (
+      {navigation.blocked && (
         <aside role="alert">
           <p>保存失败，本机修改已保留；可留在原项目重试。</p>
-          <button type="button" onClick={() => setLeave(null)}>
+          <button type="button" onClick={navigation.stay}>
             留在原页
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              leave();
-              setLeave(null);
-            }}
-          >
+          <button type="button" onClick={navigation.leave}>
             保留本机修改后离开
           </button>
         </aside>
@@ -602,11 +577,14 @@ export function ProductionToolsWorkspace({
                   },
                 });
             } else
-              go({
-                ...loc,
-                scope: { ...loc.scope, ...search },
-                cursor: undefined,
-              });
+              go(
+                {
+                  ...loc,
+                  scope: { ...loc.scope, ...search },
+                  cursor: undefined,
+                },
+                "scope",
+              );
           }}
         >
           <label>
@@ -837,13 +815,17 @@ export function ProductionToolsWorkspace({
           }}
           onComparison={(e) => void investigation.choose("comparison", e)}
           onLog={(id) => void investigation.addLog(id)}
-          onEvidenceScope={(scope, csn) =>
+          onEvidenceScope={(scope, csn) => {
             setLoc((old) => ({
               ...old,
               evidenceRange: scope,
               candidateCSN: csn || undefined,
-            }))
-          }
+            }));
+            investigation.updateView({
+              evidence_range: scope,
+              candidate_csn: csn || undefined,
+            });
+          }}
         />
       )}
     </section>

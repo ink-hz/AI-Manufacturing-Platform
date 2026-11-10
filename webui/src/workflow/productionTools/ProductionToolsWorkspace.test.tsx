@@ -34,6 +34,14 @@ const pass = {
   errorcode: null,
   measurement: 10,
 };
+const comparisonPass = {
+  ...pass,
+  softwareid: "8",
+  version: "v1",
+  cversion: "c1",
+};
+const sourceRow = (offset: number) =>
+  offset === 0 ? fail : offset === 1 ? comparisonPass : pass;
 const aggregate = {
   key: "[]",
   records: "100",
@@ -91,10 +99,12 @@ const page = (items: object[], extra = {}) => ({
   ...extra,
 });
 const selection = (offset: number) => ({
-  selection_id: "selection",
+  selection_id: `44444444-4444-4444-8444-${String(offset).padStart(12, "0")}`,
   snapshot_id: snap,
   offset,
-  descriptor: offset ? pass : fail,
+  descriptor: Object.fromEntries(
+    Object.entries(sourceRow(offset)).filter(([key]) => key !== "measurement"),
+  ),
   fingerprint: "hash",
   source_kind: "production",
 });
@@ -124,6 +134,45 @@ async function view(
 ) {
   const requests: { url: URL; init?: RequestInit }[] = [];
   let saved: any = initialDraft();
+  let handed: any = null;
+  const drafts = new Map<string, any>();
+  const bind = (d: any, kind: "draft" | "handoff") => ({
+    kind,
+    id: d.id,
+    version: d.version,
+    primary_selection_id: d.primary?.selection_id ?? null,
+    comparison_selection_id: d.comparison?.selection_id ?? null,
+  });
+  async function intercepted(url: URL, response: Response) {
+    if (!response.ok) return response;
+    const data = await response.clone().json();
+    if (url.pathname.endsWith("/resolve") && !("binding" in data))
+      return new Response(
+        JSON.stringify({
+          ...data,
+          binding: bind(
+            url.pathname.includes("/handoffs/")
+              ? handed || {
+                  ...saved,
+                  id: handoffId,
+                  primary: selection(0),
+                  comparison: selection(1),
+                }
+              : saved,
+            url.pathname.includes("/handoffs/") ? "handoff" : "draft",
+          ),
+        }),
+      );
+    if (data?.id && data?.context) {
+      if (url.pathname.includes("/handoffs/")) handed = data;
+      else {
+        saved = data;
+        drafts.set(data.source_project_id, data);
+      }
+    }
+    return response;
+  }
+
   const response = (data: unknown) => new Response(JSON.stringify(data));
   vi.stubGlobal(
     "fetch",
@@ -131,7 +180,7 @@ async function view(
       const url = new URL(String(input), location.origin);
       requests.push({ url, init });
       const override = intercept(url, init);
-      if (override) return override;
+      if (override) return intercepted(url, await override);
       const path = url.pathname,
         body = init?.body ? JSON.parse(String(init.body)) : {};
       if (path.endsWith("/status")) return response(status);
@@ -181,55 +230,123 @@ async function view(
             },
           ],
         });
-      if (path.endsWith("/resolve"))
+      if (path.endsWith("/resolve")) {
+        const d = path.includes("/handoffs/") ? handed : saved;
         return response({
+          binding: bind(d, path.includes("/handoffs/") ? "handoff" : "draft"),
           captured_at: now,
-          primary: saved.primary
+          primary: d.primary
             ? {
                 state: "verified",
-                descriptor: fail,
+                descriptor: d.primary.descriptor,
                 complete: true,
-                candidates: [{ snapshot_id: snap, offset: 0, row: fail }],
+                candidates: [
+                  {
+                    snapshot_id: snap,
+                    offset: d.primary.offset,
+                    row: sourceRow(d.primary.offset),
+                  },
+                ],
               }
             : null,
-          comparison: saved.comparison
+          comparison: d.comparison
             ? {
                 state: "verified",
-                descriptor: pass,
+                descriptor: d.comparison.descriptor,
                 complete: true,
-                candidates: [{ snapshot_id: snap, offset: 1, row: pass }],
+                candidates: [
+                  {
+                    snapshot_id: snap,
+                    offset: d.comparison.offset,
+                    row: sourceRow(d.comparison.offset),
+                  },
+                ],
               }
             : null,
           logs: [],
         });
+      }
       if (path.endsWith("/fork"))
         return response({
           ...saved,
           id: draftId,
           origin_handoff_id: handoffId,
         });
-      if (path.endsWith("/handoffs") && init?.method === "POST")
-        return response({ ...saved, id: handoffId, investigation_id: draftId });
-      if (path.includes("/handoffs/"))
-        return response({
+      if (path.endsWith("/handoffs") && init?.method === "POST") {
+        handed = structuredClone({
+          ...saved,
+          id: handoffId,
+          investigation_id: saved.id,
+        });
+        return response(handed);
+      }
+      if (path.includes("/handoffs/")) {
+        handed = {
           ...saved,
           id: handoffId,
           investigation_id: draftId,
           primary: selection(0),
           comparison: selection(1),
           note: "交接时的待确认事项",
+        };
+        return response(handed);
+      }
+      const sourceProject = path.match(
+        /projects\/([0-9]+)\/investigations/,
+      )?.[1];
+      const currentDraft = sourceProject
+        ? drafts.get(sourceProject)
+        : undefined;
+      if (sourceProject && currentDraft) saved = currentDraft;
+      if (init?.method === "PUT" && body.expected_version !== saved.version)
+        return new Response(JSON.stringify({ code: "VERSION_CONFLICT" }), {
+          status: 409,
         });
+      const context = body.context || saved.context;
+      const mapping: Record<string, string> = {
+        stage_id: "workstagesid",
+        software_id: "softwareid",
+        status: "status",
+        error_code: "errorcode",
+        device: "devicename",
+        sn: "sn",
+        software_version: "version",
+        config_version: "cversion",
+        config_log_id: "configlogsid",
+      };
+      for (const which of ["primary", "comparison"])
+        if (body[which]) {
+          const row = sourceRow(body[which].offset) as Record<string, unknown>;
+          for (const [key, native] of Object.entries(mapping)) {
+            if (
+              which === "comparison" &&
+              !["stage_id", "software_id"].includes(key)
+            )
+              continue;
+            if (
+              context[key] != null &&
+              row[native] != null &&
+              String(context[key]) !== String(row[native])
+            )
+              return new Response(
+                JSON.stringify({ code: "SOURCE_INVALID_QUERY" }),
+                { status: 422 },
+              );
+          }
+        }
       if (path.endsWith("/investigations")) {
         if (init?.method === "POST") {
           saved = {
-            ...saved,
+            ...initialDraft(),
             ...body,
+            source_project_id: sourceProject,
             primary: body.primary ? selection(body.primary.offset) : null,
           };
+          drafts.set(sourceProject!, saved);
           return response(saved);
         }
         return response({
-          items: saved.version > 1 ? [saved] : [],
+          items: currentDraft ? [currentDraft] : [],
           has_more: false,
         });
       }
@@ -252,6 +369,7 @@ async function view(
               descriptor: { csn: "OTHER-CSN" },
             }));
         }
+        drafts.set(sourceProject!, saved);
         return response(saved);
       }
       if (path.endsWith("/evidence"))
@@ -284,7 +402,7 @@ async function view(
             url.searchParams.get("kind") === "stopover"
               ? []
               : url.searchParams.get("sn")
-                ? [fail, pass]
+                ? [fail, comparisonPass, pass]
                 : [fail],
           ),
         );
@@ -705,7 +823,7 @@ it("restores main and comparison through project detach and remount without trus
         : undefined,
   );
   try {
-    await next.click("查看项目 A");
+    expect(next.host.textContent).toContain(draftId);
     await next.click("比较已选记录");
     expect(next.host.textContent).toContain("主要事件和对照参数尚未核对");
     expect(next.host.textContent).not.toContain("measurement");
@@ -1007,7 +1125,7 @@ it("uses actual row identity labels when history crosses tools and supports para
     await v.click("查看该范围异常");
     await v.click("选择异常 E1");
     await v.click("查看 SN-A 履历");
-    await v.click("查看测试 2");
+    await v.click("查看测试 3");
     expect(
       v.host.querySelector('[aria-label="测试详情"]')?.textContent,
     ).toContain("工具 18（名称未取得）");
@@ -1199,6 +1317,612 @@ it("shows parent versus fresh readings, selected anomaly trend and version-recor
       .at(-1)!.url;
     expect(q.searchParams.get("software_id")).toBe(project.id);
     expect(q.searchParams.get("software_version")).toBe("v2");
+  } finally {
+    await v.dispose();
+  }
+});
+
+it("I1 advances live overview then freezes drill interval", async () => {
+  let tick = () => {};
+  const timer = vi.spyOn(window, "setInterval").mockImplementation(((
+    f: () => void,
+  ) => {
+    tick = f;
+    return 1;
+  }) as typeof setInterval);
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(now));
+  const v = await view();
+  try {
+    const first = v.requests
+      .filter((r) => r.url.pathname.endsWith("/overview"))
+      .at(-1)!
+      .url.searchParams.get("end");
+    vi.setSystemTime(new Date(+new Date(now) + 60000));
+    await act(async () => tick());
+    await flush();
+    const second = v.requests
+      .filter((r) => r.url.pathname.endsWith("/overview"))
+      .at(-1)!
+      .url.searchParams.get("end");
+    expect(second).not.toBe(first);
+    await v.click("查看项目 A");
+    vi.setSystemTime(new Date(+new Date(now) + 120000));
+    await v.click("重新读取");
+    expect(
+      v.requests
+        .filter((r) => r.url.searchParams.get("view") === "stages")
+        .at(-1)!
+        .url.searchParams.get("end"),
+    ).toBe(second);
+  } finally {
+    await v.dispose();
+    timer.mockRestore();
+    vi.useRealTimers();
+  }
+});
+it("I2 overview scope is global and never carries project A filters into B", async () => {
+  const v = await view();
+  try {
+    await v.click("查看项目 A");
+    await v.click("查看该范围异常");
+    await v.click("选择异常 E1");
+    await v.click("限定上位机 PC07");
+    await v.click("运行总览");
+    expect(
+      (v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement)
+        .value,
+    ).toBe("");
+    expect(v.host.querySelector(".pt-chips")?.textContent).toBe("");
+    await v.click("查看项目 B");
+    const q = v.requests
+      .filter((r) => r.url.searchParams.get("view") === "stages")
+      .at(-1)!.url;
+    expect(q.pathname).toContain(other.id);
+    for (const k of [
+      "device",
+      "status",
+      "error_code",
+      "stage_id",
+      "software_id",
+      "missing_fields",
+    ])
+      expect(q.searchParams.has(k)).toBe(false);
+  } finally {
+    await v.dispose();
+  }
+});
+for (const hasMain of [false, true])
+  it(`I2 parent back preserves saved and handed context ${hasMain ? "with main" : "without main"}`, async () => {
+    let handed: any;
+    const v = await view((u, i) => {
+      if (u.pathname.endsWith("/handoffs") && i?.method === "POST")
+        handed = structuredClone(v.saved());
+      return undefined;
+    });
+    try {
+      await v.click("查看项目 A");
+      await v.click("查看该范围异常");
+      await v.click("选择异常 E1");
+      if (hasMain) {
+        await v.click("查看测试 1");
+        await v.click("设为调查对象");
+        await v.click("关闭测试详情");
+      } else await v.click("开始调查");
+      const original = structuredClone(v.saved().context);
+      await v.click("返回");
+      await v.click("返回");
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 400));
+      });
+      await v.click("生成交接摘要");
+      expect(v.saved().context).toEqual(original);
+      expect(handed.context).toEqual(original);
+    } finally {
+      await v.dispose();
+    }
+  });
+it("I2 recent drill keeps device and symptom predicates and original issue interval", async () => {
+  const v = await view((u) =>
+    u.searchParams.get("view") === "activity"
+      ? new Response(
+          JSON.stringify({
+            captured_at: now,
+            complete: true,
+            bucket_minutes: 5,
+            items: [
+              {
+                ...aggregate,
+                device: "PC07",
+                timestamp: u.searchParams.get("start"),
+              },
+            ],
+          }),
+        )
+      : undefined,
+  );
+  try {
+    await v.click("查看项目 A");
+    await v.click("查看该范围异常");
+    await v.click("选择异常 E1");
+    await v.click("查看上位机 PC07");
+    await v.click("开始调查");
+    const original = structuredClone(v.saved().context);
+    await v.click("查看近况");
+    await act(async () =>
+      (
+        v.host.querySelector(
+          '[aria-label="近况活动"] button',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    await flush();
+    const q = v.requests
+      .filter((r) => r.url.pathname.endsWith("/observations"))
+      .at(-1)!.url;
+    expect(q.searchParams.get("device")).toBe("PC07");
+    expect(q.searchParams.get("error_code")).toBe("E1");
+    expect(q.searchParams.get("stage_id")).toBe("7");
+    await v.click("返回");
+    await v.click("生成交接摘要");
+    expect(v.saved().context.start).toBe(original.start);
+    expect(v.saved().context.end).toBe(original.end);
+  } finally {
+    await v.dispose();
+  }
+});
+it("I3 failed first POST resumes idless local notes without project click or directory", async () => {
+  const v = await view((u, i) =>
+    u.pathname.endsWith("/investigations") && i?.method === "POST"
+      ? new Response("{}", { status: 503 })
+      : undefined,
+  );
+  await v.click("查看项目 A");
+  await v.field("观察事实和待确认事项", "首次创建失败仍须保留");
+  await v.click("生成交接摘要");
+  expect(v.host.textContent).toContain("保存失败");
+  await v.dispose();
+  const restored = await view((u) =>
+    u.pathname.endsWith("/production-tools/projects")
+      ? new Response("{}", { status: 503 })
+      : undefined,
+  );
+  try {
+    expect(restored.host.textContent).toContain("本机未保存修改");
+    expect(
+      (restored.host.querySelector("textarea") as HTMLTextAreaElement).value,
+    ).toBe("首次创建失败仍须保留");
+    expect(restored.requests.some((r) => r.init?.method === "POST")).toBe(
+      false,
+    );
+    await restored.click("提交本机修改");
+    expect(restored.saved().note).toBe("首次创建失败仍须保留");
+  } finally {
+    await restored.dispose();
+  }
+});
+it("I3 active locator resumes authorized saved page without directory or selection", async () => {
+  const v = await view();
+  await v.click("查看项目 A");
+  await v.click("查记录");
+  await v.click("查看测试 1");
+  await v.click("设为调查对象");
+  const saved = structuredClone(v.saved());
+  await v.dispose();
+  const restored = await view((u) =>
+    u.pathname.endsWith("/production-tools/projects")
+      ? new Response("{}", { status: 503 })
+      : u.pathname.endsWith("/" + draftId)
+        ? new Response(JSON.stringify(saved))
+        : undefined,
+  );
+  try {
+    expect(restored.host.textContent).toContain(draftId);
+    expect(restored.host.textContent).toContain("保存的定位：SN-A");
+    expect(
+      restored.requests.some((r) => r.url.pathname.endsWith("/" + draftId)),
+    ).toBe(true);
+    expect(
+      (
+        restored.host.querySelector(
+          '[aria-label="源项目"]',
+        ) as HTMLSelectElement
+      ).value,
+    ).toBe(project.id);
+  } finally {
+    await restored.dispose();
+  }
+});
+it("I4 replacement clears verified candidate ownership immediately", async () => {
+  const v = await view((u) =>
+    u.pathname.endsWith("/resolve") && v.saved().primary?.offset === 1
+      ? new Promise(() => {})
+      : undefined,
+  );
+  try {
+    await v.click("查看项目 A");
+    await v.click("查记录");
+    await v.click("查看测试 1");
+    await v.click("设为调查对象");
+    await v.click("关闭测试详情");
+    await v.click("按原条件复查证据");
+    await v.click("查看 SN-A 履历");
+    await v.click("查看测试 2");
+    await v.click("设为调查对象");
+    await v.click("确认替换主要事件");
+    expect(v.saved().primary.offset).toBe(1);
+    expect(
+      [...v.host.querySelectorAll("button")].some(
+        (b) => b.textContent === "核对主要候选 1",
+      ),
+    ).toBe(false);
+    expect(
+      v.host.querySelector('[aria-label="当前调查"]')?.textContent,
+    ).not.toContain("内容已核对");
+  } finally {
+    await v.dispose();
+  }
+});
+it("I4 reverse resolve completion cannot install stale raw rows or candidate identity", async () => {
+  const pending: ((r: Response) => void)[] = [];
+  const v = await view(
+    (u) =>
+      u.pathname.endsWith("/resolve")
+        ? new Promise((r) => pending.push(r))
+        : undefined,
+    { handoffId },
+  );
+  try {
+    await v.click("按原条件复查证据");
+    expect(pending.length).toBeGreaterThanOrEqual(2);
+    const resolved = (marker: string) =>
+      new Response(
+        JSON.stringify({
+          captured_at: now,
+          primary: {
+            state: "verified",
+            complete: true,
+            candidates: [
+              {
+                snapshot_id: snap,
+                offset: 0,
+                row: { ...fail, measurement: marker },
+              },
+            ],
+          },
+          comparison: {
+            state: "verified",
+            complete: true,
+            candidates: [{ snapshot_id: snap, offset: 1, row: pass }],
+          },
+          logs: [],
+        }),
+      );
+    await act(async () => pending.at(-1)!(resolved("CURRENT-RAW")));
+    await flush();
+    await act(async () => pending[0](resolved("STALE-RAW")));
+    await flush();
+    await v.click("比较已选记录");
+    expect(v.host.textContent).toContain("CURRENT-RAW");
+    expect(v.host.textContent).not.toContain("STALE-RAW");
+    await v.click("核对主要候选 1");
+    expect(
+      v.host.querySelector('[aria-label="测试详情"]')?.textContent,
+    ).toContain("CURRENT-RAW");
+  } finally {
+    await v.dispose();
+  }
+});
+it("I5 failed-save Back Stay reconciles native history before repeated Back Forward", async () => {
+  const v = await view((u, i) =>
+    u.pathname.includes(other.id + "/investigations") && i?.method === "POST"
+      ? new Response("{}", { status: 503 })
+      : undefined,
+  );
+  try {
+    await v.click("查看项目 A");
+    await v.field("源项目", other.id);
+    await v.field("观察事实和待确认事项", "B本机未保存");
+    const originalIndex = history.state.productionWorkbench.index;
+    await act(async () => history.back());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    await flush();
+    expect(v.host.textContent).toContain("留在原页");
+    await v.click("留在原页");
+    expect(history.state.productionWorkbench.index).toBe(originalIndex);
+    expect(
+      (v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement)
+        .value,
+    ).toBe(other.id);
+    await act(async () => history.back());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    await flush();
+    await v.click("保留本机修改后离开");
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    await flush();
+    expect(
+      (v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement)
+        .value,
+    ).toBe(project.id);
+    await act(async () => history.forward());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    await flush();
+    expect(
+      (v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement)
+        .value,
+    ).toBe(other.id);
+    expect(
+      (v.host.querySelector("textarea") as HTMLTextAreaElement).value,
+    ).toBe("B本机未保存");
+  } finally {
+    await v.dispose();
+  }
+});
+for (const fault of ["missing", "version", "selection"] as const)
+  it(`I4 rejects server resolve binding ${fault}`, async () => {
+    const binding = {
+      kind: "handoff",
+      id: handoffId,
+      version: 1,
+      primary_selection_id: selection(0).selection_id,
+      comparison_selection_id: selection(1).selection_id,
+    };
+    const v = await view(
+      (u) =>
+        u.pathname.endsWith("/resolve")
+          ? new Response(
+              JSON.stringify({
+                binding:
+                  fault === "missing"
+                    ? null
+                    : {
+                        ...binding,
+                        ...(fault === "version"
+                          ? { version: 2 }
+                          : {
+                              primary_selection_id: selection(2).selection_id,
+                            }),
+                      },
+                captured_at: now,
+                primary: {
+                  state: "verified",
+                  complete: true,
+                  candidates: [
+                    {
+                      snapshot_id: snap,
+                      offset: 2,
+                      row: { ...pass, measurement: "WRONG-SERVER-OWNER" },
+                    },
+                  ],
+                },
+                comparison: {
+                  state: "verified",
+                  complete: true,
+                  candidates: [
+                    { snapshot_id: snap, offset: 1, row: comparisonPass },
+                  ],
+                },
+                logs: [],
+              }),
+            )
+          : undefined,
+      { handoffId },
+    );
+    try {
+      await v.click("比较已选记录");
+      expect(v.host.textContent).not.toContain("WRONG-SERVER-OWNER");
+      expect(v.host.textContent).toContain("当前参数未核对");
+      expect(
+        [...v.host.querySelectorAll("button")].some(
+          (b) => b.textContent === "核对主要候选 1",
+        ),
+      ).toBe(false);
+    } finally {
+      await v.dispose();
+    }
+  });
+it("I4 different same-project handoffs resolve in reverse order without crossing raw ownership", async () => {
+  const secondId = "55555555-5555-4555-8555-555555555555",
+    pending = new Map<string, (r: Response) => void>();
+  const v = await view(
+    (u) =>
+      u.pathname.endsWith("/resolve")
+        ? new Promise((r) =>
+            pending.set(
+              u.pathname.includes(secondId) ? secondId : handoffId,
+              r,
+            ),
+          )
+        : u.pathname.endsWith("/" + secondId)
+          ? new Response(
+              JSON.stringify({
+                ...initialDraft(),
+                id: secondId,
+                primary: {
+                  ...selection(2),
+                  descriptor: { ...pass, sn: "SECOND-SN" },
+                },
+                comparison: selection(1),
+                note: "第二份固定版本",
+              }),
+            )
+          : undefined,
+    { handoffId },
+  );
+  try {
+    await v.field("交接号或内部恢复链接", secondId);
+    await v.click("读取交接");
+    const resolved = (id: string, offset: number, marker: string) =>
+      new Response(
+        JSON.stringify({
+          binding: {
+            kind: "handoff",
+            id,
+            version: 1,
+            primary_selection_id: selection(offset).selection_id,
+            comparison_selection_id: selection(1).selection_id,
+          },
+          captured_at: now,
+          primary: {
+            state: "verified",
+            complete: true,
+            candidates: [
+              {
+                snapshot_id: snap,
+                offset,
+                row: { ...sourceRow(offset), measurement: marker },
+              },
+            ],
+          },
+          comparison: {
+            state: "verified",
+            complete: true,
+            candidates: [{ snapshot_id: snap, offset: 1, row: comparisonPass }],
+          },
+          logs: [],
+        }),
+      );
+    await act(async () =>
+      pending.get(secondId)!(resolved(secondId, 2, "SECOND-CURRENT")),
+    );
+    await act(async () =>
+      pending.get(handoffId)!(resolved(handoffId, 0, "FIRST-STALE")),
+    );
+    await flush();
+    await v.click("比较已选记录");
+    expect(v.host.textContent).toContain("SECOND-SN");
+    expect(v.host.textContent).toContain("SECOND-CURRENT");
+    expect(v.host.textContent).not.toContain("FIRST-STALE");
+  } finally {
+    await v.dispose();
+  }
+});
+it("I2 nullable recent bucket keeps exact missing predicates", async () => {
+  const v = await view((u) =>
+    u.searchParams.get("view") === "errors"
+      ? new Response(
+          JSON.stringify({
+            captured_at: now,
+            complete: true,
+            items: [
+              {
+                ...aggregate,
+                stage_id: "7",
+                software_id: "8",
+                error_code: null,
+              },
+            ],
+          }),
+        )
+      : u.searchParams.get("view") === "devices"
+        ? new Response(
+            JSON.stringify({
+              captured_at: now,
+              complete: true,
+              items: [{ ...aggregate, device: null }],
+            }),
+          )
+        : u.searchParams.get("view") === "activity"
+          ? new Response(
+              JSON.stringify({
+                captured_at: now,
+                complete: true,
+                bucket_minutes: 5,
+                items: [
+                  {
+                    ...aggregate,
+                    device: null,
+                    timestamp: u.searchParams.get("start"),
+                  },
+                ],
+              }),
+            )
+          : undefined,
+  );
+  try {
+    await v.click("查看项目 A");
+    await v.click("查看该范围异常");
+    await v.click("选择异常 源未提供错误码");
+    await v.click("查看上位机 源未提供");
+    await v.click("查看近况");
+    await act(async () =>
+      (
+        v.host.querySelector(
+          '[aria-label="近况活动"] button',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    await flush();
+    const q = v.requests
+      .filter((r) => r.url.pathname.endsWith("/observations"))
+      .at(-1)!.url;
+    expect(q.searchParams.get("missing_fields")).toBe("device,error_code");
+    expect(q.searchParams.get("software_id")).toBe("8");
+  } finally {
+    await v.dispose();
+  }
+});
+it("I3 active resume denial never displays local pending notes", async () => {
+  sessionStorage.setItem(
+    `production-investigation:admin-A:active`,
+    JSON.stringify({ projectId: project.id, id: draftId }),
+  );
+  sessionStorage.setItem(
+    `production-investigation:admin-A:${project.id}`,
+    JSON.stringify({ id: draftId, pending: { note: "PRIVATE-UNAUTHORIZED" } }),
+  );
+  const v = await view((u) =>
+    u.pathname.includes("/investigations")
+      ? new Response("{}", { status: 403 })
+      : undefined,
+  );
+  try {
+    expect(v.host.textContent).not.toContain("PRIVATE-UNAUTHORIZED");
+    expect(
+      (v.host.querySelector("textarea") as HTMLTextAreaElement).value,
+    ).toBe("");
+  } finally {
+    await v.dispose();
+  }
+});
+it("Minor rejects different-tool comparison under an explicit tool investigation scope", async () => {
+  const v = await view();
+  try {
+    await v.click("查看项目 A");
+    await v.click("选择无线测试 · 无线工具");
+    await v.click("查看该范围异常");
+    await v.click("选择异常 E1");
+    await v.click("查看测试 1");
+    await v.click("设为调查对象");
+    await v.click("查看 SN-A 履历");
+    await v.click("查看测试 3");
+    await v.click("选作对照");
+    expect(v.host.textContent).toContain("保存失败");
+    expect(v.saved().comparison).toBeNull();
+  } finally {
+    await v.dispose();
+  }
+});
+it("I2 explicit chip removal updates saved scope without retaining deleted predicates", async () => {
+  const v = await view();
+  try {
+    await v.click("查看项目 A");
+    await v.click("查看该范围异常");
+    await v.click("选择异常 E1");
+    await v.click("开始调查");
+    await v.click("错误码：E1 ×");
+    await v.click("生成交接摘要");
+    expect(v.saved().context.error_code).toBeUndefined();
+    expect(v.saved().context.stage_id).toBe("7");
+    expect(v.saved().context.status).toBe("2");
   } finally {
     await v.dispose();
   }

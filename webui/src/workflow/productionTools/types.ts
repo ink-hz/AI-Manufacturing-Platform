@@ -259,6 +259,13 @@ export interface Resolution {
   error?: string;
 }
 export interface ResolvedInvestigation {
+  binding: {
+    kind: "draft" | "handoff";
+    id: string;
+    version: number;
+    primary_selection_id: string | null;
+    comparison_selection_id: string | null;
+  };
   primary: Resolution | null;
   comparison: Resolution | null;
   logs: (Resolution & { source_log_id: string })[];

@@ -17,10 +17,11 @@ export type Api = ReturnType<typeof createWorkflowApi>;
 export interface BoardProps {
   api: Api;
   location: Location;
-  go: (next: Location) => void;
+  go: (next: Location, intent?: "browse" | "scope") => void;
   inspect: (event: ViewedEvent) => void;
   refresh: number;
   onRecent?: (scope: Scope) => void;
+  onOverviewRefresh?: () => void;
 }
 export function ReadBlock<T>({
   state,
@@ -89,30 +90,48 @@ export function Counts({ item }: { item: Aggregate | null }) {
     <p>统计未取得，不能计作零</p>
   );
 }
-export function OverviewBoard({ api, location, go, refresh }: BoardProps) {
+export function OverviewBoard({
+  api,
+  location,
+  go,
+  refresh,
+  onOverviewRefresh,
+}: BoardProps) {
   const [before, setBefore] = useState<string>(),
     [sort, setSort] = useState("failed"),
-    [auto, setAuto] = useState(true),
-    [tick, setTick] = useState(0);
+    [auto, setAuto] = useState(true);
   const state = useRead(
     (s) =>
-      api.productionOverview(
-        {
-          start: location.scope.start,
-          end: location.scope.end,
-          before_id: before,
-        },
-        s,
-      ),
-    [api, location.scope.start, location.scope.end, before, refresh, tick],
+      api
+        .productionOverview(
+          {
+            start: location.scope.start,
+            end: location.scope.end,
+            before_id: before,
+          },
+          s,
+        )
+        .then((data) => ({
+          ...data,
+          requested_scope: {
+            start: location.scope.start,
+            end: location.scope.end,
+          },
+        })),
+    [api, location.scope.start, location.scope.end, before, refresh],
     true,
-    [api, location.scope.start, location.scope.end, before],
+    [
+      api,
+      location.scope.start,
+      location.inherited ? location.scope.end : "live",
+      before,
+    ],
   );
   useEffect(() => {
     if (!auto) return;
-    const timer = setInterval(() => setTick((x) => x + 1), 60000);
+    const timer = setInterval(() => onOverviewRefresh?.(), 60000);
     return () => clearInterval(timer);
-  }, [auto]);
+  }, [auto, onOverviewRefresh]);
   return (
     <>
       <h3>今天哪里需要关注</h3>
@@ -152,6 +171,10 @@ export function OverviewBoard({ api, location, go, refresh }: BoardProps) {
             <>
               <Coverage data={data} />
               <p>
+                本次概览实际范围 {localTime(data.requested_scope.start)} —{" "}
+                {localTime(data.requested_scope.end)}
+              </p>
+              <p>
                 本页已读取 {valid.length} / {data.items.length} 项目 ·
                 有测试的项目{" "}
                 {valid.filter((p) => p.statistics!.records !== "0").length} ·
@@ -189,6 +212,10 @@ export function OverviewBoard({ api, location, go, refresh }: BoardProps) {
                       onClick={() =>
                         go({
                           ...location,
+                          scope: data.requested_scope,
+                          selectedError: false,
+                          selectedStage: false,
+                          cursor: undefined,
                           view: "project",
                           projectId: p.id,
                           labels: { project: p.name },
@@ -197,7 +224,7 @@ export function OverviewBoard({ api, location, go, refresh }: BoardProps) {
                                 captured_at: p.blocks.statistics.captured_at,
                                 records: p.statistics.records,
                                 distinct_sn: p.statistics.distinct_sn,
-                                scope: location.scope,
+                                scope: data.requested_scope,
                               }
                             : undefined,
                           inherited: true,
@@ -295,7 +322,8 @@ function Trend({
   );
 }
 export function ProjectBoard(props: BoardProps) {
-  const { api, location: l, go, refresh } = props;
+  const { api, location: l, refresh } = props;
+  const go = (next: Location) => props.go(next, "scope");
   const summary = useRead(
     (s) =>
       api.productionAnalysis(l.projectId, { ...l.scope, view: "summary" }, s),
@@ -440,7 +468,8 @@ export function ProjectBoard(props: BoardProps) {
   );
 }
 export function AnomaliesBoard(props: BoardProps) {
-  const { api, location: l, go, refresh } = props;
+  const { api, location: l, refresh } = props;
+  const go = (next: Location) => props.go(next, "scope");
   const [distribution, setDistribution] = useState<"devices" | "versions">(
     "devices",
   );
@@ -652,7 +681,8 @@ export function AnomaliesBoard(props: BoardProps) {
   );
 }
 export function ActivityBoard(props: BoardProps) {
-  const { api, location: l, go, refresh } = props;
+  const { api, location: l, refresh } = props;
+  const go = (next: Location) => props.go(next, "scope");
   const [recentRange, setRecentRange] = useState<Scope | null>(
     l.recentRange || null,
   );
@@ -787,8 +817,10 @@ export function ActivityBoard(props: BoardProps) {
                 {(d) => (
                   <Trend
                     data={d}
-                    scope={recentRange}
-                    onRange={(scope) => go({ ...l, view: "records", scope })}
+                    scope={{ ...l.scope, ...recentRange }}
+                    onRange={(scope) =>
+                      props.go({ ...l, view: "records", scope }, "browse")
+                    }
                   />
                 )}
               </ReadBlock>

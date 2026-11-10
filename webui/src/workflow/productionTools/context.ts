@@ -298,3 +298,40 @@ export function matchesContext(
     (+when >= +new Date(context.start) && +when < +new Date(context.end))
   );
 }
+
+export function investigationContextFromLocation(
+  loc: Location,
+): InvestigationContext {
+  return {
+    ...loc.scope,
+    view: loc.view,
+    history_sn: loc.historySN || undefined,
+    symptom:
+      loc.savedSymptom ||
+      [
+        loc.labels.project || `源项目 ${loc.projectId}`,
+        loc.scope.stage_id
+          ? loc.labels[`stage_id:${loc.scope.stage_id}`] || loc.labels.stage_id
+          : undefined,
+        loc.scope.software_id
+          ? loc.labels[`software_id:${loc.scope.software_id}`] ||
+            loc.labels.software_id
+          : undefined,
+        loc.scope.error_code ? `错误码 ${loc.scope.error_code}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+        .slice(0, 1000),
+    recent_range: loc.recentRange,
+    evidence_range: loc.evidenceRange,
+    candidate_csn: loc.candidateCSN,
+    ...(loc.view === "history"
+      ? {
+          history_range: loc.historyRange || {
+            start: loc.scope.start,
+            end: loc.scope.end,
+          },
+        }
+      : {}),
+  };
+}
