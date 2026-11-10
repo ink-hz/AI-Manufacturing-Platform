@@ -173,3 +173,25 @@ it('does not send a pre-cancelled read and still denies a current authenticated 
  await expect(api.dashboard(owner.signal)).rejects.toMatchObject({name:'AbortError'});expect(fetcher).not.toHaveBeenCalled();
  await expect(api.project('current',new AbortController().signal)).rejects.toMatchObject({status:401});expect(auth).toHaveBeenCalledOnce();
 });
+
+it('reads production routes with encoded project/filter values and fixed evidence URLs', async () => {
+ const fetcher=vi.fn(async (_url:string,_init?:RequestInit)=>new Response(JSON.stringify({items:[],snapshot_id:'snapshot'})));
+ vi.stubGlobal('fetch',fetcher);
+ const api=createWorkflowApi({apiBase:'/preview/api/v1/manufacturing',csrfToken:'csrf',readOnly:false});
+ const controller=new AbortController();
+ await api.productionStatus('p /',controller.signal);
+ await api.productionObservations('p /',{kind:'production',start:'2026-11-09T00:00:00Z',end:'2026-11-10T00:00:00Z',sn:'SN & one'},controller.signal);
+ await api.productionCatalog('p /','software_versions',{parent_id:4,before_id:10});
+ await api.productionEvidence('p /',{start:'2026-11-09T00:00:00Z',end:'2026-11-10T00:00:00Z',sn:'SN & one',before_id:9});
+ await api.productionStatistics('p /',{kind:'stopover',start:'2026-11-09T00:00:00Z',end:'2026-11-10T00:00:00Z'});
+ await api.productionSnapshot('p /','snapshot /',50,50);
+ const urls=fetcher.mock.calls.map(call=>String(call[0]));
+ expect(urls[0]).toBe('/preview/api/v1/manufacturing/workflow/projects/p%20%2F/production-tools/status');
+ expect(new URL(urls[1],location.origin).searchParams.get('sn')).toBe('SN & one');
+ expect(urls[2]).toContain('/catalog/software_versions?parent_id=4&before_id=10');
+ expect(urls[3]).toContain('/evidence?');expect(urls[4]).toContain('/statistics?kind=stopover&');
+ expect(urls[5]).toContain('/snapshots/snapshot%20%2F?offset=50&limit=50');
+ expect(api.productionEvidenceUrl('p /','12')).toBe('/preview/api/v1/manufacturing/workflow/projects/p%20%2F/production-tools/evidence/12/content');
+ for(const id of ['https://example.com','../1','0','1?x=1','１２']) expect(()=>api.productionEvidenceUrl('p',id)).toThrow();
+ expect(fetcher).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({method:'GET',credentials:'same-origin',cache:'no-store',headers:{}}));api.dispose();
+});

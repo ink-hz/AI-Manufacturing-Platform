@@ -1,3 +1,4 @@
+import { ProductionToolsWorkspace } from "./productionTools/ProductionToolsWorkspace";
 import { oemActionWorkspace, oemObjectWorkspace } from "./oemNavigation";
 import { StatusBadge } from "./StatusBadge";
 import { IntroductionWorkspace } from "./IntroductionWorkspace";
@@ -400,6 +401,7 @@ export function WorkflowApp({
           ["orders", "订单与交付"],
           ["introduction", "工程与资产"],
           ["laboratory", "测试与标定"],
+          ["production_tools", "产测管理"],
           ["supply", "计划与物料"],
           ["execution", "工单与执行"],
           ["quality", "质量与追溯"],
@@ -449,6 +451,7 @@ export function WorkflowApp({
         )}
         {opening && (opening.error ? <p role="alert">{opening.error}<button onClick={() => open(opening.target)}>重试打开记录</button></p> : <p role="status">正在读取记录所属项目…</p>)}
         <div hidden={view === "handbook"} key={epoch}>
+          {activeView === "production_tools" && <ProductionToolsWorkspace api={api} projects={projects} />}
           {activeView === "home" && !project && (
             <WorkflowHome readOnly={readOnly} onDirty={onDirty} requestLeave={requestLeave} data={dashboard} projects={projects} projectsReady={projectsReady} dashboardError={dashboardError} projectsError={projectsError} api={api} refresh={refresh} active={view === "home"} onRefresh={() => setRefresh(r => r + 1)} onOpen={open}
               onNavigate={(module, kind, projectId) => navigate(module, {kind, projectId})} />

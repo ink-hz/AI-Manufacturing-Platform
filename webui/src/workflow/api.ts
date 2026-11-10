@@ -1,3 +1,4 @@
+import type { ProductionStatus, ProductionPage, ProductionStatistics, ObservationFilters, CatalogKind, CatalogFilters, EvidenceFilters } from './productionTools/types';
 import type {SystemDescriptor,SystemId,SourceKey,FactPage,FactDetail,FactLinkPage,IntentPage} from './integrations/types';
 import type {
   PublicAssetPage,
@@ -125,7 +126,29 @@ export function createWorkflowApi(
     (projectId === undefined
       ? ""
       : "&project_id=" + encodeURIComponent(projectId));
+  const productionPath = (id: string) => p(id) + "/production-tools";
+  const productionQuery = (filters: object) => new URLSearchParams(
+    Object.entries(filters).filter(([, value]) => value !== undefined)
+      .map(([key, value]) => [key, String(value)]),
+  ).toString();
   return {
+    productionStatus: (id: string, signal?: AbortSignal) =>
+      request<ProductionStatus>(productionPath(id) + "/status", "GET", undefined, signal),
+    productionObservations: (id: string, filters: ObservationFilters, signal?: AbortSignal) =>
+      request<ProductionPage>(productionPath(id) + "/observations?" + productionQuery(filters), "GET", undefined, signal),
+    productionCatalog: (id: string, kind: CatalogKind, filters: CatalogFilters, signal?: AbortSignal) =>
+      request<ProductionPage>(productionPath(id) + "/catalog/" + encodeURIComponent(kind) + "?" + productionQuery(filters), "GET", undefined, signal),
+    productionEvidence: (id: string, filters: EvidenceFilters, signal?: AbortSignal) =>
+      request<ProductionPage>(productionPath(id) + "/evidence?" + productionQuery(filters), "GET", undefined, signal),
+    productionStatistics: (id: string, filters: ObservationFilters, signal?: AbortSignal) =>
+      request<ProductionPage<ProductionStatistics>>(productionPath(id) + "/statistics?" + productionQuery(filters), "GET", undefined, signal),
+    productionSnapshot: (id: string, snapshotId: string, offset = 0, limit = 50, signal?: AbortSignal) =>
+      request<ProductionPage>(productionPath(id) + "/snapshots/" + encodeURIComponent(snapshotId) + "?" + productionQuery({offset, limit}), "GET", undefined, signal),
+    productionEvidenceUrl: (id: string, sourceLogId: string) => {
+      assert();
+      if (!/^[1-9][0-9]{0,19}$/.test(sourceLogId)) throw new Error("Invalid evidence ID");
+      return base + "/workflow" + productionPath(id) + "/evidence/" + encodeURIComponent(sourceLogId) + "/content";
+    },
     systems: (id:string, signal?:AbortSignal) => request<SystemDescriptor[]>(p(id)+"/systems", "GET", undefined, signal),
     systemFacts: (id:string, system:SystemId, filters:{object_type:string;cursor?:number;limit?:number}, signal?:AbortSignal) => request<FactPage>(p(id)+"/systems/"+encodeURIComponent(system)+"/facts?"+new URLSearchParams({object_type:filters.object_type,cursor:String(filters.cursor||0),limit:String(filters.limit||50)}), "GET", undefined, signal),
     systemFact: (id:string, key:SourceKey, signal?:AbortSignal) => request<FactDetail>(p(id)+"/systems/"+encodeURIComponent(key.system)+"/facts/"+encodeURIComponent(key.object_type)+"/"+encodeURIComponent(key.external_id)+"?version="+key.version, "GET", undefined, signal),

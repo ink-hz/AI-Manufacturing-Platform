@@ -116,3 +116,17 @@ it('revocation retires a pending account departure and removes private user and 
  await v.rerender({csrfToken:'rotated'});expect(v.host.textContent).toContain('无权访问');expect(v.host.textContent).not.toContain('私人姓名');expect(v.host.textContent).not.toContain('私有草稿');expect(v.host.querySelector('[role="dialog"]')).toBeNull();expect(onNavigatePlatform).not.toHaveBeenCalled();expect(onLogout).not.toHaveBeenCalled();
  }finally{await v.dispose();}
 });
+it('opens production management independently from the controlled test and calibration ledger',async()=>{
+ const v=await workflowView();
+ try{await v.click('产测管理');expect(v.host.querySelector('select[aria-label="制造项目"]')).not.toBeNull();
+ for(const label of ['SN 观测','软件与配置目录','日志证据','记录统计']) expect([...v.host.querySelectorAll('button')].some(b=>b.textContent===label)).toBe(true);
+ expect(v.host.textContent).toContain('请选择制造项目');
+ await v.click('测试与标定');expect(v.host.querySelector('[aria-label="所属项目筛选"]')).not.toBeNull();expect(v.host.textContent).toContain('测试计划');
+ expect(v.host.querySelector('select[aria-label="制造项目"]')).toBeNull();
+ }finally{await v.dispose();}
+});
+it('keeps production management out of the project command workspace tabs',async()=>{
+ const v=await workflowView({initial:'制造项目'});
+ try{expect([...v.host.querySelectorAll('button')].filter(b=>b.textContent==='产测管理')).toHaveLength(1);}
+ finally{await v.dispose();}
+});

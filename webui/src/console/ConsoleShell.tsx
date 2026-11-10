@@ -4,6 +4,7 @@ import "./console.css";
 
 export type ConsoleView =
   | "introduction" | "laboratory" | "orders" | "supply" | "execution" | "quality"
+  | "production_tools"
   | "home"
   | "projects"
   | "tasks"
@@ -17,6 +18,7 @@ const modules = [
   ["handbook", "制造手册"],
 ] as const;
 const paths = {
+  production_tools: "M3 4h18v16H3zM7 9l3 3 7-6M7 16h10",
   introduction: "M4 3h12l4 4v14H4zM8 8h8M8 12h8M8 16h5",
   laboratory: "M9 3h6M10 3v7L4 20h16l-6-10V3M7 15h10",
   orders: "M3 4h18v16H3zM7 8h10M7 12h10M7 16h6",
