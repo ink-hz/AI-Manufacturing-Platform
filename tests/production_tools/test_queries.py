@@ -1,23 +1,22 @@
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
 
 import pytest
 
 from manufacturing_platform.production_tools.contracts import (
     ProductionQuery,
-    SourceBinding,
+    SourceScope,
 )
 from manufacturing_platform.production_tools.queries import (
     compile_query,
     validate_statement,
 )
 
-PROJECT = UUID("00000000-0000-4000-8000-000000000001")
+PROJECT = "10001"
 NOW = datetime(2026, 11, 10, tzinfo=UTC)
 
 
 def binding():
-    return SourceBinding("test", PROJECT, "fixture", "10001", "v1", "logs/10001/")
+    return SourceScope("fixture", "10001", "v1", "logs/10001/")
 
 
 def timed(kind="production", **kw):
@@ -131,7 +130,7 @@ def test_window_is_bounded_in_elapsed_utc_time_across_dst():
 )
 def test_binding_prefix_is_canonical(prefix):
     with pytest.raises(ValueError):
-        SourceBinding("test", PROJECT, "fixture", "10001", "v1", prefix)
+        SourceScope("fixture", "10001", "v1", prefix)
 
 
 @pytest.mark.parametrize(

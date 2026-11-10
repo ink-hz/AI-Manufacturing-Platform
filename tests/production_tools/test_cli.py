@@ -25,23 +25,25 @@ def test_cli_default_caps_native_select_and_prints_only_summary(tmp_path, capsys
     src = source([row(id=5, secret="NEVER PRINT"), row(id=4)])
     scope = binding()
     config = ProductionToolsConfig(
-        src, {scope.project_id: scope}, str(tmp_path / "snapshot.db")
+        src,
+        scope.source_namespace,
+        scope.revision,
+        {scope.source_project_id: scope.object_prefix},
+        str(tmp_path / "snapshot.db"),
     )
     module.build_native_config = lambda *args: config
     code = module.main(
         [
             "--config",
             str(tmp_path / "private.json"),
-            "--dataset-id",
-            scope.dataset_id,
-            "--project",
-            str(scope.project_id),
+            "--source-project",
+            scope.source_project_id,
             "--transport",
             "mysql",
         ]
     )
     output = json.loads(capsys.readouterr().out)
-    assert code == 0 and src.mysql.calls[0].max_rows == 2
+    assert code == 0 and src.mysql.calls[1].max_rows == 2
     assert output["row_count"] == 1 and output["complete"] is False
     assert set(output) == {
         "transport",
@@ -63,10 +65,8 @@ def test_cli_oss_requires_verified_log_id_before_config_or_io(capsys):
             [
                 "--config",
                 "/private.json",
-                "--dataset-id",
-                "test",
-                "--project",
-                str(binding().project_id),
+                "--source-project",
+                binding().source_project_id,
                 "--transport",
                 "oss",
             ]
@@ -85,10 +85,8 @@ def test_cli_sanitizes_source_errors(tmp_path, capsys):
             [
                 "--config",
                 "/private.json",
-                "--dataset-id",
-                "test",
-                "--project",
-                str(binding().project_id),
+                "--source-project",
+                binding().source_project_id,
                 "--transport",
                 "mysql",
             ]

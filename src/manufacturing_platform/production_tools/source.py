@@ -9,8 +9,20 @@ from threading import BoundedSemaphore
 from urllib.parse import unquote, urlsplit
 
 from ..workflow.contracts import DomainError
-from .contracts import EvidenceObject, ProductionQuery, SourceBinding, SourceResult
-from .queries import CATALOG_TABLES, LOG_TABLES, compile_query, evidence_statement
+from .contracts import (
+    EvidenceObject,
+    ProductionQuery,
+    SourceResult,
+    SourceScope,
+    valid_source_id,
+)
+from .queries import (
+    CATALOG_TABLES,
+    LOG_TABLES,
+    compile_query,
+    directory_statement,
+    evidence_statement,
+)
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_ATTACHMENT = 10 * 1024 * 1024
@@ -155,8 +167,63 @@ class NativeProductionSource:
         except Exception:  # noqa: BLE001 - Sanitize all SDK/private configuration errors.
             raise error() from None
 
+    def _directory(self, *, before_id=None, source_project_id=None):
+        try:
+            statement = directory_statement(
+                before_id=before_id, source_project_id=source_project_id
+            )
+        except ValueError:
+            raise error("SOURCE_INVALID_QUERY", 422) from None
+        if not self._slots.acquire(blocking=False):
+            raise error("SOURCE_BUSY")
+        try:
+            rows = self._select(statement)
+            if not isinstance(rows, list) or len(rows) > statement.max_rows:
+                raise error("SOURCE_SCHEMA_INVALID")
+            items, previous = [], int(before_id) if before_id else None
+            for row in rows:
+                if not isinstance(row, dict) or set(row) != {"id", "name"}:
+                    raise error("SOURCE_SCHEMA_INVALID")
+                identifier = row["id"]
+                if type(identifier) not in (str, int) or not valid_source_id(
+                    str(identifier)
+                ):
+                    raise error("SOURCE_SCHEMA_INVALID")
+                identifier = str(identifier)
+                if (previous is not None and int(identifier) >= previous) or (
+                    source_project_id is not None and identifier != source_project_id
+                ):
+                    raise error("SOURCE_SCHEMA_INVALID")
+                name = row["name"]
+                if not isinstance(name, str) or len(name.encode("utf-8")) > 4096:
+                    raise error("SOURCE_SCHEMA_INVALID")
+                previous = int(identifier)
+                items.append({"id": identifier, "name": name})
+            return items
+        except (UnicodeError, ValueError, TypeError):
+            raise error("SOURCE_SCHEMA_INVALID") from None
+        finally:
+            self._slots.release()
+
+    def projects(self, *, before_id=None):
+        items = self._directory(before_id=before_id)
+        return {
+            "items": items[:100],
+            "limit": 100,
+            "has_more": len(items) > 100,
+            "next_before_id": items[99]["id"] if len(items) > 100 else None,
+        }
+
+    def project(self, source_project_id):
+        items = self._directory(source_project_id=source_project_id)
+        if not items:
+            raise error("SOURCE_NOT_FOUND", 404)
+        if len(items) != 1:
+            raise error("SOURCE_SCHEMA_INVALID")
+        return items[0]
+
     def query(
-        self, binding: SourceBinding, query: ProductionQuery, *, cap: int = 1000
+        self, binding: SourceScope, query: ProductionQuery, *, cap: int = 1000
     ) -> SourceResult:
         try:
             statement = compile_query(binding, query, cap=cap)
@@ -306,7 +373,7 @@ class NativeProductionSource:
 
     def evidence(
         self,
-        binding: SourceBinding,
+        binding: SourceScope,
         source_log_id: int,
         *,
         before_open: Callable[[], None] | None = None,

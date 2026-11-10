@@ -1,4 +1,4 @@
-"""Dataset-bound immutable observation cache, independent of workflow schemas."""
+"""Source-bound immutable observation cache, independent of workflow schemas."""
 
 import hashlib
 import json
@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 from ..workflow.clock import checked_time
 from ..workflow.contracts import DomainError
-from .contracts import SourceBinding, SourceResult
+from .contracts import SourceResult, SourceScope
 from .queries import CATALOG_TABLES
 from .source import MAX_BYTES, error, normalize
 
@@ -82,16 +82,9 @@ def _missing():
 
 
 class SnapshotStore:
-    def __init__(self, path: str, dataset: dict[str, str], *, clock):
+    def __init__(self, path: str, *, clock):
         validate_snapshot_path(path)
-        if (
-            set(dataset) != {"id", "mode", "label"}
-            or not dataset["id"]
-            or not dataset["label"]
-            or dataset["mode"] not in {"production", "demo", "test"}
-        ):
-            raise ValueError("invalid snapshot dataset")
-        self.path, self.dataset, self.clock = path, dict(dataset), clock
+        self.path, self.clock = path, clock
         checked_time(clock)
         fresh = False
         try:
@@ -104,19 +97,16 @@ class SnapshotStore:
         with sqlite3.connect(path) as conn:
             if fresh:
                 conn.executescript("""
-                    CREATE TABLE metadata(version INTEGER NOT NULL, dataset_id TEXT NOT NULL, dataset_mode TEXT NOT NULL, dataset_label TEXT NOT NULL);
-                    CREATE TABLE snapshots(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, binding_revision TEXT NOT NULL, source_namespace TEXT NOT NULL, source_project_id TEXT NOT NULL, source_kind TEXT NOT NULL, captured_at TEXT NOT NULL, expires_at TEXT NOT NULL, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL);
-                    CREATE INDEX snapshots_project_expiry ON snapshots(project_id, expires_at);
+                    CREATE TABLE metadata(version INTEGER NOT NULL);
+                    CREATE TABLE snapshots(id TEXT PRIMARY KEY, scope_revision TEXT NOT NULL, source_namespace TEXT NOT NULL, source_project_id TEXT NOT NULL, source_kind TEXT NOT NULL, captured_at TEXT NOT NULL, expires_at TEXT NOT NULL, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL);
+                    CREATE INDEX snapshots_project_expiry ON snapshots(source_namespace, source_project_id, expires_at);
                 """)
-                conn.execute(
-                    "INSERT INTO metadata VALUES (1,?,?,?)",
-                    tuple(self.dataset[key] for key in ("id", "mode", "label")),
-                )
+                conn.execute("INSERT INTO metadata VALUES (2)")
             self._validate(conn)
         os.chmod(path, 0o600)
 
     def _validate(self, conn):
-        expected = (1, *(self.dataset[key] for key in ("id", "mode", "label")))
+        expected = (2,)
         tables = {
             row[0]
             for row in conn.execute(
@@ -127,8 +117,7 @@ class SnapshotStore:
             raise ValueError("unrecognized snapshot database")
         expected_columns = (
             "id",
-            "project_id",
-            "binding_revision",
+            "scope_revision",
             "source_namespace",
             "source_project_id",
             "source_kind",
@@ -143,13 +132,11 @@ class SnapshotStore:
         ):
             raise ValueError("unrecognized snapshot schema")
         try:
-            rows = conn.execute(
-                "SELECT version,dataset_id,dataset_mode,dataset_label FROM metadata"
-            ).fetchall()
+            rows = conn.execute("SELECT version FROM metadata").fetchall()
         except sqlite3.Error:
             raise ValueError("unrecognized snapshot database") from None
         if rows != [expected]:
-            raise ValueError("snapshot dataset mismatch")
+            raise ValueError("snapshot version mismatch")
 
     @contextmanager
     def _transaction(self, *, write=False):
@@ -172,9 +159,7 @@ class SnapshotStore:
         finally:
             conn.close()
 
-    def put(self, binding: SourceBinding, result: SourceResult) -> UUID:
-        if binding.dataset_id != self.dataset["id"]:
-            raise ValueError("snapshot binding dataset mismatch")
+    def put(self, binding: SourceScope, result: SourceResult) -> UUID:
         now = checked_time(self.clock)
         redactions = set(result.redacted_fields)
         items = normalize(result.items, redactions)
@@ -183,9 +168,10 @@ class SnapshotStore:
         reason = "row_limit" if len(items) > 1000 else result.truncation_reason
         items = items[:1000]
         payload = {
-            "dataset": self.dataset,
-            "binding_fingerprint": _fingerprint(binding),
-            "query_version": 1,
+            "source_namespace": binding.source_namespace,
+            "source_project_id": binding.source_project_id,
+            "scope_fingerprint": _fingerprint(binding),
+            "query_version": 2,
             "source_kind": result.source_kind,
             "captured_at": captured_at,
             "filters": filters,
@@ -216,8 +202,8 @@ class SnapshotStore:
                 (now.isoformat(),),
             )
             count = conn.execute(
-                "SELECT COUNT(*) FROM snapshots WHERE project_id=? AND expires_at>?",
-                (str(binding.project_id), now.isoformat()),
+                "SELECT COUNT(*) FROM snapshots WHERE source_namespace=? AND source_project_id=? AND expires_at>?",
+                (binding.source_namespace, binding.source_project_id, now.isoformat()),
             ).fetchone()[0]
             if count >= 100:
                 raise DomainError(
@@ -226,10 +212,9 @@ class SnapshotStore:
                     "Observation retention limit reached; retry after expiry",
                 )
             conn.execute(
-                "INSERT INTO snapshots VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO snapshots VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     str(sid),
-                    str(binding.project_id),
                     binding.revision,
                     binding.source_namespace,
                     binding.source_project_id,
@@ -244,9 +229,9 @@ class SnapshotStore:
 
     def get(
         self,
-        project_id: UUID,
+        source_project_id: str,
         snapshot_id: UUID,
-        binding: SourceBinding,
+        binding: SourceScope,
         *,
         offset=0,
         limit=50,
@@ -258,12 +243,12 @@ class SnapshotStore:
             or not 1 <= limit <= 100
         ):
             raise error("SOURCE_INVALID_QUERY", 422)
-        if binding.project_id != project_id or binding.dataset_id != self.dataset["id"]:
+        if binding.source_project_id != source_project_id:
             raise _missing()
         with self._transaction() as conn:
             row = conn.execute(
-                "SELECT binding_revision,source_namespace,source_project_id,expires_at,payload_json,payload_sha256 FROM snapshots WHERE id=? AND project_id=?",
-                (str(snapshot_id), str(project_id)),
+                "SELECT scope_revision,source_namespace,source_project_id,expires_at,payload_json,payload_sha256 FROM snapshots WHERE id=? AND source_namespace=? AND source_project_id=?",
+                (str(snapshot_id), binding.source_namespace, source_project_id),
             ).fetchone()
         if row is None or row[:3] != (
             binding.revision,
@@ -275,9 +260,7 @@ class SnapshotStore:
             raise error("SOURCE_SCHEMA_INVALID")
         try:
             payload = json.loads(row[4])
-            if payload["dataset"] != self.dataset or payload[
-                "binding_fingerprint"
-            ] != _fingerprint(binding):
+            if payload["scope_fingerprint"] != _fingerprint(binding):
                 raise _missing()
             if row[3] <= checked_time(self.clock).isoformat():
                 raise DomainError(
@@ -295,7 +278,8 @@ class SnapshotStore:
                 )
             } | {
                 "snapshot_id": str(snapshot_id),
-                "project_id": str(project_id),
+                "source_namespace": binding.source_namespace,
+                "source_project_id": source_project_id,
                 "items": [_public_row(item) for item in items[offset : offset + limit]],
                 "next_before_id": (
                     str(payload["next_before_id"])

@@ -2,13 +2,16 @@
 
 import argparse
 import json
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
-from uuid import UUID
 
 from manufacturing_platform import build_native_config
-from manufacturing_platform.production_tools.contracts import ProductionQuery
+from manufacturing_platform.production_tools.contracts import (
+    ProductionQuery,
+    SourceScope,
+)
 from manufacturing_platform.production_tools.source import MAX_ATTACHMENT
 from manufacturing_platform.workflow.contracts import DomainError
 
@@ -34,8 +37,7 @@ KINDS = {
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
-    parser.add_argument("--dataset-id", required=True)
-    parser.add_argument("--project", required=True, type=UUID)
+    parser.add_argument("--source-project", required=True)
     parser.add_argument("--transport", choices=tuple(KINDS), required=True)
     parser.add_argument("--kind")
     parser.add_argument("--start")
@@ -43,14 +45,17 @@ def main(argv=None):
     parser.add_argument("--cap", type=int, default=1)
     parser.add_argument("--verified-source-log-id", type=int)
     args = parser.parse_args(argv)
+    if not re.fullmatch(r"[1-9][0-9]{0,19}", args.source_project):
+        parser.error("source project must be a decimal ID of 1 to 20 digits")
     kind = args.kind or KINDS[args.transport][0]
     if kind not in KINDS[args.transport] or not 1 <= args.cap <= 1000:
         parser.error("invalid query kind or capture cap")
     if args.transport == "oss" and (
-        args.verified_source_log_id is None or args.verified_source_log_id < 1
+        args.verified_source_log_id is None
+        or not 1 <= args.verified_source_log_id <= 99999999999999999999
     ):
         parser.error(
-            "OSS requires an approved log ID within the selected project binding"
+            "OSS requires an approved log ID within the selected source project"
         )
     if args.transport != "oss" and args.verified_source_log_id is not None:
         parser.error("log ID is only supported for explicit OSS verification")
@@ -71,11 +76,14 @@ def main(argv=None):
             config = build_native_config(
                 args.config,
                 str(Path(directory) / "snapshot.db"),
-                {"id": args.dataset_id, "mode": "test", "label": "Native verification"},
             )
-            binding = config.bindings.get(args.project)
-            if binding is None or binding.dataset_id != args.dataset_id:
-                raise ValueError("unbound project")
+            binding = SourceScope(
+                config.source_namespace,
+                args.source_project,
+                config.revision,
+                config.object_prefixes.get(args.source_project, ""),
+            )
+            config.source.project(args.source_project)
             if args.transport == "oss":
                 if args.start or args.end:
                     raise ValueError("unexpected time range")

@@ -215,15 +215,14 @@ def _object_options(options):
     return options
 
 
-def build_native_config(config_path: str, snapshot_path: str, dataset: dict[str, str]):
+def build_native_config(config_path: str, snapshot_path: str):
     """Load private trusted JSON. Raw credentials remain inside native readers only."""
     import json
     import os
     import stat
     from datetime import UTC, datetime
-    from uuid import UUID
 
-    from .contracts import ProductionToolsConfig, SourceBinding
+    from .contracts import ProductionToolsConfig
     from .source import NativeProductionSource
 
     descriptor = None
@@ -243,37 +242,19 @@ def build_native_config(config_path: str, snapshot_path: str, dataset: dict[str,
             descriptor = None
             raw = json.load(stream, object_pairs_hook=_no_duplicate_keys)
         if not isinstance(raw, dict) or set(raw) - {
-            "dataset_id",
+            "version",
+            "source_namespace",
+            "revision",
             "mysql",
             "questdb",
             "objects",
-            "bindings",
+            "object_prefixes",
         }:
             raise ValueError()
-        if (
-            not isinstance(dataset, dict)
-            or not isinstance(dataset.get("id"), str)
-            or not dataset["id"]
-            or raw.get("dataset_id") != dataset["id"]
-        ):
+        if type(raw.get("version")) is not int or raw["version"] != 2:
             raise ValueError()
-        if not isinstance(raw.get("bindings"), list):
+        if not isinstance(raw.get("object_prefixes"), dict):
             raise ValueError()  # noqa: TRY004 - Configuration errors share one safe type.
-        bindings = {}
-        for item in raw["bindings"]:
-            if not isinstance(item, dict) or set(item) != {
-                "dataset_id",
-                "project_id",
-                "source_namespace",
-                "source_project_id",
-                "revision",
-                "object_prefix",
-            }:
-                raise ValueError()
-            binding = SourceBinding(**{**item, "project_id": UUID(item["project_id"])})
-            if binding.dataset_id != dataset["id"] or binding.project_id in bindings:
-                raise ValueError()
-            bindings[binding.project_id] = binding
         readers = {}
         for key, allowed, reader_class in [
             ("mysql", MYSQL_KEYS, MySqlReader),
@@ -297,7 +278,13 @@ def build_native_config(config_path: str, snapshot_path: str, dataset: dict[str,
             allowed_object_host=host,
             clock=lambda: datetime.now(UTC),
         )
-        return ProductionToolsConfig(source, bindings, snapshot_path)
+        return ProductionToolsConfig(
+            source,
+            raw["source_namespace"],
+            raw["revision"],
+            raw["object_prefixes"],
+            snapshot_path,
+        )
     except Exception:  # noqa: BLE001 - Sanitize all SDK/private configuration errors.
         raise ValueError("invalid native source configuration") from None
     finally:

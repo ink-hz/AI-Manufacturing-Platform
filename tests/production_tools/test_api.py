@@ -1,16 +1,14 @@
 from dataclasses import replace
 from datetime import UTC, datetime
 from io import BytesIO
-from threading import Event, Thread
 from typing import get_args
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
 from manufacturing_platform.production_tools.contracts import (
     EvidenceObject,
     ProductionToolsConfig,
-    SourceBinding,
     SourceKind,
     SourceResult,
 )
@@ -30,6 +28,17 @@ class FakeSource:
         self.opened = False
         self.size = None
         self.failure = None
+
+    def project(self, source_project_id):
+        return {"id": source_project_id, "name": "Source project"}
+
+    def projects(self, *, before_id=None):
+        return {
+            "items": [{"id": "1", "name": "Source project"}],
+            "limit": 100,
+            "has_more": False,
+            "next_before_id": None,
+        }
 
     def query(self, binding, query):
         self.calls.append((binding, query))
@@ -59,17 +68,14 @@ class FakeSource:
         return EvidenceObject(self.stream, self.size, "untrusted\r\nfilename.html")
 
 
-def configure(workflow, project, source=None, **binding_changes):
+def configure(workflow, project=None, source=None, **scope_changes):
     source = source or FakeSource()
-    scope = replace(
-        SourceBinding(
-            "workflow-test", UUID(project["id"]), "native", "1", "v1", "project/"
-        ),
-        **binding_changes,
-    )
+    prefix = scope_changes.pop("object_prefix", "project/")
     workflow.production_tools = ProductionToolsConfig(
         source,
-        {scope.project_id: scope},
+        "native",
+        scope_changes.pop("revision", "v1"),
+        {"1": prefix} if prefix else {},
         str(workflow.paths.domain.parent / "observations.db"),
     )
     workflow.reopen()
@@ -77,17 +83,18 @@ def configure(workflow, project, source=None, **binding_changes):
 
 
 def url(project, suffix):
-    return f"{BASE}/{project['id']}/production-tools/{suffix}"
+    return f"/api/v1/manufacturing/workflow/production-tools/projects/1/{suffix}"
 
 
-def test_unconfigured_status_is_still_project_scoped(workflow):
+def test_unconfigured_status_is_admin_only(workflow):
     project = workflow.create_project()
     path = url(project, "status")
-    assert workflow.client("outsider").get(path).status_code == 404
+    assert workflow.client("outsider").get(path).status_code == 403
     response = workflow.client().get(path)
     assert response.status_code == 200
     assert response.json() == {
-        "project_id": project["id"],
+        "source_namespace": None,
+        "source_project_id": "1",
         "configured": False,
         "capabilities": {
             kind: {"available": False, "reason": "PRODUCTION_TOOLS_UNCONFIGURED"}
@@ -97,17 +104,17 @@ def test_unconfigured_status_is_still_project_scoped(workflow):
     assert "no-store" in response.headers["cache-control"]
 
 
-def test_configured_reads_and_all_seven_routes_are_protected(workflow):
+def test_configured_source_reads_are_admin_only(workflow):
     project = workflow.create_project()
     workflow.grant(project["id"], "quality", ["quality"])
-    workflow.read_only.add("quality")
+    workflow.read_only.add("admin")
     source = configure(workflow, project)
     with workflow.db() as db:
         before = {
             table: db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             for table in ("test_runs", "quality_releases", "audit_events")
         }
-    status = workflow.client("quality").get(url(project, "status"))
+    status = workflow.client("admin").get(url(project, "status"))
     assert status.json()["configured"] is True
     assert all(
         item == {"available": True, "reason": None}
@@ -126,15 +133,16 @@ def test_configured_reads_and_all_seven_routes_are_protected(workflow):
             workflow.client("outsider")
             .get(url(project, path), params=params)
             .status_code
-            == 404
+            == 403
         )
         assert len(source.calls) == count
-        response = workflow.client("quality").get(url(project, path), params=params)
+        response = workflow.client("admin").get(url(project, path), params=params)
         assert response.status_code == 200, response.text
         page = response.json()
         assert set(page) == {
             "snapshot_id",
-            "project_id",
+            "source_namespace",
+            "source_project_id",
             "source_kind",
             "captured_at",
             "complete",
@@ -151,14 +159,14 @@ def test_configured_reads_and_all_seven_routes_are_protected(workflow):
         }
         assert page["captured_count"] == 1
         snapshot = url(project, f"snapshots/{page['snapshot_id']}")
-        assert workflow.client("outsider").get(snapshot).status_code == 404
-        assert workflow.client("quality").get(snapshot).json() == page
+        assert workflow.client("outsider").get(snapshot).status_code == 403
+        assert workflow.client("admin").get(snapshot).json() == page
     assert (
         workflow.client("outsider").get(url(project, "evidence/1/content")).status_code
-        == 404
+        == 403
     )
     assert not source.opened
-    response = workflow.client("quality").get(url(project, "evidence/1/content"))
+    response = workflow.client("admin").get(url(project, "evidence/1/content"))
     assert response.status_code == 200 and response.content == b"evidence bytes"
     assert response.headers["content-type"] == "application/octet-stream"
     assert response.headers["x-content-type-options"] == "nosniff"
@@ -172,83 +180,45 @@ def test_configured_reads_and_all_seven_routes_are_protected(workflow):
         }
 
 
-def test_snapshot_revocation_rebinding_and_wrong_project(workflow):
+def test_snapshot_admin_downgrade_revision_and_wrong_source_project(workflow):
     project, other = workflow.create_project(), workflow.create_project()
     workflow.grant(project["id"], "quality", ["quality"])
     configure(workflow, project)
-    response = workflow.client("quality").get(url(project, "catalog/software"))
+    response = workflow.client("admin").get(url(project, "catalog/software"))
     sid = response.json()["snapshot_id"]
-    assert workflow.client().get(url(other, f"snapshots/{sid}")).status_code == 404
+    assert (
+        workflow.client()
+        .get(url(other, f"snapshots/{sid}").replace("/projects/1/", "/projects/2/"))
+        .status_code
+        == 404
+    )
     assert (
         workflow.client().get(url(project, f"snapshots/{uuid4()}")).status_code == 404
     )
-    workflow.grant(project["id"], "quality", [], active=False)
+    workflow.configuration_admins.remove("admin")
     assert (
-        workflow.client("quality").get(url(project, f"snapshots/{sid}")).status_code
-        == 404
+        workflow.client("admin").get(url(project, f"snapshots/{sid}")).status_code
+        == 403
     )
     configure(workflow, project, revision="v2")
     assert workflow.client().get(url(project, f"snapshots/{sid}")).status_code == 404
     assert workflow.client().get(url(project, "evidence/2/content")).status_code == 404
 
 
-def test_slow_query_rechecks_live_grants_before_persistence(workflow):
-    project = workflow.create_project()
-    workflow.grant(project["id"], "quality", ["quality"])
-    source = configure(workflow, project)
-    source.pause = lambda: workflow.grant(project["id"], "quality", [], active=False)
-    response = workflow.client("quality").get(url(project, "catalog/software"))
-    assert response.status_code == 404
-    import sqlite3
-
-    with sqlite3.connect(workflow.production_tools.snapshot_path) as db:
-        assert db.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0] == 0
-
-
-def test_metadata_revocation_prevents_object_open(workflow):
-    project = workflow.create_project()
-    workflow.grant(project["id"], "quality", ["quality"])
-    source = configure(workflow, project)
-    paused, resume = Event(), Event()
-
-    def pause():
-        paused.set()
-        assert resume.wait(10)
-
-    source.pause = pause
-    responses = []
-    thread = Thread(
-        target=lambda: responses.append(
-            workflow.client("quality").get(url(project, "evidence/1/content"))
-        )
-    )
-    thread.start()
-    try:
-        assert paused.wait(10)
-        workflow.grant(project["id"], "quality", [], active=False)
-    finally:
-        resume.set()
-        thread.join(10)
-    assert not thread.is_alive()
-    assert responses[0].status_code == 404
+def test_admin_downgrade_denies_next_query_snapshot_and_download(workflow):
+    source = configure(workflow)
+    page = workflow.client("admin").get(url(None, "catalog/software")).json()
+    workflow.configuration_admins.remove("admin")
+    before = list(source.calls)
+    for suffix in (
+        "catalog/software",
+        f"snapshots/{page['snapshot_id']}",
+        "evidence/1/content",
+        "status",
+    ):
+        assert workflow.client("admin").get(url(None, suffix)).status_code == 403
+    assert source.calls == before
     assert not source.opened
-
-
-def test_buffering_revocation_prevents_any_attachment_bytes(workflow):
-    project = workflow.create_project()
-    workflow.grant(project["id"], "quality", ["quality"])
-    source = configure(workflow, project)
-
-    class RevokingStream(BytesIO):
-        def read(self, size=-1):
-            workflow.grant(project["id"], "quality", [], active=False)
-            return super().read(size)
-
-    source.stream = RevokingStream(b"private evidence bytes")
-    response = workflow.client("quality").get(url(project, "evidence/1/content"))
-    assert response.status_code == 404
-    assert b"private evidence bytes" not in response.content
-    assert source.stream.closed
 
 
 @pytest.mark.parametrize(
@@ -295,10 +265,8 @@ def test_failures_capabilities_and_validation_do_not_become_empty_success(workfl
         )
 
 
-@pytest.mark.parametrize("target", ["domain", "authority", "foreign", "wrong_dataset"])
+@pytest.mark.parametrize("target", ["domain", "authority", "foreign"])
 def test_invalid_connector_storage_isolated_from_workflow(workflow, target):
-    from pathlib import Path
-
     project = workflow.create_project()
     source = configure(workflow, project)
     if target in {"domain", "authority"}:
@@ -312,12 +280,7 @@ def test_invalid_connector_storage_isolated_from_workflow(workflow, target):
     elif target == "foreign":
         path = workflow.paths.domain.parent / "foreign.db"
         path.write_bytes(b"untouched foreign file")
-    else:
-        path = Path(workflow.production_tools.snapshot_path)
     config = workflow.production_tools
-    if target == "wrong_dataset":
-        scope = replace(next(iter(config.bindings.values())), dataset_id="other")
-        config = replace(config, bindings={scope.project_id: scope})
     workflow.production_tools = replace(config, snapshot_path=str(path))
     workflow.reopen()
     response = workflow.client().get(url(project, "status"))
@@ -350,29 +313,18 @@ def test_missing_backend_is_reported_without_status_or_query_io(workflow):
     assert response.status_code == 503 and source.calls == []
 
 
-def test_slow_source_binding_change_invalidates_result(workflow):
+def test_slow_source_scope_change_invalidates_result(workflow):
     from manufacturing_platform.production_tools.contracts import ProductionQuery
     from manufacturing_platform.production_tools.service import ProductionToolsService
     from manufacturing_platform.workflow.contracts import Actor
-    from manufacturing_platform.workflow.store import WorkflowStore
 
-    project = workflow.create_project()
-    source = configure(workflow, project)
-    store = WorkflowStore(
-        str(workflow.paths.domain),
-        str(workflow.paths.authority),
-        {"id": "workflow-test", "mode": "test", "label": "Workflow test"},
-    )
+    source = configure(workflow)
     service = ProductionToolsService(
-        store, workflow.production_tools, clock=lambda: datetime.now(UTC)
+        workflow.production_tools, clock=lambda: datetime.now(UTC)
     )
-    binding = next(iter(workflow.production_tools.bindings.values()))
 
     def remap():
-        service.config = replace(
-            service.config,
-            bindings={binding.project_id: replace(binding, revision="v2")},
-        )
+        service.config = replace(service.config, revision="v2")
 
     source.pause = remap
     with pytest.raises(DomainError) as exc:
@@ -383,7 +335,7 @@ def test_slow_source_binding_change_invalidates_result(workflow):
                 configuration_admin=True,
                 read_only=False,
             ),
-            UUID(project["id"]),
+            "1",
             ProductionQuery(kind="software"),
         )
     assert exc.value.status == 404
@@ -414,8 +366,7 @@ def test_large_ids_survive_api_json_and_javascript_keyset_roundtrip(workflow):
     large, maximum = 9007199254740993, 99999999999999999999
     rows = [{"id": n, "projuectid": "1"} for n in range(large + 999, large - 2, -1)]
     source = configure(workflow, workflow.create_project(), native(KeysetReader(rows)))
-    scope = next(iter(workflow.production_tools.bindings.values()))
-    path = f"{BASE}/{scope.project_id}/production-tools/catalog/software_versions"
+    path = url(None, "catalog/software_versions")
     response = workflow.client().get(
         path, params={"parent_id": str(maximum), "before_id": str(maximum)}
     )
@@ -451,13 +402,13 @@ def test_large_ids_survive_api_json_and_javascript_keyset_roundtrip(workflow):
         "parent": str(maximum),
         "before": str(maximum),
     }
-    assert source.mysql.calls[0].params == (1, maximum, maximum, 1001)
+    assert source.mysql.calls[1].params == (1, maximum, maximum, 1001)
     following = workflow.client().get(
         path, params={"parent_id": wire["parent"], "before_id": wire["cursor"]}
     )
     assert following.status_code == 200, following.text
     assert following.json()["items"][0]["id"] == "9007199254740992"
-    assert source.mysql.calls[1].params == (1, large, maximum, 1001)
+    assert source.mysql.calls[3].params == (1, large, maximum, 1001)
     with sqlite3.connect(workflow.production_tools.snapshot_path) as conn:
         captured = [
             json.loads(row[0])
@@ -466,7 +417,7 @@ def test_large_ids_survive_api_json_and_javascript_keyset_roundtrip(workflow):
     assert captured[0]["next_before_id"] == large
     assert captured[0]["filters"]["parent_id"] == maximum
     assert captured[0]["items"][-1]["id"] == large
-    snapshot = f"{BASE}/{scope.project_id}/production-tools/snapshots/{response.json()['snapshot_id']}"
+    snapshot = url(None, f"snapshots/{response.json()['snapshot_id']}")
     assert workflow.client().get(snapshot).json() == response.json()
 
 

@@ -12,7 +12,7 @@ from manufacturing_platform.production_tools.store import SnapshotStore
 from manufacturing_platform.workflow.contracts import DomainError
 
 from .test_queries import NOW, PROJECT, binding, timed
-from .test_snapshots import DATASET, result
+from .test_snapshots import result
 
 
 class KeysetReader:
@@ -22,6 +22,8 @@ class KeysetReader:
 
     def select(self, statement):
         self.calls.append(statement)
+        if statement.name == "source_project":
+            return [{"id": statement.params[0], "name": "Source project"}]
         rows = self.rows
         if "id < %s" in statement.sql:
             cursor_index = statement.sql.split("id < %s")[0].count("%s")
@@ -53,7 +55,7 @@ def test_native_mysql_snapshot_trim_continues_from_actual_retained_prefix(
     assert len(captured.items) == 3
     assert captured.complete is not source_partial
     assert captured.next_before_id == (2 if source_partial else None)
-    store = SnapshotStore(str(tmp_path / "snapshots.db"), DATASET, clock=lambda: NOW)
+    store = SnapshotStore(str(tmp_path / "snapshots.db"), clock=lambda: NOW)
     sid = store.put(binding(), captured)
     page = store.get(PROJECT, sid, binding())
     retained = [str(row["id"]) for row in captured.items[:2]]
@@ -79,7 +81,7 @@ def test_questdb_snapshot_trim_has_no_source_continuation(tmp_path):
         )
     ).query(binding(), timed())
     assert captured.complete and len(captured.items) == 3
-    store = SnapshotStore(str(tmp_path / "snapshots.db"), DATASET, clock=lambda: NOW)
+    store = SnapshotStore(str(tmp_path / "snapshots.db"), clock=lambda: NOW)
     page = store.get(PROJECT, store.put(binding(), captured), binding())
     assert page["captured_count"] == 2
     assert page["truncation_reason"] == "byte_limit"
@@ -98,7 +100,7 @@ def test_snapshot_mysql_trim_rejects_malformed_retained_cursor(tmp_path, bad_id)
         ),
         source_kind="software",
     )
-    store = SnapshotStore(str(tmp_path / "snapshots.db"), DATASET, clock=lambda: NOW)
+    store = SnapshotStore(str(tmp_path / "snapshots.db"), clock=lambda: NOW)
     with pytest.raises(DomainError) as caught:
         store.put(binding(), captured)
     assert caught.value.code == "SOURCE_SCHEMA_INVALID"
@@ -136,7 +138,7 @@ def test_public_projection_is_lossless_without_mutating_canonical_snapshot(tmp_p
         next_before_id=large,
         filters={"parent_id": maximum, "before_id": large},
     )
-    store = SnapshotStore(str(tmp_path / "snapshots.db"), DATASET, clock=lambda: NOW)
+    store = SnapshotStore(str(tmp_path / "snapshots.db"), clock=lambda: NOW)
     sid = store.put(binding(), captured)
     with sqlite3.connect(store.path) as conn:
         raw = conn.execute("SELECT payload_json FROM snapshots").fetchone()[0]
@@ -192,7 +194,7 @@ def test_snapshot_mysql_row_cap_also_uses_retained_boundary(tmp_path):
         truncation_reason="row_limit",
         next_before_id=1,
     )
-    store = SnapshotStore(str(tmp_path / "snapshots.db"), DATASET, clock=lambda: NOW)
+    store = SnapshotStore(str(tmp_path / "snapshots.db"), clock=lambda: NOW)
     page = store.get(PROJECT, store.put(binding(), captured), binding())
     assert page["captured_count"] == 1000
     assert page["next_before_id"] == "2"

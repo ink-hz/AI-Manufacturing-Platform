@@ -19,6 +19,8 @@ class RecordingReader:
 
     def select(self, statement):
         self.calls.append(statement)
+        if statement.name == "source_project":
+            return [{"id": statement.params[0], "name": "Source project"}]
         return self.rows[: statement.max_rows]
 
 

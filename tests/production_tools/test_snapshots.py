@@ -8,21 +8,19 @@ from uuid import uuid4
 import pytest
 
 from manufacturing_platform.production_tools.contracts import (
-    SourceBinding,
     SourceResult,
+    SourceScope,
 )
 from manufacturing_platform.production_tools.store import SnapshotStore
 from manufacturing_platform.workflow.contracts import DomainError
 
-PROJECT = uuid4()
+PROJECT = "1"
 DATASET = {"id": "test", "mode": "test", "label": "Test"}
 NOW = datetime(2026, 11, 10, tzinfo=UTC)
 
 
 def binding(**changes):
-    return replace(
-        SourceBinding("test", PROJECT, "native", "1", "v1", "project/"), **changes
-    )
+    return replace(SourceScope("native", "1", "v1", "project/"), **changes)
 
 
 def result(items=None):
@@ -38,7 +36,7 @@ def result(items=None):
 
 
 def test_snapshot_is_immutable_and_binding_scoped(tmp_path):
-    store = SnapshotStore(str(tmp_path / "observations.db"), DATASET, clock=lambda: NOW)
+    store = SnapshotStore(str(tmp_path / "observations.db"), clock=lambda: NOW)
     scope, rows = binding(), result()
     sid = store.put(scope, rows)
     rows.items[0]["status"] = "2"
@@ -61,10 +59,10 @@ def test_snapshot_is_immutable_and_binding_scoped(tmp_path):
     assert os.stat(store.path).st_mode & 0o077 == 0
 
 
-def test_dataset_expiry_checksum_and_paging(tmp_path):
+def test_expiry_checksum_and_paging(tmp_path):
     now = [NOW]
     path = str(tmp_path / "observations.db")
-    store = SnapshotStore(path, DATASET, clock=lambda: now[0])
+    store = SnapshotStore(path, clock=lambda: now[0])
     sid = store.put(binding(), result([{"sn": str(i)} for i in range(102)]))
     page = store.get(PROJECT, sid, binding(), offset=100, limit=2)
     assert page["items"] == [{"sn": "100"}, {"sn": "101"}]
@@ -73,10 +71,6 @@ def test_dataset_expiry_checksum_and_paging(tmp_path):
         with pytest.raises(DomainError) as exc:
             store.get(PROJECT, sid, binding(), offset=offset, limit=limit)
         assert exc.value.status == 422
-    with pytest.raises((ValueError, DomainError)):
-        SnapshotStore(path, {**DATASET, "id": "other"}, clock=lambda: NOW).get(
-            PROJECT, sid, binding()
-        )
     now[0] += timedelta(hours=24)
     with pytest.raises(DomainError) as exc:
         store.get(PROJECT, sid, binding())
@@ -92,7 +86,7 @@ def test_dataset_expiry_checksum_and_paging(tmp_path):
 
 
 def test_caps_redactions_and_snapshot_quota(tmp_path):
-    store = SnapshotStore(str(tmp_path / "observations.db"), DATASET, clock=lambda: NOW)
+    store = SnapshotStore(str(tmp_path / "observations.db"), clock=lambda: NOW)
     sid = store.put(
         binding(),
         result(
@@ -134,12 +128,12 @@ def test_existing_unknown_file_is_never_adopted(tmp_path):
         conn.execute("CREATE TABLE private(x)")
     original = path.read_bytes()
     with pytest.raises((ValueError, DomainError)):
-        SnapshotStore(str(path), DATASET, clock=lambda: NOW).put(binding(), result())
+        SnapshotStore(str(path), clock=lambda: NOW).put(binding(), result())
     assert path.read_bytes() == original
     empty = tmp_path / "empty.db"
     empty.touch()
     with pytest.raises((ValueError, DomainError)):
-        SnapshotStore(str(empty), DATASET, clock=lambda: NOW).put(binding(), result())
+        SnapshotStore(str(empty), clock=lambda: NOW).put(binding(), result())
 
 
 def test_snapshot_path_validator_rejects_domain_authority_and_legacy_aliases(tmp_path):
@@ -166,20 +160,18 @@ def test_snapshot_path_validator_rejects_domain_authority_and_legacy_aliases(tmp
 
 def test_metadata_is_checked_on_every_open_and_cleanup_is_bounded(tmp_path):
     now = [NOW]
-    store = SnapshotStore(
-        str(tmp_path / "observations.db"), DATASET, clock=lambda: now[0]
-    )
+    store = SnapshotStore(str(tmp_path / "observations.db"), clock=lambda: now[0])
     sid = store.put(binding(), result())
     with sqlite3.connect(store.path) as conn:
-        conn.execute("UPDATE metadata SET dataset_label=?", ("Changed",))
+        conn.execute("UPDATE metadata SET version=?", (1,))
     with pytest.raises(ValueError):
         store.get(PROJECT, sid, binding())
     with sqlite3.connect(store.path) as conn:
-        conn.execute("UPDATE metadata SET dataset_label=?", (DATASET["label"],))
+        conn.execute("UPDATE metadata SET version=?", (2,))
         original = conn.execute("SELECT * FROM snapshots").fetchone()
         for _ in range(150):
             conn.execute(
-                "INSERT INTO snapshots VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO snapshots VALUES (?,?,?,?,?,?,?,?,?)",
                 (str(uuid4()), *original[1:]),
             )
     now[0] += timedelta(hours=25)
@@ -188,22 +180,20 @@ def test_metadata_is_checked_on_every_open_and_cleanup_is_bounded(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0] == 52
 
 
-def test_snapshot_payload_contains_binding_dataset_and_query_provenance(tmp_path):
-    store = SnapshotStore(str(tmp_path / "observations.db"), DATASET, clock=lambda: NOW)
+def test_snapshot_payload_contains_source_scope_and_query_provenance(tmp_path):
+    store = SnapshotStore(str(tmp_path / "observations.db"), clock=lambda: NOW)
     store.put(binding(), result())
     with sqlite3.connect(store.path) as conn:
         payload = json.loads(
             conn.execute("SELECT payload_json FROM snapshots").fetchone()[0]
         )
-        assert payload["dataset"] == DATASET
-        assert payload["query_version"] == 1
-        assert len(payload["binding_fingerprint"]) == 64
+        assert "dataset" not in payload
+        assert payload["query_version"] == 2
+        assert len(payload["scope_fingerprint"]) == 64
 
 
 def test_absolute_snapshot_paths_preserve_uri_special_characters(tmp_path):
-    store = SnapshotStore(
-        str(tmp_path / "observations?#.db"), DATASET, clock=lambda: NOW
-    )
+    store = SnapshotStore(str(tmp_path / "observations?#.db"), clock=lambda: NOW)
     sid = store.put(binding(), result())
     assert store.get(PROJECT, sid, binding())["captured_count"] == 1
 
@@ -221,5 +211,5 @@ def test_existing_database_requires_complete_dedicated_snapshot_schema(tmp_path)
         conn.execute("CREATE TABLE private(x)")
     original = path.read_bytes()
     with pytest.raises(ValueError):
-        SnapshotStore(str(path), DATASET, clock=lambda: NOW)
+        SnapshotStore(str(path), clock=lambda: NOW)
     assert path.read_bytes() == original

@@ -4,15 +4,18 @@ from .api import build_router
 from .production_tools.store import validate_snapshot_path
 from .workflow import WORKFLOW_API_VERSION, build_workflow_router
 
+NATIVE_PRODUCTION_PROTOCOL = 2
 
-def build_native_config(config_path: str, snapshot_path: str, dataset: dict[str, str]):
+
+def build_native_config(config_path: str, snapshot_path: str):
     """Construct optional native readers only when trusted host settings request them."""
     from .production_tools.transports import build_native_config as factory
 
-    return factory(config_path, snapshot_path, dataset)
+    return factory(config_path, snapshot_path)
 
 
 __all__ = [
+    "NATIVE_PRODUCTION_PROTOCOL",
     "WORKFLOW_API_VERSION",
     "build_native_config",
     "build_router",

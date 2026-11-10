@@ -1,44 +1,56 @@
-# Native production tools
+# Native production tools v2
 
-产测管理 reads external observations through native adapters. The host's existing
-session and live project grants authorize every route, including snapshot reads
-and evidence downloads. No source account, grant, bucket or table is created.
-The separate 测试与标定 workflow remains the controlled business workflow.
+产测管理 independently reads source observations. Every HTTP request requires the
+host's current `Actor.configuration_admin=true`; read-only administrators can read.
+Ordinary manufacturing members receive 403 before source I/O and anonymous requests
+receive host-owned 401. A manufacturing project, dataset binding or project grant is
+not required. The separate 测试与标定 workflow retains its controlled business role.
+No observation automatically creates tests, quality releases, inventory or work orders.
 
-## Host configuration
+## Host and private configuration
 
-Use a release containing `build_native_config`, `validate_snapshot_path` and the
-optional `production_tools` workflow keyword. The host permits exactly seven GET
-routes under `/api/v1/manufacturing/workflow/projects/{project_id}/production-tools`:
-`status`, `observations`, `catalog/{kind}`, `evidence`,
-`evidence/{source_log_id}/content`, `statistics`, `snapshots/{snapshot_id}`.
-Older releases return authenticated 503 on missing routes; existing workflow
-routes remain available. Anonymous requests return 401. Unmapped/unauthorized
-projects remain unavailable to outsiders, without source reads.
+The package exports `NATIVE_PRODUCTION_PROTOCOL=2`,
+`build_native_config(config_path, snapshot_path)`, `validate_snapshot_path` and the
+optional `production_tools` workflow-router keyword. The host must verify protocol 2
+before calling the two-argument factory. Exactly nine GET routes are protected under
+`/api/v1/manufacturing/workflow/production-tools`:
+
+- `/status`: configuration capabilities only; it does not check source connectivity.
+- `/projects`: source directory; only `before_id` is accepted.
+- `/projects/{source_project_id}/status`: selected source configuration capabilities.
+- `/projects/{source_project_id}/observations`
+- `/projects/{source_project_id}/catalog/{kind}`
+- `/projects/{source_project_id}/evidence`
+- `/projects/{source_project_id}/evidence/{source_log_id}/content`
+- `/projects/{source_project_id}/statistics`
+- `/projects/{source_project_id}/snapshots/{snapshot_id}`
+
+The former manufacturing-project production routes are removed. Source project and
+log IDs are decimal strings matching `[1-9][0-9]{0,19}`; preserve them as strings in
+browser JSON. Duplicate or unsupported query parameters are rejected.
 
 Trusted process settings:
 
 ```text
 PLATFORM_MANUFACTURING_PRODUCTION_TOOLS_CONFIG_PATH=/absolute/private/native-production.json
-PLATFORM_MANUFACTURING_PRODUCTION_TOOLS_SNAPSHOT_PATH=/absolute/private/production-snapshots.db
+PLATFORM_MANUFACTURING_PRODUCTION_TOOLS_SNAPSHOT_PATH=/absolute/private/production-snapshots-v2.db
 ```
 
-Both paths must be absolute. Keep the secret JSON owned by the host runtime user
-(or root), with mode `0600` or stricter and a private parent directory; symlinks,
-nonregular files, group/world permissions and files over 128 KiB are rejected.
-Snapshot storage must resolve to a separate file from the actual host legacy,
-workflow and authority databases and the secret JSON; hardlink aliases are also
-rejected. Keep snapshot storage and its SQLite sidecars in a private directory.
-The host validates these paths before constructing the native configuration.
-Missing halves or malformed settings disable only this connector. Diagnostics
-use fixed codes, never raw configuration or SDK exceptions.
+Use absolute paths. The secret JSON must be owned by the host runtime user or root,
+mode 0600 or stricter, regular, nonsymlink and at most 128 KiB. Use a private parent
+directory. The host validates that snapshot storage does not alias the private JSON
+or any legacy, workflow or authority database, including hardlinks; router initialization
+also checks workflow and authority paths. Keep SQLite sidecars in the private directory.
+Malformed configuration disables only the optional connector. Diagnostics must never
+contain private settings, endpoints, rows or SDK exceptions.
 
-This structural example uses dummy values only; replace it through the trusted
-secret-management process, never through browser configuration:
+This structural example contains dummy values only:
 
 ```json
 {
-  "dataset_id": "example-dataset",
+  "version": 2,
+  "source_namespace": "orbbec-native-production",
+  "revision": "standalone-v2",
   "mysql": {
     "host": "example.invalid", "port": 3306, "user": "readonly-example",
     "password": "EXAMPLE-ONLY", "database": "example"
@@ -52,101 +64,95 @@ secret-management process, never through browser configuration:
     "access_key_id": "EXAMPLE-ONLY", "access_key_secret": "EXAMPLE-ONLY",
     "allowed_host": "example.invalid"
   },
-  "bindings": [{
-    "dataset_id": "example-dataset",
-    "project_id": "00000000-0000-4000-8000-000000000001",
-    "source_namespace": "example-native", "source_project_id": "10001",
-    "revision": "approved-example-v1", "object_prefix": "logs/10001/"
-  }]
+  "object_prefixes": {"10001": "logs/10001/"}
 }
 ```
 
-Omit unavailable transports. Unknown keys cannot override SQL, timeouts or
-project authorization. Host runtime packaging pins PyMySQL 1.2.4, psycopg 3.3.4
-(cloud) and oss2 2.19.1. SDKs load only when their capability is used. Runtime
-reads this native JSON only; no third-party application's settings, service,
-login token or repository is required.
+Omit unavailable transports. `version`, `source_namespace`, `revision` and
+`object_prefixes` are required; an empty prefix map is allowed. Namespace/revision
+use 1–96 letters, digits, underscores or hyphens. Unknown fields, duplicate JSON
+keys, legacy version 1, `dataset_id`, manufacturing `project_id` and `bindings` are
+rejected. Native SDKs load only when used. No third-party business API is involved.
 
-Before enabling a binding, its owner must approve the exact platform project UUID,
-source project ID, dataset, namespace, revision and object prefix as a real mapping.
-Never infer mappings from matching display names. Verify that the database account
-supports scoped SELECT and MySQL `START TRANSACTION READ ONLY`; unsupported controls
-fail closed. Confirm QuestDB PGWire compatibility, timestamps, columns and status
-values through bounded queries. Check OSS account permissions and the exact object
-prefix before enabling controlled download. Account creation and grants are an
-operator responsibility outside this implementation.
+Select a real source project from MySQL `projuectlists`, with `del=0`, columns `id,name`,
+ordered by descending ID. Each directory request reads at most 101 rows and returns
+100 with `has_more`/`next_before_id`; the next page is an explicit user action. Do not
+loop through the whole directory automatically. Unknown/deleted source projects
+return 404 before querying their observations or resolving evidence. Source failure
+returns 503, never a fabricated empty directory. MySQL SELECT permission and read-only
+transaction support are required. Never infer an object prefix from the project name.
+Projects without a confirmed prefix can query records but cannot download objects.
 
 ## Bounded verification
 
-Run from the manufacturing release with its dependencies available. These explicit
-commands print only transport, query kind, success, elapsed milliseconds, row count,
-completeness and sanitized error code. They never print rows, credentials, URLs,
-SQL parameters or source exceptions. No arbitrary SQL, table or URL flag exists.
+Run only under explicit source-read authorization. Commands print transport, query
+kind, success, elapsed milliseconds, row count, completeness and a sanitized code.
+They never print source rows, credentials, URLs, SQL parameters or exceptions.
 
 ```bash
 PYTHONPATH=src python scripts/verify_production_tools.py \
-  --config /absolute/private/native-production.json --dataset-id example-dataset \
-  --project 00000000-0000-4000-8000-000000000001 --transport mysql
+  --config /absolute/private/native-production.json \
+  --source-project 10001 --transport mysql
 PYTHONPATH=src python scripts/verify_production_tools.py \
-  --config /absolute/private/native-production.json --dataset-id example-dataset \
-  --project 00000000-0000-4000-8000-000000000001 --transport questdb \
+  --config /absolute/private/native-production.json \
+  --source-project 10001 --transport questdb \
   --start 2026-11-09T00:00:00Z --end 2026-11-10T00:00:00Z
 ```
 
-The default capture cap is **1**, implemented in the SELECT limit/fetch bound
-with one additional sentinel; it does not fetch 1000 rows and hide them. An explicit
-trusted CLI `--cap` may be 1–1000. HTTP does not expose a cap override. `--kind` is
-restricted to that transport's fixed catalog/observation/aggregate kinds. Timed
-queries require timezone-aware start/end, maximum 31 days; prefer a one-day window.
-A statistics query returns one aggregate row and declares `consistency=single_query`;
-this does not promise cross-source atomicity. A successful zero-row query establishes
-connectivity/execution, not historical business evidence. A TCP handshake is insufficient.
+The CLI checks that the selected source project is active, then defaults to a one-row
+capture plus one sentinel. An explicit `--cap` may be 1–1000; HTTP has no cap override.
+`--kind` accepts only the transport's fixed catalog, observation or aggregate kinds.
+Timed queries require timezone-aware start/end and a range of at most 31 days.
+OSS additionally requires `--transport oss --verified-source-log-id 1`, an approved
+project prefix and a metadata row in that source project. Content is limited to 10 MiB.
+The CLI does not exercise platform authorization; protected HTTP acceptance additionally
+requires actual current administrator identity. A successful empty query proves query
+execution, not historical business evidence; a TCP handshake alone is insufficient.
 
-OSS is opt-in via `--transport oss --verified-source-log-id 1`, only after that exact
-log ID and prefix have been approved in the selected binding. It resolves scoped
-metadata and validates the host/prefix before one bounded object read (10 MiB maximum).
-No object upload or initialization is reachable. If OSS credentials or prefix cannot
-be verified, mark controlled download unverified/unavailable; other transports can
-still be used. This CLI does not exercise platform session authorization; protected
-HTTP acceptance must additionally use actual project grants and current membership.
+## Snapshot semantics and limits
 
-## Semantics, retention and rollback
+Observations preserve allowed nulls, duplicates and numeric precision, redact source
+URLs and dynamic secrets, and report truncation. Captures retain at most 1000 rows and
+2 MiB, pages at most 100 rows. There are at most 100 live snapshots per source namespace
+and project, 24-hour retention and bounded cleanup of 100 expired entries per capture.
+Source timeouts remain five seconds to connect and ten seconds to read/execute, with
+four concurrent source operations per worker and no automatic retries. Partial captures
+retain `complete=false` and their row/byte reason; time-series partial results have no
+invented continuation cursor. MySQL keysets continue from the actual retained last ID.
 
-Observation captures preserve allowed nulls and duplicates, redact dynamic secret
-fields and source URLs, and record truncation. Snapshots capture at most 1000 rows
-plus a sentinel, total payload at most 2 MiB; page size is at most 100. Partial captures
-must retain `complete=false` and their row/byte limit reason. A source failure is an
-unavailable capability/error, never an empty successful result. Queries use five-second
-connect and ten-second read/statement timeouts, at most four concurrent source operations
-per worker, with no automatic retries. External observations never create TestRun,
-quality release, calibration, work-order or completion facts.
+The independent schema is version 2. Its payload and metadata contain source namespace,
+source project and a fingerprint of namespace/project/revision/object prefix; they do
+not contain a manufacturing dataset or project UUID. Version 1 caches are rejected
+without migration or modification. Use a separate new v2 file. An administrator can
+read a valid snapshot while the source is offline; changed scope fingerprints return
+404, expiry returns 410 and a new request after administrator downgrade returns 403.
+All responses use `Cache-Control: private, no-store`.
 
 Statistics describe records, distinct nonempty SN and PASS-record/all-record ratio;
-they do not measure FPY, OEE or completed goods. Five-minute activity is not heartbeat.
-Snapshots expire after 24 hours; expired rows are pruned in bounded batches during new captures. Keep no
-longer retention through backups/exports unless separately approved. Live grant
-revocation and changed bindings invalidate access, including retained snapshots.
+they do not claim FPY, OEE or finished-goods quantities. `consistency=single_query`
+describes one aggregate query, not cross-source atomicity. Activity is not heartbeat.
 
-Rollback removes both native environment settings and restarts the owned host process.
-The status endpoint then reports unconfigured, with unrelated workflow intact. Retain or
-remove the isolated snapshot file according to the approved retention process; never
-point it at a workflow/authority/legacy file. No source rollback or schema migration exists.
+Rollback removes both optional native settings and restarts the owned host process;
+status then reports unconfigured while unrelated workflow remains available. Retain
+or remove the separate snapshot file according to the retention process. Never point
+it at any business database. No manufacturing schema24 migration, demo cleanup or
+source rollback is part of this feature.
 
 ## Acceptance boundaries
 
-The synthetic socket regression runs a separate local uvicorn process, real host
-identity middleware/authorization and real project grant/revoke commands, with explicitly
-synthetic session provider and native transport rows. It checks duplicates, snapshot
-revocation, unauthorized no-I/O, unavailable isolation and download headers. Run it with
-`TEST_PLATFORM_SOURCE_ROOT` selecting the isolated host checkout.
+The socket regression starts a separate loopback uvicorn process with real host identity
+middleware and authorization, a synthetic session provider and fake native transports.
+It starts with zero manufacturing projects, exercises all nine routes, changes the
+provider's current owner role to member between requests and verifies snapshot/download
+403 with zero additional source I/O. Set `TEST_PLATFORM_SOURCE_ROOT` to the isolated host
+checkout containing the nine-route v2 whitelist before running it.
 
-Live adapters/protected routes require a separate credentialed acceptance report; do
-not describe synthetic tests as live source validation. Root/controller owns that phase.
-Browser acceptance belongs to the user: open **产测管理**, select an approved mapped
-project, execute an SN query, inspect catalog versions/review-order wording, download
-one permitted evidence item if available, review record statistics, reopen a snapshot,
-and confirm no quality/work-order actions appeared. Check the explicit unavailable
-state. Browser and production deployment are not performed by this task.
+Credentialed source and protected HTTP acceptance are separate operator-owned work;
+synthetic tests do not prove live connectivity. Browser acceptance belongs to the user:
+open 产测管理 as an administrator, select a real source project, query an SN, inspect
+catalog versions/review orders, download allowed evidence, inspect record statistics,
+and reopen a snapshot. Check explicit unavailable states and project-switch stale
+response handling. No manufacturing project should need to be created or mapped.
 
 ## COPY-only production SDK release profile
 
@@ -214,8 +220,8 @@ configuration is at most 128 KiB. Release checks use metadata and a configuratio
 hash; they do not parse or print credentials. Snapshot inode isolation from the
 configuration and the three manufacturing databases is mandatory.
 
-Without approved production project bindings, omit both native path objects and
-publish the SDK/code with the source entry closed. Local fixture UUIDs and
-synthetic mappings must never enter the production configuration. The operator
+Without approved native source configuration, omit both native path objects and
+publish the SDK/code with the source entry closed. Synthetic endpoints and source
+IDs must never enter the production configuration. The operator
 owns actual-image acceptance and deployment; local helper tests do not establish
 live source connectivity or browser acceptance.

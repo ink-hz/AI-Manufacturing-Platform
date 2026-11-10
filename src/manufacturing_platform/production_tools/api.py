@@ -1,4 +1,4 @@
-"""Seven synchronous GET handlers on the workflow's protected route class."""
+"""Nine synchronous GET handlers on the workflow's protected route class."""
 
 import re
 from collections.abc import Callable
@@ -14,7 +14,9 @@ from .contracts import ProductionQuery
 from .service import ProductionToolsService
 from .source import MAX_ATTACHMENT, error
 
-PREFIX = "/projects/{project_id}/production-tools"
+BASE = "/production-tools"
+PREFIX = BASE + "/projects/{source_project_id}"
+SourceId = Annotated[str, Path(pattern=r"^[1-9][0-9]{0,19}$")]
 
 
 def _query(request, kind, allowed):
@@ -42,19 +44,37 @@ def register_production_tools_routes(
     service: ProductionToolsService,
     actor: Callable[[Request], Actor],
 ) -> None:
-    @router.get(PREFIX + "/status")
-    def status(project_id: UUID, request: Request):
+    @router.get(BASE + "/status")
+    def global_status(request: Request):
         if request.query_params:
             raise error("SOURCE_INVALID_QUERY", 422)
-        return service.status(actor(request), project_id)
+        return service.status(actor(request))
+
+    @router.get(BASE + "/projects")
+    def projects(request: Request):
+        if set(request.query_params) - {"before_id"} or any(
+            len(request.query_params.getlist(key)) != 1 for key in request.query_params
+        ):
+            raise error("SOURCE_INVALID_QUERY", 422)
+        return service.projects(
+            actor(request), before_id=request.query_params.get("before_id")
+        )
+
+    @router.get(PREFIX + "/status")
+    def status(source_project_id: SourceId, request: Request):
+        if request.query_params:
+            raise error("SOURCE_INVALID_QUERY", 422)
+        return service.status(actor(request), source_project_id)
 
     @router.get(PREFIX + "/observations")
     def observations(
-        project_id: UUID, request: Request, kind: Literal["production", "stopover"]
+        source_project_id: SourceId,
+        request: Request,
+        kind: Literal["production", "stopover"],
     ):
         return service.query(
             actor(request),
-            project_id,
+            source_project_id,
             _query(
                 request,
                 kind,
@@ -64,7 +84,7 @@ def register_production_tools_routes(
 
     @router.get(PREFIX + "/catalog/{kind}")
     def catalog(
-        project_id: UUID,
+        source_project_id: SourceId,
         kind: Literal[
             "software",
             "software_versions",
@@ -76,15 +96,15 @@ def register_production_tools_routes(
     ):
         return service.query(
             actor(request),
-            project_id,
+            source_project_id,
             _query(request, kind, {"parent_id", "before_id"}),
         )
 
     @router.get(PREFIX + "/evidence")
-    def evidence(project_id: UUID, request: Request):
+    def evidence(source_project_id: SourceId, request: Request):
         return service.query(
             actor(request),
-            project_id,
+            source_project_id,
             _query(
                 request, "evidence", {"start", "end", "sn", "order_id", "before_id"}
             ),
@@ -92,11 +112,13 @@ def register_production_tools_routes(
 
     @router.get(PREFIX + "/statistics")
     def statistics(
-        project_id: UUID, request: Request, kind: Literal["production", "stopover"]
+        source_project_id: SourceId,
+        request: Request,
+        kind: Literal["production", "stopover"],
     ):
         return service.query(
             actor(request),
-            project_id,
+            source_project_id,
             _query(
                 request,
                 kind + "_statistics",
@@ -106,7 +128,7 @@ def register_production_tools_routes(
 
     @router.get(PREFIX + "/snapshots/{snapshot_id}")
     def snapshot(
-        project_id: UUID,
+        source_project_id: SourceId,
         snapshot_id: UUID,
         request: Request,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -117,20 +139,20 @@ def register_production_tools_routes(
         ):
             raise error("SOURCE_INVALID_QUERY", 422)
         return service.snapshot(
-            actor(request), project_id, snapshot_id, offset=offset, limit=limit
+            actor(request), source_project_id, snapshot_id, offset=offset, limit=limit
         )
 
     @router.get(PREFIX + "/evidence/{source_log_id}/content")
     def content(
-        project_id: UUID,
-        source_log_id: Annotated[int, Path(ge=1, le=99999999999999999999)],
+        source_project_id: SourceId,
+        source_log_id: SourceId,
         request: Request,
     ):
         if request.query_params:
             raise error("SOURCE_INVALID_QUERY", 422)
         current_actor = actor(request)
-        binding = service._authorized_binding(current_actor, project_id)
-        opened = service.evidence(current_actor, project_id, source_log_id)
+        binding = service._authorized_scope(current_actor, source_project_id)
+        opened = service.evidence(current_actor, source_project_id, source_log_id)
         try:
             if opened.size is not None and (
                 type(opened.size) is not int or not 0 <= opened.size <= MAX_ATTACHMENT
@@ -158,7 +180,7 @@ def register_production_tools_routes(
                 opened.stream.close()
             except Exception:  # noqa: BLE001, S110 - SDK cleanup must not expose private errors.
                 pass
-        service._reauthorize(current_actor, project_id, binding)
+        service._reauthorize(current_actor, source_project_id, binding)
         return Response(
             bytes(data),
             media_type="application/octet-stream",

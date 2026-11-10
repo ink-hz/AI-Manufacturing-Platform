@@ -200,7 +200,9 @@ from manufacturing_platform.production_tools.transports import build_native_conf
 
 def config_payload():
     return {
-        "dataset_id": "test",
+        "version": 2,
+        "source_namespace": "fixture",
+        "revision": "v1",
         "mysql": {
             "host": "fixture",
             "port": 3306,
@@ -208,16 +210,7 @@ def config_payload():
             "password": "SECRET",
             "database": "fixture",
         },
-        "bindings": [
-            {
-                "dataset_id": "test",
-                "project_id": str(binding().project_id),
-                "source_namespace": "fixture",
-                "source_project_id": "10001",
-                "revision": "v1",
-                "object_prefix": "logs/10001/",
-            }
-        ],
+        "object_prefixes": {"10001": "logs/10001/"},
     }
 
 
@@ -232,9 +225,9 @@ def test_factory_builds_standalone_config_without_connecting(tmp_path):
     config = build_native_config(
         str(config_file(tmp_path)),
         str(tmp_path / "snapshots.sqlite"),
-        {"id": "test", "mode": "live", "label": "test"},
     )
-    assert config.bindings[binding().project_id] == binding()
+    assert config.source_namespace == "fixture"
+    assert config.object_prefixes == {"10001": "logs/10001/"}
     assert config.source.capabilities == frozenset(
         {
             "software",
@@ -268,19 +261,19 @@ def test_factory_rejects_bad_config_without_secret_errors(tmp_path, change):
     if change == "dataset":
         payload["dataset_id"] = "other"
     elif change == "duplicate":
-        payload["bindings"] *= 2
+        payload["version"] = 1
     elif change == "mapping_dataset":
-        payload["bindings"][0]["dataset_id"] = "other"
+        payload["bindings"] = []
     elif change == "unknown":
         payload["bridge_url"] = "SECRET"
     elif change == "collision":
         payload["mysql"]["client_flag"] = 1
     elif change == "prefix":
-        payload["bindings"][0]["object_prefix"] = "../SECRET/"
+        payload["object_prefixes"]["10001"] = "../SECRET/"
     elif change == "revision":
-        payload["bindings"][0]["revision"] = ""
+        payload["revision"] = ""
     elif change == "project":
-        payload["bindings"][0]["project_id"] = "SECRET"
+        payload["object_prefixes"] = {"SECRET": "logs/"}
     elif change == "objects":
         payload["objects"] = {"endpoint": "https://SECRET@host"}
     elif change == "password_type":
@@ -289,7 +282,6 @@ def test_factory_rejects_bad_config_without_secret_errors(tmp_path, change):
         build_native_config(
             str(config_file(tmp_path, payload)),
             str(tmp_path / "snapshots.sqlite"),
-            {"id": "test"},
         )
     assert "SECRET" not in str(error.value)
 
@@ -299,7 +291,7 @@ def test_factory_requires_private_regular_owned_absolute_file(tmp_path, mode):
     path = config_file(tmp_path)
     path.chmod(mode)
     with pytest.raises(ValueError):
-        build_native_config(str(path), str(tmp_path / "snapshot"), {"id": "test"})
+        build_native_config(str(path), str(tmp_path / "snapshot"))
 
 
 def test_factory_rejects_symlink_relative_and_duplicate_json_keys(tmp_path):
@@ -308,10 +300,10 @@ def test_factory_rejects_symlink_relative_and_duplicate_json_keys(tmp_path):
     link.symlink_to(path)
     for candidate in [str(link), "relative.json", str(tmp_path)]:
         with pytest.raises(ValueError):
-            build_native_config(candidate, str(tmp_path / "snapshot"), {"id": "test"})
+            build_native_config(candidate, str(tmp_path / "snapshot"))
     path.write_text('{"dataset_id":"test","dataset_id":"test","bindings":[]}')
     with pytest.raises(ValueError):
-        build_native_config(str(path), str(tmp_path / "snapshot"), {"id": "test"})
+        build_native_config(str(path), str(tmp_path / "snapshot"))
 
 
 @pytest.mark.parametrize("sdk", ["pymysql", "psycopg", "oss2"])
@@ -366,3 +358,62 @@ def test_mysql_cursor_setup_failure_is_sanitized_and_closed():
             compile_query(binding(), ProductionQuery(kind="software"))
         )
     assert connection.closed and connection.rolled and "SECRET" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("version", 1),
+        ("version", True),
+        ("version", 2.0),
+        ("source_namespace", ""),
+        ("source_namespace", "x" * 97),
+        ("source_namespace", "bad/name"),
+        ("revision", "bad revision"),
+        ("revision", "x" * 97),
+        ("object_prefixes", []),
+        ("object_prefixes", {"01": "logs/"}),
+        ("object_prefixes", {"100000000000000000000": "logs/"}),
+        ("object_prefixes", {"1": ""}),
+        ("project_id", "00000000-0000-4000-8000-000000000001"),
+    ],
+)
+def test_strict_v2_config_rejects_legacy_or_ambiguous_values(tmp_path, key, value):
+    payload = config_payload()
+    payload[key] = value
+    with pytest.raises(ValueError, match="invalid native source configuration"):
+        build_native_config(
+            str(config_file(tmp_path, payload)), str(tmp_path / "snapshots.db")
+        )
+
+
+def test_public_protocol_and_two_argument_factory():
+    import inspect
+
+    import manufacturing_platform
+
+    assert manufacturing_platform.NATIVE_PRODUCTION_PROTOCOL == 2
+    assert list(
+        inspect.signature(manufacturing_platform.build_native_config).parameters
+    ) == ["config_path", "snapshot_path"]
+
+
+def test_empty_prefix_map_and_optional_transports_are_valid(tmp_path):
+    config = build_native_config(
+        str(
+            config_file(
+                tmp_path,
+                {
+                    "version": 2,
+                    "source_namespace": "native",
+                    "revision": "v2",
+                    "object_prefixes": {},
+                },
+            )
+        ),
+        str(tmp_path / "snapshots.db"),
+    )
+    assert config.object_prefixes == {}
+    assert config.source.capabilities == frozenset()
+    with pytest.raises(TypeError):
+        config.object_prefixes["1"] = "logs/"

@@ -1,11 +1,10 @@
-"""Public contracts for bounded, project-scoped external observations."""
+"""Public contracts for bounded, source-scoped external observations."""
 
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, BinaryIO, Literal, Protocol
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -80,28 +79,32 @@ def canonical_prefix(value: str) -> bool:
 
 
 @dataclass(frozen=True)
-class SourceBinding:
-    dataset_id: str
-    project_id: UUID
+class SourceScope:
     source_namespace: str
     source_project_id: str
     revision: str
     object_prefix: str
 
     def __post_init__(self):
-        if not all(
-            isinstance(v, str) and v.strip()
-            for v in (self.dataset_id, self.source_namespace, self.revision)
-        ):
-            raise ValueError("invalid source binding")
-        if (
-            not isinstance(self.project_id, UUID)
-            or not isinstance(self.source_project_id, str)
-            or not re.fullmatch(r"[1-9][0-9]{0,19}", self.source_project_id)
-        ):
-            raise ValueError("invalid source binding")
+        if not all(valid_identifier(v) for v in (self.source_namespace, self.revision)):
+            raise ValueError("invalid source scope")
+        if not valid_source_id(self.source_project_id):
+            raise ValueError("invalid source project id")
         if self.object_prefix != "" and not canonical_prefix(self.object_prefix):
             raise ValueError("invalid object prefix")
+
+
+def valid_source_id(value):
+    return (
+        isinstance(value, str) and re.fullmatch(r"[1-9][0-9]{0,19}", value) is not None
+    )
+
+
+def valid_identifier(value):
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9_-]{1,96}", value) is not None
+    )
 
 
 @dataclass(frozen=True)
@@ -143,10 +146,12 @@ class SourceResult:
 class ProductionSource(Protocol):
     @property
     def capabilities(self) -> frozenset[str]: ...
-    def query(self, binding: SourceBinding, query: ProductionQuery) -> SourceResult: ...
+    def projects(self, *, before_id: str | None = None) -> dict: ...
+    def project(self, source_project_id: str) -> dict: ...
+    def query(self, binding: SourceScope, query: ProductionQuery) -> SourceResult: ...
     def evidence(
         self,
-        binding: SourceBinding,
+        binding: SourceScope,
         source_log_id: int,
         *,
         before_open: Callable[[], None] | None = None,
@@ -156,17 +161,22 @@ class ProductionSource(Protocol):
 @dataclass(frozen=True)
 class ProductionToolsConfig:
     source: ProductionSource
-    bindings: Mapping[UUID, SourceBinding]
+    source_namespace: str
+    revision: str
+    object_prefixes: Mapping[str, str]
     snapshot_path: str
 
     def __post_init__(self):
         from types import MappingProxyType
 
-        copied = dict(self.bindings)
-        if any(key != value.project_id for key, value in copied.items()):
-            raise ValueError("binding key mismatch")
-        if len({value.dataset_id for value in copied.values()}) > 1:
-            raise ValueError("binding dataset mismatch")
+        if not all(valid_identifier(v) for v in (self.source_namespace, self.revision)):
+            raise ValueError("invalid source configuration")
+        copied = dict(self.object_prefixes)
+        if any(
+            not valid_source_id(key) or not canonical_prefix(value)
+            for key, value in copied.items()
+        ):
+            raise ValueError("invalid object prefixes")
         if not isinstance(self.snapshot_path, str) or not self.snapshot_path.strip():
             raise ValueError("snapshot path required")
-        object.__setattr__(self, "bindings", MappingProxyType(copied))
+        object.__setattr__(self, "object_prefixes", MappingProxyType(copied))

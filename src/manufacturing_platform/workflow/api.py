@@ -116,10 +116,17 @@ def build_workflow_router(
     from ..production_tools.service import ProductionToolsService
 
     try:
-        production_service = ProductionToolsService(store, production_tools, clock=store.business_clock)
+        if production_tools is not None:
+            from ..production_tools.store import validate_snapshot_path
+            validate_snapshot_path(
+                production_tools.snapshot_path, (database_path, authority_database_path)
+            )
+        production_service = ProductionToolsService(
+            production_tools, clock=store.business_clock
+        )
     except (sqlite3.Error, OSError, ValueError):
         # Optional connector misconfiguration must not disable workflow routes.
-        production_service = ProductionToolsService(store, None, clock=store.business_clock)
+        production_service = ProductionToolsService(None, clock=store.business_clock)
     register_production_tools_routes(router, production_service, actor)
 
     async def parse(request, model):

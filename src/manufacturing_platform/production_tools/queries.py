@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from itertools import combinations
 
-from .contracts import ProductionQuery, ReadStatement, SourceBinding
+from .contracts import ProductionQuery, ReadStatement, SourceScope, valid_source_id
 
 CATALOG_TABLES = {
     "software": "softwarelists",
@@ -73,7 +73,7 @@ def _ceil_epoch_milliseconds(date: datetime) -> int:
 
 
 def compile_query(
-    binding: SourceBinding, query: ProductionQuery, *, cap: int = 1000
+    binding: SourceScope, query: ProductionQuery, *, cap: int = 1000
 ) -> ReadStatement:
     if type(cap) is not int or not 1 <= cap <= 1000:
         raise ValueError("invalid capture cap")
@@ -107,7 +107,7 @@ def compile_query(
     )
 
 
-def evidence_statement(binding: SourceBinding, source_log_id: int) -> ReadStatement:
+def evidence_statement(binding: SourceScope, source_log_id: int) -> ReadStatement:
     if type(source_log_id) is not int or source_log_id < 1:
         raise ValueError("invalid source log id")
     return ReadStatement(
@@ -119,9 +119,50 @@ def evidence_statement(binding: SourceBinding, source_log_id: int) -> ReadStatem
     )
 
 
+DIRECTORY_SQL = {
+    "source_projects": "SELECT id, name FROM projuectlists WHERE del = 0 ORDER BY id DESC LIMIT %s",
+    "source_projects_before": "SELECT id, name FROM projuectlists WHERE del = 0 AND id < %s ORDER BY id DESC LIMIT %s",
+    "source_project": "SELECT id, name FROM projuectlists WHERE del = 0 AND id = %s LIMIT %s",
+}
+
+
+def directory_statement(*, before_id=None, source_project_id=None):
+    value = source_project_id if source_project_id is not None else before_id
+    if value is not None and not valid_source_id(value):
+        raise ValueError("invalid source project id")
+    name = (
+        "source_project"
+        if source_project_id is not None
+        else "source_projects_before"
+        if before_id is not None
+        else "source_projects"
+    )
+    cap = 2 if source_project_id is not None else 101
+    return ReadStatement(
+        name,
+        "mysql",
+        DIRECTORY_SQL[name],
+        (int(value), cap) if value is not None else (cap,),
+        cap,
+    )
+
+
 def validate_statement(statement: ReadStatement) -> None:
     """Validate registry name, backend, exact SQL shape and bounded result count before I/O."""
-    if statement.name == "evidence_object":
+    if statement.name in DIRECTORY_SQL:
+        cap = 2 if statement.name == "source_project" else 101
+        valid = (
+            statement.backend == "mysql"
+            and statement.sql == DIRECTORY_SQL[statement.name]
+            and statement.max_rows == cap
+            and len(statement.params) == statement.sql.count("%s")
+            and statement.params[-1] == cap
+            and all(
+                type(value) is int and 1 <= value <= 99999999999999999999
+                for value in statement.params
+            )
+        )
+    elif statement.name == "evidence_object":
         valid = (
             statement.backend == "mysql"
             and statement.sql == EVIDENCE_SQL

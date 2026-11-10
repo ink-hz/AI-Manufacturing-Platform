@@ -1,4 +1,4 @@
-"""Real loopback HTTP; synthetic sessions/transports, real host policy and grants."""
+"""Real loopback HTTP; synthetic sessions/transports, real host policy and current administrator role."""
 
 import json
 import os
@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from threading import Event
 from time import monotonic
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import httpx
 import pytest
@@ -20,7 +20,7 @@ OUTSIDER = UUID("00000000-0000-4000-8000-000000000008")
 PARAMS = {"start": "2026-11-09T00:00:00Z", "end": "2026-11-10T00:00:00Z"}
 
 
-def serve(directory, project_id, port, configured):
+def serve(directory, port, configured):
     """Child process fixture. No real provider, SDK, or external source is contacted."""
     from datetime import UTC, datetime
     from io import BytesIO
@@ -36,7 +36,6 @@ def serve(directory, project_id, port, configured):
     from manufacturing_platform.production_tools.contracts import (
         EvidenceObject,
         ProductionToolsConfig,
-        SourceBinding,
     )
     from manufacturing_platform.production_tools.source import NativeProductionSource
 
@@ -56,6 +55,8 @@ def serve(directory, project_id, port, configured):
             }
             if token in contexts:
                 uid, role, stale = contexts[token]
+                if token == "owner" and (directory / "admin-downgraded").exists():
+                    role = Role.MEMBER
                 return AuthContext(uid, role, UUID(int=123), stale), "socket-csrf"
             return None
 
@@ -71,6 +72,8 @@ def serve(directory, project_id, port, configured):
             history = json.loads(calls.read_text())
             history.append(statement.name)
             calls.write_text(json.dumps(history))
+            if statement.name.startswith("source_project"):
+                return [{"id": 10001, "name": "Synthetic source"}]
             if statement.name.endswith("_statistics"):
                 return [
                     {
@@ -114,12 +117,13 @@ def serve(directory, project_id, port, configured):
         allowed_object_host="example.invalid",
         clock=lambda: datetime.now(UTC),
     )
-    binding = SourceBinding(
-        "workflow-test", UUID(project_id), "synthetic", "10001", "v1", "logs/10001/"
-    )
     config = (
         ProductionToolsConfig(
-            source, {binding.project_id: binding}, str(directory / "snapshots.db")
+            source,
+            "synthetic",
+            "v2",
+            {"10001": "logs/10001/"},
+            str(directory / "snapshots.db"),
         )
         if configured
         else None
@@ -148,7 +152,7 @@ def serve(directory, project_id, port, configured):
 
 
 class SocketHost:
-    def __init__(self, directory, project_id, configured):
+    def __init__(self, directory, configured):
         platform = os.environ.get("TEST_PLATFORM_SOURCE_ROOT")
         if not platform:
             pytest.fail(
@@ -173,7 +177,6 @@ class SocketHost:
                 sys.executable,
                 str(Path(__file__).resolve()),
                 str(directory),
-                project_id,
                 str(port),
                 str(int(configured)),
             ],
@@ -217,44 +220,39 @@ class SocketHost:
         self.log.close()
 
 
-def test_real_socket_native_reads_live_grants_and_unconfigured_isolation(workflow):
-    # Setup uses real workflow project creation; all acceptance reads and grant
-    # transitions below use HTTP to a separate uvicorn process, never TestClient.
-    project = workflow.create_project()
-    pid = project["id"]
+def test_real_socket_native_reads_current_admin_and_unconfigured_isolation(workflow):
+    # Real host middleware resolves synthetic session roles on every HTTP request.
+    # The role marker models an actual owner-to-member transition in the provider.
     directory = workflow.paths.domain.parent
-    host = SocketHost(directory, pid, True)
-    tools = f"/projects/{pid}/production-tools"
+    host = SocketHost(directory, True)
+    tools = "/production-tools/projects/10001"
+    history = lambda: json.loads((directory / "calls.json").read_text())
     try:
-        assert host.request("GET", tools + "/status", actor=None).status_code == 401
-        assert (
-            host.request("GET", tools + "/status", actor="outsider").status_code == 404
-        )
-        assert host.request("GET", tools + "/status").json()["configured"] is True
-
-        def grant(active):
-            version = host.request("GET", f"/projects/{pid}").json()["version"]
-            result = host.request(
-                "PUT",
-                f"/projects/{pid}/members/{MEMBER}",
-                json={
-                    "operation_id": str(uuid4()),
-                    "expected_version": version,
-                    "scope": {"kind": "project", "project_id": pid},
-                    "roles": ["quality"] if active else [],
-                    "qualifications": [],
-                    "active": active,
-                    "evidence": "Synthetic socket grant",
-                },
-            )
-            assert result.status_code == 200, result.text
-
-        grant(True)
-        for actor in ("member", "readonly"):
+        assert host.request("GET", "/projects").json()["items"] == []
+        for suffix in ("/status", "/projects", "/projects/10001/status"):
             assert (
-                host.request("GET", tools + "/status", actor=actor).status_code == 200
+                host.request(
+                    "GET", "/production-tools" + suffix, actor=None
+                ).status_code
+                == 401
             )
-        history = lambda: json.loads((directory / "calls.json").read_text())
+            assert (
+                host.request(
+                    "GET", "/production-tools" + suffix, actor="member"
+                ).status_code
+                == 403
+            )
+        assert history() == []
+        assert (
+            host.request("GET", "/production-tools/status").json()["configured"] is True
+        )
+        assert history() == []
+        assert host.request("GET", "/production-tools/projects").json() == {
+            "items": [{"id": "10001", "name": "Synthetic source"}],
+            "limit": 100,
+            "has_more": False,
+            "next_before_id": None,
+        }
         for suffix, params in (
             ("/observations", {**PARAMS, "kind": "production"}),
             ("/catalog/software", {}),
@@ -262,21 +260,29 @@ def test_real_socket_native_reads_live_grants_and_unconfigured_isolation(workflo
             ("/statistics", {**PARAMS, "kind": "stopover"}),
         ):
             before = history()
-            assert (
-                host.request(
-                    "GET", tools + suffix, actor="outsider", params=params
-                ).status_code
-                == 404
-            )
+            for actor in ("member", "readonly", "outsider"):
+                assert (
+                    host.request(
+                        "GET", tools + suffix, actor=actor, params=params
+                    ).status_code
+                    == 403
+                )
             assert history() == before
-            response = host.request(
-                "GET", tools + suffix, actor="member", params=params
-            )
+            response = host.request("GET", tools + suffix, params=params)
             assert response.status_code == 200, response.text
             assert "no-store" in response.headers["cache-control"]
             page = response.json()
+            assert (
+                page["source_namespace"] == "synthetic"
+                and page["source_project_id"] == "10001"
+            )
+            assert "project_id" not in page
             snapshot = tools + "/snapshots/" + page["snapshot_id"]
-            assert host.request("GET", snapshot, actor="readonly").json() == page
+            assert host.request("GET", snapshot).json() == page
+            assert (
+                host.request("GET", snapshot.replace("/10001/", "/10002/")).status_code
+                == 404
+            )
             if suffix == "/observations":
                 assert (
                     page["captured_count"] == 2 and page["items"][0] == page["items"][1]
@@ -287,12 +293,12 @@ def test_real_socket_native_reads_live_grants_and_unconfigured_isolation(workflo
         before = history()
         assert (
             host.request(
-                "GET", tools + "/evidence/1/content", actor="outsider"
+                "GET", tools + "/evidence/1/content", actor="member"
             ).status_code
-            == 404
+            == 403
         )
         assert history() == before
-        evidence = host.request("GET", tools + "/evidence/1/content", actor="readonly")
+        evidence = host.request("GET", tools + "/evidence/1/content")
         assert evidence.status_code == 200 and evidence.content == b"synthetic evidence"
         assert evidence.headers["x-content-type-options"] == "nosniff"
         assert "no-store" in evidence.headers["cache-control"]
@@ -308,20 +314,32 @@ def test_real_socket_native_reads_live_grants_and_unconfigured_isolation(workflo
             405,
         )
         assert host.request("GET", tools + "/unknown").status_code in (403, 404)
-        grant(False)
-        assert host.request("GET", retained_snapshot, actor="member").status_code == 404
-        assert host.request("GET", f"/projects/{pid}").status_code == 200
+        before = history()
+        (directory / "admin-downgraded").write_text("member")
+        for path in (
+            retained_snapshot,
+            tools + "/evidence/1/content",
+            tools + "/catalog/software",
+            "/production-tools/projects",
+        ):
+            assert host.request("GET", path).status_code == 403
+        assert history() == before
+        (directory / "admin-downgraded").unlink()
+        assert host.request("GET", "/projects").json()["items"] == []
     finally:
         host.close()
-    host = SocketHost(directory, pid, False)
+    host = SocketHost(directory, False)
     try:
-        assert host.request("GET", tools + "/status").json()["configured"] is False
+        assert (
+            host.request("GET", "/production-tools/status").json()["configured"]
+            is False
+        )
         assert host.request("GET", tools + "/catalog/software").status_code == 503
-        assert host.request("GET", f"/projects/{pid}").status_code == 200
-        assert json.loads((directory / "calls.json").read_text()) == []
+        assert host.request("GET", "/projects").json()["items"] == []
+        assert history() == []
     finally:
         host.close()
 
 
 if __name__ == "__main__":
-    serve(Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), bool(int(sys.argv[4])))
+    serve(Path(sys.argv[1]), int(sys.argv[2]), bool(int(sys.argv[3])))
