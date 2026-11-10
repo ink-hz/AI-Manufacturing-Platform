@@ -98,7 +98,7 @@ def test_draft_is_private_but_frozen_handoff_can_be_forked_by_admin(workflow):
 
 ## Task 2: Native analytics and complete drill filters
 
-**Files:** Create `production_tools/analytics.py`, `analytics_queries.py`, `analytics_api.py`; extend `contracts.py`, `queries.py`, `source.py`, `service.py`, `workflow/api.py`. Tests: `test_analytics.py`, `test_analytics_api.py`, extend `test_queries.py`.
+**Files:** Create `production_tools/analytics.py`, `analytics_queries.py`, `analytics_api.py`; extend `contracts.py`, `queries.py`, `source.py`, `service.py`, `api.py`, `workflow/api.py`. Tests: `test_analytics.py`, `test_analytics_api.py`, extend `test_queries.py` and exact route inventories as needed.
 
 **Interfaces:** Keep `SourceKind` unchanged. Add typed analytics filters, fixed SQL registry and `NativeProductionSource.analysis(scope, filters, view)`; service exposes project analyses and server-side paged overview. Register:
 
@@ -112,13 +112,17 @@ Analysis: {view, source_namespace,source_project_id,captured_at,filters,
            items:Aggregate[], complete,truncation_reason,bucket_minutes?}
 Aggregate: {key, stage_id?,software_id?,device?,error_code?,software_version?,
  config_log_id?,config_version?,timestamp?,records,distinct_sn,pass_records,
- fail_records,unknown_records,failed_sn,last_time?,denominator_records?}
+ fail_records,unknown_records,failed_sn,first_time?,last_time?,denominator_records?}
 Overview: {items:[{id,name,state:'ready'|'unavailable',statistics:Aggregate|null,
  trend:Aggregate[],latest_at:string|null}],captured_at,complete,
  limit:100,has_more,next_before_id,source_namespace}
 ```
 
 Extend observation/statistics filters with `stage_id,software_id,software_version,config_log_id,config_version,error_code,barcode`; preserve old SQL templates for unchanged filters and exact IDs. Evidence adds supported device and tool-name filters. Use fixed source field mapping (`workstagesid`, `softwareid`, `version`, `configlogsid`, `cversion`, `errorcode`, `barcode`); no arbitrary client SQL identifiers.
+
+Review-required exact unknown-group support: add optional `missing_fields` finite list for stage_id/software_id/config_log_id/software_version/config_version/device/error_code. HTTP encodes it as one comma-separated value; investigation JSON uses a list. Reject duplicates, unknown fields and simultaneous exact/missing predicates for the same dimension. SQL missing predicates share the grouping definition (ID NULL/empty/0/-1; text NULL/empty). Carry this scope through observations/statistics/analysis, saved investigation/impact, selection checks and restore. Remove only the missing error_code symptom from baselines, retaining missing device/stage/etc. Do not silently broaden or disable the approved missing-device record journey. Evidence accepts only its valid missing dimensions and keeps event/log identities independent.
+
+Overview statistics/trend/latest have independent explicit state/readtime/coverage; a later block error never clears earlier successful blocks. Any gap makes whole-response complete false. UI must distinguish successful empty trend/history from unavailable or truncated data. Add first_time as SQL MIN(timestamp) for the chosen scope so range-local first occurrence is source-derived, never inferred from captured rows.
 
 Aggregates execute over the full source interval. Bound result groups to 1000 with sentinel and explicit partial state, preserve huge counts as exact public strings. Time buckets chosen from fixed minute values 5/15/30/60/180/360/720/1440 so no more than 96 buckets per scope. Overview obtains at most one directory page server-side, reports its coverage and computes source aggregates without browser fanout; group source queries by this bounded directory where practical. Do not show an all-project total for an incomplete page. No analysis refresh writes source snapshots or consumes their 100-count quota. Default records are production only; stopover is separate on SN history.
 
@@ -149,11 +153,13 @@ def test_server_aggregate_is_not_the_bounded_observation_sample(workflow):
 
 **Files:** Replace `ProductionToolsWorkspace.tsx`, `productionTools.css`; extend `types.ts`, `workflow/api.ts`, `WorkflowApp.tsx`; add focused `boards.tsx`, `details.tsx`, `investigations.tsx`, `context.ts`, `productionApi.ts` as needed to keep responsibilities small. Replace old workspace tests with journey tests; retain cancellation/precision/boundary regression behavior in the new UI.
 
-**Interfaces:** Use Task 1/2 endpoints and exact public names. Existing `createWorkflowApi` methods stay compatible; add methods `productionOverview`, `productionAnalysis`, investigation CRUD/resolve/handoff/fork. Request helper already enforces CSRF/read-only. Support an internal URL query parameter `production_handoff=<UUID>` for authenticated restore links; consume it only inside production module, and allow entering the handoff ID directly. Do not embed raw event data in URLs.
+**Interfaces:** Use Task 1/2 endpoints and exact public names. Existing `createWorkflowApi` methods stay compatible; add methods `productionOverview`, `productionAnalysis`, investigation CRUD/resolve/handoff/fork. Request helper handles CSRF, cancellation and auth loss; service/host enforce read-only, and the workspace receives explicit readOnly/userId props from bootstrap to disable mutations and scope resume state. Support an internal URL query parameter `production_handoff=<UUID>` for authenticated restore links; consume it only inside production module, and allow entering the handoff ID directly. Do not embed raw event data in URLs.
 
 The shell must select the production module for a valid restore parameter after access checks; otherwise the workspace would never mount when opening a copied link from the home page. Non-admins still cannot enter or read the handoff. Restore saved metadata independently of live directory loading, so an unavailable source project directory does not hide an otherwise authorized stored handoff.
 
 Three main nav buttons, project details before records, anomaly master/detail with scope chips and denominators, activity time grid and explicit near-now comparison, shared SN full page and event sidebar. Source/context names are readable, timestamps local with timezone, PASS/FAIL/unknown explicit. No raw JSON as main detail, no parent-ID entry, no speculative graph/KPI placeholders. Secondary tool/config catalog uses object clicks for versions. Search records and SN shortcuts allow direct entry.
+
+Use `missing_fields` for exact nullable-group drills, preserve those visible scope chips through save/restore and denominator queries. Read overview block-specific states so a failed trend/latest block does not hide valid counts or paint unknown time buckets as zero. Use source first_time/last_time for range-local occurrence labels. Event SN must not prefill candidate log CSN.
 
 Current draft state: explicit main/comparison selection, 5 log references, server autosave with visible state/version, owner-private resume list, project detach/rejoin and refresh restore via stored draft ID, conflict protection. Generate immutable handoff only after successful save; receivers see saved context then resolve candidates/fork. Do not claim a historical row was restored without verification. Readonly admins can read, cannot save/generate/fork.
 
@@ -190,7 +196,7 @@ it('opens project explanation before records and keeps investigation time on dri
 
 ## Progress
 
-- [ ] Task 1 reviewed
+- [x] Task 1 reviewed (`a1102ee`)
 - [ ] Task 2 reviewed
 - [ ] Task 3 reviewed
 - [ ] Task 4 reviewed and integrated
