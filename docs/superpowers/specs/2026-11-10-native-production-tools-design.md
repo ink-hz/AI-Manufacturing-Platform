@@ -3,6 +3,8 @@ The user approved independent source-project queries without manufacturing proje
 
 # Native production tools / 产测管理 design
 
+页面重做方案见[产测管理页面与用户旅程设计](2026-11-10-production-test-workbench-product-design.md)，以角色、核心看板和逐层调查替代本文原页面安排；原生读取边界及历史接入记录保留。新页面方案尚未实施。
+
 Date: 2026-11-10. Implementation base: `552f653`, branch `codex/production-tools-readonly`. This design supersedes the old `/23790` API bridge draft. The user has authorized this design and native implementation; no additional design approval is required.
 
 ## Product boundary
