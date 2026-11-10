@@ -179,7 +179,13 @@ it('submits actual named OEM forms including customer release without a viewed u
     expect((await items('shipment')).length).toBe(0);
     result = undefined;
     await act(async () => root.render(<QualityWorkspace key="oem-customer-release" {...await props()} requestLeave={f => f()}/>));
-    await settle();
+    // Initial ledger reads select the first unit. Wait for that selection before clearing it.
+    await vi.waitFor(async () => {
+        await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+        const selector = host.querySelector('[aria-label="查看序列号"]') as HTMLSelectElement;
+        expect([...selector.options].map(option => option.value).filter(Boolean).sort()).toEqual(units.map(u => u.id).sort());
+        expect(units.some(u => u.id === selector.value)).toBe(true);
+    }, {timeout: 2000, interval: 10});
     await field('查看序列号', '');
     await settle();
     expect((host.querySelector('[aria-label="查看序列号"]') as HTMLSelectElement).value).toBe('');
