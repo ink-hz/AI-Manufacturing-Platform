@@ -1,6 +1,6 @@
 # Production Test Workbench Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. The user authorized development; execute continuously without another execution-choice prompt.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. The user authorized development; execute continuously without another execution-choice prompt.
 
 **Goal:** Replace the production tools query tabs with the approved role-based dashboards and a real persisted investigation/handoff journey.
 
@@ -70,7 +70,7 @@ Task1 review clarified two previously underspecified contracts. Optional `candid
 
 Typed `impact` is server-derived, not a client input: capture counts, filtering definition, read times and coverage on create or context scope changes; retain them for note/selection-only saves and freeze them in handoffs. Use bounded trusted statistics source queries without observation snapshot writes. Baseline denominator excludes result/error-only filters; selected scope and FAIL-only distinct SN use their own explicit filters. Unavailable/unsupported scopes are explicit, never a silently broadened query. Raw observation rows remain absent from durable storage. Task2 must verify newly supported drill filters also flow into impact capture. New async body handlers offload synchronous service operations; strict time input requires explicit ISO date/time plus timezone.
 
-- [ ] Write HTTP tests for admin A draft save/read, admin B denial, readonly/ordinary denial before source I/O, optimistic conflict, 1/1/5 selections and allowed missing main, scope replacement safeguards, metadata-only persistence, reopening a service, 30-day expiration and source-fingerprint changes. A selection of the same main during note updates must preserve comparison/logs; replacing main explicitly clears dependent selections.
+- [x] Write HTTP tests for admin A draft save/read, admin B denial, readonly/ordinary denial before source I/O, optimistic conflict, 1/1/5 selections and allowed missing main, scope replacement safeguards, metadata-only persistence, reopening a service, 30-day expiration and source-fingerprint changes. A selection of the same main during note updates must preserve comparison/logs; replacing main explicitly clears dependent selections.
 
 ```python
 def test_draft_is_private_but_frozen_handoff_can_be_forked_by_admin(workflow):
@@ -91,10 +91,10 @@ def test_draft_is_private_but_frozen_handoff_can_be_forked_by_admin(workflow):
     assert workflow.client('owner').get(root+'/handoffs/'+handoff.json()['id']).status_code == 200
 ```
 
-- [ ] Run `PYTHONPATH=src python3.11 -m pytest -q tests/production_tools/test_investigations.py tests/production_tools/test_investigation_api.py` and capture expected missing-route/module failure.
-- [ ] Implement store/models/service/routes. Resolve expired snapshots using exact event time and SN in bounded source queries, retaining all ambiguous duplicates and source content changes; never select the first candidate automatically. Reuse existing `ProductionQuery` fields now; Task 2 extends filters. Log revalidation must use current project membership/existence and allowlisted metadata, not supplied URLs.
-- [ ] Rerun new tests and `tests/production_tools/test_snapshots.py tests/production_tools/test_api.py tests/production_tools/test_standalone.py`; verify source snapshots retain schema/version/TTL/limits.
-- [ ] Commit task and write `.superpowers/sdd/production-workbench-20261110/task-1-report.md`; task review before next task.
+- [x] Run `PYTHONPATH=src python3.11 -m pytest -q tests/production_tools/test_investigations.py tests/production_tools/test_investigation_api.py` and capture expected missing-route/module failure.
+- [x] Implement store/models/service/routes. Resolve expired snapshots using exact event time and SN in bounded source queries, retaining all ambiguous duplicates and source content changes; never select the first candidate automatically. Reuse existing `ProductionQuery` fields now; Task 2 extends filters. Log revalidation must use current project membership/existence and allowlisted metadata, not supplied URLs.
+- [x] Rerun new tests and `tests/production_tools/test_snapshots.py tests/production_tools/test_api.py tests/production_tools/test_standalone.py`; verify source snapshots retain schema/version/TTL/limits.
+- [x] Commit task and write `.superpowers/sdd/production-workbench-20261110/task-1-report.md`; task review before next task.
 
 ## Task 2: Native analytics and complete drill filters
 
@@ -130,7 +130,7 @@ Availability is a single-row fixed metadata SELECT of the latest actual producti
 
 Errors use FAIL records grouped by project/stage/tool/code, retaining missing codes. Denominator excludes symptom/result-only restrictions but retains base scope. `failed_sn` counts unique nonempty SN with FAIL, not repeated records. Status unknown remains a separate count. Cross-group distinct counts must never be summed into a fake whole-project count. Dynamic item analytics only for actually validated profiles; otherwise omit the mode instead of inferring FAIL from arbitrary columns. Lookup names with fixed bounded dictionary reads where available, retain IDs with clear unknown labels when mapping absent.
 
-- [ ] Write query and HTTP tests proving grouping sees rows beyond 1000, duplicate SN behavior, partial groups, source unavailable vs zero, denominator after error/status selection, SQL registry/injection rejection, decimal IDs and large counts, short/31-day bucket limits, no snapshot-quota consumption, unauthorized zero-I/O.
+- [x] Write query and HTTP tests proving grouping sees rows beyond 1000, duplicate SN behavior, partial groups, source unavailable vs zero, denominator after error/status selection, SQL registry/injection rejection, decimal IDs and large counts, short/31-day bucket limits, no snapshot-quota consumption, unauthorized zero-I/O.
 
 ```python
 def test_server_aggregate_is_not_the_bounded_observation_sample(workflow):
@@ -144,10 +144,10 @@ def test_server_aggregate_is_not_the_bounded_observation_sample(workflow):
     assert reader.used_aggregate_sql
 ```
 
-- [ ] Record RED via `PYTHONPATH=src python3.11 -m pytest -q tests/production_tools/test_analytics.py tests/production_tools/test_analytics_api.py`.
-- [ ] Implement registered parameterized SELECTs and bounded normalization/errors, endpoint wiring and exact typed filtering; no source writes or fake totals.
-- [ ] Verify investigation `impact` uses every newly supported scope field and preserves error/result-free denominators, failure-involved SN and immutable handoff values after source/context changes. Never treat unsupported statistical filters as permission to drop them.
-- [ ] Rerun new tests plus native query/source/transports/precision/API suites; commit and report Task 2, then task review.
+- [x] Record RED via `PYTHONPATH=src python3.11 -m pytest -q tests/production_tools/test_analytics.py tests/production_tools/test_analytics_api.py`.
+- [x] Implement registered parameterized SELECTs and bounded normalization/errors, endpoint wiring and exact typed filtering; no source writes or fake totals.
+- [x] Verify investigation `impact` uses every newly supported scope field and preserves error/result-free denominators, failure-involved SN and immutable handoff values after source/context changes. Never treat unsupported statistical filters as permission to drop them.
+- [x] Rerun new tests plus native query/source/transports/precision/API suites; commit and report Task 2, then task review.
 
 ## Task 3: Role-based React workbench and shared investigation journeys
 
@@ -163,7 +163,7 @@ Use `missing_fields` for exact nullable-group drills, preserve those visible sco
 
 Current draft state: explicit main/comparison selection, 5 log references, server autosave with visible state/version, owner-private resume list, project detach/rejoin and refresh restore via stored draft ID, conflict protection. Generate immutable handoff only after successful save; receivers see saved context then resolve candidates/fork. Do not claim a historical row was restored without verification. Readonly admins can read, cannot save/generate/fork.
 
-- [ ] Write component journey tests with real API-shaped fetch fixtures: manager overview -> project/stage -> anomaly; selected error -> SN history showing previous PASS on other device/tool; event selection and comparison save survive project switch and remount; admin receiver restore -> expired candidate verification -> fork; failed save blocks handoff; near-now view preserves problem range; partial/error/unknown/no-source states and large decimal IDs.
+- [x] Write component journey tests with real API-shaped fetch fixtures: manager overview -> project/stage -> anomaly; selected error -> SN history showing previous PASS on other device/tool; event selection and comparison save survive project switch and remount; admin receiver restore -> expired candidate verification -> fork; failed save blocks handoff; near-now view preserves problem range; partial/error/unknown/no-source states and large decimal IDs.
 
 ```tsx
 it('opens project explanation before records and keeps investigation time on drill', async () => {
@@ -178,9 +178,9 @@ it('opens project explanation before records and keeps investigation time on dri
 });
 ```
 
-- [ ] Record missing/new behavior failures with `npm test -- src/workflow/productionTools`.
-- [ ] Implement the workbench with scoped async cancellation, shared history/context and persisted investigation controls; no changes to unrelated manufacturing workflows.
-- [ ] Run relevant frontend API/navigation/journey tests, `npm run test:bundle`, then broader existing frontend once. Report any inherited warnings exactly. Commit Task 3 and task review.
+- [x] Record missing/new behavior failures with `npm test -- src/workflow/productionTools`.
+- [x] Implement the workbench with scoped async cancellation, shared history/context and persisted investigation controls; no changes to unrelated manufacturing workflows.
+- [x] Run relevant frontend API/navigation/journey tests, `npm run test:bundle`, then broader existing frontend once. Report any inherited warnings exactly. Commit Task 3 and task review.
 
 
 ## Task3 review architecture correction
@@ -208,17 +208,21 @@ Add backward-compatible captured log input: `logs` may contain decimal IDs or `{
 
 **Interfaces:** Host registry must enumerate every new method/path exactly, including POST/PUT investigation writes and GET analytics; unavailable router retains admin/no-store/read-only semantics. Do not loosen wildcard paths. Reserve unavailable operations by exact method/path so a missing POST or PUT cannot intercept a released GET on the same path; production fallbacks retain administrator checks. Keep optional production failure from disabling other manufacturing routes. Derived investigation DB cannot alias workflow/domain/authority/snapshot/config files, including symlink/hardlink aliases.
 
-- [ ] Add host contract test comparing released router routes to host registry and admin/read-only/ordinary authorization for new endpoints; verify RED before host changes.
-- [ ] Integrate exact paths and path isolation. Preserve CSRF/Origin and authenticated real HTTP behavior.
-- [ ] Run local real HTTP journey with explicit test identities and isolated native readers: save A -> immutable handoff -> B restore/fork -> expiration/ambiguity -> readonly/ordinary denial. Separately report injected source boundaries; never call this real-source or production acceptance.
-- [ ] Run affected MF backend, frontend, platform manufacturing integration and bundle checks once; broaden only on new failures. Run real-source SELECT acceptance if existing authorized private configuration is available, bounded and sanitized; if unavailable record the gap, never substitute demo data.
-- [ ] Request final whole-branch review, fix all Critical/Important findings and targeted retests. Merge reviewed MF/PF branches to their current mainlines without touching unrelated work. No deployment in this task. Write exact commits, passed/failed/skipped/unexecuted checks, browser and production gaps, and deliver implementation links.
+- [x] Add host contract test comparing released router routes to host registry and admin/read-only/ordinary authorization for new endpoints; verify RED before host changes.
+- [x] Integrate exact paths and path isolation. Preserve CSRF/Origin and authenticated real HTTP behavior.
+- [x] Run local real HTTP journey with explicit test identities and isolated native readers: save A -> immutable handoff -> B restore/fork -> expiration/ambiguity -> readonly/ordinary denial. Separately report injected source boundaries; never call this real-source or production acceptance.
+- [x] Run affected MF backend, frontend, platform manufacturing integration and bundle checks once; broaden only on new failures. Run real-source SELECT acceptance if existing authorized private configuration is available, bounded and sanitized; if unavailable record the gap, never substitute demo data.
+- [x] Request final whole-branch review, fix all Critical/Important findings and targeted retests. Merge reviewed MF/PF branches to their current mainlines without touching unrelated work. No deployment in this task. Write exact commits, passed/failed/skipped/unexecuted checks, browser and production gaps, and deliver implementation links.
 
 ## Progress
 
 - [x] Task 1 reviewed (`a1102ee`)
 - [x] Task 2 reviewed (`83cad73`)
 - [x] Task 3 reviewed (`6aef6f5`)
-- [ ] Task 4 reviewed and integrated
+- [x] Task 4 reviewed and integrated
 
 Plan coverage: role/private-access rules and durable objects are Task 1; native semantics and full-scope boards Task 2; every first-release page and user journey Task 3; actual host authorization and cross-layer delivery Task 4. Version-use board remains explicitly outside first release.
+
+## Delivery evidence
+
+All implementation/review/integration steps above are complete. Final product baselines: MF `e01d275e`, PF `f8f36259`; documentation-only delivery follows. Current generic frontend418passed; latest affected MF462passed and PF221passed at their unchanged backend/host code; merged original-root bundle and2socket/35hostchecks passed. See `docs/verification/production-test-workbench-2026-11-10.md` for versions, exact boundaries, failures and exclusions. Employee/browser/E30/production acceptance remains unexecuted; no push or deployment.

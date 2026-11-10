@@ -1,6 +1,6 @@
 # 产测管理页面与用户旅程设计
 
-2026-11-10。用户已确认以角色和核心使用场景推导看板，再逐层进入具体内容。首期代码已在隔离分支实施，后台／API 和前端组件已有验证；Task 4 独立审查、最终整分支审查及主线集成仍待根任务完成，尚未部署。真实员工身份、浏览器页面和生产业务验收尚未执行，详见[本轮验收记录](../../verification/production-test-workbench-2026-11-10.md)。它替代此前产测页面的四页签、通用查询表和原始 JSON 详情设计；独立源项目、首期管理员访问、原生只读接入及来源隔离规则沿用[独立接入设计](2026-11-10-standalone-production-tools-design.md)。本方案补齐访问资格、交接恢复和调查对象保存，并以文中首期及后续范围划分为准。
+2026-11-10。用户已确认以角色和核心使用场景推导看板，再逐层进入具体内容。首期代码已归并制造端与平台端本地主线，后台／API、前端组件、最终整分支独立审查及合并后构建／HTTP 核验已完成，尚未推送或部署。真实员工身份、浏览器页面和生产业务验收尚未执行，详见[本轮验收记录](../../verification/production-test-workbench-2026-11-10.md)。它替代此前产测页面的四页签、通用查询表和原始 JSON 详情设计；独立源项目、首期管理员访问、原生只读接入及来源隔离规则沿用[独立接入设计](2026-11-10-standalone-production-tools-design.md)。本方案补齐访问资格、交接恢复和调查对象保存，并以文中首期及后续范围划分为准。
 
 产测管理帮助使用者完成四件事：负责人发现需要介入的项目，工程师界定异常影响，现场人员确定检查对象，工具负责人核对实际版本使用。首期完成前三条日常旅程，工具配置的使用分析作为后续工程专题。页面按工作任务组织，角色不做成切换器，也不新增权限体系。
 
@@ -375,7 +375,7 @@ PE 视角的操作人可以从某条失败进入 SN 履历和日志，也可以�
 
 ## 数据依据
 
-- [当前九条 HTTP 接口](../../../src/manufacturing_platform/production_tools/api.py)与[查询契约](../../../src/manufacturing_platform/production_tools/contracts.py)：现有筛选、时间窗与访问范围。
+- [基础查询 HTTP 接口](../../../src/manufacturing_platform/production_tools/api.py)与[查询契约](../../../src/manufacturing_platform/production_tools/contracts.py)：现有筛选、时间窗与访问范围。
 - [固定查询](../../../src/manufacturing_platform/production_tools/queries.py)与[源读取](../../../src/manufacturing_platform/production_tools/source.py)：事件字段、聚合、明细上限、内容隐藏及日志读取。
 - [原系统实体定义](../../../analysis-repos/shengchanggongjuguanli/public/databases/tables.go)：工具、配置版本、审核单、字典和日志元数据。
 - [原系统测试事件](../../../analysis-repos/shengchanggongjuguanli/end/service/operate/production.go)、[看板聚合](../../../analysis-repos/shengchanggongjuguanli/end/service/operate/dashboard.go)和[上位机活动聚合](../../../analysis-repos/shengchanggongjuguanli/end/service/operate/stationDashboard.go)：可复核的数据字段与聚合依据，代码存在不代表新平台已有对应功能。
