@@ -1,3 +1,6 @@
+# Current scope update
+The user approved independent source-project queries without manufacturing project mappings. The [standalone production tools design](2026-11-10-standalone-production-tools-design.md) supersedes this document's binding, project-member authorization and snapshot scope requirements; native transport/read-only limits remain in force. Historical deployment receipts are unchanged.
+
 # Native production tools / 产测管理 design
 
 Date: 2026-11-10. Implementation base: `552f653`, branch `codex/production-tools-readonly`. This design supersedes the old `/23790` API bridge draft. The user has authorized this design and native implementation; no additional design approval is required.
@@ -108,7 +111,3 @@ Acceptance combines injected unit tests, HTTP authorization tests, frontend comp
 ## Source probe evidence available at handoff
 
 Root reports successful direct authenticated bounded SELECT probes for both configured MySQL and QuestDB environments, including MySQL read-only transactions and QuestDB `autocommit=True`, `prepare_threshold=None`, supported statement timeout. The more recent source contains production records on 2026-11-10 and 244 production columns; the other environment has older test-like data. This validates native connectivity and motivates the byte cap/redaction, but does not authorize guessing platform-project mappings. Runtime configuration is our own trusted file, never a dependency on `analysis-repos` or the old TOML. Probe counts and raw row data are not needed in product UI. Root also verified OSS HEAD HTTP200 for one database-linked object in each configured bucket; this establishes metadata access, not a downloaded-object or protected-route acceptance. Full controlled download verification remains separate.
-# Current scope update
-
-The user approved independent source-project queries without manufacturing project mappings. The [standalone production tools design](2026-11-10-standalone-production-tools-design.md) supersedes this document's binding, project-member authorization and snapshot scope requirements; native transport/read-only limits remain in force. Historical deployment receipts are unchanged.
-
