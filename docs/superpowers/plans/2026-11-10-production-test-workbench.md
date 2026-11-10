@@ -28,7 +28,7 @@
 
 ## Task 1: Persisted investigation and immutable handoff HTTP contract
 
-**Files:** Create `production_tools/investigation_models.py`, `investigation_store.py`, `investigations.py`, `investigation_api.py` under `src/manufacturing_platform/`; modify `production_tools/contracts.py`, `service.py`, `transports.py`, `workflow/api.py` only for store configuration and route wiring. Tests: `tests/production_tools/test_investigations.py`, `test_investigation_api.py`.
+**Files:** Create `production_tools/investigation_models.py`, `investigation_store.py`, `investigations.py`, `investigation_statistics.py`, `investigation_api.py` under `src/manufacturing_platform/`; modify `production_tools/contracts.py`, `service.py`, `transports.py`, `workflow/api.py` only for store configuration and route wiring. Tests: `tests/production_tools/test_investigations.py`, `test_investigation_api.py`.
 
 **Interfaces:** Register protected routes beneath `/production-tools`; use an `InvestigationService(production_service, *, path, clock)` and `register_investigation_routes(router, service, actor)`. Derive the independent path as `snapshot_path + '.investigations.sqlite3'`; validate it against snapshot/config/domain/authority paths and aliases without altering snapshot schema. The optional new path configuration must not break existing factory callers.
 
@@ -47,17 +47,17 @@ POST /handoffs/{handoff_id}/fork -> Draft
 
 Draft: {id, source_namespace, source_project_id, owner_id, version,
         created_at, updated_at, expires_at, origin_handoff_id,
-        context, primary, comparison, logs, note}
+        context, primary, comparison, logs, note, impact}
 context: {start,end,view,stage_id?,software_id?,software_version?,config_log_id?,
           config_version?,device?,error_code?,order_id?,barcode?,sn?,status?,
-          symptom?,history_range?,evidence_range?,recent_range?}
+          symptom?,candidate_csn?,history_range?,evidence_range?,recent_range?}
 Selection input: {snapshot_id: UUID, offset: nonnegative integer}
 Selection saved: {selection_id, snapshot_id, offset, source_kind, descriptor,
                   fingerprint, fingerprint_version: 1, captured_at, filters}
 PUT: {expected_version, context?,primary?:Selection|null,comparison?:Selection|null,
       logs?:decimal-string[],note?}; omitted fields stay unchanged.
 Handoff POST: {expected_version}; Handoff: {id, investigation_id, version,
- created_at,expires_at,context,primary,comparison,logs,note,source_project_id,...}
+ created_at,expires_at,context,primary,comparison,logs,note,impact,source_project_id,...}
 Fork POST: {}; server supplies fresh owner, UUID and version 1.
 Resolution: {primary:Resolved|null,comparison:Resolved|null,logs:[...],captured_at}
 Resolved: {state:'verified'|'ambiguous'|'changed'|'not_found'|'partial'|'unavailable',
@@ -65,6 +65,10 @@ Resolved: {state:'verified'|'ambiguous'|'changed'|'not_found'|'partial'|'unavail
 ```
 
 Bound and strictly validate bodies/context/notes, reject unknown fields, unsafe payloads and contradictory scopes. Server resolves selections from authorized immutable snapshots; browsers cannot submit trusted descriptors or fingerprints. PUT has optimistic version conflict 409, ownership 404, expiry 410, invalid limits/scopes 422, source/store unavailable sanitized 503. Avoid leaking private connection details through the workflow's traceback boundary.
+
+Task1 review clarified two previously underspecified contracts. Optional `candidate_csn` is an explicit log-search identity; event `sn` must never populate it automatically. Persist exact native descriptors (`workstagesid`, `softwareid`, `version`, `configlogsid`, `cversion`, `workselectid`) and log metadata (`toolsname`, `state`), with corresponding scope validation aliases.
+
+Typed `impact` is server-derived, not a client input: capture counts, filtering definition, read times and coverage on create or context scope changes; retain them for note/selection-only saves and freeze them in handoffs. Use bounded trusted statistics source queries without observation snapshot writes. Baseline denominator excludes result/error-only filters; selected scope and FAIL-only distinct SN use their own explicit filters. Unavailable/unsupported scopes are explicit, never a silently broadened query. Raw observation rows remain absent from durable storage. Task2 must verify newly supported drill filters also flow into impact capture. New async body handlers offload synchronous service operations; strict time input requires explicit ISO date/time plus timezone.
 
 - [ ] Write HTTP tests for admin A draft save/read, admin B denial, readonly/ordinary denial before source I/O, optimistic conflict, 1/1/5 selections and allowed missing main, scope replacement safeguards, metadata-only persistence, reopening a service, 30-day expiration and source-fingerprint changes. A selection of the same main during note updates must preserve comparison/logs; replacing main explicitly clears dependent selections.
 
@@ -101,6 +105,8 @@ def test_draft_is_private_but_frozen_handoff_can_be_forked_by_admin(workflow):
 ```text
 GET /production-tools/overview?start,end,before_id? -> Overview
 GET /production-tools/projects/{id}/analysis?view,start,end,...filters -> Analysis
+GET /production-tools/projects/{id}/availability -> {source_namespace,
+ source_project_id,captured_at,latest_at:string|null}
 view = summary | stages | errors | devices | activity | trend | versions
 Analysis: {view, source_namespace,source_project_id,captured_at,filters,
            items:Aggregate[], complete,truncation_reason,bucket_minutes?}
@@ -115,6 +121,8 @@ Overview: {items:[{id,name,state:'ready'|'unavailable',statistics:Aggregate|null
 Extend observation/statistics filters with `stage_id,software_id,software_version,config_log_id,config_version,error_code,barcode`; preserve old SQL templates for unchanged filters and exact IDs. Evidence adds supported device and tool-name filters. Use fixed source field mapping (`workstagesid`, `softwareid`, `version`, `configlogsid`, `cversion`, `errorcode`, `barcode`); no arbitrary client SQL identifiers.
 
 Aggregates execute over the full source interval. Bound result groups to 1000 with sentinel and explicit partial state, preserve huge counts as exact public strings. Time buckets chosen from fixed minute values 5/15/30/60/180/360/720/1440 so no more than 96 buckets per scope. Overview obtains at most one directory page server-side, reports its coverage and computes source aggregates without browser fanout; group source queries by this bounded directory where practical. Do not show an all-project total for an incomplete page. No analysis refresh writes source snapshots or consumes their 100-count quota. Default records are production only; stopover is separate on SN history.
+
+Availability is a single-row fixed metadata SELECT of the latest actual production timestamp for the authorized project, independent of the chosen observation interval; it does not retrieve raw history or pretend to report ingestion/heartbeat state. It enables an explicit jump to a historical data window when today's results are empty. Keep existing transport timeouts/slots and sanitized errors. Cache immutable approved SQL-shape sets when extending legacy filter combinations rather than rebuilding thousands of templates per request.
 
 Errors use FAIL records grouped by project/stage/tool/code, retaining missing codes. Denominator excludes symptom/result-only restrictions but retains base scope. `failed_sn` counts unique nonempty SN with FAIL, not repeated records. Status unknown remains a separate count. Cross-group distinct counts must never be summed into a fake whole-project count. Dynamic item analytics only for actually validated profiles; otherwise omit the mode instead of inferring FAIL from arbitrary columns. Lookup names with fixed bounded dictionary reads where available, retain IDs with clear unknown labels when mapping absent.
 
@@ -134,13 +142,16 @@ def test_server_aggregate_is_not_the_bounded_observation_sample(workflow):
 
 - [ ] Record RED via `PYTHONPATH=src python3.11 -m pytest -q tests/production_tools/test_analytics.py tests/production_tools/test_analytics_api.py`.
 - [ ] Implement registered parameterized SELECTs and bounded normalization/errors, endpoint wiring and exact typed filtering; no source writes or fake totals.
+- [ ] Verify investigation `impact` uses every newly supported scope field and preserves error/result-free denominators, failure-involved SN and immutable handoff values after source/context changes. Never treat unsupported statistical filters as permission to drop them.
 - [ ] Rerun new tests plus native query/source/transports/precision/API suites; commit and report Task 2, then task review.
 
 ## Task 3: Role-based React workbench and shared investigation journeys
 
-**Files:** Replace `ProductionToolsWorkspace.tsx`, `productionTools.css`; extend `types.ts`, `workflow/api.ts`; add focused `boards.tsx`, `details.tsx`, `investigations.tsx`, `context.ts`, `productionApi.ts` as needed to keep responsibilities small. Replace old workspace tests with journey tests; retain cancellation/precision/boundary regression behavior in the new UI.
+**Files:** Replace `ProductionToolsWorkspace.tsx`, `productionTools.css`; extend `types.ts`, `workflow/api.ts`, `WorkflowApp.tsx`; add focused `boards.tsx`, `details.tsx`, `investigations.tsx`, `context.ts`, `productionApi.ts` as needed to keep responsibilities small. Replace old workspace tests with journey tests; retain cancellation/precision/boundary regression behavior in the new UI.
 
 **Interfaces:** Use Task 1/2 endpoints and exact public names. Existing `createWorkflowApi` methods stay compatible; add methods `productionOverview`, `productionAnalysis`, investigation CRUD/resolve/handoff/fork. Request helper already enforces CSRF/read-only. Support an internal URL query parameter `production_handoff=<UUID>` for authenticated restore links; consume it only inside production module, and allow entering the handoff ID directly. Do not embed raw event data in URLs.
+
+The shell must select the production module for a valid restore parameter after access checks; otherwise the workspace would never mount when opening a copied link from the home page. Non-admins still cannot enter or read the handoff. Restore saved metadata independently of live directory loading, so an unavailable source project directory does not hide an otherwise authorized stored handoff.
 
 Three main nav buttons, project details before records, anomaly master/detail with scope chips and denominators, activity time grid and explicit near-now comparison, shared SN full page and event sidebar. Source/context names are readable, timestamps local with timezone, PASS/FAIL/unknown explicit. No raw JSON as main detail, no parent-ID entry, no speculative graph/KPI placeholders. Secondary tool/config catalog uses object clicks for versions. Search records and SN shortcuts allow direct entry.
 
