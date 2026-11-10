@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from threading import BoundedSemaphore
@@ -197,15 +198,20 @@ class NativeProductionSource:
                 item = normalize(row, candidate_redactions)
                 if statistics:
                     try:
-                        values = {
-                            key: row.get(key)
-                            for key in (
-                                "records",
-                                "distinct_sn",
-                                "pass_records",
-                                "fail_records",
-                            )
-                        }
+                        aliases = (
+                            "records",
+                            "distinct_sn",
+                            "pass_records",
+                            "fail_records",
+                        )
+                        if any(key not in row for key in aliases):
+                            raise ValueError()
+                        values = {key: row[key] for key in aliases}
+                        if any(
+                            type(values[key]) is not int
+                            for key in ("records", "distinct_sn")
+                        ):
+                            raise ValueError()
                         if any(
                             value is not None and (type(value) is not int)
                             for value in values.values()
@@ -295,7 +301,13 @@ class NativeProductionSource:
         finally:
             self._slots.release()
 
-    def evidence(self, binding: SourceBinding, source_log_id: int) -> EvidenceObject:
+    def evidence(
+        self,
+        binding: SourceBinding,
+        source_log_id: int,
+        *,
+        before_open: Callable[[], None] | None = None,
+    ) -> EvidenceObject:
         if (
             self.objects is None
             or not self.allowed_object_host
@@ -351,6 +363,8 @@ class NativeProductionSource:
                     raise ValueError()
             except (ValueError, UnicodeError):
                 raise error("SOURCE_NOT_FOUND", 404) from None
+            if before_open is not None:
+                before_open()
             try:
                 opened = self.objects.open(key, max_bytes=MAX_ATTACHMENT)
             except DomainError:

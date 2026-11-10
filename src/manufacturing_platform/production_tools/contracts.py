@@ -1,7 +1,7 @@
 """Public contracts for bounded, project-scoped external observations."""
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, BinaryIO, Literal, Protocol
@@ -141,7 +141,11 @@ class ProductionSource(Protocol):
     def capabilities(self) -> frozenset[str]: ...
     def query(self, binding: SourceBinding, query: ProductionQuery) -> SourceResult: ...
     def evidence(
-        self, binding: SourceBinding, source_log_id: int
+        self,
+        binding: SourceBinding,
+        source_log_id: int,
+        *,
+        before_open: Callable[[], None] | None = None,
     ) -> EvidenceObject: ...
 
 

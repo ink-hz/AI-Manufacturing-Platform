@@ -375,3 +375,140 @@ def test_malformed_evidence_metadata_is_sanitized(rows):
     src.mysql = type("Reader", (), {"select": lambda self, statement: rows})()
     with pytest.raises(DomainError):
         src.evidence(binding(), 5)
+
+
+@pytest.mark.parametrize(
+    "alias", ["records", "distinct_sn", "pass_records", "fail_records"]
+)
+def test_statistics_requires_every_aggregate_alias(alias):
+    aggregate = {"records": 5, "distinct_sn": 3, "pass_records": 1, "fail_records": 1}
+    del aggregate[alias]
+    with pytest.raises(DomainError) as error:
+        source([aggregate]).query(binding(), timed("production_statistics"))
+    assert error.value.code == "SOURCE_SCHEMA_INVALID"
+
+
+@pytest.mark.parametrize("alias", ["records", "distinct_sn"])
+@pytest.mark.parametrize("value", [None, -1, True, 1.5, "1"])
+def test_statistics_requires_nonnull_nonnegative_integer_counts(alias, value):
+    aggregate = {"records": 5, "distinct_sn": 3, "pass_records": 1, "fail_records": 1}
+    aggregate[alias] = value
+    with pytest.raises(DomainError) as error:
+        source([aggregate]).query(binding(), timed("production_statistics"))
+    assert error.value.code == "SOURCE_SCHEMA_INVALID"
+
+
+def test_statistics_normalizes_only_present_null_sum_aliases():
+    result = source(
+        [{"records": 5, "distinct_sn": 3, "pass_records": None, "fail_records": None}]
+    ).query(binding(), timed("production_statistics"))
+    assert result.items == [
+        {
+            "records": 5,
+            "distinct_sn": 3,
+            "pass_records": 0,
+            "fail_records": 0,
+            "unknown_records": 5,
+            "record_pass_ratio": 0.0,
+        }
+    ]
+
+
+def test_evidence_metadata_triggered_revocation_prevents_object_open():
+    objects = Objects()
+    src = source([], objects)
+    events = []
+    revoked = False
+    denial = DomainError("FORBIDDEN", 403, "Project access revoked")
+
+    def metadata(statement):
+        nonlocal revoked
+        events.append("metadata")
+        revoked = True
+        return [row(**{"del": 0}, url="https://example.invalid/logs/10001/x")]
+
+    def authorize():
+        events.append("authorize")
+        if revoked:
+            raise denial
+
+    src.mysql.select = metadata
+    with pytest.raises(DomainError) as error:
+        src.evidence(binding(), 5, before_open=authorize)
+    assert error.value is denial
+    assert events == ["metadata", "authorize"]
+    assert objects.keys == []
+    for _ in range(4):
+        assert src._slots.acquire(blocking=False)
+    for _ in range(4):
+        src._slots.release()
+
+
+def test_evidence_authorization_runs_after_metadata_before_open():
+    objects = Objects()
+    src = source([], objects)
+    events = []
+    original_open = objects.open
+
+    def metadata(statement):
+        events.append("metadata")
+        return [row(**{"del": 0}, url="https://example.invalid/logs/10001/x")]
+
+    def authorize():
+        events.append("authorize")
+
+    def opened(key, *, max_bytes):
+        events.append("open")
+        return original_open(key, max_bytes=max_bytes)
+
+    src.mysql.select = metadata
+    objects.open = opened
+    result = src.evidence(binding(), 5, before_open=authorize)
+    assert events == ["metadata", "authorize", "open"]
+    result.stream.close()
+
+
+def test_evidence_invalid_url_never_runs_authorization_or_open():
+    objects = Objects()
+    src = source([row(**{"del": 0}, url="https://other.invalid/logs/10001/x")], objects)
+    calls = []
+    with pytest.raises(DomainError) as error:
+        src.evidence(binding(), 5, before_open=lambda: calls.append("authorize"))
+    assert error.value.code == "SOURCE_NOT_FOUND"
+    assert calls == [] and objects.keys == []
+
+
+@pytest.mark.parametrize(
+    "aggregate",
+    [
+        {},
+        {
+            "records": None,
+            "distinct_sn": None,
+            "pass_records": None,
+            "fail_records": None,
+        },
+        {"distinct_sn": 0, "pass_records": None, "fail_records": None},
+        {"records": None, "distinct_sn": 0, "pass_records": None, "fail_records": None},
+    ],
+)
+def test_empty_and_null_count_aggregate_schemas_are_not_zero_statistics(aggregate):
+    with pytest.raises(DomainError) as error:
+        source([aggregate]).query(binding(), timed("production_statistics"))
+    assert error.value.code == "SOURCE_SCHEMA_INVALID"
+
+
+def test_evidence_authorization_callback_exception_propagates_unchanged():
+    objects = Objects()
+    src = source(
+        [row(**{"del": 0}, url="https://example.invalid/logs/10001/x")], objects
+    )
+    denial = RuntimeError("authorization callback failure")
+
+    def authorize():
+        raise denial
+
+    with pytest.raises(RuntimeError) as error:
+        src.evidence(binding(), 5, before_open=authorize)
+    assert error.value is denial
+    assert objects.keys == []
