@@ -59,7 +59,7 @@ def test_catalog_keyset(kind, table):
         ("software", {"sn": "x"}),
         ("software", {"parent_id": 1}),
         ("production", {"parent_id": 1}),
-        ("evidence", {"device": "x"}),
+        ("evidence", {"status": "1"}),
         ("configs", {"order_id": "1"}),
         ("production", {"before_id": 1}),
     ],
@@ -164,3 +164,18 @@ def test_evidence_integer_millisecond_bounds_preserve_exact_half_open_interval(
         n for n in candidates if start <= base + timedelta(milliseconds=n) < end
     ]
     validate_statement(statement)
+
+
+def test_evidence_native_device_and_tool_name_are_bound():
+    statement=compile_query(binding(),timed("evidence",device="PC",tool_name="Tool' OR 1=1"))
+    assert "devicename = %s" in statement.sql and "toolsname = %s" in statement.sql
+    assert "Tool' OR 1=1" not in statement.sql
+    assert statement.params[-3:-1]==("PC","Tool' OR 1=1")
+    validate_statement(statement)
+
+
+def test_legacy_shape_registry_is_cached_and_immutable():
+    from manufacturing_platform.production_tools.queries import _approved_templates
+    first=_approved_templates('production_statistics')
+    assert isinstance(first,frozenset)
+    assert first is _approved_templates('production_statistics')

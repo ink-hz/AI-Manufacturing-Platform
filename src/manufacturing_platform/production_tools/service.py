@@ -124,6 +124,48 @@ class ProductionToolsService:
         except Exception:  # noqa: BLE001 - Sanitize source/storage errors.
             raise error() from None
 
+    def analysis(self, actor, source_project_id, filters, view):
+        scope = self._authorized_scope(actor, source_project_id)
+        try:
+            self.config.source.project(source_project_id)
+            result = self.config.source.analysis(scope, filters, view)
+            self._reauthorize(actor, source_project_id, scope)
+            return result
+        except DomainError:
+            raise
+        except Exception:  # noqa: BLE001 - Sanitize connector errors.
+            raise error() from None
+
+    def availability(self, actor, source_project_id):
+        scope = self._authorized_scope(actor, source_project_id)
+        try:
+            self.config.source.project(source_project_id)
+            result = self.config.source.availability(scope)
+            self._reauthorize(actor, source_project_id, scope)
+            return result
+        except DomainError:
+            raise
+        except Exception:  # noqa: BLE001 - Sanitize connector errors.
+            raise error() from None
+
+    def overview(self, actor, filters, *, before_id=None):
+        self._authorize(actor)
+        if before_id is not None and not valid_source_id(before_id):
+            raise error("SOURCE_INVALID_QUERY", 422)
+        # Establish the same configured scope boundary before any source reads.
+        self._scope_for("1")
+        config = self.config
+        try:
+            result = config.source.overview(config.source_namespace, filters, before_id=before_id)
+            self._authorize(actor)
+            if self.config is not config:
+                raise error()
+            return result
+        except DomainError:
+            raise
+        except Exception:  # noqa: BLE001 - Sanitize connector errors.
+            raise error() from None
+
     def snapshot(
         self,
         actor: Actor,

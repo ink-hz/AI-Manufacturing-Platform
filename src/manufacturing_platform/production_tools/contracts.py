@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, BinaryIO, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
 
 SourceKind = Literal[
     "production",
@@ -45,6 +45,22 @@ class ProductionQuery(BaseModel):
         default=None, ge=1, le=99999999999999999999, strict=True
     )
 
+    stage_id: StrictStr | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$")
+    software_id: StrictStr | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$")
+    software_version: StrictStr | None = Field(default=None, min_length=1, max_length=200)
+    config_log_id: StrictStr | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$")
+    config_version: StrictStr | None = Field(default=None, min_length=1, max_length=200)
+    error_code: StrictStr | None = Field(default=None, min_length=1, max_length=200)
+    barcode: StrictStr | None = Field(default=None, min_length=1, max_length=200)
+    tool_name: StrictStr | None = Field(default=None, min_length=1, max_length=200)
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def iso_time(cls, value):
+        if value is not None and (not isinstance(value, (str, datetime)) or (isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})", value) is None)):
+            raise ValueError("ISO timestamp with timezone required")
+        return value
+
     @model_validator(mode="after")
     def bounded_window(self):
         if self.kind in TIMED_KINDS:
@@ -65,6 +81,24 @@ class ProductionQuery(BaseModel):
         if self.kind in TIMED_KINDS - {"evidence"} and self.before_id is not None:
             raise ValueError("source has no verified unique row key")
         return self
+
+
+AnalysisView = Literal["summary", "stages", "errors", "devices", "activity", "trend", "versions"]
+
+
+class AnalyticsFilters(ProductionQuery):
+    kind: Literal["production"] = "production"
+    start: datetime
+    end: datetime
+
+    @model_validator(mode="after")
+    def analytics_only(self):
+        if self.parent_id is not None or self.before_id is not None or self.tool_name is not None:
+            raise ValueError("unsupported analysis filter")
+        return self
+
+    def public(self):
+        return self.model_dump(mode="json", exclude_none=True, exclude={"kind"})
 
 
 def canonical_prefix(value: str) -> bool:
@@ -149,6 +183,9 @@ class ProductionSource(Protocol):
     def projects(self, *, before_id: str | None = None) -> dict: ...
     def project(self, source_project_id: str) -> dict: ...
     def query(self, binding: SourceScope, query: ProductionQuery) -> SourceResult: ...
+    def analysis(self, binding: SourceScope, filters: AnalyticsFilters, view: AnalysisView) -> dict: ...
+    def availability(self, binding: SourceScope) -> dict: ...
+    def overview(self, namespace: str, filters: AnalyticsFilters, *, before_id: str | None = None) -> dict: ...
     def evidence(
         self,
         binding: SourceScope,

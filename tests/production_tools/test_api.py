@@ -255,7 +255,7 @@ def test_failures_capabilities_and_validation_do_not_become_empty_success(workfl
         ),
         ("catalog/software", {"sql": "private"}),
         ("catalog/software", {"parent_id": "0"}),
-        ("evidence", {**PARAMS, "device": "bad"}),
+        ("evidence", {**PARAMS, "status": "1"}),
         ("snapshots/" + str(uuid4()), {"limit": "101"}),
         ("evidence/0/content", {}),
         ("evidence/100000000000000000000/content", {}),

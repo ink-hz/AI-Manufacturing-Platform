@@ -262,6 +262,9 @@ def test_exact_native_and_investigation_routes_and_no_legacy_route(workflow):
     expected = {
         "/status": {"get"},
         "/projects": {"get"},
+        "/overview": {"get"},
+        "/projects/{source_project_id}/analysis": {"get"},
+        "/projects/{source_project_id}/availability": {"get"},
         "/projects/{source_project_id}/status": {"get"},
         "/projects/{source_project_id}/observations": {"get"},
         "/projects/{source_project_id}/catalog/{kind}": {"get"},

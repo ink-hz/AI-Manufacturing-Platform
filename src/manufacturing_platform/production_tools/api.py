@@ -11,6 +11,7 @@ from starlette.responses import Response
 
 from ..workflow.contracts import Actor, DomainError
 from .contracts import ProductionQuery
+from .queries import PRODUCTION_FIELDS
 from .service import ProductionToolsService
 from .source import MAX_ATTACHMENT, error
 
@@ -78,7 +79,7 @@ def register_production_tools_routes(
             _query(
                 request,
                 kind,
-                {"kind", "start", "end", "sn", "order_id", "device", "status"},
+                {"kind", "start", "end", *PRODUCTION_FIELDS},
             ),
         )
 
@@ -106,7 +107,7 @@ def register_production_tools_routes(
             actor(request),
             source_project_id,
             _query(
-                request, "evidence", {"start", "end", "sn", "order_id", "before_id"}
+                request, "evidence", {"start", "end", "sn", "order_id", "before_id", "device", "tool_name"}
             ),
         )
 
@@ -122,7 +123,7 @@ def register_production_tools_routes(
             _query(
                 request,
                 kind + "_statistics",
-                {"kind", "start", "end", "sn", "order_id", "device", "status"},
+                {"kind", "start", "end", *PRODUCTION_FIELDS},
             ),
         )
 

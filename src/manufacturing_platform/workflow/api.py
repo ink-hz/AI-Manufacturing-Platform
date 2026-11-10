@@ -128,6 +128,8 @@ def build_workflow_router(
         # Optional connector misconfiguration must not disable workflow routes.
         production_service = ProductionToolsService(None, clock=store.business_clock)
     register_production_tools_routes(router, production_service, actor)
+    from ..production_tools.analytics_api import register_analytics_routes
+    register_analytics_routes(router, production_service, actor)
     from ..production_tools.investigations import InvestigationService
     from ..production_tools.investigation_api import register_investigation_routes
 

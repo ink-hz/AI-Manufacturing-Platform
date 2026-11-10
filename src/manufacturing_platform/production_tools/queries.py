@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime
 from itertools import combinations
+from functools import lru_cache
+from types import MappingProxyType
 
 from .contracts import ProductionQuery, ReadStatement, SourceScope, valid_source_id
 
@@ -20,6 +22,12 @@ AGGREGATE = (
     "sum(CASE WHEN status = '1' THEN 1 ELSE 0 END) AS pass_records, "
     "sum(CASE WHEN status = '2' THEN 1 ELSE 0 END) AS fail_records"
 )
+PRODUCTION_FIELDS = MappingProxyType({
+    "sn": "sn", "order_id": "orderid", "device": "devicename", "status": "status",
+    "stage_id": "workstagesid", "software_id": "softwareid", "software_version": "version",
+    "config_log_id": "configlogsid", "config_version": "cversion", "error_code": "errorcode", "barcode": "barcode",
+})
+ALL_FILTERS = (*PRODUCTION_FIELDS, "parent_id", "before_id", "tool_name")
 EVIDENCE_SQL = "SELECT id, projuectid, del, url FROM toolslogs WHERE del = 0 AND projuectid = %s AND id = %s LIMIT %s"
 
 
@@ -28,12 +36,7 @@ def _template(kind, filters):
     base = kind.removesuffix("_statistics")
     if base in LOG_TABLES:
         sql = f"SELECT {AGGREGATE if statistics else '*'} FROM {LOG_TABLES[base]} WHERE projuectid = %s AND timestamp >= %s AND timestamp < %s"
-        fields = {
-            "sn": "sn",
-            "order_id": "orderid",
-            "device": "devicename",
-            "status": "status",
-        }
+        fields = PRODUCTION_FIELDS
     else:
         sql = f"SELECT * FROM {CATALOG_TABLES[kind]} WHERE del = 0 AND projuectid = %s"
         if kind == "evidence":
@@ -43,6 +46,8 @@ def _template(kind, filters):
             "parent_id": PARENT_FIELDS.get(kind),
             "sn": "csn",
             "order_id": "orderid",
+            "device": "devicename",
+            "tool_name": "toolsname",
         }
     for field in filters:
         sql += f" AND {fields[field]} {'<' if field == 'before_id' else '='} %s"
@@ -57,11 +62,11 @@ def _template(kind, filters):
 
 def allowed_filters(kind):
     if kind.removesuffix("_statistics") in LOG_TABLES:
-        return ("sn", "order_id", "device", "status")
+        return tuple(PRODUCTION_FIELDS)
     return (
         ("before_id",)
         + (("parent_id",) if kind in PARENT_FIELDS else ())
-        + (("sn", "order_id") if kind == "evidence" else ())
+        + (("sn", "order_id", "device", "tool_name") if kind == "evidence" else ())
     )
 
 
@@ -78,7 +83,7 @@ def compile_query(
     if type(cap) is not int or not 1 <= cap <= 1000:
         raise ValueError("invalid capture cap")
     allowed = allowed_filters(query.kind)
-    for name in ("sn", "order_id", "device", "status", "parent_id", "before_id"):
+    for name in ALL_FILTERS:
         if getattr(query, name) is not None and name not in allowed:
             raise ValueError("unsupported source filter")
     log = query.kind.removesuffix("_statistics") in LOG_TABLES
@@ -147,9 +152,25 @@ def directory_statement(*, before_id=None, source_project_id=None):
     )
 
 
+DICTIONARY_SQL = {
+    "analytics_stage_names": "SELECT id, name FROM workstages WHERE del = 0 ORDER BY id DESC LIMIT %s",
+    "analytics_software_names": "SELECT id, name FROM softwarelists WHERE del = 0 AND projuectid = %s ORDER BY id DESC LIMIT %s",
+}
+
+
+def dictionary_statement(scope, kind):
+    if kind not in {"stage", "software"}:
+        raise ValueError("invalid dictionary")
+    name = f"analytics_{kind}_names"
+    params = (1001,) if kind == "stage" else (int(scope.source_project_id), 1001)
+    return ReadStatement(name, "mysql", DICTIONARY_SQL[name], params, 1001)
+
+
 def validate_statement(statement: ReadStatement) -> None:
     """Validate registry name, backend, exact SQL shape and bounded result count before I/O."""
-    if statement.name in DIRECTORY_SQL:
+    if statement.name in DICTIONARY_SQL:
+        valid = statement.backend == "mysql" and statement.sql == DICTIONARY_SQL[statement.name] and type(statement.max_rows) is int and statement.max_rows == 1001 and len(statement.params) == statement.sql.count("%s") and statement.params[-1] == 1001 and all(type(value) is int and 1 <= value < 10**20 for value in statement.params)
+    elif statement.name in DIRECTORY_SQL:
         cap = 2 if statement.name == "source_project" else 101
         valid = (
             statement.backend == "mysql"
@@ -177,12 +198,7 @@ def validate_statement(statement: ReadStatement) -> None:
         "stopover_statistics",
     }:
         log = statement.name.removesuffix("_statistics") in LOG_TABLES
-        names = allowed_filters(statement.name)
-        templates = {
-            _template(statement.name, subset)
-            for length in range(len(names) + 1)
-            for subset in combinations(names, length)
-        }
+        templates = _approved_templates(statement.name)
         stats = statement.name.endswith("_statistics")
         valid = (
             statement.sql in templates
@@ -192,7 +208,17 @@ def validate_statement(statement: ReadStatement) -> None:
             and len(statement.params) == statement.sql.count("%s")
             and (stats or statement.params[-1] == statement.max_rows)
         )
+    elif statement.name.startswith("analytics:"):
+        from .analytics_queries import validate_analytics_statement
+        valid = validate_analytics_statement(statement)
     else:
         valid = False
     if not valid:
         raise ValueError("unapproved source statement")
+
+
+@lru_cache(maxsize=16)
+def _approved_templates(kind):
+    """Immutable allowlist, computed once per source kind rather than per request."""
+    names = allowed_filters(kind)
+    return frozenset(_template(kind, subset) for length in range(len(names) + 1) for subset in combinations(names, length))

@@ -371,6 +371,18 @@ class NativeProductionSource:
         finally:
             self._slots.release()
 
+    def analysis(self, scope, filters, view):
+        from .analytics import analysis
+        return analysis(self, scope, filters, view)
+
+    def availability(self, scope):
+        from .analytics import availability
+        return availability(self, scope)
+
+    def overview(self, namespace, filters, *, before_id=None):
+        from .analytics import overview
+        return overview(self, namespace, filters, before_id=before_id)
+
     def evidence(
         self,
         binding: SourceScope,

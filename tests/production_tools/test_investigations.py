@@ -298,7 +298,13 @@ def test_impact_is_server_derived_exact_frozen_and_does_not_create_snapshots(imp
     assert service.fork(actor,handoff['id'],{})['impact'] == impact
 
 
-def test_impact_marks_unsupported_filters_without_broadening_and_source_failure(impact_source):
+def test_impact_marks_unsupported_filters_without_broadening_and_source_failure(impact_source, monkeypatch):
+    from manufacturing_platform.production_tools import investigation_statistics
+    from manufacturing_platform.production_tools.contracts import ProductionQuery
+    class LegacyQueryContract:
+        model_fields = {key: field for key, field in ProductionQuery.model_fields.items() if key != 'error_code'}
+        model_validate = ProductionQuery.model_validate
+    monkeypatch.setattr(investigation_statistics, 'ProductionQuery', LegacyQueryContract)
     service, actor, source, _ = impact_source
     draft = service.create(actor,'1',{'context':{**PARAMS,'view':'anomalies','error_code':'E-1','status':'1'}})
     impact = draft['impact']
