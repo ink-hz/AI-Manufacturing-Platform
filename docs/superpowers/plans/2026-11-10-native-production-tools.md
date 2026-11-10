@@ -135,6 +135,8 @@ class SourceResult:
     redacted_fields: tuple[str, ...] = ()
 
 class ProductionSource(Protocol):
+    @property
+    def capabilities(self) -> frozenset[str]: ...
     def query(self, binding: SourceBinding, query: ProductionQuery) -> SourceResult: ...
     def evidence(self, binding: SourceBinding, source_log_id: int) -> EvidenceObject: ...
 
@@ -153,7 +155,7 @@ Additional exported signatures:
 # queries.py
 compile_query(binding: SourceBinding, query: ProductionQuery, *, cap: int = 1000) -> ReadStatement
 # source.py
-NativeProductionSource(mysql: SqlReader, questdb: SqlReader, objects: ObjectReader | None, *, allowed_object_host: str, clock: Callable[[], datetime])
+NativeProductionSource(mysql: SqlReader | None, questdb: SqlReader | None, objects: ObjectReader | None, *, allowed_object_host: str, clock: Callable[[], datetime])
 # transports.py
 build_native_config(config_path: str, snapshot_path: str, dataset: dict[str, str]) -> ProductionToolsConfig
 # store.py
@@ -171,6 +173,16 @@ register_production_tools_routes(router: APIRouter, service: ProductionToolsServ
 ```
 
 `Callable`, `datetime`, `UUID`, existing `Actor`, `WorkflowStore`, `APIRouter` and `Request` must be imported in their implementing files. The signatures are a contract list, not a Python module to execute verbatim.
+
+
+
+## Task 1 clarified native configuration contract
+
+Native JSON has exactly `dataset_id`, optional `mysql`, optional `questdb`, optional `objects`, and `bindings`. `dataset_id` matches the host dataset ID. `mysql` fields are `host`, `port`, `user`, `password`, `database`; `questdb` fields are `host`, `port`, `user`, `password`, `dbname` (default `qdb`); `objects` fields are `endpoint`, `bucket`, `access_key_id`, `access_key_secret`, `allowed_host`. `bindings` is a list of the shared `SourceBinding` fields, with UUID text for project IDs and duplicate platform project IDs rejected. Binding dataset IDs match the top-level and host IDs. Empty object prefix disables downloads for that binding; enabled canonical prefixes end with `/`. Missing backends cause capability-specific unavailability. `ProductionSource.capabilities` is a read-only frozenset of supported SourceKind strings; it additionally contains `evidence_content` only when MySQL and the object reader are configured. The service further disables content for bindings with empty object prefixes. Unsupported kinds fail with `SOURCE_UNAVAILABLE` before attempting I/O. Unknown keys and options overriding enforced connection controls are rejected.
+
+The absolute native secret file is regular, not a symlink, owned by the effective UID or root, and has no group/other permissions. Credentials are absent from repr, errors, snapshots and logs.
+
+Native error codes/status: `SOURCE_UNAVAILABLE`503 for sanitized transport errors, `SOURCE_SCHEMA_INVALID`503 for malformed/upstream out-of-scope rows, `SOURCE_INVALID_QUERY`422 for invalid filters, `SOURCE_LIMIT_EXCEEDED`422 for an oversize first record or unrepresentable bound, `SOURCE_BUSY`503 for exhausted concurrency and `SOURCE_NOT_FOUND`404 for absent/denied evidence. Normal capture truncation is a partial result, not an error. No outward `SOURCE_SCOPE_MISMATCH` containing upstream identifiers.
 
 ### Task 1: Native connectors, source contracts and bounded queries
 
