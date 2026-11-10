@@ -296,12 +296,15 @@ def test_factory_requires_private_regular_owned_absolute_file(tmp_path, mode):
 
 def test_factory_rejects_symlink_relative_and_duplicate_json_keys(tmp_path):
     path = config_file(tmp_path)
+    valid_json = path.read_text()
+    accepted = build_native_config(str(path), str(tmp_path / "snapshot"))
+    assert accepted.source_namespace == "fixture" and accepted.revision == "v1"
     link = tmp_path / "link"
     link.symlink_to(path)
     for candidate in [str(link), "relative.json", str(tmp_path)]:
         with pytest.raises(ValueError):
             build_native_config(candidate, str(tmp_path / "snapshot"))
-    path.write_text('{"dataset_id":"test","dataset_id":"test","bindings":[]}')
+    path.write_text(valid_json[:-1] + ', "revision": "v1"}')
     with pytest.raises(ValueError):
         build_native_config(str(path), str(tmp_path / "snapshot"))
 
