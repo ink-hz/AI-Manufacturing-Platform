@@ -54,6 +54,9 @@ export function useInvestigation({
   projectRef.current = projectId;
   handoffRef.current = handoff;
   const restoreGeneration = useRef(0);
+  // Metadata reads may commit only while no newer local write or restore owns
+  // the investigation. Retiring them leaves pending edits and their cache intact.
+  const retireMetadataRestore = () => ++restoreGeneration.current;
   const resolution = useInvestigationResolution(
     api,
     userId,
@@ -142,7 +145,12 @@ export function useInvestigation({
         api
           .productionStatus(projectId, c.signal)
           .then(() => {
-            if (!c.signal.aborted && epoch.current === token) restoreLocal();
+            if (
+              !c.signal.aborted &&
+              epoch.current === token &&
+              restoreToken === restoreGeneration.current
+            )
+              restoreLocal();
           })
           .catch((e) => {
             if (!c.signal.aborted) setError(errorText(e));
@@ -192,6 +200,7 @@ export function useInvestigation({
       return null;
     }
     if (pause.current && !force) return null;
+    retireMetadataRestore();
     const token = epoch.current;
     const operation = queue.current.then(async () => {
       if (token !== epoch.current) return null;
@@ -254,6 +263,7 @@ export function useInvestigation({
   }
   const patch = (value: InvestigationPatch) => {
     if (readOnly || handoffRef.current) return;
+    retireMetadataRestore();
     pending.current = {
       ...(!current.current ? { context: contextRef.current } : {}),
       ...pending.current,
@@ -331,6 +341,8 @@ export function useInvestigation({
   }
   async function restore(id: string, isHandoff = false) {
     if (dirty && !(await flush())) return;
+    // Editing can continue while that preflight save is pending.
+    if (Object.keys(pending.current).length) return;
     setError("");
     const generation = ++restoreGeneration.current;
     resolution.invalidate();
@@ -358,7 +370,8 @@ export function useInvestigation({
       if (d.source_project_id === projectRef.current)
         void resolve(d, isHandoff);
     } catch (e) {
-      if (!signal.aborted) setError(errorText(e));
+      if (!signal.aborted && generation === restoreGeneration.current)
+        setError(errorText(e));
     }
   }
   async function generate() {
@@ -382,6 +395,7 @@ export function useInvestigation({
   }
   async function fork() {
     if (readOnly || !handoffRef.current) return;
+    retireMetadataRestore();
     try {
       const d = await api.forkProductionHandoff(
         handoffRef.current.id,
@@ -400,6 +414,7 @@ export function useInvestigation({
   }
   async function acceptServer() {
     if (!conflict) return;
+    retireMetadataRestore();
     pending.current = {};
     setDirty(false);
     install(conflict);
@@ -483,11 +498,13 @@ export function useInvestigation({
       await flush(true);
     },
     detachHandoff: () => {
+      retireMetadataRestore();
       setHandoff(null);
       handoffRef.current = null;
       resolution.invalidate();
     },
     closeHandoff: () => {
+      retireMetadataRestore();
       setHandoff(null);
       handoffRef.current = null;
       if (current.current) {

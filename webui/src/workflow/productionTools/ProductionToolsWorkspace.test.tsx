@@ -1927,3 +1927,99 @@ it("I2 explicit chip removal updates saved scope without retaining deleted predi
     await v.dispose();
   }
 });
+
+for (const action of ["edit", "selection", "save"] as const) {
+  it(`I4 retires delayed handoff metadata after newer ${action}`, async () => {
+    let finish!: (response: Response) => void;
+    const v = await view((u) =>
+      u.pathname.endsWith("/handoffs/" + handoffId)
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    try {
+      await v.click("查看项目 A");
+      await v.click("查记录");
+      await v.click("开始调查");
+      await v.field("交接号或内部恢复链接", handoffId);
+      await v.click("读取交接");
+      const note = () =>
+        v.host.querySelector("textarea") as HTMLTextAreaElement;
+      expect(note().disabled).toBe(false);
+      if (action === "edit") {
+        await v.field("观察事实和待确认事项", "AFTER-RESTORE-REQUEST-UNSAVED");
+      } else if (action === "selection") {
+        await v.click("查看测试 1");
+        await v.click("设为调查对象");
+        await v.click("关闭测试详情");
+      } else {
+        await v.click("生成交接摘要");
+      }
+      await act(async () =>
+        finish(
+          new Response(
+            JSON.stringify({
+              ...initialDraft(),
+              id: handoffId,
+              note: "FROZEN-OLD-NOTE",
+            }),
+          ),
+        ),
+      );
+      await flush();
+      expect(note().value).toBe(
+        action === "edit" ? "AFTER-RESTORE-REQUEST-UNSAVED" : "",
+      );
+      if (action === "edit") {
+        expect(note().disabled).toBe(false);
+        await v.click("重试保存");
+        expect(v.saved().note).toBe("AFTER-RESTORE-REQUEST-UNSAVED");
+      } else if (action === "selection") {
+        expect(v.saved().primary?.offset).toBe(0);
+        expect(note().disabled).toBe(false);
+        expect(v.host.textContent).toContain("核对主要候选 1");
+      } else {
+        await v.click("返回我的调查");
+        expect(note().value).toBe("");
+      }
+    } finally {
+      await v.dispose();
+    }
+  });
+}
+
+it("I4 newer local edit retires cached startup metadata too", async () => {
+  const first = await view();
+  await first.click("查看项目 A");
+  await first.click("开始调查");
+  await first.dispose();
+  let finish!: (response: Response) => void;
+  const v = await view((u, init) =>
+    u.pathname.endsWith("/investigations/" + draftId) && init?.method === "GET"
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : undefined,
+  );
+  try {
+    await v.field("观察事实和待确认事项", "EDIT-DURING-STARTUP-RESTORE");
+    await act(async () =>
+      finish(
+        new Response(
+          JSON.stringify({
+            ...initialDraft(),
+            note: "OLD-CACHED-SERVER-NOTE",
+          }),
+        ),
+      ),
+    );
+    await flush();
+    expect(
+      (v.host.querySelector("textarea") as HTMLTextAreaElement).value,
+    ).toBe("EDIT-DURING-STARTUP-RESTORE");
+    expect(v.host.textContent).toContain("未保存修改");
+  } finally {
+    await v.dispose();
+  }
+});
