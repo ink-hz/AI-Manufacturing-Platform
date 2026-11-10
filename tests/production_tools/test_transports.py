@@ -1,7 +1,6 @@
 from dataclasses import replace
 
 import pytest
-from test_queries import binding, timed
 
 from manufacturing_platform.production_tools.contracts import (
     ProductionQuery,
@@ -13,6 +12,8 @@ from manufacturing_platform.production_tools.transports import (
     QuestDbReader,
 )
 from manufacturing_platform.workflow.contracts import DomainError
+
+from .test_queries import binding, timed
 
 
 class Cursor:

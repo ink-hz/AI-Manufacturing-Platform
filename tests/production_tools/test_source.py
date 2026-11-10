@@ -2,7 +2,6 @@ from decimal import Decimal
 from io import BytesIO
 
 import pytest
-from test_queries import NOW, binding, timed
 
 from manufacturing_platform.production_tools.contracts import (
     EvidenceObject,
@@ -10,6 +9,8 @@ from manufacturing_platform.production_tools.contracts import (
 )
 from manufacturing_platform.production_tools.source import NativeProductionSource
 from manufacturing_platform.workflow.contracts import DomainError
+
+from .test_queries import NOW, binding, timed
 
 
 class RecordingReader:

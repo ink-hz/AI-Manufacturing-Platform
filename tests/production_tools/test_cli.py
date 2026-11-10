@@ -5,10 +5,11 @@ import json
 from pathlib import Path
 
 import pytest
-from test_queries import binding
-from test_source import row, source
 
 from manufacturing_platform.production_tools.contracts import ProductionToolsConfig
+
+from .test_queries import binding
+from .test_source import row, source
 
 
 def cli():
