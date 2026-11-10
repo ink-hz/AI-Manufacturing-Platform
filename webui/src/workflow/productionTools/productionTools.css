@@ -1,19 +1,258 @@
-.wf-production-tools { min-width: 0; }
-.wf-production-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 16px 0; }
-.wf-production-filters label { display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
-.wf-production-filters input, .wf-production-filters select { width: 100%; min-width: 0; box-sizing: border-box; }
-.wf-production-directory, .wf-production-tabs, .wf-production-paging { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
-.wf-production-tabs [aria-pressed="true"] { font-weight: 700; border-color: currentColor; }
-.wf-production-capture { overflow-wrap: anywhere; }
-.wf-production-table { max-width: 100%; overflow-x: auto; }
-.wf-production-table table { width: 100%; border-collapse: collapse; }
-.wf-production-table th, .wf-production-table td { text-align: left; padding: 8px; vertical-align: top; }
-.wf-production-table pre { max-width: 36rem; max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-.wf-production-statistics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
-.wf-production-statistics dd { margin: 8px 0; font-size: 1.3rem; }
-@media (max-width: 640px) {
-  .wf-production-filters { flex-direction: column; align-items: stretch; }
-  .wf-production-filters label { min-width: 0; width: 100%; }
-  .wf-production-tabs > button { flex: 1 1 42%; }
-  .wf-production-table pre { max-width: 70vw; }
+.wf-production-tools {
+  --pt-border: #d9e1e8;
+  --pt-muted: #526578;
+  position: relative;
+  max-width: 1440px;
+  margin: auto;
+  padding: 24px;
+  color: #203549;
+  background: #f6f8fa;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.wf-production-tools h2 {
+  font-size: 26px;
+  margin: 0 0 8px;
+}
+.wf-production-tools h3 {
+  font-size: 19px;
+  margin: 18px 0 10px;
+}
+.wf-production-tools h4 {
+  font-size: 15px;
+  margin: 12px 0 6px;
+}
+.wf-production-tools p {
+  margin: 8px 0;
+}
+.wf-production-tools button,
+.wf-production-tools input,
+.wf-production-tools select,
+.wf-production-tools textarea {
+  font: inherit;
+}
+.wf-production-tools button {
+  padding: 7px 11px;
+  border: 1px solid #b7c5d0;
+  border-radius: 5px;
+  background: white;
+  color: #244968;
+  cursor: pointer;
+}
+.wf-production-tools button:hover {
+  background: #edf4fa;
+}
+.wf-production-tools button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.wf-production-tools button:focus-visible,
+.wf-production-tools input:focus-visible,
+.wf-production-tools select:focus-visible {
+  outline: 3px solid #78b5e3;
+  outline-offset: 2px;
+}
+.pt-nav,
+.pt-actions,
+.pt-scope,
+.pt-search,
+.pt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  margin: 12px 0;
+}
+.pt-nav button {
+  font-size: 16px;
+  padding: 10px 18px;
+}
+.pt-nav button[aria-pressed="true"] {
+  background: #214e71;
+  color: white;
+  border-color: #214e71;
+}
+.pt-scope {
+  padding: 14px;
+  background: #eaf0f5;
+  border-radius: 6px;
+}
+.wf-production-tools label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wf-production-tools input,
+.wf-production-tools select,
+.wf-production-tools textarea {
+  border: 1px solid #b7c5d0;
+  border-radius: 4px;
+  padding: 7px;
+  max-width: 100%;
+  background: white;
+}
+.wf-production-tools textarea {
+  min-height: 90px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.pt-meta {
+  font-size: 12px;
+  color: var(--pt-muted);
+}
+.pt-content,
+.pt-investigation {
+  background: white;
+  border: 1px solid var(--pt-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 18px 0;
+}
+.pt-projects {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 14px;
+}
+.wf-production-tools article {
+  background: white;
+  border: 1px solid var(--pt-border);
+  padding: 14px;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+.pt-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+}
+.pt-counts strong {
+  color: #8b3a36;
+}
+.pt-master-detail {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(360px, 2fr);
+  gap: 20px;
+}
+.pt-trend,
+.pt-grid {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 8px 0;
+}
+.pt-trend button,
+.pt-grid button {
+  flex: 0 0 160px;
+  background: #e3edf4;
+  font-size: 12px;
+}
+.pt-grid .has-failure {
+  border-bottom: 4px solid #bd675d;
+}
+.pt-table {
+  overflow: auto;
+  max-width: 100%;
+}
+.wf-production-tools table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+.wf-production-tools th,
+.wf-production-tools td {
+  padding: 10px;
+  border-bottom: 1px solid var(--pt-border);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.wf-production-tools th {
+  background: #f1f5f8;
+}
+.wf-production-tools small {
+  display: block;
+  color: var(--pt-muted);
+}
+.wf-production-tools dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.wf-production-tools dt {
+  font-size: 12px;
+  color: var(--pt-muted);
+}
+.wf-production-tools dd {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+.wf-production-tools details {
+  margin: 12px 0;
+}
+.wf-production-tools summary {
+  cursor: pointer;
+  color: #285f89;
+}
+.wf-production-tools pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+  background: #f0f4f7;
+  padding: 12px;
+}
+.wf-production-tools [role="alert"] {
+  border-left: 4px solid #b66c3d;
+  background: #fff5e9;
+  padding: 12px;
+}
+.pt-sidebar {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(620px, 90vw);
+  z-index: 30;
+  background: white;
+  box-shadow: -8px 0 28px #17324a30;
+  padding: 24px;
+  overflow: auto;
+  border-left: 1px solid var(--pt-border);
+}
+.pt-chips button {
+  background: #eaf1f7;
+  font-size: 12px;
+}
+.pt-investigation > details > button {
+  display: block;
+  margin: 8px 0;
+}
+@media (max-width: 760px) {
+  .wf-production-tools {
+    padding: 12px;
+  }
+  .pt-master-detail {
+    display: block;
+  }
+  .pt-projects {
+    grid-template-columns: 1fr;
+  }
+  .pt-scope label {
+    width: 100%;
+  }
+  .pt-content,
+  .pt-investigation {
+    padding: 12px;
+  }
+  .pt-sidebar {
+    box-sizing: border-box;
+    width: 100vw;
+  }
+  .pt-counts {
+    gap: 6px 12px;
+  }
+  .wf-production-tools td,
+  .wf-production-tools th {
+    min-width: 100px;
+  }
 }

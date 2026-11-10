@@ -120,8 +120,8 @@ it('opens production management independently from the controlled test and calib
  const v=await workflowView({options:{bootstrap:{...bootstrap,configuration_admin:true,project_ids:[]}},readProjects:async()=>[]});
  try{expect(v.host.querySelector('.mf-badge')?.textContent).toContain('独立测试');const original=fetch;vi.stubGlobal('fetch',vi.fn(async(input,init)=>String(input).endsWith('/production-tools/status')?new Response(JSON.stringify({configured:true,source_namespace:'native',source_project_id:null,capabilities:{}})):String(input).endsWith('/production-tools/projects')?new Response(JSON.stringify({items:[{id:'99999999999999999999',name:'真实源项目'}],limit:100,has_more:false,next_before_id:null})):original(input,init)));
  await v.click('产测管理');expect(v.host.querySelector('.mf-badge')?.textContent).toBe('产测源数据 · 只读查询');expect(v.host.querySelector('.mf-badge')?.textContent).not.toContain('隔离测试数据');expect(v.host.textContent).toContain('真实源项目');expect(v.host.querySelector('select[aria-label="源项目"]')).not.toBeNull();
- for(const label of ['SN 观测','软件与配置目录','日志证据','记录统计']) expect([...v.host.querySelectorAll('button')].some(b=>b.textContent===label)).toBe(true);
- expect(v.host.textContent).toContain('请选择源项目');
+ for(const label of ['运行总览','测试异常','上位机活动','工具与配置']) expect([...v.host.querySelectorAll('button')].some(b=>b.textContent===label)).toBe(true);
+ expect(v.host.textContent).toContain('全部可访问源项目');
  await v.click('测试与标定');expect(v.host.querySelector('[aria-label="所属项目筛选"]')).not.toBeNull();expect(v.host.textContent).toContain('测试计划');
  expect(v.host.querySelector('select[aria-label="源项目"]')).toBeNull();expect(v.host.querySelector('.mf-badge')?.textContent).toContain('独立测试');
  }finally{await v.dispose();}

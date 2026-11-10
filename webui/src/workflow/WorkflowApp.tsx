@@ -1,4 +1,5 @@
-import { ProductionToolsWorkspace } from "./productionTools/ProductionToolsWorkspace";
+import { clearProductionResume } from './productionTools/investigations';
+import { ProductionToolsWorkspace, validProductionHandoff } from "./productionTools/ProductionToolsWorkspace";
 import { oemActionWorkspace, oemObjectWorkspace } from "./oemNavigation";
 import { StatusBadge } from "./StatusBadge";
 import { IntroductionWorkspace } from "./IntroductionWorkspace";
@@ -41,6 +42,7 @@ export function WorkflowApp({
   options: MountOptions;
 }) {
   const b = options.bootstrap!;
+  const productionHandoff = b.configuration_admin ? validProductionHandoff(new URLSearchParams(window.location.search).get("production_handoff")) : undefined;
   const handoffReturn = useRef<{projectId: string; projectWorkspace: boolean} | null>(null);
   const [handoffFilters, setHandoffFilters] = useState<Record<string, MaterialHandoffFilter>>({});
   const [supplyMode, setSupplyMode] = useState<{projectId: string; mode: 'handoff' | 'legacy'} | null>(null);
@@ -53,7 +55,7 @@ export function WorkflowApp({
     [projectsError, setProjectsError] = useState(""),
     [projectsReady, setProjectsReady] = useState(false),
     [project, setProject] = useState<ProjectDetail | null>(null),
-    [view, setView] = useState<ConsoleView>("home"),
+    [view, setView] = useState<ConsoleView>(productionHandoff ? "production_tools" : "home"),
     [creating, setCreating] = useState(false),
     [workspace, setWorkspace] = useState<"introduction" | "laboratory" | "orders" | "engineering" | "supply" | "execution" | "quality" | "delivery" | "trace" | "exchange" | "members">(
       "orders",
@@ -92,6 +94,7 @@ export function WorkflowApp({
     alive.current = false;
     apiRef.current?.dispose();
     cancelOpening();
+    clearProductionResume(String(b.user.id));
     setDenied(true);
     setDashboard(null);
     setDetail(null);
@@ -128,6 +131,7 @@ export function WorkflowApp({
       ),
     [],
   );
+  const productionDirty = useCallback((value: boolean) => onDirty("production", value), [onDirty]);
   const dirty = Object.values(dirtyKeys).some(Boolean);
   useEffect(() => {
     options.onDirtyChange?.(dirty);
@@ -149,6 +153,7 @@ export function WorkflowApp({
       try {
         if (accountAction === "logout") {
           await callbacks.current.onLogout?.();
+          clearProductionResume(String(b.user.id));
           if (!alive.current) return;
           api.dispose();
           alive.current = false;
@@ -451,7 +456,7 @@ export function WorkflowApp({
         )}
         {opening && (opening.error ? <p role="alert">{opening.error}<button onClick={() => open(opening.target)}>重试打开记录</button></p> : <p role="status">正在读取记录所属项目…</p>)}
         <div hidden={view === "handbook"} key={epoch}>
-          {activeView === "production_tools" && b.configuration_admin && <ProductionToolsWorkspace api={api} />}
+          {activeView === "production_tools" && b.configuration_admin && <ProductionToolsWorkspace api={api} userId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} handoffId={productionHandoff} onDirty={productionDirty} />}
           {activeView === "home" && !project && (
             <WorkflowHome readOnly={readOnly} onDirty={onDirty} requestLeave={requestLeave} data={dashboard} projects={projects} projectsReady={projectsReady} dashboardError={dashboardError} projectsError={projectsError} api={api} refresh={refresh} active={view === "home"} onRefresh={() => setRefresh(r => r + 1)} onOpen={open}
               onNavigate={(module, kind, projectId) => navigate(module, {kind, projectId})} />
