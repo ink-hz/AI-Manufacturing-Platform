@@ -2,6 +2,8 @@
 import copy
 import re
 
+from native_release import NATIVE_FIELDS, native_environment
+
 
 def _require(condition, reason):
     if not condition:
@@ -67,7 +69,7 @@ def validate_candidate(baseline, candidate, *, target_image, environment_delta, 
 
 
 def validate_upgrade_candidate(baseline, candidate, *, target_image, environment_delta,
-                               baseline_environment, new_code_mount, data_mount):
+                               baseline_environment, new_code_mount, data_mount, native_enabled=False):
     """Replace one immutable source; preserve the existing data and all other state."""
     before,after=copy.deepcopy(baseline),copy.deepcopy(candidate)
     old,new=before['services']['platform-api'],after['services']['platform-api']
@@ -77,16 +79,22 @@ def validate_upgrade_candidate(baseline, candidate, *, target_image, environment
            'PLATFORM_MANUFACTURING_DATABASE_PATH':'/app/data/manufacturing/workbench.sqlite3'}
     releases={'PLATFORM_RELEASE_SHA','PLATFORM_MANUFACTURING_RELEASE'}
     workflow_keys=set(WORKFLOW_FIELDS.values())
+    native_keys=set(NATIVE_FIELDS.values()) if native_enabled else set()
     for row in [baseline_environment,environment_delta]:
-        _require(set(fixed)|releases <= set(row) <= set(fixed)|releases|workflow_keys,'upgrade_environment_keys')
+        _require(set(fixed)|releases <= set(row) <= set(fixed)|releases|workflow_keys|native_keys,'upgrade_environment_keys')
         validate_workflow_environment(row)
+        selected={key:row[value] for key,value in NATIVE_FIELDS.items() if value in row}
+        if selected:native_environment(selected)
     old_workflow={k:v for k,v in baseline_environment.items() if k in workflow_keys}
     new_workflow={k:v for k,v in environment_delta.items() if k in workflow_keys}
     _require(not old_workflow or old_workflow==new_workflow,'existing_workflow_configuration_changed')
+    old_native={k:v for k,v in baseline_environment.items() if k in native_keys}
+    new_native={k:v for k,v in environment_delta.items() if k in native_keys}
+    _require(not old_native or old_native==new_native,'existing_native_configuration_changed')
     for key in releases:
         _require(all(isinstance(row[key],str) and re.fullmatch('[0-9a-f]{40}',row[key]) for row in [baseline_environment,environment_delta]),'upgrade_release_pin')
     old_env,new_env=old.get('environment',{}),new.get('environment',{})
-    for key in workflow_keys-set(baseline_environment):
+    for key in (workflow_keys|native_keys)-set(baseline_environment):
         _require(key not in old_env,'upgrade_baseline_workflow_expected_absent')
     for key,value in environment_delta.items():
         if key not in baseline_environment:

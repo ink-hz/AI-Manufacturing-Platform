@@ -15,6 +15,7 @@ import time
 import uuid
 from release_guard import validate_candidate,validate_upgrade_candidate,workflow_environment,WORKFLOW_FIELDS
 import release_support as ops
+import native_release
 
 READINESS_CODE = '''import os,sys,json
 assert os.getuid()==10001
@@ -228,7 +229,8 @@ def validate_workflow_storage(e):
 
 def environment_delta(e):
     config=workflow_configuration(e)
-    return {**(workflow_environment(config) if config else {}),'PLATFORM_RELEASE_SHA':e['platform_commit'],
+    native=native_release.native_configuration(e)
+    return {**(native_release.native_environment(native) if native else {}),**(workflow_environment(config) if config else {}),'PLATFORM_RELEASE_SHA':e['platform_commit'],
             'PLATFORM_MANUFACTURING_ROOT':'/opt/manufacturing',
             'PLATFORM_MANUFACTURING_DATABASE_PATH':'/app/data/manufacturing/workbench.sqlite3',
             'PLATFORM_MANUFACTURING_RELEASE':e['manufacturing_commit']}
@@ -244,9 +246,11 @@ def overlay_mounts(e):
 
 
 def baseline_environment(e):
-    old={k:v for k,v in e.items() if k not in {'target_workflow','baseline_workflow'}}
+    old={k:v for k,v in e.items() if k not in {'target_workflow','baseline_workflow','target_native','baseline_native'}}
     config=workflow_configuration(e,baseline=True)
     if config is not None:old['target_workflow']=config
+    native=native_release.native_configuration(e,baseline=True)
+    if native is not None:old['target_native']=native
     return {**environment_delta(old),'PLATFORM_RELEASE_SHA':e['expected_old_platform_commit'],
             'PLATFORM_MANUFACTURING_RELEASE':e['expected_old_manufacturing_commit']}
 
@@ -258,7 +262,7 @@ def previous_source(e):
 def validate_baseline(e,old):
     if e.get('mode')!='upgrade':return
     env=ops.actual_environment(old)
-    for key in set(WORKFLOW_FIELDS.values())-set(baseline_environment(e)):
+    for key in (set(WORKFLOW_FIELDS.values())|set(native_release.NATIVE_FIELDS.values()))-set(baseline_environment(e)):
         require(key not in env,'upgrade_baseline_workflow_expected_absent')
     require(all(env.get(key)==value for key,value in baseline_environment(e).items()),'upgrade_baseline_environment_drift')
     require(len({m['Destination'] for m in old['Mounts']})==len(old['Mounts']),'baseline_duplicate_mount')
@@ -273,7 +277,7 @@ def validate_baseline(e,old):
 def validate_configuration(e,baseline,candidate):
     if e.get('mode')=='upgrade':
         validate_upgrade_candidate(baseline,candidate,target_image=e['target_image'],environment_delta=environment_delta(e),
-            baseline_environment=baseline_environment(e),new_code_mount=added_mounts(e)[0],data_mount=added_mounts(e)[1])
+            baseline_environment=baseline_environment(e),new_code_mount=added_mounts(e)[0],data_mount=added_mounts(e)[1],native_enabled=native_release.native_configuration(e) is not None)
     else:
         validate_candidate(baseline,candidate,target_image=e['target_image'],environment_delta=environment_delta(e),new_mounts=added_mounts(e))
 
@@ -297,6 +301,8 @@ def validate_backend_baseline(e,source):
 
 
 def validate_paths(e):
+    native_release.sdk_request(e)
+    native_release.native_configuration(e)
     workflow_configuration(e)
     base='/data/orbbec-agent-platform/manufacturing'
     require(e['manufacturing_host']==base+'/releases/'+e['manufacturing_commit'] and e['data_host']==base+'/data','unapproved_manufacturing_path')
@@ -346,8 +352,14 @@ def publish_success(receipt,maintenance):
 
 
 def snapshot_files(e):
-    names=['request.json','release.py','release_support.py','release_guard.py','candidate_verify.py','candidate_fixture.py','sqlite_backup.py']
+    names=['request.json','release.py','release_support.py','release_guard.py','candidate_verify.py','candidate_fixture.py','sqlite_backup.py','native_release.py']
     result={name:ops.digest(ops.STAGE/name) for name in names}
+    sdk=native_release.validate_sdk(ops.STAGE,e)
+    if sdk is not None:
+        native_release.validate_sdk_copy_metadata(ops.STAGE,e)
+        result['build/native-sdk-manifest.json']=ops.digest(ops.STAGE/'build/native-sdk-manifest.json')
+        result.update({'build/native-sdk/'+name:value for name,value in sdk['files'].items()})
+    result.update(native_release.validate_native_storage(e))
     if workflow_configuration(e) is not None:
         require(re.fullmatch('[0-9a-f]{64}',e.get('candidate_fixture_sha256','')) is not None,'candidate_fixture_pin_required')
         result['candidate_fixture']=ops.digest(ops.STAGE/'candidate-fixture/fixture.json')
@@ -413,6 +425,8 @@ def compare_rollback_runtime(old,restored):
 
 def compare_runtime(old, new, e):
     require(new['Image']==e['target_image_id'],'deployed_image_mismatch')
+    sdk=native_release.validate_sdk(ops.STAGE,e)
+    if sdk is not None:native_release.check_container_sdk(ops.run,ops.API,sdk)
     require(ops.actual_environment(new)=={**ops.actual_environment(old),**environment_delta(e)},'runtime_environment_changed')
     old_mounts={v['Destination']:v for v in copy.deepcopy(old['Mounts'])}
     new_mounts={v['Destination']:v for v in new['Mounts']}
@@ -597,6 +611,11 @@ def prepare(e):
         require(old['Image']==e['expected_old_image'],'baseline_image_drift')
         validate_baseline(e,old)
         check_images(e,old)
+        sdk=native_release.validate_sdk(ops.STAGE,e)
+        if sdk is not None:
+            native_release.validate_sdk_copy_metadata(ops.STAGE,e)
+            native_release.check_container_sdk(ops.run,ops.API,sdk,baseline=True)
+        native_release.validate_native_storage(e)
         files=ops.discover_files(old)
         require(len(files)==e['expected_chain_length'],'compose_chain_length_drift')
         env=ops.environment(old)
@@ -665,7 +684,12 @@ def candidate(e):
                                 'PLATFORM_MANUFACTURING_DATASET_MODE':'test','PLATFORM_MANUFACTURING_DATASET_LABEL':'Synthetic candidate test'})
             for key,value in private_env.items():args+=['-e',key+'='+value]
             payload['source_manifest_sha256']=spec['source_manifest_sha256']
-        args+=['--entrypoint','python',e['target_image_id'],'-c',(ops.STAGE/'candidate_verify.py').read_text()]
+        verifier=(ops.STAGE/'candidate_verify.py').read_text()
+        sdk=native_release.validate_sdk(ops.STAGE,e)
+        if sdk is not None:
+            payload['native_sdk']=sdk
+            verifier=(ops.STAGE/'native_release.py').read_text()+'\n'+verifier
+        args+=['--entrypoint','python',e['target_image_id'],'-c',verifier]
         try:
             checked=json.loads(ops.run(args,data=ops.canonical(payload),timeout=3900 if workflow else 180))
         finally:

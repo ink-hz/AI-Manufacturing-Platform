@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 
 DOCUMENTS=['docs/manufacturing-system-handbook.md','docs/workflows/manufacturing-process-overview.md']
-TOOLS=['release.py','release_support.py','release_guard.py','candidate_verify.py','candidate_fixture.py','sqlite_backup.py']
+TOOLS=['release.py','release_support.py','release_guard.py','candidate_verify.py','candidate_fixture.py','sqlite_backup.py','native_release.py']
 
 
 def require(condition,reason):
@@ -127,9 +127,11 @@ def assemble(manufacturing_repo,platform_repo,output,baseline,manufacturing_sha,
              'resource_urls':['https://agent.orbbec.com.cn/office/','https://fae.orbbec.com.cn/partner/login'],
              'backend_base_hashes':base_hashes,'backend_hashes':new_hashes,'backend_added_files':baseline.get('approved_backend_additions',[]),'static_hashes':static}
     from release import workflow_configuration
-    for key in ['baseline_workflow','target_workflow']:
+    for key in ['baseline_workflow','target_workflow','baseline_native','target_native']:
         if key in baseline:request[key]=baseline[key]
     workflow_configuration(request)
+    from native_release import native_configuration
+    native_configuration(request)
     (payload/'request-template.json').write_text(json.dumps(request,sort_keys=True,indent=2)+'\n')
     archive=output/'payload.tar.gz'
     def metadata(member):

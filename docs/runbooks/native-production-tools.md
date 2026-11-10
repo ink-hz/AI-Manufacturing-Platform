@@ -147,3 +147,63 @@ project, execute an SN query, inspect catalog versions/review-order wording, dow
 one permitted evidence item if available, review record statistics, reopen a snapshot,
 and confirm no quality/work-order actions appeared. Check the explicit unavailable
 state. Browser and production deployment are not performed by this task.
+
+## COPY-only production SDK release profile
+
+The release installer accepts one explicit SDK extension. Omit `native_sdk` to
+retain the existing backend/static-only Dockerfile. To opt in, provision
+`build/native-sdk/` and `build/native-sdk-manifest.json` in the private payload,
+then set `request.native_sdk` to exactly:
+
+```json
+{"profile":"native-production-tools-sdk-v1","manifest_sha256":"<64 lowercase hex characters>"}
+```
+
+The manifest has exactly `profile`, `python` (`3.11`), `platform`
+(`linux-x86_64`), `distributions`, and `files`. Its distributions are exactly
+PyMySQL 1.2.4, oss2 2.19.1, crcmod 1.7, pycryptodome 4.4.0,
+aliyun-python-sdk-kms 2.16.5, and aliyun-python-sdk-core 2.16.1. The `files`
+object maps every SDK-relative file path to its SHA-256. Only the six package
+namespaces and their six matching `.dist-info` directories are accepted.
+Build this tree in disposable Linux preparation against the pinned actual
+baseline; preserve wheel hashes and preparation logs privately. Remove bytecode
+caches before inventorying. Do not install SDKs into the host or live container.
+
+Generate the Dockerfile with `native_release.dockerfile(baseline_tag, request)`.
+The only added instruction is `COPY --chown=0:0 native-sdk/
+/usr/local/lib/python3.11/site-packages/` on one line, before the existing two
+COPY instructions. The installer checks the actual image-pinned baseline for
+namespace/distribution collisions using read-only Python, validates the exact
+inventory and metadata versions, then normalizes only the SDK copy tree to
+root-owned directories `0755` and files `0644`. The private enclosing stage and
+all unrelated files retain their permissions. No build-time network, package
+installer, extra image defaults, or additional Dockerfile instructions are
+allowed. Prepare pins the manifest and every SDK file. Candidate and deployed
+checks read the installed bytes, metadata versions and import origins, verify
+Linux x86_64 / Python 3.11, and exercise the CRC64 known vector and Crypto AES extension loading.
+
+Native source settings remain optional. `baseline_native` and `target_native`,
+when supplied, each contain exactly these fixed values:
+
+```json
+{
+  "config_path":"/app/data/manufacturing/native-production-tools/config.json",
+  "snapshot_path":"/app/data/manufacturing/native-production-tools/snapshots.sqlite3"
+}
+```
+
+The release permits only the two explicit environment settings shown above and
+uses the existing manufacturing data mount. Existing baseline values must be
+preserved exactly. On the host, create only the new `native-production-tools`
+subdirectory beneath the existing data directory, owned by `10001:10001` with
+mode `0700`. Its configuration and any existing snapshot/SQLite sidecars must
+be regular, nonsymlink files owned by `10001:10001` with mode `0600`. The
+configuration is at most 128 KiB. Release checks use metadata and a configuration
+hash; they do not parse or print credentials. Snapshot inode isolation from the
+configuration and the three manufacturing databases is mandatory.
+
+Without approved production project bindings, omit both native path objects and
+publish the SDK/code with the source entry closed. Local fixture UUIDs and
+synthetic mappings must never enter the production configuration. The operator
+owns actual-image acceptance and deployment; local helper tests do not establish
+live source connectivity or browser acceptance.

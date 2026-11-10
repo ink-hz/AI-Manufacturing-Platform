@@ -15,6 +15,8 @@ from app.manufacturing import build_manufacturing_router
 
 expected=json.loads(sys.stdin.read())
 assert os.getuid()==10001
+if expected.get('native_sdk'):
+    verify_installed_sdk(expected['native_sdk'])  # noqa: F821 - prepended pinned native_release helper
 for arguments in [['git','--version'],['git','--no-lazy-fetch','--version']]:
     assert subprocess.run(arguments,capture_output=True,check=True).stdout.strip()==b'git version 2.50.1'
 root=Path('/app/backend/app')

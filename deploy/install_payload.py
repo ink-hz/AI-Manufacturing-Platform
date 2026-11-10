@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tarfile
 
-TOP={'business','build','release.py','release_support.py','release_guard.py','candidate_verify.py','candidate_fixture.py','sqlite_backup.py','request-template.json'}
+TOP={'business','build','release.py','release_support.py','release_guard.py','candidate_verify.py','candidate_fixture.py','sqlite_backup.py','native_release.py','request-template.json'}
 
 
 def require(condition,reason):
@@ -61,11 +61,13 @@ def install(stage,archive_sha256):
     release.validate_baseline(e,old)
     release.validate_backend_baseline(e,release.ops.maps(release.ops.API)['source'])
     release.validate_workflow_storage(e)
+    release.native_release.validate_native_storage(e)
+    sdk=release.native_release.validate_sdk(stage,e)
+    if sdk is not None:release.native_release.check_container_sdk(release.ops.run,release.ops.API,sdk,baseline=True)
     require(len(release.ops.discover_files(old))==e['expected_chain_length'],'baseline_chain_length_drift')
     require(e['target_image']!=old['Config']['Image'],'candidate_tag_must_not_retag_rollback')
     require(run_json(['docker','image','inspect',old['Config']['Image']])['Id']==old['Image'],'baseline_tag_drift')
-    expected='FROM '+old['Config']['Image']+'\nCOPY --chown=10001:10001 backend/ /app/backend/app/\nCOPY --chown=10001:10001 static/ /app/backend/app/static/\n'
-    require((stage/'build/Dockerfile').read_text()==expected,'copy_only_dockerfile_required')
+    release.native_release.validate_dockerfile((stage/'build/Dockerfile').read_text(),old['Config']['Image'],e)
     data=release.ops.safe_path(e['data_host'],directory=True);info=data.stat()
     require(info.st_uid==10001 and info.st_gid==10001 and stat.S_IMODE(info.st_mode)==0o700,'existing_state_metadata')
     root=Path(e['manufacturing_host']);release.ops.safe_path(root.parent,directory=True)
@@ -84,6 +86,7 @@ def install(stage,archive_sha256):
             path.chmod(0o555 if path.is_dir() else 0o444)
         root.chmod(0o555)
         release.validate_release_metadata(root)
+    release.native_release.normalize_sdk_copy(stage,e)
     with (stage/'image-build.private.log').open('xb') as log:
         built=subprocess.run(['docker','build','--network','none','--pull=false','--tag',e['target_image'],str(stage/'build')],stdout=log,stderr=subprocess.STDOUT)
     require(built.returncode==0,'image_build_failed_see_private_log')
