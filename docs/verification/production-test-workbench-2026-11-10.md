@@ -79,10 +79,17 @@
 最终通用前端在已审查功能树执行既定 `npm test -- --exclude src/workflow/acceptanceNavigationHttp.test.tsx`，设置 PF 依赖环境的 `WORKFLOW_TEST_PYTHON`；418 项通过。原目录 `webui` 重新执行 `npm run test:bundle`。合并后的两项后端检查分别为：
 
 ```sh
-# MF main，TEST_PLATFORM_SOURCE_ROOT 指向 PF master 工作树
-PYTHONPATH=src "$WORKBENCH_TEST_PYTHON" -m pytest -q tests/production_tools/test_socket.py
-# PF master，TEST_MANUFACTURING_RELEASE_ROOT 指向 MF main 原目录
-PYTHONPATH=backend "$WORKBENCH_TEST_PYTHON" -m pytest -q backend/tests/test_manufacturing_production_tools.py
+WORKBENCH_MF_ROOT=/Users/neo/Developer/work/AI-Manufacturing-Platform
+WORKBENCH_PF_ROOT=/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/admin-home-20261109
+WORKBENCH_TEST_PYTHON=/Users/neo/.codex/worktrees/production-workbench-host-20261110/AI-Agent-Platform/.venv/bin/python
+(
+  cd "$WORKBENCH_MF_ROOT"
+  TEST_PLATFORM_SOURCE_ROOT="$WORKBENCH_PF_ROOT" PYTHONPATH=src "$WORKBENCH_TEST_PYTHON" -m pytest -q tests/production_tools/test_socket.py
+)
+(
+  cd "$WORKBENCH_PF_ROOT"
+  TEST_MANUFACTURING_RELEASE_ROOT="$WORKBENCH_MF_ROOT" PYTHONPATH=backend "$WORKBENCH_TEST_PYTHON" -m pytest -q backend/tests/test_manufacturing_production_tools.py
+)
 ```
 
 这里的 Python 是已安装 PF 锁定依赖的隔离解释器；两个来源根目录均使用归并后的真实本地路径，没有继续指向旧功能分支。JS／CSS 与已审查构建逐字节一致：
