@@ -52,7 +52,7 @@ Use these public names across task handoffs. Internal helpers may be split witho
 # production_tools/contracts.py
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, BinaryIO, Literal, Mapping, Protocol
+from typing import Any, BinaryIO, Callable, Literal, Mapping, Protocol
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -138,7 +138,7 @@ class ProductionSource(Protocol):
     @property
     def capabilities(self) -> frozenset[str]: ...
     def query(self, binding: SourceBinding, query: ProductionQuery) -> SourceResult: ...
-    def evidence(self, binding: SourceBinding, source_log_id: int) -> EvidenceObject: ...
+    def evidence(self, binding: SourceBinding, source_log_id: int, *, before_open: Callable[[], None] | None = None) -> EvidenceObject: ...
 
 @dataclass(frozen=True)
 class ProductionToolsConfig:
@@ -183,6 +183,12 @@ Native JSON has exactly `dataset_id`, optional `mysql`, optional `questdb`, opti
 The absolute native secret file is regular, not a symlink, owned by the effective UID or root, and has no group/other permissions. Credentials are absent from repr, errors, snapshots and logs.
 
 Native error codes/status: `SOURCE_UNAVAILABLE`503 for sanitized transport errors, `SOURCE_SCHEMA_INVALID`503 for malformed/upstream out-of-scope rows, `SOURCE_INVALID_QUERY`422 for invalid filters, `SOURCE_LIMIT_EXCEEDED`422 for an oversize first record or unrepresentable bound, `SOURCE_BUSY`503 for exhausted concurrency and `SOURCE_NOT_FOUND`404 for absent/denied evidence. Normal capture truncation is a partial result, not an error. No outward `SOURCE_SCOPE_MISMATCH` containing upstream identifiers.
+
+
+
+## Protected status JSON shared with UI
+
+`status` returns `{project_id, configured, capabilities}`. `capabilities` has every SourceKind plus `evidence_content` as keys; each value is `{available: bool, reason: str | null}`. `configured` means this platform project has an explicit valid binding and native config, not that a live connectivity check succeeded. Available entries have null reason. Missing project binding/config uses `PRODUCTION_TOOLS_UNCONFIGURED`; unsupported backend or missing evidence prefix uses `SOURCE_UNAVAILABLE`. Status never performs upstream I/O or returns hosts, source project IDs, namespaces, bucket, prefixes or credentials. UI describes these as configured capabilities, not source health.
 
 ### Task 1: Native connectors, source contracts and bounded queries
 
@@ -439,7 +445,7 @@ snapshot_id = self.snapshots.put(binding, result)
 return self.snapshot(actor, project_id, snapshot_id)
 ```
 
-`binding_for` raises `PRODUCTION_TOOLS_UNCONFIGURED` only after authorization; `require_current_binding` compares current binding fields/fingerprint. Implement both as private service methods. `snapshot()` always does a live `require_project` before reading metadata and verifies current binding; an unconfigured status response returns explicit unavailable capabilities and no sensitive topology. `evidence()` reauthorizes and checks binding around the scoped source row/object retrieval; return sanitized errors and close streams on errors.
+`binding_for` raises `PRODUCTION_TOOLS_UNCONFIGURED` only after authorization; `require_current_binding` compares current binding fields/fingerprint. Implement both as private service methods. `snapshot()` always does a live `require_project` before reading metadata and verifies current binding; an unconfigured status response returns explicit unavailable capabilities and no sensitive topology. `evidence()` passes a `before_open` closure to the source so live membership and current binding are checked again after metadata lookup and immediately before the object reader opens; it also reauthorizes after retrieval. Return sanitized errors and close streams on errors. Test revocation while metadata lookup is paused prevents any object-reader call, and revocation during buffering prevents emission.
 
 Register all seven GET routes from the design directly on the protected workflow router. Use `UUID` path types, positive bounded integer `source_log_id`, and strict `ProductionQuery` construction with rejected unknown query keys. Parse start/end as timezone-aware Pydantic datetimes; enum kinds prevent arbitrary table names. Do not use POST query routes because read-only project members must be able to inspect observations.
 
@@ -647,3 +653,5 @@ Host commands use its documented environment and run `backend/tests/test_manufac
 Coverage: Task1 implements all four native source read families and guarded SDKs; Task2 implements identity/mapping/snapshot/evidence access; Task3 supplies actual navigation and all four user flows; Task4 closes strict host routes, trusted settings and real socket evidence. No source credential values or private endpoints appear in this plan. QuestDB source-order uncertainty, missing unique row key, unsupported read-only transaction controls, zero denominators and source partial failures have explicit handling.
 
 Execute sequentially under the user's existing authorization. Each task's reviewer can reject that task without invalidating earlier native interfaces. The user already asked to start native development, so the standard skill execution-choice question is unnecessary. If source-specific compatibility differs from documented evidence, update the narrow adapter and its tests, report the limitation and preserve the authorization/source-write boundaries.
+
+Evidence authorization handoff: `ProductionSource.evidence` accepts optional `before_open`. Native source invokes it after the scoped MySQL lookup and URL/prefix validation, immediately before object-reader open; authorization exceptions propagate and no object is opened. The service passes a closure that reauthorizes live membership and the current binding. Test fakes honor the same callback. API repeats live authorization after bounded buffering and before response emission. This closes the existing design boundary between potentially slow metadata I/O and OSS opening.
