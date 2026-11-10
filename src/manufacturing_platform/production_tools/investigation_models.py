@@ -61,6 +61,7 @@ class InvestigationContext(TimeRange, MissingScope):
     candidate_csn: Text | None = None
     status: Literal['1', '2'] | None = None
     symptom: Annotated[StrictStr, Field(max_length=1000)] | None = None
+    history_sn: Text | None = None
     history_range: TimeRange | None = None
     evidence_range: TimeRange | None = None
     recent_range: TimeRange | None = None

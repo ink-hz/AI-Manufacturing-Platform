@@ -107,13 +107,13 @@ class InvestigationService:
         for name, aliases in ALIASES.items():
             if name not in context or context[name] is None:
                 continue
-            if not primary and name in {'sn', 'barcode', 'device', 'status', 'error_code'}:
+            if not primary and name in {'sn', 'barcode', 'device', 'status', 'error_code', 'software_version', 'config_log_id', 'config_version'}:
                 continue
             actual = next((descriptor[key] for key in aliases if descriptor.get(key) is not None), None)
             if actual is not None and str(actual) != str(context[name]):
                 raise error('SOURCE_INVALID_QUERY', 422)
         for field in context.get('missing_fields') or ():
-            if not primary and field in {'device', 'error_code'}:
+            if not primary and field in {'device', 'error_code', 'software_version', 'config_log_id', 'config_version'}:
                 continue
             actual = next((descriptor[key] for key in ALIASES[field] if key in descriptor), None)
             if not is_missing_dimension(field, actual):
@@ -343,13 +343,13 @@ class InvestigationService:
 
     @guarded
     def resolve(self, actor, project, identifier):
-        return self._resolve(actor, self.get(actor, project, identifier))
+        return self._resolve(actor, self.get(actor, project, identifier), kind='draft')
 
     @guarded
     def resolve_handoff(self, actor, identifier):
-        return self._resolve(actor, self.get_handoff(actor, identifier))
+        return self._resolve(actor, self.get_handoff(actor, identifier), kind='handoff')
 
-    def _resolve(self, actor, payload):
+    def _resolve(self, actor, payload, *, kind):
         project = payload['source_project_id']
         scope = self._scope(actor, project)
         logs = []
@@ -365,6 +365,12 @@ class InvestigationService:
                     raise
                 resolved.update(state='unavailable', error='SOURCE_UNAVAILABLE')
             logs.append(resolved)
-        result = {'primary': self._resolve_selection(actor, project, payload['primary']), 'comparison': self._resolve_selection(actor, project, payload['comparison']), 'logs': logs, 'captured_at': checked_time(self.clock).isoformat()}
+        # Bind to this exact payload; a concurrent draft update must not relabel resolved evidence.
+        binding = {
+            'kind': kind, 'id': payload['id'], 'version': payload['version'],
+            'primary_selection_id': (payload['primary'] or {}).get('selection_id'),
+            'comparison_selection_id': (payload['comparison'] or {}).get('selection_id'),
+        }
+        result = {'binding': binding, 'primary': self._resolve_selection(actor, project, payload['primary']), 'comparison': self._resolve_selection(actor, project, payload['comparison']), 'logs': logs, 'captured_at': checked_time(self.clock).isoformat()}
         self.production._reauthorize(actor, project, scope)
         return result

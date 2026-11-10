@@ -366,3 +366,174 @@ def test_impact_rejects_counts_contradicting_requested_failure_status(impact_sou
     draft = service.create(actor,'1',{'context':{**PARAMS,'view':'anomalies'}})
     assert draft['impact']['failure']['state'] == 'unavailable'
     assert draft['impact']['failed_involved_sn']['numerator'] is None
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_comparison_retains_different_versions_but_same_stage_tool(
+    investigation, missing
+):
+    from manufacturing_platform.production_tools.contracts import ProductionQuery
+
+    service, actor, source, _, _, _ = investigation
+    row = {
+        "timestamp": "2026-11-09T01:00:00Z",
+        "projuectid": "1",
+        "sn": "SN",
+        "workstagesid": "10",
+        "softwareid": "20",
+    }
+    source.rows = [
+        row
+        | {
+            "version": None if missing else "A",
+            "configlogsid": None if missing else "30",
+            "cversion": None if missing else "A",
+        },
+        row | {"version": "B", "configlogsid": "31", "cversion": "B"},
+        row | {"workstagesid": "99"},
+        row | {"softwareid": "99"},
+    ]
+    page = service.production.query(
+        actor, "1", ProductionQuery(kind="production", **PARAMS)
+    )
+    context = {**PARAMS, "stage_id": "10", "software_id": "20"}
+    context.update(
+        {"missing_fields": ["software_version", "config_log_id", "config_version"]}
+        if missing
+        else {"software_version": "A", "config_log_id": "30", "config_version": "A"}
+    )
+    select = lambda offset: {"snapshot_id": page["snapshot_id"], "offset": offset}
+    draft = service.create(
+        actor, "1", {"context": context, "primary": select(0), "comparison": select(1)}
+    )
+    assert draft["context"]["stage_id"] == "10"
+    assert draft["comparison"]["descriptor"]["version"] == "B"
+    assert (
+        service.update(
+            actor, "1", draft["id"], {"expected_version": 1, "note": "retained"}
+        )["comparison"]
+        == draft["comparison"]
+    )
+    with pytest.raises(DomainError) as exc:
+        service.create(actor, "1", {"context": context, "primary": select(1)})
+    assert exc.value.status == 422
+    for offset in (2, 3):
+        with pytest.raises(DomainError) as exc:
+            service.create(
+                actor,
+                "1",
+                {
+                    "context": context,
+                    "primary": select(0),
+                    "comparison": select(offset),
+                },
+            )
+        assert exc.value.status == 422
+
+
+def test_history_subject_is_bounded_independent_and_survives_handoff_fork(
+    impact_source,
+):
+    service, actor, source, _ = impact_source
+    context = {
+        **PARAMS,
+        "sn": "ORIGINAL",
+        "view": "history",
+        "history_sn": "VIEWED",
+        "history_range": PARAMS,
+    }
+    draft = service.create(actor, "1", {"context": context})
+    impact = draft["impact"]
+    calls = len(source.calls)
+    changed = service.update(
+        actor,
+        "1",
+        draft["id"],
+        {
+            "expected_version": 1,
+            "context": {**context, "history_sn": "OTHER"},
+            "note": "note",
+        },
+    )
+    assert changed["context"]["sn"] == "ORIGINAL"
+    assert changed["impact"] == impact and len(source.calls) == calls
+    handoff = service.create_handoff(actor, "1", draft["id"], {"expected_version": 2})
+    fork = service.fork(
+        actor.model_copy(update={"user_id": uuid4()}), handoff["id"], {}
+    )
+    assert service.get(actor, "1", draft["id"])["context"]["history_sn"] == "OTHER"
+    assert handoff["context"] == fork["context"] == changed["context"]
+    assert fork["impact"] == impact
+    for value in ("", "X" * 201, 12):
+        with pytest.raises(DomainError) as exc:
+            service.create(actor, "1", {"context": {**context, "history_sn": value}})
+        assert exc.value.status == 422
+
+
+def test_resolution_binding_uses_exact_resolved_revision_and_kind(
+    investigation, monkeypatch
+):
+    service, actor, _, _, draft, _ = investigation
+    handoff = service.create_handoff(actor, "1", draft["id"], {"expected_version": 1})
+    old_metadata = service.get(actor, "1", draft["id"])
+    service.update(
+        actor, "1", draft["id"], {"expected_version": 1, "note": "another tab"}
+    )
+    binding = service.resolve(actor, "1", draft["id"])["binding"]
+    assert binding == {
+        "kind": "draft",
+        "id": draft["id"],
+        "version": 2,
+        "primary_selection_id": draft["primary"]["selection_id"],
+        "comparison_selection_id": None,
+    }
+    assert old_metadata["version"] == 1
+    with pytest.raises(DomainError) as exc:
+        service.update(
+            actor, "1", draft["id"], {"expected_version": 2, "binding": binding}
+        )
+    assert exc.value.status == 422
+    # An update during source resolution must not label the resolved payload with a later revision.
+    original = service._resolve_selection
+    updated = False
+
+    def resolve_selection(*args):
+        nonlocal updated
+        if not updated:
+            updated = True
+            service.update(
+                actor, "1", draft["id"], {"expected_version": 2, "primary": None}
+            )
+        return original(*args)
+
+    monkeypatch.setattr(service, "_resolve_selection", resolve_selection)
+    assert service.resolve(actor, "1", draft["id"])["binding"] == binding
+    assert service.resolve(actor, "1", draft["id"])["binding"] == {
+        **binding,
+        "version": 3,
+        "primary_selection_id": None,
+    }
+    frozen = service.resolve_handoff(actor, handoff["id"])["binding"]
+    assert frozen == {
+        **binding,
+        "kind": "handoff",
+        "id": handoff["id"],
+        "version": handoff["version"],
+    }
+
+
+def test_history_subject_does_not_replace_primary_consistency(investigation):
+    service, actor, _, _, draft, _ = investigation
+    context = {**draft["context"], "history_sn": "DIFFERENT-SN"}
+    changed = service.update(
+        actor, "1", draft["id"], {"expected_version": 1, "context": context}
+    )
+    assert changed["primary"] == draft["primary"]
+    with pytest.raises(DomainError) as exc:
+        service.update(
+            actor,
+            "1",
+            draft["id"],
+            {"expected_version": 2, "context": {**context, "sn": "CONTRADICTORY"}},
+        )
+    assert exc.value.status == 422
