@@ -58,7 +58,7 @@ def sdk(tmp_path):
 
 def pin(stage, request, manifest):
     path = stage / "build/native-sdk-manifest.json"
-    path.write_text(json.dumps(manifest))
+    path.write_text(json.dumps(manifest, sort_keys=True))
     request["native_sdk"]["manifest_sha256"] = hashlib.sha256(
         path.read_bytes()
     ).hexdigest()
@@ -68,6 +68,20 @@ def helper():
     import native_release
 
     return native_release
+
+
+@pytest.fixture(autouse=True)
+def synthetic_approved_tree(tmp_path, monkeypatch, request):
+    """Local contract tests use a known synthetic tree, never production SDK bytes."""
+    if (
+        request.node.name
+        == "test_profile_contract_accepts_only_the_actual_reviewed_manifest_pin"
+    ):
+        return
+    _root, _manifest, spec = sdk(tmp_path / "synthetic-approval")
+    monkeypatch.setattr(
+        helper(), "APPROVED_MANIFEST_SHA256", spec["native_sdk"]["manifest_sha256"]
+    )
 
 
 def test_profile_validates_exact_manifest_tree_and_default_dockerfile(tmp_path):
@@ -394,7 +408,7 @@ def test_private_extraction_normalizes_only_validated_sdk_copy_metadata(
     assert stat.S_IMODE((root / "pymysql/__init__.py").stat().st_mode) == 0o600
 
 
-def test_sdk_metadata_versions_validated_before_build(tmp_path):
+def test_sdk_metadata_versions_validated_before_build(tmp_path, monkeypatch):
     root, manifest, request = sdk(tmp_path)
     metadata = root / "pymysql-1.2.4.dist-info/METADATA"
     metadata.write_text("Name: PyMySQL\nVersion: 9.0\n")
@@ -402,6 +416,10 @@ def test_sdk_metadata_versions_validated_before_build(tmp_path):
         metadata.read_bytes()
     ).hexdigest()
     pin(tmp_path, request, manifest)
+    # Deliberately approve these synthetic metadata bytes to isolate version checking.
+    monkeypatch.setattr(
+        helper(), "APPROVED_MANIFEST_SHA256", request["native_sdk"]["manifest_sha256"]
+    )
     with pytest.raises(ValueError, match="sdk_versions"):
         helper().validate_sdk(tmp_path, request)
 
@@ -469,3 +487,42 @@ def test_sdk_functional_crc_allows_upstream_python_implementation(tmp_path):
         check=False,
     )
     assert result.returncode != 0 and "installed_sdk_crc64" in result.stderr
+
+
+def test_profile_contract_accepts_only_the_actual_reviewed_manifest_pin(monkeypatch):
+    native = helper()
+    approved = "e4e998c94b019b1d636fafead91e349b9bdbd00d6acff53be5dbf12856505517"
+    assert native.APPROVED_MANIFEST_SHA256 == approved
+    spec = {"native_sdk": {"profile": PROFILE, "manifest_sha256": approved}}
+    assert native.sdk_request(spec) == spec["native_sdk"]
+    for digest in ["a" * 64, "0" * 64]:
+        with pytest.raises(ValueError, match="native_sdk_unapproved_manifest"):
+            native.sdk_request(
+                {"native_sdk": {"profile": PROFILE, "manifest_sha256": digest}}
+            )
+
+
+@pytest.mark.parametrize(
+    "name,content",
+    [
+        ("oss2/credentials.json", '{"access_key_secret":"synthetic-only"}'),
+        ("oss2/__init__.py", "# attacker replacement\n"),
+    ],
+)
+def test_profile_rejects_self_consistent_repin_of_added_or_changed_files(
+    tmp_path, monkeypatch, name, content
+):
+    root, manifest, request = sdk(tmp_path)
+    native = helper()
+    monkeypatch.setattr(
+        native,
+        "APPROVED_MANIFEST_SHA256",
+        request["native_sdk"]["manifest_sha256"],
+        raising=False,
+    )
+    path = root / name
+    path.write_text(content)
+    manifest["files"][name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    pin(tmp_path, request, manifest)
+    with pytest.raises(ValueError, match="native_sdk_unapproved_manifest"):
+        native.validate_sdk(tmp_path, request)

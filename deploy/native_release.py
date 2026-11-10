@@ -11,6 +11,10 @@ import sys
 from pathlib import Path, PurePosixPath
 
 PROFILE = "native-production-tools-sdk-v1"
+# Reviewed Linux preparation: exactly 622 files; future trees require a new profile.
+APPROVED_MANIFEST_SHA256 = (
+    "e4e998c94b019b1d636fafead91e349b9bdbd00d6acff53be5dbf12856505517"
+)
 SITE = Path("/usr/local/lib/python3.11/site-packages")
 PINS = {
     "PyMySQL": "1.2.4",
@@ -57,6 +61,10 @@ def sdk_request(request):
         isinstance(value["manifest_sha256"], str)
         and re.fullmatch("[0-9a-f]{64}", value["manifest_sha256"]),
         "native_sdk_manifest_pin",
+    )
+    require(
+        value["manifest_sha256"] == APPROVED_MANIFEST_SHA256,
+        "native_sdk_unapproved_manifest",
     )
     return value
 

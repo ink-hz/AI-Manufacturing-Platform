@@ -156,7 +156,7 @@ retain the existing backend/static-only Dockerfile. To opt in, provision
 then set `request.native_sdk` to exactly:
 
 ```json
-{"profile":"native-production-tools-sdk-v1","manifest_sha256":"<64 lowercase hex characters>"}
+{"profile":"native-production-tools-sdk-v1","manifest_sha256":"e4e998c94b019b1d636fafead91e349b9bdbd00d6acff53be5dbf12856505517"}
 ```
 
 The manifest has exactly `profile`, `python` (`3.11`), `platform`
@@ -165,6 +165,15 @@ PyMySQL 1.2.4, oss2 2.19.1, crcmod 1.7, pycryptodome 4.4.0,
 aliyun-python-sdk-kms 2.16.5, and aliyun-python-sdk-core 2.16.1. The `files`
 object maps every SDK-relative file path to its SHA-256. Only the six package
 namespaces and their six matching `.dist-info` directories are accepted.
+Profile v1 is additionally bound in code to the approved, byte-exact 622-file
+manifest SHA-256 `e4e998c94b019b1d636fafead91e349b9bdbd00d6acff53be5dbf12856505517`.
+Changing a file, adding a file, or reserializing that manifest requires a new
+explicitly reviewed profile; updating only the request pin is insufficient.
+The root operator retains the approved tree, trusted wheel provenance and
+content-review evidence privately. That review excludes credential payloads
+while retaining legitimate upstream code such as
+`aliyunsdkcore/auth/credentials.py`. Local synthetic tests explicitly replace
+the approved pin only within their test boundary.
 Build this tree in disposable Linux preparation against the pinned actual
 baseline; preserve wheel hashes and preparation logs privately. Remove bytecode
 caches before inventorying. Do not install SDKs into the host or live container.
@@ -180,7 +189,10 @@ all unrelated files retain their permissions. No build-time network, package
 installer, extra image defaults, or additional Dockerfile instructions are
 allowed. Prepare pins the manifest and every SDK file. Candidate and deployed
 checks read the installed bytes, metadata versions and import origins, verify
-Linux x86_64 / Python 3.11, and exercise the CRC64 known vector and Crypto AES extension loading.
+Linux x86_64 / Python 3.11, and exercise the CRC64 known vector and Crypto AES extension loading. SDK
+execution belongs to the live candidate and post-cutover readiness gates.
+Runtime comparison stays inspect-only, including the stopped-target comparison
+used by compatible workflow rollback.
 
 Native source settings remain optional. `baseline_native` and `target_native`,
 when supplied, each contain exactly these fixed values:

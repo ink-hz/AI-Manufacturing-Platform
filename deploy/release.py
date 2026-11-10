@@ -425,8 +425,6 @@ def compare_rollback_runtime(old,restored):
 
 def compare_runtime(old, new, e):
     require(new['Image']==e['target_image_id'],'deployed_image_mismatch')
-    sdk=native_release.validate_sdk(ops.STAGE,e)
-    if sdk is not None:native_release.check_container_sdk(ops.run,ops.API,sdk)
     require(ops.actual_environment(new)=={**ops.actual_environment(old),**environment_delta(e)},'runtime_environment_changed')
     old_mounts={v['Destination']:v for v in copy.deepcopy(old['Mounts'])}
     new_mounts={v['Destination']:v for v in new['Mounts']}
@@ -752,6 +750,8 @@ def cutover(e):
             require(ops.maps(ops.API)=={'source':pre['expected_source'],'static':pre['expected_static']},'deployed_content_mismatch')
             # Initializes new SQLite schema under the actual UID; writes no business records.
             readiness=json.loads(ops.run(['docker','exec',ops.API,'python','-c',READINESS_CODE]))
+            sdk=native_release.validate_sdk(ops.STAGE,e)
+            if sdk is not None:native_release.check_container_sdk(ops.run,new['Id'],sdk)
             statuses=http_checks(e,pre);unchanged(e,pre)
             receipt={'status':'healthy','platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'container':new['Id'],'compose_files':pre['files']+[str(ops.STAGE/'overlay.json')],'readiness':readiness,'http_statuses':statuses,'database_backup':backup,'browser_acceptance':'not_run','production_erp_connections':'unverified'}
             maintenance={'compose_files_in_order':receipt['compose_files'],'platform_commit':e['platform_commit'],'manufacturing_commit':e['manufacturing_commit'],'image':new['Image'],'previous_manifest':e['previous_manifest'],'preservation':'All prior ordered overlays, mounts, networks, runtime security and Git capability retained.'}

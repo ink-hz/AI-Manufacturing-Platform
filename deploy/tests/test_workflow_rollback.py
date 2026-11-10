@@ -520,3 +520,27 @@ os.read=changed_read
     result=run_probe(payload,prelude)
     assert not result['compatible'] and result['reason'].startswith('snapshot_source'),result
     db.close()
+
+
+def test_native_sdk_compatible_rollback_never_executes_stopped_target(tmp_path,monkeypatch):
+    import native_release
+    from test_native_release import sdk
+    e,events,writes,locks,state=rollback_harness(tmp_path,monkeypatch)
+    _root,_manifest,sdk_request=sdk(tmp_path)
+    e.update(sdk_request)
+    # Synthetic package fixture replaces only the reviewed tree pin in this test.
+    monkeypatch.setattr(native_release,'APPROVED_MANIFEST_SHA256',e['native_sdk']['manifest_sha256'],raising=False)
+    run=release.ops.run;probes=[]
+    def docker_boundary(args,**kwargs):
+        if args[:2]==['docker','exec'] and 'verify_installed_sdk(json.load(sys.stdin))' in args[-1]:
+            running=state['row']['State']['Running'];probes.append(running)
+            events.append('sdk_readiness')
+            if not running:raise RuntimeError('container is not running')
+            return b''
+        return run(args,**kwargs)
+    monkeypatch.setattr(release.ops,'run',docker_boundary)
+    with pytest.raises(ValueError,match='cutover_failure'):release.cutover(e)
+    assert probes==[True]
+    assert events.index('sdk_readiness')<events.index('stop')<events.index('probe')<events.index('old_compose')<events.index('old_readiness')
+    assert writes['rollback.json']['restored'] is True
+    assert 'restart' not in events and not locks.retained
