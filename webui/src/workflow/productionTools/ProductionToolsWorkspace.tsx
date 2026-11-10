@@ -138,7 +138,7 @@ export function ProductionToolsWorkspace({api}: {api: ReturnType<typeof createWo
     {directoryReady && !directoryLoading && !directoryError && projects.length === 0 && <p>源项目目录暂无项目</p>}
     <div className="wf-production-directory">
       <button type="button" onClick={() => { directoryGeneration.current++; directoryActive.current?.abort(); resetSource(); setSelected(''); setProjects([]); setDirectoryBefore(undefined); setDirectoryRetry(r => r + 1); }}>刷新源项目目录</button>
-      {directoryNext && <button type="button" disabled={directoryLoading} onClick={() => setDirectoryBefore(directoryNext)}>读取更多源项目</button>}
+      {directoryNext && <button type="button" disabled={directoryLoading} onClick={() => { setDirectoryBefore(directoryNext); setDirectoryRetry(r => r + 1); }}>读取更多源项目</button>}
     </div>
     <form className="wf-production-filters" onSubmit={submit}>
       <label>源项目<select aria-label="源项目" value={projectId} onChange={e => { resetSource(); setSelected(e.target.value); setValidation(''); }}><option value="">请选择源项目</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>

@@ -456,3 +456,27 @@ it('retires old source rows when a refreshed configuration becomes unavailable',
         expect(v.host.querySelector('select')?.value).toBe('');
     } finally { await v.dispose(); }
 });
+
+it('retries a failed directory continuation at the same exact cursor while retaining selection', async () => {
+    const cursor = '9007199254740993';
+    let attempts = 0;
+    const v = await view(undefined, project.id, url => {
+        if (!url.searchParams.has('before_id')) return new Response(JSON.stringify({...directory, items:[project], has_more:true, next_before_id:cursor}));
+        attempts++;
+        return attempts === 1 ? new Response('{}', {status:503}) : new Response(JSON.stringify({...directory, items:[other]}));
+    });
+    try {
+        await v.click('读取更多源项目');
+        expect(v.host.textContent).toContain('源项目目录暂不可用');
+        expect(v.host.querySelector('select')?.value).toBe(project.id);
+        expect(v.host.textContent).toContain('SN-1');
+        await v.click('读取更多源项目');
+        expect(attempts).toBe(2);
+        expect(v.requests.filter(r => r.url.searchParams.has('before_id')).map(r => r.url.searchParams.get('before_id'))).toEqual([cursor, cursor]);
+        expect(v.host.textContent).toContain('源项目 A');
+        expect(v.host.textContent).toContain('源项目 B');
+        expect(v.host.querySelector('select')?.value).toBe(project.id);
+        expect(v.host.textContent).toContain('SN-1');
+        expect(v.host.textContent).not.toContain('源项目目录暂不可用');
+    } finally { await v.dispose(); }
+});
