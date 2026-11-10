@@ -194,6 +194,12 @@ The first independent review exposed multiple symptoms from shared responsibilit
 
 Fix all confirmed review findings in one wave, with targeted RED/GREEN for each trigger and a covering API/navigation/production run plus bundle. No ordinary-user access, raw-row persistence, source writes, new query fallbacks or silent scope broadening.
 
+## Final review correction: query and mutation ownership
+
+The final whole-branch review confirmed five adjacent boundary defects: reused capture cursors after query changes, contradictory exact/missing edits, superseded fork adoption, log saving from a different bounded scan, and stale-base log selection writes. Correct their shared ownership contracts in one wave. Capture cursors bind to complete effective queries; canonical edits enforce exact/missing exclusivity; asynchronous metadata adoption binds owner and edit/navigation generation; accepted log actions operate on confirmed-plus-pending selections.
+
+Add backward-compatible captured log input: `logs` may contain decimal IDs or `{snapshot_id,offset,source_log_id}` (strict UUID/integer0..999/decimal ID, max5 unique source IDs). Derive new references from authorized evidence snapshots and actual captured filters, including narrowed predicates and continuation anchors; retained IDs may reuse trusted stored metadata. Revalidate each reference using its own saved capture/query, independent of current sidebar controls. Persist metadata/locators only, retain source/project checks and bounded partial states, never broaden scans or infer SN/CSN identity. All five concrete triggers require RED/GREEN and focused integrated proof before re-review/merge.
+
 ## Task 4: Platform host integration, end-to-end checks and delivery
 
 **Files:** In an isolated platform worktree based on `master`, update only manufacturing exact route registry, optional storage path validation and its integration tests. In MF add HTTP journey tests and `docs/verification/production-test-workbench-2026-11-10.md`, update product spec implementation status accurately.
