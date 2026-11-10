@@ -19,7 +19,7 @@
 - The SDK profile manifest is hash-pinned, files-only inventory, Linuxx86_64/CPython3.11, exact known distribution set; forbid symlinks/traversal/unknown top-level packages, overwritten baseline site-package files, pycache and credentials. Check files/versions inside candidate and deployed target.
 - If native settings are enabled, only the two explicit existing host variable names may be added; both paths inside a new private native-production-tools directory in the existing manufacturing data mount. No new mount. Missing business mapping remains closed; no name matching or synthetic business project creation.
 
-### Task1: Strict native dependency/config release profile
+### Task 1: Strict native dependency/config release profile
 
 Files: add deploy/native_release.py and deploy/tests/test_native_release.py; minimally extend deploy/install_payload.py, release.py, release_guard.py, candidate_verify.py, build_artifact.py TOOLS and install_payload TOP where needed; update runbook. Existing default behavior unchanged.
 
