@@ -179,20 +179,20 @@ it('reads production routes with encoded project/filter values and fixed evidenc
  vi.stubGlobal('fetch',fetcher);
  const api=createWorkflowApi({apiBase:'/preview/api/v1/manufacturing',csrfToken:'csrf',readOnly:false});
  const controller=new AbortController();
- await api.productionStatus('p /',controller.signal);
- await api.productionObservations('p /',{kind:'production',start:'2026-11-09T00:00:00Z',end:'2026-11-10T00:00:00Z',sn:'SN & one'},controller.signal);
- await api.productionCatalog('p /','software_versions',{parent_id:'4',before_id:'10'});
- await api.productionEvidence('p /',{start:'2026-11-09T00:00:00Z',end:'2026-11-10T00:00:00Z',sn:'SN & one',before_id:'9'});
- await api.productionStatistics('p /',{kind:'stopover',start:'2026-11-09T00:00:00Z',end:'2026-11-10T00:00:00Z'});
- await api.productionSnapshot('p /','snapshot /',50,50);
+ await api.productionStatus('99999999999999999999',controller.signal);
+ await api.productionObservations('99999999999999999999',{kind:'production',start:'2026-11-09T00:00:00Z',end:'2026-11-10T00:00:00Z',sn:'SN & one'},controller.signal);
+ await api.productionCatalog('99999999999999999999','software_versions',{parent_id:'4',before_id:'10'});
+ await api.productionEvidence('99999999999999999999',{start:'2026-11-09T00:00:00Z',end:'2026-11-10T00:00:00Z',sn:'SN & one',before_id:'9'});
+ await api.productionStatistics('99999999999999999999',{kind:'stopover',start:'2026-11-09T00:00:00Z',end:'2026-11-10T00:00:00Z'});
+ await api.productionSnapshot('99999999999999999999','snapshot /',50,50);
  const urls=fetcher.mock.calls.map(call=>String(call[0]));
- expect(urls[0]).toBe('/preview/api/v1/manufacturing/workflow/projects/p%20%2F/production-tools/status');
+ expect(urls[0]).toBe('/preview/api/v1/manufacturing/workflow/production-tools/projects/99999999999999999999/status');
  expect(new URL(urls[1],location.origin).searchParams.get('sn')).toBe('SN & one');
  expect(urls[2]).toContain('/catalog/software_versions?parent_id=4&before_id=10');
  expect(urls[3]).toContain('/evidence?');expect(urls[4]).toContain('/statistics?kind=stopover&');
  expect(urls[5]).toContain('/snapshots/snapshot%20%2F?offset=50&limit=50');
- expect(api.productionEvidenceUrl('p /','12')).toBe('/preview/api/v1/manufacturing/workflow/projects/p%20%2F/production-tools/evidence/12/content');
- for(const id of ['https://example.com','../1','0','1?x=1','１２']) expect(()=>api.productionEvidenceUrl('p',id)).toThrow();
+ expect(api.productionEvidenceUrl('99999999999999999999','12')).toBe('/preview/api/v1/manufacturing/workflow/production-tools/projects/99999999999999999999/evidence/12/content');
+ for(const id of ['https://example.com','../1','0','1?x=1','１２']) expect(()=>api.productionEvidenceUrl('7',id)).toThrow();
  expect(fetcher).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({method:'GET',credentials:'same-origin',cache:'no-store',headers:{}}));api.dispose();
 });
 
@@ -203,16 +203,16 @@ it('parses lossless source JSON and keeps typed parent and continuation values i
   vi.stubGlobal('fetch', fetcher);
   const api = createWorkflowApi({apiBase: '/api/v1/manufacturing', csrfToken: 'csrf', readOnly: false});
   try {
-    const first = await api.productionCatalog('p', 'software_versions', {parent_id: '99999999999999999999'});
+    const first = await api.productionCatalog('7', 'software_versions', {parent_id: '99999999999999999999'});
     expect(first.items[0].id).toBe('9007199254740993');
-    await api.productionCatalog('p', 'software_versions', {
+    await api.productionCatalog('7', 'software_versions', {
       parent_id: '99999999999999999999', before_id: first.next_before_id!,
     });
     const nextUrl = new URL(fetcher.mock.calls.at(-1)![0], location.origin);
     expect(nextUrl.searchParams.get('before_id')).toBe('9007199254740993');
     expect(nextUrl.searchParams.get('parent_id')).toBe('99999999999999999999');
-    expect(api.productionEvidenceUrl('p', '99999999999999999999')).toBe(
-      '/api/v1/manufacturing/workflow/projects/p/production-tools/evidence/99999999999999999999/content',
+    expect(api.productionEvidenceUrl('7', '99999999999999999999')).toBe(
+      '/api/v1/manufacturing/workflow/production-tools/projects/7/evidence/99999999999999999999/content',
     );
   } finally {
     api.dispose();
@@ -225,9 +225,9 @@ it('rejects out-of-contract source filter IDs before a request', async () => {
   const api = createWorkflowApi({apiBase: '/api/v1/manufacturing', csrfToken: 'csrf', readOnly: false});
   try {
     for (const id of ['100000000000000000000', '0', '-1', '1.5', '01', '１２']) {
-      await expect(async () => api.productionCatalog('p', 'software_versions', {parent_id: id})).rejects.toThrow();
-      await expect(async () => api.productionCatalog('p', 'software', {before_id: id})).rejects.toThrow();
-      await expect(async () => api.productionEvidence('p', {start: '2026-11-09T00:00:00Z', end: '2026-11-10T00:00:00Z', before_id: id})).rejects.toThrow();
+      await expect(async () => api.productionCatalog('7', 'software_versions', {parent_id: id})).rejects.toThrow();
+      await expect(async () => api.productionCatalog('7', 'software', {before_id: id})).rejects.toThrow();
+      await expect(async () => api.productionEvidence('7', {start: '2026-11-09T00:00:00Z', end: '2026-11-10T00:00:00Z', before_id: id})).rejects.toThrow();
     }
     expect(fetcher).not.toHaveBeenCalled();
   } finally {
@@ -239,9 +239,31 @@ it('requires evidence IDs to arrive as validated strings without numeric coercio
   const api = createWorkflowApi({apiBase: '/api/v1/manufacturing', csrfToken: 'csrf', readOnly: false});
   try {
     for (const value of [12, 9007199254740992, null, true]) {
-      expect(() => api.productionEvidenceUrl('p', value as unknown as string)).toThrow('Invalid evidence ID');
+      expect(() => api.productionEvidenceUrl('7', value as unknown as string)).toThrow('Invalid evidence ID');
     }
   } finally {
     api.dispose();
   }
+});
+
+it('reads native global configuration and explicitly paged source directory without project mapping', async () => {
+ const fetcher=vi.fn(async (_url:string,_init?:RequestInit)=>new Response(JSON.stringify({items:[],limit:100,has_more:false,next_before_id:null})));
+ vi.stubGlobal('fetch',fetcher);
+ const api=createWorkflowApi({apiBase:'/api/v1/manufacturing',csrfToken:'csrf',readOnly:false});
+ const controller=new AbortController();
+ try {
+  await api.productionStatus(undefined,controller.signal);
+  await api.productionProjects({},controller.signal);
+  await api.productionProjects({before_id:'99999999999999999999'},controller.signal);
+  expect(fetcher.mock.calls.map(c=>c[0])).toEqual([
+   '/api/v1/manufacturing/workflow/production-tools/status',
+   '/api/v1/manufacturing/workflow/production-tools/projects',
+   '/api/v1/manufacturing/workflow/production-tools/projects?before_id=99999999999999999999',
+  ]);
+  for(const id of ['0','01','100000000000000000000','p /']) {
+   expect(()=>api.productionStatus(id)).toThrow('Invalid source project ID');
+   expect(()=>api.productionProjects({before_id:id})).toThrow('Invalid source filter ID');
+  }
+  expect(fetcher).toHaveBeenCalledTimes(3);
+ } finally {api.dispose();}
 });

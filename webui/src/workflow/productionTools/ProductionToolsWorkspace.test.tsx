@@ -2,18 +2,20 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createWorkflowApi } from '../api';
-import { project, flush } from '../testHelpers';
+import { flush } from '../testHelpers';
 import { ProductionToolsWorkspace } from './ProductionToolsWorkspace';
-const other = { ...project, id: '00000000-0000-4000-8000-000000000009', name: '项目 B' };
+const project = { id: '99999999999999999999', name: '源项目 A' };
+const other = { id: '9007199254740993', name: '源项目 B' };
+const directory = { items: [project, other], limit: 100, has_more: false, next_before_id: null };
 const kinds = ['production', 'stopover', 'software', 'software_versions', 'configs', 'config_versions', 'review_orders', 'evidence', 'production_statistics', 'stopover_statistics', 'evidence_content'];
-const status = { project_id: project.id, configured: true, capabilities: Object.fromEntries(kinds.map(k => [k, { available: true, reason: null }])) };
+const status = { source_namespace: 'native', source_project_id: project.id, configured: true, capabilities: Object.fromEntries(kinds.map(k => [k, { available: true, reason: null }])) };
 function page(
     items: Record<string, unknown>[] = [{ sn: 'SN-1', status: '1' }],
     extra: Record<string, unknown> = {},
 ) {
     return {
         snapshot_id: 'snap',
-        project_id: project.id,
+        source_namespace: 'native', source_project_id: project.id,
         source_kind: 'production',
         captured_at: '2026-11-10T00:00:00Z',
         expires_at: '2026-11-11T00:00:00Z',
@@ -35,7 +37,7 @@ function page(
     };
 }
 afterEach(() => vi.unstubAllGlobals());
-async function view(read: (url: URL, init?: RequestInit) => Promise<Response> | Response = () => new Response(JSON.stringify(page())), initial = project.id) {
+async function view(read: (url: URL, init?: RequestInit) => Promise<Response> | Response = () => new Response(JSON.stringify(page())), initial = project.id, directoryRead: (url: URL, init?: RequestInit) => Promise<Response> | Response = () => new Response(JSON.stringify(directory)), globalStatus = status) {
     const requests: {
         url: URL;
         init?: RequestInit;
@@ -43,13 +45,13 @@ async function view(read: (url: URL, init?: RequestInit) => Promise<Response> | 
     vi.stubGlobal('fetch', vi.fn((input, init) => {
         const url = new URL(String(input), location.origin);
         requests.push({ url, init });
-        return url.pathname.endsWith('/status') ? Promise.resolve(new Response(JSON.stringify(status))) : Promise.resolve(read(url, init));
+        return url.pathname.endsWith('/status') ? Promise.resolve(new Response(JSON.stringify(url.pathname.endsWith('/production-tools/status') ? {...globalStatus, source_project_id: null} : status))) : url.pathname.endsWith('/production-tools/projects') ? Promise.resolve(directoryRead(url, init)) : Promise.resolve(read(url, init));
     }));
     const api = createWorkflowApi({ apiBase: '/api/v1/manufacturing', csrfToken: 'csrf', readOnly: false });
     const host = document.createElement('div');
     document.body.append(host);
     const root = createRoot(host);
-    await act(async () => root.render(<ProductionToolsWorkspace api={api} projects={[project, other]} initialProjectId={initial}/>));
+    await act(async () => root.render(<ProductionToolsWorkspace api={api}/>));
     await flush();
     const click = async (label: string) => {
         const b = [...host.querySelectorAll('button')].find(b => b.textContent === label);
@@ -67,6 +69,7 @@ async function view(read: (url: URL, init?: RequestInit) => Promise<Response> | 
         });
         await flush();
     };
+    if (initial && host.querySelector('[aria-label="源项目"]')) await field('源项目', initial);
     return {
         host, requests, click, field,
         dispose: async () => {
@@ -76,11 +79,12 @@ async function view(read: (url: URL, init?: RequestInit) => Promise<Response> | 
         },
     };
 }
-it('requires an authorized project and refuses an unknown initial ID', async () => {
+it('loads source names without manufacturing projects and ignores an unknown selection', async () => {
     const v = await view(undefined, 'unknown');
     try {
-        expect(v.host.textContent).toContain('请选择制造项目');
-        expect(v.requests).toHaveLength(0);
+        expect(v.host.textContent).toContain('请选择源项目');
+        expect(v.host.textContent).toContain('源项目 A');
+        expect(v.requests.map(r => r.url.pathname)).toEqual(['/api/v1/manufacturing/workflow/production-tools/status', '/api/v1/manufacturing/workflow/production-tools/projects']);
     } finally {
         await v.dispose();
     }
@@ -107,7 +111,7 @@ it('clears and aborts obsolete project reads even when the transport resolves la
         signal = init?.signal;
     }) : new Response(JSON.stringify(page([{ sn: 'B-ONLY' }]))));
     try {
-        await v.field('制造项目', other.id);
+        await v.field('源项目', other.id);
         expect(signal?.aborted).toBe(true);
         expect(v.host.textContent).toContain('B-ONLY');
         await act(async () => finish(new Response(JSON.stringify(page([{ sn: 'A-SECRET' }])))));
@@ -139,8 +143,8 @@ it('does not query unconfigured or unavailable capabilities', async () => {
     try {
         const query = vi.fn(async (_url: string) => new Response(JSON.stringify({ project_id: other.id, configured: false, capabilities: status.capabilities })));
         vi.stubGlobal('fetch', query);
-        await v.field('制造项目', other.id);
-        expect(v.host.textContent).toContain('当前项目尚未配置产测数据源');
+        await v.field('源项目', other.id);
+        expect(v.host.textContent).toContain('尚未配置产测数据源');
         expect(query).toHaveBeenCalledOnce();
         expect(String(query.mock.calls[0][0])).toContain('/status');
     } finally {
@@ -155,7 +159,7 @@ it('pages immutable snapshots and clears previous rows on revoked project access
         expect(v.requests.at(-1)?.url.pathname).toContain('/snapshots/snap');
         expect(v.requests.at(-1)?.url.searchParams.get('offset')).toBe('50');
         expect(v.host.textContent).not.toContain('PRIVATE-ROW');
-        expect(v.host.textContent).toContain('项目不存在或已失去访问权限');
+        expect(v.host.textContent).toContain('源项目不存在或已移除');
     } finally {
         await v.dispose();
     }
@@ -200,7 +204,7 @@ it('renders escaped metadata and only protected evidence links', async () => {
     try {
         await v.click('日志证据');
         const link = v.host.querySelector('tbody a')!;
-        expect(link.getAttribute('href')).toBe(`/api/v1/manufacturing/workflow/projects/${project.id}/production-tools/evidence/12/content`);
+        expect(link.getAttribute('href')).toBe(`/api/v1/manufacturing/workflow/production-tools/projects/${project.id}/evidence/12/content`);
         expect(v.host.querySelector('script')).toBeNull();
         expect(v.host.textContent).toContain('<script>alert(1)</script>');
         expect(v.host.querySelector('a[href^="https:"]')).toBeNull();
@@ -263,7 +267,7 @@ it('does not query a missing backend capability or mistake configuration for hea
     try {
         const calls = vi.fn(async (_url: string) => new Response(JSON.stringify({ ...status, project_id: other.id, capabilities: { ...status.capabilities, production: { available: false, reason: 'SOURCE_UNAVAILABLE' } } })));
         vi.stubGlobal('fetch', calls);
-        await v.field('制造项目', other.id);
+        await v.field('源项目', other.id);
         expect(calls).toHaveBeenCalledOnce();
         expect(v.host.textContent).toContain('当前数据类型尚未配置可用能力');
         expect(v.host.textContent).toContain('不代表实时连通状态');
@@ -308,7 +312,7 @@ it('keeps controls and scrollable tables keyboard-accessible at a narrow viewpor
     vi.stubGlobal('innerWidth', 375);
     const v = await view();
     try {
-        const select = v.host.querySelector('[aria-label="制造项目"]') as HTMLSelectElement;
+        const select = v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement;
         await act(async () => select.focus());
         expect(document.activeElement).toBe(select);
         const region = v.host.querySelector('[aria-label="产测记录表"]') as HTMLElement;
@@ -355,7 +359,7 @@ it('uses exact large evidence IDs and displays large aggregate counts as text', 
         : [{ id: maximum, csn: 'EXACT-EVIDENCE' }], { source_kind: url.pathname.endsWith('/statistics') ? 'production_statistics' : 'evidence' }))));
     try {
         await v.click('日志证据');
-        expect(v.host.querySelector('tbody a')?.getAttribute('href')).toBe(`/api/v1/manufacturing/workflow/projects/${project.id}/production-tools/evidence/${maximum}/content`);
+        expect(v.host.querySelector('tbody a')?.getAttribute('href')).toBe(`/api/v1/manufacturing/workflow/production-tools/projects/${project.id}/evidence/${maximum}/content`);
         await v.click('记录统计');
         expect(v.host.querySelector('dl')?.textContent).toContain(`记录总数${maximum}`);
         expect(v.host.querySelector('dl')?.textContent).toContain('非空 SN 数9007199254740993');
@@ -363,4 +367,92 @@ it('uses exact large evidence IDs and displays large aggregate counts as text', 
     } finally {
         await v.dispose();
     }
+});
+
+it('loads the source directory only on explicit continuation with exact cursors', async () => {
+    const cursor = '9007199254740993';
+    const v = await view(undefined, '', url => new Response(JSON.stringify(url.searchParams.has('before_id') ? {items: [other], limit: 100, has_more: false, next_before_id: null} : {items: [project], limit: 100, has_more: true, next_before_id: cursor})));
+    try {
+        expect(v.requests.filter(r => r.url.pathname.endsWith('/projects'))).toHaveLength(1);
+        expect(v.host.textContent).not.toContain('源项目 B');
+        await v.click('读取更多源项目');
+        expect(v.requests.at(-1)?.url.searchParams.get('before_id')).toBe(cursor);
+        expect(v.host.textContent).toContain('源项目 B');
+        expect(v.host.textContent).not.toContain('读取更多源项目');
+    } finally { await v.dispose(); }
+});
+
+it('distinguishes global unconfigured, failed source directory, empty directory and forbidden access', async () => {
+    const scenarios = [
+        {global: {...status, configured: false}, response: new Response('{}'), text: '尚未配置产测数据源', requests: 1},
+        {global: status, response: new Response('{}', {status: 503}), text: '源项目目录暂不可用', requests: 2},
+        {global: status, response: new Response(JSON.stringify({...directory, items: []})), text: '源项目目录暂无项目', requests: 2},
+        {global: status, response: new Response('{}', {status: 403}), text: '无权访问产测管理', requests: 2},
+    ];
+    for (const scenario of scenarios) {
+        const v = await view(undefined, '', () => scenario.response, scenario.global);
+        try { expect(v.host.textContent).toContain(scenario.text); expect(v.requests).toHaveLength(scenario.requests); }
+        finally { await v.dispose(); }
+    }
+});
+
+it('cannot restore directory choices after unmount when transport ignores cancellation', async () => {
+    let finish!: (r: Response) => void;
+    let signal: AbortSignal | null | undefined;
+    const v = await view(undefined, '', (_url, init) => new Promise(r => { finish = r; signal = init?.signal; }));
+    await v.dispose();
+    expect(signal?.aborted).toBe(true);
+    await act(async () => finish(new Response(JSON.stringify(directory))));
+    expect(v.requests).toHaveLength(2);
+});
+
+it('sends the selected exact source ID on every scoped tab and supports device filters', async () => {
+    const v = await view();
+    try {
+        await v.field('精确设备', 'device & one');
+        await v.click('查询产测数据');
+        expect(v.requests.at(-1)?.url.searchParams.get('device')).toBe('device & one');
+        for (const label of ['软件与配置目录', '日志证据', '记录统计']) {
+            await v.click(label);
+            if (label === '日志证据') expect(v.requests.at(-1)?.url.searchParams.has('device')).toBe(false);
+            if (label === '记录统计') expect(v.requests.at(-1)?.url.searchParams.get('device')).toBe('device & one');
+        }
+        for (const r of v.requests.filter(r => !r.url.pathname.endsWith('/projects') && !r.url.pathname.endsWith('/production-tools/status'))) {
+            expect(r.url.pathname).toContain(`/production-tools/projects/${project.id}/`);
+        }
+    } finally { await v.dispose(); }
+});
+
+it('refreshes the directory and ignores an obsolete continuation response', async () => {
+    let finish!: (r: Response) => void;
+    let signal: AbortSignal | null | undefined;
+    let refreshed = false;
+    const v = await view(undefined, project.id, (url, init) => {
+        if (url.searchParams.has('before_id')) return new Promise(r => {finish = r; signal = init?.signal;});
+        return new Response(JSON.stringify(refreshed ? {...directory, items: []} : {...directory, items: [project], has_more: true, next_before_id: other.id}));
+    });
+    try {
+        expect(v.host.textContent).toContain('SN-1');
+        await v.click('读取更多源项目');
+        refreshed = true;
+        await v.click('刷新源项目目录');
+        expect(signal?.aborted).toBe(true);
+        expect(v.host.textContent).not.toContain('SN-1');
+        expect(v.host.textContent).not.toContain('源项目 A');
+        await act(async () => finish(new Response(JSON.stringify({...directory, items: [other]}))));
+        await flush();
+        expect(v.host.textContent).not.toContain('源项目 B');
+        expect(v.host.textContent).toContain('源项目目录暂无项目');
+    } finally { await v.dispose(); }
+});
+
+it('retires old source rows when a refreshed configuration becomes unavailable', async () => {
+    const v = await view(undefined, project.id, () => new Response(JSON.stringify({...directory, has_more:true, next_before_id:other.id})));
+    try {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({...status, configured:false}))));
+        await v.click('读取更多源项目');
+        expect(v.host.textContent).toContain('尚未配置产测数据源');
+        expect(v.host.textContent).not.toContain('SN-1');
+        expect(v.host.querySelector('select')?.value).toBe('');
+    } finally { await v.dispose(); }
 });

@@ -1,4 +1,4 @@
-import type { ProductionStatus, ProductionPage, ProductionStatistics, ObservationFilters, CatalogKind, CatalogFilters, EvidenceFilters } from './productionTools/types';
+import type { ProductionStatus, SourceProjectPage, ProductionPage, ProductionStatistics, ObservationFilters, CatalogKind, CatalogFilters, EvidenceFilters } from './productionTools/types';
 import type {SystemDescriptor,SystemId,SourceKey,FactPage,FactDetail,FactLinkPage,IntentPage} from './integrations/types';
 import type {
   PublicAssetPage,
@@ -126,7 +126,10 @@ export function createWorkflowApi(
     (projectId === undefined
       ? ""
       : "&project_id=" + encodeURIComponent(projectId));
-  const productionPath = (id: string) => p(id) + "/production-tools";
+  const productionPath = (id: string) => {
+    if (typeof id !== 'string' || !/^[1-9][0-9]{0,19}$/.test(id)) throw new Error("Invalid source project ID");
+    return "/production-tools/projects/" + encodeURIComponent(id);
+  };
   const productionQuery = (filters: object) => {
     for (const [key, value] of Object.entries(filters)) {
       if ((key === 'parent_id' || key === 'before_id') && value !== undefined
@@ -140,8 +143,10 @@ export function createWorkflowApi(
     ).toString();
   };
   return {
-    productionStatus: (id: string, signal?: AbortSignal) =>
-      request<ProductionStatus>(productionPath(id) + "/status", "GET", undefined, signal),
+    productionProjects: (filters: {before_id?: string} = {}, signal?: AbortSignal) =>
+      request<SourceProjectPage>("/production-tools/projects" + (filters.before_id === undefined ? "" : "?" + productionQuery(filters)), "GET", undefined, signal),
+    productionStatus: (id?: string, signal?: AbortSignal) =>
+      request<ProductionStatus>((id === undefined ? "/production-tools" : productionPath(id)) + "/status", "GET", undefined, signal),
     productionObservations: (id: string, filters: ObservationFilters, signal?: AbortSignal) =>
       request<ProductionPage>(productionPath(id) + "/observations?" + productionQuery(filters), "GET", undefined, signal),
     productionCatalog: (id: string, kind: CatalogKind, filters: CatalogFilters, signal?: AbortSignal) =>
