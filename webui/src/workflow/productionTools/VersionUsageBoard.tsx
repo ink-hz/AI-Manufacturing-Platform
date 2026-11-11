@@ -58,7 +58,7 @@ export function VersionUsageBoard({ api, location: l, go, refresh }: BoardProps)
     ? versions.data?.items.find(item => combinationKey(item) === selection.key)
     : undefined;
   const selectedScope = selected && versions.data
-    ? drill(baseline(versions.data.scope), selected, combinationFields)
+    ? drill(versions.data.scope, selected, combinationFields)
     : undefined;
   const devices = useRead(
     signal => api.productionAnalysis(versions.data!.projectId, { ...selectedScope!, view: "devices" }, signal),

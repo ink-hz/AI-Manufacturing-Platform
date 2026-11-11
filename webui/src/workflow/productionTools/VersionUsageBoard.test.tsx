@@ -37,9 +37,9 @@ it("carries the entire combination and exact window through all tests, failures 
   expect(go.mock.calls[0][0].scope.error_code).toBeUndefined(); expect(go.mock.calls[0][0].scope.status).toBeUndefined();
   await click("查看失败"); expect(go.mock.calls[1][0]).toMatchObject({ view: "records", projectId: "1", scope: { ...combo, status: "2" } });
   await click("查看上位机");
-  expect(api.productionAnalysis).toHaveBeenLastCalledWith("1", { ...combo, view: "devices" }, expect.any(AbortSignal));
+  expect(api.productionAnalysis).toHaveBeenLastCalledWith("1", { ...combo, error_code: scope.error_code, status: scope.status, view: "devices" }, expect.any(AbortSignal));
   expect(host.textContent).toContain("合成上位机");
-  await click("进入上位机"); expect(go.mock.calls[2][0]).toMatchObject({ view: "device", projectId: "1", scope: { ...combo, device: "合成上位机" } });
+  await click("进入上位机"); expect(go.mock.calls[2][0]).toMatchObject({ view: "device", projectId: "1", scope: { ...combo, error_code: scope.error_code, status: scope.status, device: "合成上位机" } });
 });
 it("keeps missing identities and versions distinct and removes stale error missing predicates", async () => {
   const missing = { ...item, key: "missing", stage_id: null, software_id: null, software_version: null, config_log_id: null, config_version: null };
@@ -96,4 +96,23 @@ it("keeps optional late directory names isolated to their source project", async
   await act(async () => { for (const finish of pending) finish(page([{ id: item.config_log_id, name: "旧项目配置" }])); });
   expect(host.textContent).toContain("新项目配置"); expect(host.textContent).not.toContain("旧项目配置");
   expect(directory).toHaveBeenCalledTimes(4);
+});
+
+it("keeps a filtered version row and inline machine counts in the same captured scope", async () => {
+  const filtered = { ...item, records: "2", distinct_sn: "2", failed_sn: "2" };
+  const machineRead = vi.fn(async (_project: string, q: any) => analysis(q.view === "devices"
+    ? [{ ...filtered, key: "device", device: "合成上位机", records: q.status === "2" && q.missing_fields?.includes("error_code") ? "2" : "10" }]
+    : [filtered]));
+  const { go, show } = await setup(analysis([filtered]), { productionAnalysis: machineRead });
+  await show({ ...location, scope: { ...scope, error_code: undefined, status: "2", missing_fields: ["error_code"] } });
+  await click("查看上位机");
+  const query = machineRead.mock.calls.at(-1)![1];
+  expect(query).toMatchObject({ start: scope.start, end: scope.end, status: "2", missing_fields: ["error_code"], stage_id: "7", software_id: item.software_id, software_version: "v2", config_log_id: item.config_log_id, config_version: "7", view: "devices" });
+  expect(host.querySelector('[aria-label="组合上位机分布"] tbody td')?.textContent).toBe("2");
+  expect([...host.querySelectorAll('[aria-label="组合上位机分布"] tbody td')].slice(0, 3).map(td => td.textContent)).toEqual(["2", "2", "2"]);
+  await click("进入上位机");
+  const { view: _view, ...capturedCombo } = query;
+  expect(go.mock.calls[0][0].scope).toEqual({ ...capturedCombo, device: "合成上位机" });
+  await click("查看测试"); expect(go.mock.calls[1][0].scope.status).toBeUndefined(); expect(go.mock.calls[1][0].scope.missing_fields).not.toContain("error_code");
+  await click("查看失败"); expect(go.mock.calls[2][0].scope.status).toBe("2"); expect(go.mock.calls[2][0].scope.missing_fields).not.toContain("error_code");
 });
