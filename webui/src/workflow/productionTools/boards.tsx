@@ -105,9 +105,11 @@ export function OverviewBoard({
   const [before, setBefore] = useState<string>(),
     [sort, setSort] = useState("failed"),
     [auto, setAuto] = useState(true);
-  const task = location.view === "activity" ? "activity" : "anomalies";
-  const chooser = location.view === "anomalies" || location.view === "activity";
-  const title = chooser ? `${task === "activity" ? "上位机活动" : "失败分析"} · 选择项目` : "项目测试概况";
+  const task = location.view === "catalog" ? "catalog" : location.view === "activity" ? "activity" : "anomalies";
+  const chooser = location.view === "anomalies" || location.view === "activity" || location.view === "catalog";
+  const taskLabel = task === "catalog" ? "版本使用" : task === "activity" ? "现场上位机" : "失败分析";
+  const taskAction = task === "catalog" ? "查看版本" : task === "activity" ? "查看上位机" : "查看失败";
+  const title = chooser ? `${taskLabel} · 选择项目` : "项目测试概况";
   const state = useRead(
     (s) =>
       api
@@ -179,6 +181,8 @@ export function OverviewBoard({
           const zero = rows.filter(knownZero), visible = rows.filter((p) => !knownZero(p));
           const openProject = (p: OverviewItem, view: Location["view"]) => go({
             ...location,
+            catalog: view === "catalog" ? location.catalog : undefined,
+            parentId: undefined,
             scope: data.requested_scope,
             selectedError: false,
             selectedStage: false,
@@ -212,20 +216,20 @@ export function OverviewBoard({
                   const unavailable = !p.statistics || p.blocks.statistics.state === "unavailable";
                   const partial = !unavailable && (!p.blocks.statistics.complete || p.blocks.statistics.state === "partial");
                   return <tr key={p.id}>
-                    <th scope="row"><button type="button" className="pt-project-name" onClick={() => openProject(p, "project")}>{p.name}</button>
+                    <th scope="row"><button type="button" className="pt-project-name" onClick={() => openProject(p, chooser ? task : "project")}>{p.name}</button>
                       {(unavailable || partial) && <span className="pt-project-warning">{unavailable ? "统计未取得" : "统计未完整"}{p.blocks.statistics.error || p.blocks.statistics.truncation_reason ? `：${p.blocks.statistics.error || p.blocks.statistics.truncation_reason}` : ""}</span>}
                     </th>
                     {(["records", "distinct_sn", "failed_sn", "fail_records"] as const).map((key) => <td key={key} data-failed={(key === "failed_sn" || key === "fail_records") && !unavailable && BigInt(p.statistics![key]) > 0n}>{unavailable ? "—" : p.statistics![key]}</td>)}
                     <td>{latest(p)}{p.blocks.latest.state === "partial" && <span className="pt-project-warning">时间未完整</span>}</td>
-                    <td><button type="button" className="pt-button-primary" onClick={() => openProject(p, task)}>{task === "activity" ? "查看活动" : "查看失败"}</button></td>
+                    <td><button type="button" className="pt-button-primary" onClick={() => openProject(p, task)}>{taskAction}</button></td>
                   </tr>;
                 })}</tbody>
               </table></div>}
               {!!zero.length && <DeferredDetails className="pt-zero-projects" summary={`本时段无测试的项目（${zero.length}）`}>
                 <ul>{zero.map((p) => <li key={p.id}>
-                  <button type="button" className="pt-project-name" onClick={() => openProject(p, "project")}>{p.name}</button>
+                  <button type="button" className="pt-project-name" onClick={() => openProject(p, chooser ? task : "project")}>{p.name}</button>
                   <span>最近测试 {latest(p)}</span>
-                  <button type="button" onClick={() => openProject(p, task)}>{task === "activity" ? "查看活动" : "查看失败"}</button>
+                  <button type="button" onClick={() => openProject(p, task)}>{taskAction}</button>
                   {p.latest_at && p.blocks.latest.state !== "unavailable" && <button type="button" onClick={() => {
                     const end = +new Date(p.latest_at!) + 1;
                     go({ ...location, view: chooser ? task : "project", projectId: p.id, scope: { start: new Date(end - 7200000).toISOString(), end: new Date(end).toISOString() }, labels: { project: p.name }, inherited: true, selectedError: false, selectedStage: false, cursor: undefined, parentRead: undefined });

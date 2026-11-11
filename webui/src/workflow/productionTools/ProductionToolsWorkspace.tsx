@@ -38,6 +38,7 @@ import { InvestigationPanel, useInvestigation } from "./investigations";
 import "./productionTools.css";
 import { useProductionNavigation } from "./navigation";
 import { activeProductionProject } from "./resume";
+import { VersionUsageBoard } from "./VersionUsageBoard";
 export function validProductionHandoff(value: string | null) {
   return value &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -146,6 +147,8 @@ export function ProductionToolsWorkspace({
     setLoc((old) => ({
       ...old,
       view: d.context.view,
+      catalog: undefined,
+      parentId: undefined,
       projectId: d.source_project_id,
       scope: queryScope(d.context),
       historySN:
@@ -315,7 +318,7 @@ export function ProductionToolsWorkspace({
     }));
     setRefresh((n) => n + 1);
   }
-  function board(view: "overview" | "anomalies" | "activity") {
+  function board(view: "overview" | "anomalies" | "activity" | "catalog") {
     if (view === "overview") {
       go({
         view: "overview",
@@ -329,6 +332,8 @@ export function ProductionToolsWorkspace({
     go({
       ...loc,
       view,
+      catalog: undefined,
+      parentId: undefined,
       scope: view === "activity" && !loc.inherited ? recent(120) : loc.scope,
       inherited: view === "activity" ? true : loc.inherited,
       cursor: undefined,
@@ -385,9 +390,10 @@ export function ProductionToolsWorkspace({
           <nav className="pt-nav" aria-label="产测主导航">
             {(
               [
-                ["overview", "运行总览"],
+                ["overview", "项目总览"],
                 ["anomalies", "失败分析"],
-                ["activity", "上位机活动"],
+                ["activity", "现场上位机"],
+                ["catalog", "版本使用"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -455,7 +461,7 @@ export function ProductionToolsWorkspace({
             <button
               type="button"
               disabled={!loc.projectId}
-              onClick={() => go({ ...loc, view: "catalog" })}
+              onClick={() => go({ ...loc, view: "catalog", catalog: "software", parentId: undefined })}
             >
               工具与配置
             </button>
@@ -492,19 +498,21 @@ export function ProductionToolsWorkspace({
                 if (p)
                   go({
                     view:
-                      loc.view === "anomalies" || loc.view === "activity"
+                      loc.view === "anomalies" || loc.view === "activity" || loc.view === "catalog"
                         ? loc.view
                         : "project",
                     projectId: p.id,
                     scope: { start: loc.scope.start, end: loc.scope.end },
                     labels: { project: p.name },
+                    catalog: loc.view === "catalog" ? loc.catalog : undefined,
+                    parentId: undefined,
                     inherited: loc.inherited,
                   });
                 else if (!e.target.value)
                   go({
                     ...loc,
                     view:
-                      loc.view === "anomalies" || loc.view === "activity"
+                      loc.view === "anomalies" || loc.view === "activity" || loc.view === "catalog"
                         ? loc.view
                         : "overview",
                     projectId: "",
@@ -809,7 +817,7 @@ export function ProductionToolsWorkspace({
                 <p>请输入 SN，在当前项目与时间内查找。</p>
               )
             ) : loc.view === "catalog" ? (
-              <CatalogPage {...props} />
+              loc.catalog ? <CatalogPage {...props} /> : <VersionUsageBoard {...props} />
             ) : loc.view === "compare" ? (
               <Compare {...investigation.raw} />
             ) : null}

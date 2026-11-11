@@ -130,6 +130,7 @@ it("keeps one production title and omits only production provenance and eyebrow"
     await v.click("产测管理");
     expect([...v.host.querySelectorAll("h1, h2")].filter((h) => h.textContent === "产测管理")).toHaveLength(1);
     expect(v.host.querySelector(".mf-badge")).toBeNull();
+    expect([...v.host.querySelectorAll('[aria-label="产测主导航"] button')].map(b => b.textContent)).toEqual(["项目总览", "失败分析", "现场上位机", "版本使用"]);
     expect(v.host.querySelector(".mf-console-page-heading p")).toBeNull();
     await v.click("制造项目");
     expect(v.host.querySelector(".mf-badge")?.textContent).toBe(otherBadge);

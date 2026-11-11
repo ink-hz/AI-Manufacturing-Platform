@@ -1,0 +1,9 @@
+.wf-production-tools .pt-version-table table { min-width: 1060px; }
+.wf-production-tools .pt-version-table td:nth-child(2),
+.wf-production-tools .pt-version-table td:nth-child(3) { min-width: 130px; }
+.wf-production-tools .pt-version-value { display: block; color: var(--pt-muted); margin-top: 4px; }
+.wf-production-tools .pt-version-table tr[aria-selected="true"] { background: #e4ecff; }
+.wf-production-tools .pt-version-table .pt-actions { flex-wrap: wrap; gap: 6px; }
+.wf-production-tools .pt-version-devices { margin-top: 20px; }
+.wf-production-tools .pt-version-devices .pt-board-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wf-production-tools .pt-version-devices h4 { margin: 0; }

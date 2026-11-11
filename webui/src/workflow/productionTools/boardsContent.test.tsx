@@ -41,7 +41,7 @@ it("keeps active and unavailable projects in a compact table and mounts known ze
   await toggle("统计说明"); expect(host.textContent).toContain("测试记录不是成品数量");
   await toggle("统计说明"); expect(host.textContent).not.toContain("测试记录不是成品数量");
 });
-it.each([["anomalies", "失败分析", "查看失败"], ["activity", "上位机活动", "查看活动"]] as const)("keeps the %s project chooser on its task", async (view, title, action) => {
+it.each([["anomalies", "失败分析", "查看失败"], ["activity", "现场上位机", "查看上位机"], ["catalog", "版本使用", "查看版本"]] as const)("keeps the %s project chooser on its task", async (view, title, action) => {
   const go = await overview(view);
   expect(host.querySelector("h3")?.textContent).toBe(`${title} · 选择项目`); expect(host.textContent).not.toContain("运行总览");
   const button = host.querySelector<HTMLButtonElement>("tbody .pt-button-primary")!; expect(button.textContent).toBe(action);

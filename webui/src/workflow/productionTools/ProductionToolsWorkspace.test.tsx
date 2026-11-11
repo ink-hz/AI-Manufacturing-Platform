@@ -506,16 +506,16 @@ it("keeps a failed linked restore visible without an explicit panel open", async
     await v.dispose();
   }
 });
-for (const task of ["anomalies", "activity"] as const) {
+for (const task of ["anomalies", "activity", "catalog"] as const) {
   it(`preserves the ${task} task when selecting and clearing source projects`, async () => {
     const v = await view();
-    const label = task === "anomalies" ? "失败分析" : "上位机活动";
+    const label = task === "anomalies" ? "失败分析" : task === "activity" ? "现场上位机" : "版本使用";
     try {
       await v.click(label);
       expect(v.host.textContent).not.toContain("不逐项目扫描 SN");
       await v.field("源项目", project.id);
       expect(v.host.querySelector('[aria-label="产测主导航"] [aria-pressed="true"]')?.textContent).toBe(label);
-      expect(v.requests.some((r) => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === (task === "anomalies" ? "errors" : "devices"))).toBe(true);
+      expect(v.requests.some((r) => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === (task === "anomalies" ? "errors" : task === "activity" ? "devices" : "versions"))).toBe(true);
       await v.field("源项目", "");
       expect(v.host.querySelector('[aria-label="产测主导航"] [aria-pressed="true"]')?.textContent).toBe(label);
     } finally {
@@ -610,7 +610,7 @@ it("preserves problem time while comparing explicit recent thirty minutes", asyn
   const v = await view();
   try {
     await v.click("项目 A");
-    await v.click("上位机活动");
+    await v.click("现场上位机");
     await v.click("查看上位机 PC07");
     const original = v.requests
       .filter((r) => r.url.searchParams.get("view") === "activity")
@@ -857,7 +857,7 @@ it("keeps original investigation time and persists subsidiary recent scope", asy
     await v.click("项目 A");
     await v.click("开始调查");
     const original = v.saved().context.start;
-    await v.click("上位机活动");
+    await v.click("现场上位机");
     await v.click("查看上位机 PC07");
     await v.click("查看近况");
     await v.click("生成交接摘要");
@@ -1086,7 +1086,7 @@ it("shows unknown activity gaps on partial captures and observed empty buckets o
   );
   try {
     await v.click("项目 A");
-    await v.click("上位机活动");
+    await v.click("现场上位机");
     expect(v.host.textContent).toContain("该时间格未知");
     expect(v.host.textContent).not.toContain("该格未观测到测试事件");
   } finally {
@@ -1483,7 +1483,7 @@ it("I2 overview scope is global and never carries project A filters into B", asy
     await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     await v.click("限定上位机 PC07");
-    await v.click("运行总览");
+    await v.click("项目总览");
     expect(
       (v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement)
         .value,
@@ -3026,4 +3026,32 @@ it("R7 version distribution preserves explicitly missing versions when both pare
   } finally {
     await v.dispose();
   }
+});
+
+it("switches between version usage and explicit directory while preserving project selection mode", async () => {
+  const v = await view();
+  try {
+    expect([...v.host.querySelectorAll('[aria-label="产测主导航"] button')].map(b => b.textContent)).toEqual(["项目总览", "失败分析", "现场上位机", "版本使用"]);
+    await v.click("版本使用"); await v.click("查看版本");
+    expect(v.host.querySelector('[aria-label="实际版本组合"]')).not.toBeNull();
+    await v.click("工具与配置"); expect(v.host.querySelector('[aria-label="目录分类"]')).not.toBeNull();
+    await v.field("源项目", other.id);
+    expect(v.host.querySelector('[aria-label="目录分类"]')).not.toBeNull();
+    await v.click("版本使用"); expect(v.host.querySelector('[aria-label="实际版本组合"]')).not.toBeNull();
+    expect(v.host.querySelector('[aria-label="目录分类"]')).toBeNull();
+    await v.field("源项目", ""); await v.click("项目 A");
+    expect(v.host.querySelector('[aria-label="实际版本组合"]')).not.toBeNull();
+  } finally { await v.dispose(); }
+});
+it("restores saved catalog scope into version usage after an explicit nested directory", async () => {
+  const exact = { start: "2026-11-10T01:40:59.123Z", end: "2026-11-10T02:50:31.456Z", stage_id: "7", software_id: "9007199254740993", software_version: "v2", config_log_id: "9007199254740994", missing_fields: ["config_version"] };
+  const v = await view(u => u.pathname.endsWith("/handoffs/" + handoffId) ? new Response(JSON.stringify({ ...initialDraft(), id: handoffId, context: { ...exact, view: "catalog" } })) : undefined);
+  try {
+    await v.click("项目 A"); await v.click("工具与配置"); await v.click("查看无线工具版本");
+    await v.click("恢复调查"); await v.field("交接号或内部恢复链接", handoffId); await v.click("读取交接");
+    expect(v.host.querySelector('[aria-label="实际版本组合"]')).not.toBeNull();
+    expect(v.host.querySelector('[aria-label="目录分类"]')).toBeNull();
+    const request = v.requests.filter(r => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === "versions").at(-1)!.url;
+    for (const [key, value] of Object.entries(exact)) expect(request.searchParams.get(key)).toBe(Array.isArray(value) ? value.join(",") : value);
+  } finally { await v.dispose(); }
 });
