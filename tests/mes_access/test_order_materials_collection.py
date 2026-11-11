@@ -88,3 +88,28 @@ def test_integer_reservation_and_empty_optional_location(config, tmp_path):
     result = service.collect_order_materials('ORDER-1', 'actor')
     assert result['components'][0]['component_key'] == '123:1'
     assert result['components'][0]['storage_location'] is None
+
+
+@pytest.mark.parametrize('value', [None, '', 'missing'])
+def test_unknown_withdrawn_quantity_is_preserved(config, tmp_path, value):
+    service = implementation('mes_access.service').MesAccessService('/unused', str(tmp_path / 'audit'))
+    service._context = lambda: (config, config.fingerprint(), None)
+    item = row(1)
+    if value == 'missing':
+        del item['ENMNG']
+    else:
+        item['ENMNG'] = value
+    service._query = lambda *args: {'rows': [item], 'total_items': 1, 'request_id': 'request'}
+    assert service.collect_order_materials('ORDER-1', 'actor')['components'][0]['withdrawn_quantity'] is None
+
+
+@pytest.mark.parametrize('value', [True, -1, '-1', 'NaN', 'Infinity', 'oops', ' '])
+def test_invalid_withdrawn_quantity_is_rejected(config, tmp_path, value):
+    from manufacturing_platform.mes_access.errors import MesAccessError
+    service = implementation('mes_access.service').MesAccessService('/unused', str(tmp_path / 'audit'))
+    service._context = lambda: (config, config.fingerprint(), None)
+    item = row(1); item['ENMNG'] = value
+    service._query = lambda *args: {'rows': [item], 'total_items': 1, 'request_id': 'request'}
+    with pytest.raises(MesAccessError) as exc:
+        service.collect_order_materials('ORDER-1', 'actor')
+    assert exc.value.code == 'MES_INVALID_ORDER_MATERIALS'

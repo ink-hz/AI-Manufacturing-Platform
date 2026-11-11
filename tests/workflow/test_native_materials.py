@@ -137,10 +137,22 @@ def test_migration_from_25_keeps_data_and_installs_tables(workflow):
         db.execute('DROP TABLE mes_order_bindings')
         db.execute('UPDATE schema_version SET version=25')
     actor = Actor(user_id=USERS['owner'], display_name='owner', read_only=False, configuration_admin=True)
-    service = make_service(workflow, FakeMes())
+    source = FakeMes()
+    original = source.collect_order_materials
+    def collect(*args):
+        result = original(*args)
+        result['components'][0]['withdrawn_quantity'] = None
+        return result
+    source.collect_order_materials = collect
+    service = make_service(workflow, source)
     assert service.mes_materials(actor, UUID(p['id']), UUID(related['work_order_id']))['binding'] is None
+    service.execute(actor, UUID(p['id']), bind_command(service, actor, p['id'], related['work_order_id']))
+    assert make_service(workflow, source).mes_materials(actor, UUID(p['id']), UUID(related['work_order_id']))['snapshot']['components'][0]['withdrawn_quantity'] is None
     with workflow.db() as db:
         assert db.execute('SELECT version FROM schema_version').fetchone()[0] == 26
+        columns = {row[1]: row for row in db.execute('PRAGMA table_info(mes_material_components)')}
+        assert columns['withdrawn_quantity'][3] == 0
+        assert columns['required_quantity'][3] == 1
         assert db.execute('SELECT count(*) FROM work_orders WHERE project_id=?', (p['id'],)).fetchone()[0] > 0
 
 
@@ -217,3 +229,38 @@ def test_configuration_change_after_precommit_check_is_rejected(workflow):
         service.execute(actor, UUID(p['id']), bind_command(service, actor, p['id'], related['work_order_id']))
     assert exc.value.code == 'MES_CONFIGURATION_CHANGED'
     assert service.mes_materials(actor, UUID(p['id']), UUID(related['work_order_id']))['binding'] is None
+
+
+def test_null_withdrawn_survives_bind_refresh_restart_and_http(workflow):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from manufacturing_platform.workflow.api import build_workflow_router
+    from .conftest import BASE
+    p, _, related = workflow.material_requirement()
+    source = FakeMes()
+    original = source.collect_order_materials
+    def collect(*args):
+        result = original(*args)
+        result['components'][0]['withdrawn_quantity'] = None
+        return result
+    source.collect_order_materials = collect
+    actor_data = {'user_id': USERS['owner'], 'display_name': 'owner', 'read_only': False, 'configuration_admin': True}
+    actor = Actor.model_validate(actor_data)
+    service = make_service(workflow, source)
+    pid, wid = UUID(p['id']), UUID(related['work_order_id'])
+    service.execute(actor, pid, bind_command(service, actor, str(pid), str(wid)))
+    first = service.mes_materials(actor, pid, wid)
+    assert first['snapshot']['components'][0]['withdrawn_quantity'] is None
+    refresh = {'action': 'mes_order.refresh', 'operation_id': str(uuid4()), 'expected_version': service.detail(actor, pid).version, 'work_order_id': str(wid), 'binding_id': first['binding']['id']}
+    service.execute(actor, pid, refresh)
+    restarted = make_service(workflow, source).mes_materials(actor, pid, wid)
+    assert restarted['snapshot']['id'] != first['snapshot']['id']
+    assert restarted['snapshot']['components'][0]['withdrawn_quantity'] is None
+    with workflow.db() as db:
+        assert [r[0] for r in db.execute('SELECT withdrawn_quantity FROM mes_material_components ORDER BY rowid')] == [None, None]
+    app = FastAPI()
+    app.include_router(build_workflow_router(database_path=str(workflow.paths.domain), authority_database_path=str(workflow.paths.authority), assets_dir=str(workflow.paths.domain.parent), authenticate=lambda request, write: actor_data, resolve_subject=lambda uid: True, release='test', dataset={'id': 'workflow-test', 'mode': 'test', 'label': 'Workflow test'}, mes_access_service=source))
+    response = TestClient(app).get(f"{BASE}/projects/{pid}/work-orders/{wid}/mes-materials")
+    assert response.status_code == 200
+    assert response.json()['snapshot']['components'][0]['withdrawn_quantity'] is None
+    assert source.calls == 2

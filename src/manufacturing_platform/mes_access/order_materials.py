@@ -75,7 +75,7 @@ def collect(service, config, fingerprint, store, shop_order, actor_id):
                     raise ValueError()
                 seen.add(key)
                 components.append({'component_key': ':'.join(key), 'material_id': _text(row.get('MATNR')),
-                    'required_quantity': _amount(row.get('BDMNG')), 'withdrawn_quantity': _amount(row.get('ENMNG')),
+                    'required_quantity': _amount(row.get('BDMNG')), 'withdrawn_quantity': None if row.get('ENMNG') in (None, '') else _amount(row.get('ENMNG')),
                     'unit': _text(row.get('MEINS')), 'storage_location': _text(row.get('LGORT'), required=False)})
             if len(components) == total:
                 break
