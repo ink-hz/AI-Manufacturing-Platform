@@ -6,6 +6,11 @@ advertised WSDL endpoints, and TLS verification overrides are never used.
 import base64
 from dataclasses import dataclass
 import http.client
+import json
+import os
+import subprocess
+import sys
+from time import monotonic
 import socket
 import ssl
 import xml.etree.ElementTree as ET
@@ -172,44 +177,40 @@ class SoapTransport:
         return reply.body
 
     def _send_http(self, method, path, body, headers, timeout, max_bytes):
-        connection = None
+        # A separate process permits hard cancellation of blocking DNS, connect,
+        # TLS, headers and body without leaving resolver threads behind.
+        started = monotonic()
+        request = {'config': {'scheme': self.config.http_scheme, 'host': self.config.application_server,
+                              'port': self.config.http_port, 'ca': self.config.ca_bundle_path},
+                   'method': method, 'path': path, 'body': base64.b64encode(body).decode('ascii') if body is not None else None,
+                   'headers': headers, 'timeout': timeout, 'max_bytes': max_bytes}
+        payload = json.dumps(request, separators=(',', ':')).encode()
+        worker = os.path.join(os.path.dirname(__file__), 'http_worker.py')
+        process = subprocess.Popen([sys.executable, '-I', worker], stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         try:
-            if self.config.http_scheme == "https":
-                context = ssl.create_default_context(cafile=self.config.ca_bundle_path)
-                connection = http.client.HTTPSConnection(
-                    self.config.application_server, self.config.http_port, timeout=timeout, context=context,
-                )
-            else:
-                connection = http.client.HTTPConnection(
-                    self.config.application_server, self.config.http_port, timeout=timeout,
-                )
-            connection.request(method, path, body=body, headers=headers)
-            response = connection.getresponse()
-            response_headers = dict(response.getheaders())
-            if 300 <= response.status < 400:
-                raise SapAccessError("SAP_REDIRECT_BLOCKED", 502)
-            if response.status in {401, 403}:
-                raise SapAccessError("SAP_AUTHENTICATION_FAILED")
-            declared_length = None
-            for name, value in response_headers.items():
-                if name.lower() == "content-length":
-                    try:
-                        length = int(value)
-                    except (ValueError, TypeError):
-                        raise SapAccessError("SAP_HTTP_ERROR", 502) from None
-                    if length < 0:
-                        raise SapAccessError("SAP_HTTP_ERROR", 502)
-                    if length > max_bytes:
-                        raise SapAccessError("SAP_RESPONSE_TOO_LARGE", 502)
-                    if declared_length is not None and declared_length != length:
-                        raise SapAccessError("SAP_HTTP_ERROR", 502)
-                    declared_length = length
-            content = response.read(max_bytes + 1)
-            if len(content) > max_bytes:
-                raise SapAccessError("SAP_RESPONSE_TOO_LARGE", 502)
-            if declared_length is not None and len(content) != declared_length:
-                raise SapAccessError("SAP_HTTP_ERROR", 502)
-            return HttpReply(response.status, response_headers, content)
+            remaining = max(0, timeout - (monotonic() - started))
+            try:
+                output, _ = process.communicate(payload, timeout=remaining)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+                raise SapAccessError('SAP_TIMEOUT', 504) from None
+            if monotonic() - started >= timeout:
+                raise SapAccessError('SAP_TIMEOUT', 504)
+            if process.returncode != 0 or len(output) > (max_bytes * 2 + 65536):
+                raise SapAccessError('SAP_TRANSPORT_ERROR')
+            result = json.loads(output)
+            if 'error' in result:
+                code = result['error']
+                statuses = {'SAP_TIMEOUT':504, 'SAP_REDIRECT_BLOCKED':502,
+                            'SAP_HTTP_ERROR':502, 'SAP_RESPONSE_TOO_LARGE':502}
+                allowed = {*statuses, 'SAP_AUTHENTICATION_FAILED', 'SAP_TLS_ERROR',
+                           'SAP_CONNECTION_FAILED', 'SAP_TRANSPORT_ERROR', 'SAP_INVALID_RESPONSE'}
+                if code not in allowed: code = 'SAP_TRANSPORT_ERROR'
+                raise SapAccessError(code, statuses.get(code, 503))
+            return HttpReply(result['status'], result['headers'], base64.b64decode(result['body'], validate=True))
         finally:
-            if connection is not None:
-                connection.close()
+            if process.poll() is None:
+                process.kill()
+                process.communicate()

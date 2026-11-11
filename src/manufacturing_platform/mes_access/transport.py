@@ -11,6 +11,7 @@ import time
 from urllib.parse import urlencode, urlsplit, urljoin
 
 from .errors import MesAccessError
+from ..sap_access.http_worker import run_worker, WorkerError
 
 
 class _DeadlineHTTPSConnection(http.client.HTTPSConnection):
@@ -73,7 +74,15 @@ class SessionTransport:
             self._connection.close(); self._connection=None
 
     def _resolve_peer(self, host, port, deadline):
-        # libc resolution cannot be cancelled portably. Only its daemon worker
+        if self._resolver is socket.getaddrinfo:
+            try:
+                result = run_worker({'operation':'resolve', 'host':host, 'port':port},
+                                    max(0, deadline-time.monotonic()), 4096)
+                return result['peer']
+            except WorkerError as error:
+                if error.code == 'SAP_TIMEOUT': raise TimeoutError() from None
+                raise OSError() from None
+        # Injected resolver seam used by offline tests. Only its daemon worker
         # may outlive the deadline; it cannot change session state or connect.
         result = queue.Queue(maxsize=1)
 

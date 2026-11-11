@@ -79,7 +79,8 @@ def parse_query_response(interface, payload, *, page=1, page_size=1):
         if payload.lstrip().startswith(b'<'):
             raise MesAccessError('MES_SESSION_EXPIRED', 502)
         root = json.loads(payload.decode('utf-8'), object_pairs_hook=_unique,
-                          parse_constant=_invalid_constant)
+                          parse_constant=_invalid_constant,
+                          **({'parse_float': str} if interface == 'iqc_receive' else {}))
         _bounded_tree(root, interface)
         if type(root) is not dict or type(root.get('result')) is not dict:
             raise ValueError()

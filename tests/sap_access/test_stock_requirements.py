@@ -133,3 +133,71 @@ def test_legacy_functions_remain_denied_even_if_configured(function):
     sender=Sender(None); t=SoapTransport(config(allowed_functions=(function,)),sender=sender)
     with pytest.raises(SapAccessError) as err: t.invoke(function,generic(function),'http://www.sap.com/'+function)
     assert err.value.code=='SAP_FUNCTION_NOT_ALLOWED' and not sender.calls
+
+@pytest.mark.parametrize('replace_from,replace_to', [
+    (b'<MRP_ITEMS>', b'<MRP_ITEMS>bad'),
+    (b'<item>', b'<item>bad'),
+    (b'</ELEMENT>', b'</ELEMENT>bad'),
+    (b'<MRP_ITEMS>', b'<MRP_ITEMS bad="1">'),
+    (b'<item>', b'<item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true">'),
+    (b'<EXTENSIONOUT/>', b'<EXTENSIONOUT>bad</EXTENSIONOUT>'),
+    (b'<MRP_LIST/>', b'<MRP_LIST bad="1"/>'),
+])
+def test_response_rejects_mixed_text_and_attributes(replace_from,replace_to):
+    with pytest.raises(SapAccessError): parse_response(response().replace(replace_from,replace_to))
+
+def synthetic_wsdl():
+    from .test_core import WSDL
+    from manufacturing_platform.sap_access.stock_requirements import FUNCTION
+    def scalar(name, length=10):
+        return f'<x:element name="{name}" minOccurs="0"><x:simpleType><x:restriction base="x:string"><x:maxLength value="{length}"/></x:restriction></x:simpleType></x:element>'
+    def struct(name, names):
+        return '<x:element name="'+name+'"><x:complexType><x:sequence>'+''.join(scalar(n) for n in names)+'</x:sequence></x:complexType></x:element>'
+    def table(name, names):
+        return '<x:element name="'+name+'"><x:complexType><x:sequence><x:element name="item" minOccurs="0" maxOccurs="unbounded"><x:complexType><x:sequence>'+''.join(scalar(n) for n in names)+'</x:sequence></x:complexType></x:element></x:sequence></x:complexType></x:element>'
+    tables=['EXTENSIONOUT','MRP_IND_LINES','MRP_ITEMS','MRP_TOTAL_LINES']
+    req=''.join(table(n,['DUMMY']) for n in tables)+scalar('MATERIAL',18)+scalar('PLANT',4)+''.join(scalar(n,1) for n in ['GET_ITEM_DETAILS','GET_IND_LINES','GET_TOTAL_LINES'])
+    fields=''.join([struct('MRP_CONTROL_PARAM',['DUMMY']),struct('MRP_LIST',['BASE_UOM']),struct('MRP_STOCK_DETAIL',['DUMMY']),struct('RETURN',['TYPE']),table('EXTENSIONOUT',['DUMMY']),table('MRP_IND_LINES',['DUMMY']),table('MRP_ITEMS',['ELEMENT','QUANTITY','ENTRY_UOM']),table('MRP_TOTAL_LINES',['DUMMY'])])
+    value=WSDL.replace(b'RFC_PING',FUNCTION.encode())
+    value=value.replace(b'<x:all/>', ('<x:sequence>'+req+'</x:sequence>').encode(),1)
+    return value.replace(b'<x:all/>', ('<x:sequence>'+fields+'</x:sequence>').encode(),1)
+
+def synthetic_response(rows):
+    return (f'<s:Envelope xmlns:s="{SOAP}" xmlns:r="{NS}"><s:Body><r:BAPI_MATERIAL_STOCK_REQ_LIST.Response><MRP_CONTROL_PARAM><DUMMY/></MRP_CONTROL_PARAM><MRP_LIST><BASE_UOM>EA</BASE_UOM></MRP_LIST><MRP_STOCK_DETAIL><DUMMY/></MRP_STOCK_DETAIL><RETURN><TYPE>S</TYPE></RETURN><EXTENSIONOUT/><MRP_IND_LINES/><MRP_ITEMS>{rows}</MRP_ITEMS><MRP_TOTAL_LINES/></r:BAPI_MATERIAL_STOCK_REQ_LIST.Response></s:Body></s:Envelope>').encode()
+
+@pytest.mark.parametrize('rows,count', [('',0), ('<item><ELEMENT>0001</ELEMENT><QUANTITY>1.200</QUANTITY><ENTRY_UOM>EA</ENTRY_UOM></item>',1)])
+def test_real_wsdl_parser_through_service_and_transport(tmp_path, rows, count):
+    import json
+    from .test_core import config_file
+    from manufacturing_platform.sap_access.transport import SoapTransport, HttpReply
+    from manufacturing_platform.sap_access.stock_requirements import FUNCTION
+    from manufacturing_platform.sap_access.service import SapAccessService
+    path=config_file(tmp_path); raw=json.loads(open(path).read()); raw['allowed_functions'].append(FUNCTION); open(path,'w').write(json.dumps(raw))
+    calls=[]
+    def sender(method,path,body,headers,timeout,cap):
+        calls.append((method,path,body))
+        return HttpReply(200,{'Content-Type':'text/xml'},synthetic_wsdl() if method=='GET' else synthetic_response(rows))
+    s=SapAccessService(path,str(tmp_path/'audit.json'),transport_factory=lambda cfg: SoapTransport(cfg,sender=sender))
+    result=s.stock_requirements('MAT-1','P001','admin')
+    assert len(result['items'])==count and result['mrp_list']['BASE_UOM']=='EA'
+    if count: assert result['items'][0]['QUANTITY']=='1.200' and result['items'][0]['ENTRY_UOM']=='EA'
+    assert [call[0] for call in calls]==['GET','POST'] and ET.fromstring(calls[1][2])[0][0][4].text=='MAT-1'
+
+def test_schema_optional_omission_rejected_to_avoid_incomplete_success():
+    from manufacturing_platform.sap_access.contracts import parse_wsdl
+    from manufacturing_platform.sap_access.stock_requirements import FUNCTION
+    contract=parse_wsdl(FUNCTION,synthetic_wsdl())
+    with pytest.raises(SapAccessError):
+        parse_response(synthetic_response('<item><ELEMENT>0001</ELEMENT><QUANTITY>1.200</QUANTITY></item>'),contract)
+
+@pytest.mark.parametrize('old,new',[(b'<MRP_ITEMS>',b'<MRP_ITEMS>invalid'),
+    (b'<item>',b'<item>invalid'),(b'</ELEMENT>',b'</ELEMENT>invalid'),
+    (b'<MRP_ITEMS>',b'<MRP_ITEMS bad="x">'),
+    (b'<item>',b'<item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true">'),
+    (b'<MRP_TOTAL_LINES/>',b'<MRP_TOTAL_LINES>invalid</MRP_TOTAL_LINES>')])
+def test_full_contract_rejects_malformed_structural_nodes(old,new):
+    from manufacturing_platform.sap_access.contracts import parse_wsdl
+    from manufacturing_platform.sap_access.stock_requirements import FUNCTION
+    contract=parse_wsdl(FUNCTION,synthetic_wsdl())
+    payload=synthetic_response('<item><ELEMENT>1</ELEMENT><QUANTITY>1.200</QUANTITY><ENTRY_UOM>EA</ENTRY_UOM></item>')
+    with pytest.raises(SapAccessError): parse_response(payload.replace(old,new),contract)

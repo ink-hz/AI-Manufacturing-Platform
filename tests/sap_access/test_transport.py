@@ -206,6 +206,16 @@ def install_connection(monkeypatch, module, response):
         connections.append(connection)
         return connection
 
+    from manufacturing_platform.sap_access.http_worker import exchange, WorkerError
+    def inline(self, method, path, body, headers, timeout, max_bytes):
+        settings = {'scheme': self.config.http_scheme, 'host': self.config.application_server,
+                    'port': self.config.http_port, 'ca': self.config.ca_bundle_path}
+        try:
+            status, response_headers, content = exchange(settings, method, path, body, headers, timeout, max_bytes)
+            return module.HttpReply(status, response_headers, content)
+        except WorkerError as exc:
+            raise module.SapAccessError(exc.code, 502) from None
+    monkeypatch.setattr(module.SoapTransport, '_send_http', inline)
     monkeypatch.setattr(module.http.client, "HTTPSConnection", factory)
     monkeypatch.setattr(module.http.client, "HTTPConnection", factory)
     return calls, connections

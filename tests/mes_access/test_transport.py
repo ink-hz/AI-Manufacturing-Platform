@@ -409,3 +409,23 @@ def test_native_real_tls_handshake_shares_remaining_connect_deadline(config, mon
         assert len(destinations) == 1 and not requests
         assert identities == [('mes.orbbec.com', False, True, ssl.CERT_REQUIRED)]
         assert c._connection is None
+
+def test_production_resolver_timeout_reaps_worker(config, monkeypatch):
+    import subprocess, sys, time
+    from manufacturing_platform.mes_access.transport import SessionTransport
+    original=subprocess.Popen; children=[]
+    def delayed(args, **kwargs):
+        code='import socket,time,runpy,sys; socket.getaddrinfo=lambda *a,**k: time.sleep(5); runpy.run_path(sys.argv[1],run_name="__main__")'
+        child=original([sys.executable,'-I','-c',code,args[-1]],**kwargs); children.append(child); return child
+    monkeypatch.setattr(subprocess,'Popen',delayed)
+    c=SessionTransport(config)
+    started=time.monotonic()
+    with pytest.raises(TimeoutError): c._resolve_peer('slow.invalid',80,started+1)
+    assert time.monotonic()-started<1.5 and len(children)==1 and children[0].poll() is not None
+
+def test_production_resolver_worker_timeout_is_not_connection_failure(config, monkeypatch):
+    import time
+    import manufacturing_platform.mes_access.transport as mod
+    def timeout(*args): raise mod.WorkerError('SAP_TIMEOUT')
+    monkeypatch.setattr(mod,'run_worker',timeout)
+    with pytest.raises(TimeoutError): mod.SessionTransport(config)._resolve_peer('example.invalid',80,time.monotonic()+1)

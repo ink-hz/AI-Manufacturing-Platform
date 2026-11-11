@@ -46,3 +46,10 @@ def test_iqc_receive_api_requires_scope_and_admin():
     assert private(browser.post(route,json={'filters':{}})).status_code==422 and not s.calls
     browser,s,_,_=install({**ADMIN,'read_only':True})
     assert private(browser.post(route,json={'filters':{'inspNo':'INSP-1'}})).status_code==403 and not s.calls
+
+def test_iqc_receive_numeric_lexemes_keep_precision_and_trailing_zeros():
+    from manufacturing_platform.mes_access.parsing import parse_query_response
+    payload=b'{"status":true,"result":{"MSTATUS":"S","page":[{"QTY":1234567890.123456789,"OTHER":1.2300,"COUNT":3}],"totalItems":1,"pageNumber":1}}'
+    result=parse_query_response('iqc_receive',payload)
+    assert result['rows'][0] == {'QTY':'1234567890.123456789','OTHER':'1.2300','COUNT':3}
+    assert result['total_items']==1 and type(result['total_items']) is int
