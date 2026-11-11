@@ -48,21 +48,21 @@ Bind requires nonempty exact source rows. Existing association requires explicit
 
 ### Task 2: 宿主共享原生服务与可信注入
 
-**Files:** PF `backend/app/manufacturing.py`, `backend/tests/test_manufacturing_native_access.py` and existing host workflow tests.
+**Files:** PF `backend/app/manufacturing.py`, `backend/app/manufacturing_paths.py`, `backend/tests/test_manufacturing_native_access.py`, `backend/tests/test_manufacturing_material_routes.py` and existing host workflow tests.
 
 **Interfaces:** Consume optional `mes_access_service` keyword from Task1. Build native readers once before workflow factory; return validated routers and service instances from an internal composition helper. Preserve `_native_access_router` wrapper if tests/users rely on it. Pass MES instance only when explicit supported signature; old releases mount without injection, missing/broken MES remains independent503.
 
 - [ ] Add failing host tests proving exact same service instance used by native router and workflow, no config file/network work at mount, missing MES doesn't disable workflow/SAP, old signatures still work, and existing protected-path aliases still block injection.
 - [ ] Refactor composition with current cross-source/database/sidecar/production-tools path guards unchanged, inspect explicit keyword capability, no HTTP loopback and no constructor config reads. Guard a reader whose router fails validation: do not inject it.
-- [ ] Run focused PF native/workflow route tests using PF `.venv/bin/python`, commit owned files only. Record tests and older-release behavior.
+- [ ] Run focused PF native/workflow route tests using PF `backend/.venv/bin/python`, commit owned files only. Record tests and older-release behavior. Register the exact MES组件 GET in host authorization, reserving authenticated503 fallback when older released workflow omits it.
 
 ### Task 3: 料况页关联工单、完整组件查看与刷新
 
 **Files:** Create `webui/src/workflow/materialControl/MesOrderMaterials.tsx` and `.test.tsx`; modify `materialControl/{api,types,MaterialControlWorkspace}.ts(x)`, needed existing test fixtures only; rebuild tracked assets through existing bundle task.
 
-**Interfaces:** Use Task1 GET+commands exactly; add API method `mesOrderMaterials(projectId,workOrderId,signal?)`. Consume existing `page.work_orders` picker, existing guarded draft/leave/reload+command handling. No native admin/raw query endpoints on the page.
+**Interfaces:** Use Task1 GET+commands exactly; add API method `mesOrderMaterials(projectId,workOrderId,signal?)`. Load work-order choices with existing `api.objects(projectId, 'work_order', 50, offset)` and a load-more action, using object titles; `page.work_orders` only contains the current requirement page and cannot support initial binding before a supply plan exists. Reuse existing guarded draft/leave/reload+command handling. No native admin/raw query endpoints on the page.
 
-- [ ] Add failing component tests for human-readable work-order selection, business MES工单 input, unbound/read-only capability, successful bind/read/refresh, exact quantity strings and units, replacement reason, and failure retaining previous saved result.
+- [ ] Add failing component tests for human-readable work-order selection before any plan/requirement exists, loading additional work-order choices, business MES工单 input, unbound/read-only capability, successful bind/read/refresh, exact quantity strings and units, replacement reason, and failure retaining previous saved result.
 - [ ] Embed a compact `MES工单物料` section in料况 before requirement table. Pick platform work order by title, admins with `can_manage` may associate/explicitly replace and refresh; others view saved results. Show bound MES order, test/production环境/站点、读取时间、完整组件行数。Table columns: 组件行、物料、需求、MES已提料、单位、仓储位置. No fake shortage/readiness; one concise note explains MES已提料需另核对线边实收.
 - [ ] Handle auth loss/project selection/version changes/abort races without stale cross-project results; link selection/form drafts into existing dirty navigation protection. Use current project version after successful command, reset submitted fields; cancellation/discard clears discarded fields. Error gives concrete next action and leaves approved saved result visible.
 - [ ] Run focused Vitest plus `npm run test:bundle` and appropriate related workflow tests. Record component/API/browser/production boundaries. Update taskbook status and verification doc after reviews; commit source and generated assets.

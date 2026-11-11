@@ -1,0 +1,17 @@
+# T2（P0）料况直接回答缺什么、卡哪里、下一步谁做
+
+日期：2026-11-11。状态：已拆分，待进入实施。
+
+**用户动作→输出**：计划员选工单或全项目，按急料/待检/未实收/待核实筛选并跨页查物料；每条看到当前剩余需求、可证明属于本需求的满足量、缺口或不可判断原因、需要时间、并行卡点、责任与可打开操作。
+
+**交付**：
+- 服务端物料搜索/工单/问题分类，先过滤再分页；详情/任务往返保留范围、页码及草稿。
+- 分开呈现平台确认计划与分配口径、MES原始欠料/优先级、SAP MRP供需；各有范围/时点，不能把库存当本单分配或把里程碑相加。
+- 同范围、同单位、数量含义明确时才计算；已净扣源数量不二次扣消耗/发料，缺分配/质量/换算/完整需求则给具体缺项和下一步。
+- 保留计划开始代理标识；支持授权补充带依据的需要时间及变更历史，时间风险建议与已确认急料分别表达。
+
+**依赖**：T1提供原生读取版本/绑定；筛选、问题列和平台事实判断可先开发。不改`available()`去猜原生字段含义。
+
+**验收**：第51条物料从全项目搜索可命中；共享储备不重复满足；净扣需求不二次扣；不同单位不合计；部分、过期、无权限和真实空结果有各自行为；无需要时间不能判不急；同一需求同时待检/短收时保留两个问题且指向准确对象。
+
+**文件**：`src/manufacturing_platform/workflow/{material_control.py,material_control_models.py,material_control_api.py,supply.py,supply_models.py}`；`webui/src/workflow/materialControl/{api.ts,types.ts,MaterialControlWorkspace.tsx,MaterialFlowPanel.tsx}`；`webui/src/workflow/navigationContext.ts`；`tests/workflow/test_material_control.py`和现有料况前端测试。

@@ -2,6 +2,8 @@
 
 基线：机器人 OEM **代工代料**，沿用已批准的[料况工作台设计](../specs/2026-11-11-robot-oem-material-workbench-design.md)。已有急料、IQC接单、指定签收及寻料流程继续复用。
 
+独立任务书：[T1工单需求](../../taskbooks/robot-oem/01-mes-order-and-demand.md)、[T2料况分析](../../taskbooks/robot-oem/02-material-analysis.md)、[T3批次IQC](../../taskbooks/robot-oem/03-iqc-receipt-and-results.md)、[T4急料协调](../../taskbooks/robot-oem/04-expedite-coordination.md)、[T5发料实收](../../taskbooks/robot-oem/05-issue-and-line-receipt.md)、[T6项目行动](../../taskbooks/robot-oem/06-project-actions.md)。每份包含用户动作、交付、依赖、验收场景和开发文件范围。
+
 | 任务 | 岗位实际完成的事 | 交付与验收 | 依赖 / 当前状态 |
 | --- | --- | --- | --- |
 | T1 关联真实工单、读取需求 | 管理员在项目中选择平台工单，关联MES工单；计划员查看完整组件与读取时间 | 精确核对源工单；跨页收齐后保存；显示物料、组件行、需求、MES已提料、单位、仓储位置。空结果、串单、重复、分页变化均拒绝更新；失败保留上次结果。更换关联保留历史 | **本轮开发**，执行见[实施计划](2026-11-11-oem-native-order.md)。MES身份与SAP身份分别核实 |
