@@ -445,6 +445,7 @@ export function AnomaliesBoard(props: BoardProps) {
     [api, l.projectId, l.scope, refresh],
     !!l.selectedError,
   );
+  const failedSnMax = errors.data ? maximum(errors.data.items, "failed_sn") : "0";
   return (
     <>
       <h3>测试异常 · 先选症状，再看影响</h3>
@@ -466,7 +467,7 @@ export function AnomaliesBoard(props: BoardProps) {
                 )
                 .map((a, i) => (
                   <article className="pt-error-card" key={a.key || i} data-selected={!!l.selectedError && (a.error_code ?? null) === (l.scope.error_code ?? null) && (a.stage_id ?? null) === (l.scope.stage_id ?? null) && (a.software_id ?? null) === (l.scope.software_id ?? null)}>
-                    <RankingBar value={a.failed_sn} max={maximum(d.items, "failed_sn")} label="失败涉及 SN" />
+                    <RankingBar value={a.failed_sn} max={failedSnMax} label="失败涉及 SN" />
                     <button
                       type="button"
                       onClick={() =>
