@@ -19,6 +19,7 @@
 - 稳定源命名空间取可信配置的规范化base_url、environment、site_id、site_code，排除密码；完整配置指纹仅在服务端临时用于采集中及提交前防变化，不返回或持久化。密码轮换不改变工单身份；切换环境/站点拒绝旧关联刷新，需明确更换关联。
 - 不修改用户原有dirty/untracked资料、私有配置或源业务数据；不在主线直接开发，不推送/部署。界面使用岗位业务名，错误不泄露凭据、地址或原始上游内容。
 - 接口优先；前端组件自动化由开发验证，浏览器验收交用户。合成服务测试不得写成真实SAP/MES业务闭环。
+- MES关联/刷新成功后保留料况页及选中工单并显示保存结果。切换选中工单不能丢失同项目已提交命令的版本回执；临时busy造成的只读不能清空未确认放弃的草稿。确认本地放弃必须清空所有受影响的草稿字段。
 
 ---
 
@@ -40,11 +41,11 @@ Commands through existing `/projects/{id}/commands`:
 
 Bind requires nonempty exact source rows. Existing association requires explicit current `replace_binding_id` and nonempty business reason; save supersession history. Refresh uses stored source order and namespace. Result is normal CommandResult of `work_order`, no new universal object kind. One active binding per work order; same configured source namespace+shop_order cannot bind to a second platform work order even across projects. New read versions append; failed refresh never clears prior approved snapshot.
 
-- [ ] Write tests before implementation: exact12 rows/3pages; quantity precision; no data/wrong or missing order/duplicate component/bad amount/unit/changed total/short page/over100/second-page failure reject with zero mutations; configured max_rows respected.
-- [ ] Exercise command path: admin+project role required before config/I/O, read-only/inactive/cross-project blocked, idempotent retry without source query, changed payload conflict, CAS race/permission revocation/config change after preflight fails, explicit supersession history, namespace uniqueness and restart. GET reads stored snapshot without source I/O.
-- [ ] Implement source collector reusing native audit/allowed paths and config policy, freezing one config for all pages and validating unchanged current config. `order_materials` parse_float preserves numeric lexemes as strings, with profile compatibility tests. Validate finite nonnegative known amounts, bounded identifiers and required units, preserve component rows separately. `withdrawn_quantity: string | null` must stay nullable through collector/schema/DTO and restart; null is no known quantity, nonempty malformed ENMNG rejects.
-- [ ] Add schema26 transactional migration from25 and freshDB; no fabricated seed. Persist binding history and typed snapshots (not raw source response); unique active indexes. Reuse central command parsing/idempotency/audit/CAS. Do not hold SQLite write/read transaction across source I/O. Recheck source configuration immediately before entering commit and actor/role/replay/version inside commit; resolve_subject checks actor activity.
-- [ ] Run `/private/tmp/manufacturing-contract-py311/bin/python -m pytest tests/workflow/test_native_materials.py tests/mes_access -q`, plus relevant command/schema/API tests; record red/green and actual outputs. Commit only owned files. Write DTO/examples and tests in report for Task3.
+- [x] Write tests before implementation: exact12 rows/3pages; quantity precision; no data/wrong or missing order/duplicate component/bad amount/unit/changed total/short page/over100/second-page failure reject with zero mutations; configured max_rows respected.
+- [x] Exercise command path: admin+project role required before config/I/O, read-only/inactive/cross-project blocked, idempotent retry without source query, changed payload conflict, CAS race/permission revocation/config change after preflight fails, explicit supersession history, namespace uniqueness and restart. GET reads stored snapshot without source I/O.
+- [x] Implement source collector reusing native audit/allowed paths and config policy, freezing one config for all pages and validating unchanged current config. `order_materials` parse_float preserves numeric lexemes as strings, with profile compatibility tests. Validate finite nonnegative known amounts, bounded identifiers and required units, preserve component rows separately. `withdrawn_quantity: string | null` must stay nullable through collector/schema/DTO and restart; null is no known quantity, nonempty malformed ENMNG rejects.
+- [x] Add schema26 transactional migration from25 and freshDB; no fabricated seed. Persist binding history and typed snapshots (not raw source response); unique active indexes. Reuse central command parsing/idempotency/audit/CAS. Do not hold SQLite write/read transaction across source I/O. Recheck source configuration immediately before entering commit and actor/role/replay/version inside commit; resolve_subject checks actor activity.
+- [x] Run `/private/tmp/manufacturing-contract-py311/bin/python -m pytest tests/workflow/test_native_materials.py tests/mes_access -q`, plus relevant command/schema/API tests; record red/green and actual outputs. Commit only owned files. Write DTO/examples and tests in report for Task3.
 
 ### Task 2: 宿主共享原生服务与可信注入
 
@@ -52,9 +53,9 @@ Bind requires nonempty exact source rows. Existing association requires explicit
 
 **Interfaces:** Consume optional `mes_access_service` keyword from Task1. Build native readers once before workflow factory; return validated routers and service instances from an internal composition helper. Preserve `_native_access_router` wrapper if tests/users rely on it. Pass MES instance only when explicit supported signature; old releases mount without injection, missing/broken MES remains independent503.
 
-- [ ] Add failing host tests proving exact same service instance used by native router and workflow, no config file/network work at mount, missing MES doesn't disable workflow/SAP, old signatures still work, and existing protected-path aliases still block injection.
-- [ ] Refactor composition with current cross-source/database/sidecar/production-tools path guards unchanged, inspect explicit keyword capability, no HTTP loopback and no constructor config reads. Guard a reader whose router fails validation: do not inject it.
-- [ ] Run focused PF native/workflow route tests using PF `backend/.venv/bin/python`, commit owned files only. Record tests and older-release behavior. Register the exact MES组件 GET in host authorization, reserving authenticated503 fallback when older released workflow omits it.
+- [x] Add failing host tests proving exact same service instance used by native router and workflow, no config file/network work at mount, missing MES doesn't disable workflow/SAP, old signatures still work, and existing protected-path aliases still block injection.
+- [x] Refactor composition with current cross-source/database/sidecar/production-tools path guards unchanged, inspect explicit keyword capability, no HTTP loopback and no constructor config reads. Guard a reader whose router fails validation: do not inject it.
+- [x] Run focused PF native/workflow route tests using PF `backend/.venv/bin/python`, commit owned files only. Record tests and older-release behavior. Register the exact MES组件 GET in host authorization, reserving authenticated503 fallback when older released workflow omits it.
 
 ### Task 3: 料况页关联工单、完整组件查看与刷新
 
@@ -62,10 +63,10 @@ Bind requires nonempty exact source rows. Existing association requires explicit
 
 **Interfaces:** Use Task1 GET+commands exactly; add API method `mesOrderMaterials(projectId,workOrderId,signal?)`. Load work-order choices with existing `api.objects(projectId, 'work_order', 50, offset)` and a load-more action, using object titles; `page.work_orders` only contains the current requirement page and cannot support initial binding before a supply plan exists. Reuse existing guarded draft/leave/reload+command handling. No native admin/raw query endpoints on the page.
 
-- [ ] Add failing component tests for human-readable work-order selection before any plan/requirement exists, loading additional work-order choices, business MES工单 input, unbound/read-only capability, successful bind/read/refresh, exact quantity strings and units, replacement reason, and failure retaining previous saved result.
-- [ ] Embed a compact `MES工单物料` section in料况 before requirement table. Pick platform work order by title, admins with `can_manage` may associate/explicitly replace and refresh; others view saved results. Show bound MES order, test/production环境/站点、读取时间、完整组件行数。Table columns: 组件行、物料、需求、MES已提料、单位、仓储位置. No fake shortage/readiness; one concise note explains MES已提料需另核对线边实收.
-- [ ] Handle auth loss/project selection/version changes/abort races without stale cross-project results; link selection/form drafts into existing dirty navigation protection. Use current project version after successful command, reset submitted fields; cancellation/discard clears discarded fields. Error gives concrete next action and leaves approved saved result visible.
-- [ ] Run focused Vitest plus `npm run test:bundle` and appropriate related workflow tests. Record component/API/browser/production boundaries. Update taskbook status and verification doc after reviews; commit owned source files and keep the verified bundle for integration.
+- [x] Add failing component tests for human-readable work-order selection before any plan/requirement exists, loading additional work-order choices, business MES工单 input, unbound/read-only capability, successful bind/read/refresh, exact quantity strings and units, replacement reason, and failure retaining previous saved result.
+- [x] Embed a compact `MES工单物料` section in料况 before requirement table. Pick platform work order by title, admins with `can_manage` may associate/explicitly replace and refresh; others view saved results. Show bound MES order, test/production环境/站点、读取时间、完整组件行数。Table columns: 组件行、物料、需求、MES已提料、单位、仓储位置. No fake shortage/readiness; one concise note explains MES已提料需另核对线边实收.
+- [x] Handle auth loss/project selection/version changes/abort races without stale cross-project results; link selection/form drafts into existing dirty navigation protection. Use current project version after successful command, reset submitted fields; cancellation/discard clears discarded fields. Error gives concrete next action and leaves approved saved result visible.
+- [x] Run focused Vitest plus `npm run test:bundle` and appropriate related workflow tests. Record component/API/browser/production boundaries. Update taskbook status and verification doc after reviews; commit owned source files and keep the verified bundle for integration.
 
 ## 已核实的接口补充
 
