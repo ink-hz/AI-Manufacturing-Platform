@@ -22,6 +22,7 @@ from . import (  # noqa: F401 - trusted domain registration
     material_handoff_reader,
     material_handoffs,
     material_tasks,
+    native_material_service,
     material_task_reader,
     orders,
     ownership,
@@ -102,7 +103,9 @@ class WorkflowService:
         test_evidence_reader=None,
         resolve_subject_profiles=None,
         configure_systems=None,
+        mes_access_service=None,
     ):
+        self.mes_access_service = mes_access_service
         self.store, self.resolve_subject = store, resolve_subject
         self.resolve_subject_profiles = resolve_subject_profiles
         self.system_registry = SystemRegistry(store)
@@ -980,6 +983,10 @@ class WorkflowService:
                 delivery_states=delivery_states,
             )
 
+    def mes_materials(self, actor, project_id, work_order_id):
+        with self.store.transaction() as tx:
+            return native_material_service.read(tx, actor, project_id, work_order_id, self.resolve_subject)
+
     def execute(
         self, actor: Actor, project_id: UUID, command: WorkflowCommand
     ) -> CommandResult:
@@ -995,6 +1002,34 @@ class WorkflowService:
             if isinstance(command, integration_operations.PullIntegrationFact) else None
         )
         payload = {"project_id": str(project_id), **command.model_dump(mode="json")}
+        native_observation = None
+        if command.action.startswith("mes_order."):
+            with self.store.transaction() as tx:
+                native_material_service.authorize(tx, actor, project_id, command, self.resolve_subject)
+                row = require_project(tx, actor, project_id)
+                replay = self._replay(tx, actor, command.operation_id, payload)
+                if replay is not None:
+                    return CommandResult.model_validate({**replay, "replayed": True, "current_project_version": row["version"]})
+                if row["version"] != command.expected_version:
+                    raise DomainError("VERSION_CONFLICT", 409, "Project version changed", {"current_version": row["version"]})
+                binding = native_material_service.validate_binding(tx, command)
+                order = command.shop_order if command.action == "mes_order.bind" else binding["shop_order"]
+                expected_namespace = binding["namespace"] if command.action == "mes_order.refresh" else None
+            if self.mes_access_service is None:
+                raise DomainError("MES_UNAVAILABLE", 503, "MES source unavailable")
+            from ..mes_access.errors import MesAccessError
+            try:
+                if expected_namespace is not None:
+                    config = self.mes_access_service.order_materials_configuration()
+                    if config["namespace"] != expected_namespace:
+                        raise DomainError("MES_SOURCE_CHANGED", 409, "MES source changed; replace association")
+                native_observation = self.mes_access_service.collect_order_materials(order, actor.user_id)
+                if expected_namespace is not None and expected_namespace != native_observation["namespace"]:
+                    raise DomainError("MES_SOURCE_CHANGED", 409, "MES source changed; replace association")
+                if not self.mes_access_service.configuration_matches(native_observation["fingerprint"]):
+                    raise DomainError("MES_CONFIGURATION_CHANGED", 409, "MES configuration changed")
+            except MesAccessError as exc:
+                raise DomainError(exc.code, exc.status, "MES order collection failed") from None
         profiles = None
         profile_error = None
         if command.action.startswith("material_task."):
@@ -1056,6 +1091,8 @@ class WorkflowService:
                 permissions.roles, permissions.qualifications,
             ):
                 raise DomainError("FORBIDDEN", 403, "Action permission denied")
+            if native_observation is not None:
+                native_material_service.authorize(tx, actor, project_id, command, self.resolve_subject)
             introduction.authorize(actor, command)
             delivery.authorize(tx, actor, project_id, command)
             material_handoffs.authorize(tx, actor, project_id, command)
@@ -1087,6 +1124,16 @@ class WorkflowService:
                     "Project version changed",
                     {"current_version": row["version"]},
                 )
+            if native_observation is not None:
+                # A writer may have waited for SQLite after the precommit check.
+                # This is a local configuration read only, never source network I/O.
+                from ..mes_access.errors import MesAccessError
+                try:
+                    unchanged = self.mes_access_service.configuration_matches(native_observation["fingerprint"])
+                except MesAccessError as exc:
+                    raise DomainError(exc.code, exc.status, "MES configuration unavailable") from None
+                if not unchanged:
+                    raise DomainError("MES_CONFIGURATION_CHANGED", 409, "MES configuration changed")
             if profile_error is not None:
                 raise profile_error
             context = CommandContext(
@@ -1100,7 +1147,8 @@ class WorkflowService:
             )
             mutation = (
                 self.integration_service.prepare(tx, context, command, observed_fact=pull_observation)
-                if pull_observation is not None else entry.handler(tx, context, command)
+                if pull_observation is not None else (native_material_service.apply(tx, context, command, native_observation)
+                if native_observation is not None else entry.handler(tx, context, command))
             )
             if not isinstance(mutation, MutationResult):
                 raise TypeError("domain handler must return MutationResult")

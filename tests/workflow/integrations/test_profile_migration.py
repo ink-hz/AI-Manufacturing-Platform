@@ -105,7 +105,7 @@ def test_migrate_actual_prior_schema_preserves_every_legacy_byte(tmp_path, versi
     before = freeze22(tmp_path, version)
     for _ in range(2):
         with store(tmp_path).transaction(write=True) as tx:
-            assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 25
+            assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 26
             for table, rows in before.items():
                 assert [tuple(r) for r in tx.execute(f"SELECT * FROM {table}")] == rows
             assert profile_for(tx, PID) == "legacy-erp-v1"
@@ -168,7 +168,7 @@ def test_initial_assignment_rejected_after_any_domain_intent(workflow, boundary)
 
 def test_fresh_production_creates_no_mock_store_and_disallows_assignment(tmp_path):
     with store(tmp_path, "production").transaction(write=True) as tx:
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 25
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 26
         with pytest.raises(DomainError, match="demo/test"):
             assign_profile(tx, PID, "oem-network-v1")
     assert not (tmp_path / "mock-systems").exists()
@@ -178,7 +178,7 @@ def test_fresh_production_creates_no_mock_store_and_disallows_assignment(tmp_pat
 def test_future_schema_rejected(tmp_path):
     freeze22(tmp_path)
     with sqlite3.connect(tmp_path / "workflow.sqlite3") as tx:
-        tx.execute("UPDATE schema_version SET version=26")
+        tx.execute("UPDATE schema_version SET version=27")
     with pytest.raises(ValueError, match="dataset mismatch"):
         with store(tmp_path).transaction():
             pass
@@ -295,7 +295,7 @@ def test_existing23_adds_claim_lineage_without_rewriting_legacy_manual_rma(workf
     project, _, _, _, rma = open_rma(workflow)
     # Explicit fixture-only writer: the harness's normal db() is read-only.
     with sqlite3.connect(workflow.paths.domain) as tx:
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 25
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 26
         assert (
             tx.execute("SELECT count(*) FROM integration_return_units").fetchone()[0]
             == 0

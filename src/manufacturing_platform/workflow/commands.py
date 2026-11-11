@@ -37,6 +37,8 @@ WorkflowAction = Literal[
     "mock_system.query",
     "mock_system.retry",
     "integration.pull",
+    "mes_order.bind",
+    "mes_order.refresh",
     "authority.register",
     "authority.verify",
     "material_handoff.record",

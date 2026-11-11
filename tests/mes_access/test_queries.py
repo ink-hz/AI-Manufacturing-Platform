@@ -71,7 +71,8 @@ def test_transport_enforces_both_fixed_and_config_allowlists(config):
 
 def test_parser_preserves_bounded_java_date_and_iqc_shape():
     row = {'CREATE_DATE': {'year': 126, 'month': 10, 'time': 1794355200000}, 'other': [None, True, 1.5]}
-    assert parse(response([row])) == {'rows': [row], 'total_items': 1, 'page': 1, 'page_size': 1}
+    assert parse(response([row]), 'order_operations') == {'rows': [row], 'total_items': 1, 'page': 1, 'page_size': 1}
+    assert parse(response([row]))['rows'][0]['other'][-1] == '1.5'
     assert parse(response([], total=0, page=None, rows_key='iqcList'), 'iqc_records')['rows'] == []
 
 

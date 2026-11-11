@@ -35,6 +35,7 @@ def build_workflow_router(
     resolve_subject_profiles=None,
     business_clock=None,
     production_tools: ProductionToolsConfig | None = None,
+    mes_access_service=None,
 ):
     store = WorkflowStore(database_path, authority_database_path, dataset, business_clock=business_clock)
     service = WorkflowService(
@@ -42,6 +43,7 @@ def build_workflow_router(
         resolve_subject,
         test_evidence_reader=test_evidence_reader,
         resolve_subject_profiles=resolve_subject_profiles,
+        mes_access_service=mes_access_service,
     )
 
     class PrivateRoute(APIRoute):
@@ -147,6 +149,10 @@ def build_workflow_router(
     except (sqlite3.Error, OSError, ValueError):
         investigation_service = InvestigationService(production_service, path=None, clock=store.business_clock)
     register_investigation_routes(router, investigation_service, actor)
+
+    @router.get("/projects/{project_id}/work-orders/{work_order_id}/mes-materials")
+    def mes_materials(project_id: UUID, work_order_id: UUID, request: Request):
+        return service.mes_materials(actor(request), project_id, work_order_id)
 
     async def parse(request, model):
         try:

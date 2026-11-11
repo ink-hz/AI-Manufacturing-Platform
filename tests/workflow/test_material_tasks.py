@@ -132,7 +132,7 @@ def test_scoped_routes_and_schema24_migration(workflow):
     w.reopen()
     assert w.client('supply').get(f'{BASE}/projects/{pid}').status_code == 200
     with w.db() as tx:
-        assert tx.execute('SELECT version FROM schema_version').fetchone()[0]==25
+        assert tx.execute('SELECT version FROM schema_version').fetchone()[0]==26
     task=w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='iqc',receipt_id=receipt,
                    assignee_id=str(USERS['quality']),note='待检')['object_id']
     page=w.client('quality').get(f'{BASE}/projects/{pid}/material-tasks').json()

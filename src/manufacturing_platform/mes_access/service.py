@@ -112,6 +112,9 @@ class MesAccessService:
 
     def query(self, interface, filters=None, page=1, page_size=1, actor_id=None):
         config, binding, store = self._context()
+        return self._query(config, binding, store, interface, filters, page, page_size, actor_id)
+
+    def _query(self, config, binding, store, interface, filters, page, page_size, actor_id):
         self._live(config)
         spec, params = prepare_query(config, interface, filters, page, page_size)
         # Freeze caller-owned filters before I/O; a shared service never stores
@@ -126,3 +129,20 @@ class MesAccessService:
                     'authentication_verified': True, 'business_query_succeeded': True,
                     'business_data_verified': False, 'business_reconciled': False}
         return self._operation(config, binding, store, 'query', interface, actor_id, call)
+
+    def order_materials_configuration(self):
+        from .order_materials import namespace
+        config, fingerprint, _ = self._context()
+        self._live(config)
+        return {'namespace': namespace(config), 'fingerprint': fingerprint}
+
+    def configuration_matches(self, fingerprint):
+        config, current, _ = self._context()
+        self._live(config)
+        return current == fingerprint
+
+    def collect_order_materials(self, shop_order, actor_id):
+        from .order_materials import collect
+        config, fingerprint, store = self._context()
+        self._live(config)
+        return collect(self, config, fingerprint, store, shop_order, actor_id)

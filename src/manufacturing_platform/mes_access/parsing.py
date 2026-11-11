@@ -21,6 +21,12 @@ def _unique(pairs):
     return result
 
 
+def _decimal_lexeme(value):
+    if not math.isfinite(float(value)):
+        raise ValueError()
+    return value
+
+
 def _invalid_constant(value):
     raise ValueError()
 
@@ -80,7 +86,7 @@ def parse_query_response(interface, payload, *, page=1, page_size=1):
             raise MesAccessError('MES_SESSION_EXPIRED', 502)
         root = json.loads(payload.decode('utf-8'), object_pairs_hook=_unique,
                           parse_constant=_invalid_constant,
-                          **({'parse_float': str} if interface == 'iqc_receive' else {}))
+                          **({'parse_float': _decimal_lexeme} if interface in {'iqc_receive', 'order_materials'} else {}))
         _bounded_tree(root, interface)
         if type(root) is not dict or type(root.get('result')) is not dict:
             raise ValueError()
