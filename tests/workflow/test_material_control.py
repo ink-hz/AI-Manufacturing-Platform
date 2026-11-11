@@ -118,3 +118,38 @@ def test_requirement_paging_and_filter_scope(workflow):
     assert workflow.client().get(path, params={'work_order_id': other_related['work_order_id']}).status_code == 404
     assert workflow.client().get(path, params={'requirement_id': other_req['id']}).status_code == 404
     assert workflow.client('outsider').get(path, params={'requirement_id': other_req['id']}).status_code == 404
+
+
+def test_projection_does_not_materialize_object_history(workflow, monkeypatch):
+    import sqlite3
+    from manufacturing_platform.workflow.queries import ObjectRegistry
+    p, req, _ = workflow.material_requirement(mode='oem')
+    with sqlite3.connect(workflow.paths.domain) as db:
+        columns = [row[1] for row in db.execute('PRAGMA table_info(audit_events)') if row[1] != 'id']
+        names = ','.join(columns)
+        audit = db.execute(f'SELECT {names} FROM audit_events WHERE project_id=? LIMIT 1', (p['id'],)).fetchone()
+        db.executemany(f"INSERT INTO audit_events ({names}) VALUES ({','.join('?' for _ in columns)})", [audit] * 600)
+    def no_detail(*args, **kwargs):
+        raise AssertionError('projection must not invoke history-bearing object detail readers')
+    monkeypatch.setattr(ObjectRegistry, 'detail', no_detail)
+    response = workflow.client().get(f"{BASE}/projects/{p['id']}/material-control")
+    assert response.status_code == 200
+    assert response.json()['receipts'][0]['qualified'] == '80'
+    assert response.json()['requirements'][0]['id'] == req['id']
+
+
+def test_overview_uses_sql_pagination_with_grant_scope(workflow, monkeypatch):
+    from manufacturing_platform.workflow import material_control
+    first = workflow.create_project(name='First')
+    second = workflow.create_project(name='Second')
+    workflow.grant(first['id'], 'supply', ['supply'])
+    workflow.grant(second['id'], 'supply', ['supply'])
+    def no_unbounded_project_ids(*args, **kwargs):
+        raise AssertionError('overview must page authorized projects in SQL')
+    monkeypatch.setattr(material_control, 'project_ids', no_unbounded_project_ids, raising=False)
+    pages = [workflow.client('supply').get(f'{BASE}/material-control/overview', params={'limit': 1, 'offset': i}).json() for i in (0, 1)]
+    assert all(page['total'] == 2 for page in pages)
+    assert [page['items'][0]['project_id'] for page in pages] == sorted([first['id'], second['id']])
+    workflow.grant(second['id'], 'supply', ['supply'], active=False)
+    page = workflow.client('supply').get(f'{BASE}/material-control/overview').json()
+    assert page['total'] == 1 and page['items'][0]['project_id'] == first['id']

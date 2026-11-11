@@ -1,12 +1,11 @@
 """Non-accounting material read projections from authorized workflow facts."""
 import json
-from uuid import UUID
 
-from .authorization import project_ids, require_project
+from .authorization import require_project
 from .clock import business_time
-from .contracts import DomainError, ObjectKind
+from .contracts import DomainError
 from .material_control_models import MaterialControlPage
-from .supply import available
+from .supply import amount, available, receipt_presentation
 
 ISSUE = "Evidence is bounded and may not represent complete external supply or inventory."
 
@@ -33,27 +32,51 @@ def _modes(tx, pid):
 def overview(service, actor, limit, offset):
     service._pagination(limit, offset)
     with service.store.transaction() as tx:
-        ids = project_ids(tx, actor)
+        if actor.configuration_admin:
+            sql, args = "SELECT id FROM projects", ()
+        else:
+            sql, args = "SELECT project_id FROM project_grants WHERE user_id=? AND active=1 AND roles_json!='[]'", (str(actor.user_id),)
+        total = tx.execute(f"SELECT COUNT(*) FROM ({sql})", args).fetchone()[0]
+        ids = tx.execute(f"{sql} ORDER BY 1 LIMIT ? OFFSET ?", (*args, limit, offset)).fetchall()
         now = business_time(tx).isoformat()
         items = []
-        for pid in ids[offset:offset + limit]:
+        for entry in ids:
+            pid = entry[0]
             p = require_project(tx, actor, pid)
             items.append(dict(project_id=pid, name=p['name'], customer_id=p['customer_id'], product=p['product'],
                 work_order_count=_count(tx, 'work_orders', pid), requirement_count=_count(tx, 'requirements', pid),
                 open_expedite_count=_count(tx, 'material_expedites', pid, "AND state='open'"),
                 unreceived_handoff_count=_count(tx, 'material_handoffs', pid, "AND state='pending'"),
                 coverage_issues=[ISSUE], source_modes=_modes(tx, pid)))
-        return dict(items=items, total=len(ids), limit=limit, offset=offset, read_at=now)
+        return dict(items=items, total=total, limit=limit, offset=offset, read_at=now)
 
 
-def _detail(service, tx, pid, kind, ident):
-    detail = service.object_registry.detail(tx, pid, ObjectKind(kind), UUID(str(ident)))
-    if detail is None:
-        raise DomainError('NOT_FOUND', 404, 'Workflow resource not found')
-    value = detail.value.model_dump(mode='json')
-    if kind == 'receipt':
-        value['qualified'] = value['accepted']
-    return {'id': str(ident), **value}
+def _value(tx, pid, kind, ident, project):
+    """Read only bounded value fields, leaving object history to its detail route."""
+    if kind == "work_order":
+        from .orders import amount as project_amount
+        row = tx.execute("SELECT * FROM work_orders WHERE project_id=? AND id=?", (pid, ident)).fetchone()
+        return dict(id=ident, kind=kind, order_line_id=row["order_line_id"], revision_id=row["revision_id"],
+                    quantity=project_amount(row["q_atoms"], project), unit=row["unit"], purpose=row["purpose"],
+                    trial_quantity=project_amount(row["trial_q_atoms"], project), source=json.loads(row["source_json"]),
+                    planned_start=row["planned_start"], planned_end=row["planned_end"])
+    if kind == "receipt":
+        row = tx.execute("SELECT r.*, l.scale, original.q_atoms original_q_atoms FROM effective_supply_receipts r JOIN material_lots l ON l.id=r.material_lot_id AND l.project_id=r.project_id JOIN supply_receipts original ON original.id=r.id AND original.project_id=r.project_id WHERE r.project_id=? AND r.id=?", (pid, ident)).fetchone()
+        accepted, rejected = tx.execute("SELECT COALESCE(SUM(accepted_atoms),0), COALESCE(SUM(rejected_atoms),0) FROM effective_iqc_results WHERE project_id=? AND receipt_id=?", (pid, ident)).fetchone()
+        return dict(id=ident, kind=kind, commitment_id=row["commitment_id"], material_lot_id=row["material_lot_id"],
+                    quantity=amount(row["q_atoms"], row["scale"]), original_quantity=amount(row["original_q_atoms"], row["scale"]),
+                    unit=row["unit"], source=json.loads(row["source_json"]), accepted=amount(accepted, row["scale"]),
+                    qualified=amount(accepted, row["scale"]), rejected=amount(rejected, row["scale"]),
+                    uninspected=amount(row["q_atoms"]-accepted-rejected, row["scale"]),
+                    **receipt_presentation(row["q_atoms"], accepted, rejected))
+    if kind == "material_handoff":
+        from .material_handoff_reader import value
+        table = "material_handoffs"
+    else:
+        from .issue_marks import value
+        table = "issue_marks"
+    row = tx.execute(f"SELECT * FROM {table} WHERE project_id=? AND id=?", (pid, ident)).fetchone()
+    return value(tx, pid, row).model_dump(mode="json")
 
 
 def _expedite_preview(tx, pid, ident):
@@ -101,14 +124,14 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
         now = business_time(tx)
         requirements, expedites, handoffs, receipts, issue_marks, work_orders = [], [], [], [], [], []
         seen = {name: set() for name in ('work_orders', 'expedites', 'handoffs', 'receipts', 'issue_marks')}
-        issues = [ISSUE]
+        issues = [ISSUE, "Work order readiness and execution history, and receipt correction and confirmation history, are available in object detail."]
         if total > len(rows):
             issues.append('Requirement page is partial; related evidence covers only returned requirements.')
         def add(target, kind, ident, extra=None):
             if ident in seen[target]: return
             seen[target].add(ident)
             item = (_expedite_preview(tx, pid, ident) if kind == 'material_expedite'
-                    else _detail(service, tx, project_id, kind, ident))
+                    else _value(tx, pid, kind, ident, p))
             if kind == 'material_expedite' and item['progress_truncated']:
                 issues.append(f'Expedite {ident} progress preview is truncated; use object detail for full progress.')
             if extra: item.update(extra)
