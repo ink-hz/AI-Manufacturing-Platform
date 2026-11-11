@@ -399,6 +399,53 @@ it("opens an expedite through the component against FastAPI with project version
     await click("放弃并离开");
     await wait(() => !!host.querySelector('[aria-label="完成说明"]'));
     await click("登记检验结果");
+    await changeField("合格数量", "0.5");
+    await changeField("拒收数量", "0.75");
+    await click("更新进展");
+    await click("放弃并离开");
+    await click("登记检验结果");
+    expect(
+      (host.querySelector('[aria-label="合格数量"]') as HTMLInputElement).value,
+    ).toBe("");
+    expect(
+      (host.querySelector('[aria-label="拒收数量"]') as HTMLInputElement).value,
+    ).toBe("");
+    await click("完成任务");
+    const setChoice = async (name: string, value: string) => {
+      const e = host.querySelector(
+        `[aria-label="${name}"]`,
+      ) as HTMLSelectElement;
+      expect(e, name).toBeTruthy();
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          HTMLSelectElement.prototype,
+          "value",
+        )!.set!.call(e, value);
+        e.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    };
+    await setChoice("结果", "discrepancy");
+    await click("更新进展");
+    await click("放弃并离开");
+    await click("完成任务");
+    expect(
+      (host.querySelector('[aria-label="结果"]') as HTMLSelectElement).value,
+    ).toBe("fulfilled");
+    await click("转交任务");
+    await wait(
+      () =>
+        !!host.querySelector(
+          `[aria-label="接收人"] option[value="${s.identity.user_id}"]`,
+        ),
+    );
+    await setChoice("接收人", s.identity.user_id);
+    await click("更新进展");
+    await click("放弃并离开");
+    await click("转交任务");
+    expect(
+      (host.querySelector('[aria-label="接收人"]') as HTMLSelectElement).value,
+    ).toBe("");
+    await click("登记检验结果");
     for (const [name, value] of [
       ["合格数量", "1"],
       ["拒收数量", "0.25"],

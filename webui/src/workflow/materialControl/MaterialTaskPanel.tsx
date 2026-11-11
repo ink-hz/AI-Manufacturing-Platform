@@ -197,6 +197,10 @@ export function MaterialTaskPanel(p: Props) {
       setBlocked("");
       setFound("");
       setLocation("");
+      setAccepted("");
+      setRejected("");
+      setAssignee("");
+      setOutcome("fulfilled");
       setSelected([]);
       setError("");
       if (f === "close" && detail?.value.task_kind === "trace")
