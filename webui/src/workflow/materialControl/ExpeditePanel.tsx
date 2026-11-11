@@ -1,5 +1,5 @@
 import { useMaterialCommand } from "./useMaterialCommand";
-import { useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { ExpediteHistory } from "./ExpediteHistory";
 import type { OEMWorkspaceProps } from "../OEMWorkspace";
 import type { MaterialProject, MaterialRequirement } from "./types";
@@ -10,12 +10,14 @@ export function ExpeditePanel({
   requirement,
   active,
   begin,
+  resetRef,
 }: {
   p: OEMWorkspaceProps;
   page: MaterialProject;
   requirement: MaterialRequirement;
   active: boolean;
   begin(f: () => void): void;
+  resetRef: RefObject<() => void>;
 }) {
   const command = useMaterialCommand(p.api, p.project.id);
   const [version, setVersion] = useState(p.project.version);
@@ -30,6 +32,19 @@ export function ExpeditePanel({
     >("fulfilled"),
     [error, setError] = useState(""),
     [saving, setSaving] = useState(false);
+  useEffect(() => {
+    resetRef.current = () => {
+      command.clear();
+      setAction(null);
+      setId("");
+      setReason("");
+      setImpact("");
+      setOutcome("fulfilled");
+      setError("");
+      p.onDirty("material-expedite", false);
+    };
+    return () => { resetRef.current = () => {}; };
+  });
   const available = (a: string) =>
     !p.readOnly && p.project.allowed_actions.some((x) => x === a);
   const start = (a: "open" | "progress" | "close", i = "") =>

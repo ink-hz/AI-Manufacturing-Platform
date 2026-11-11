@@ -132,3 +132,43 @@ it("keeps the newer command retry identity when an older command finishes", asyn
     expect(command.mock.calls[2][1].operation_id).toBe(command.mock.calls[1][1].operation_id);
   } finally { await act(async () => root.unmount()); }
 });
+
+for (const editor of [
+  { action: "expedite.open", open: "发起催料", field: "催料原因" },
+  { action: "material_task.open", open: "安排检验", field: "任务说明" },
+]) {
+  it(`clears a discarded ${editor.field} draft when changing MES work order, while cancel preserves it`, async () => {
+    const host = document.createElement("div"), root = createRoot(host);
+    const dirty: Record<string, boolean> = {};
+    let pending: (() => void) | undefined;
+    const leave = (f: () => void) => { if (Object.values(dirty).some(Boolean)) pending = f; else f(); };
+    const p = {
+      api: { ...api(), materialAssignees: vi.fn().mockResolvedValue({ items: [] }) },
+      project: { ...project, allowed_actions: [editor.action] }, readOnly: false,
+      onDirty: (k: string, v: boolean) => { dirty[k] = v; }, onChanged: vi.fn(), onOpen: vi.fn(), requestLeave: leave, requestLocalLeave: leave,
+    };
+    const click = async (label: string) => act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === label)!.click());
+    try {
+      await act(async () => root.render(<MaterialControlWorkspace {...p as any} />));
+      await click("齿轮");
+      await click(editor.open);
+      await act(async () => {
+        const input = host.querySelector(`[aria-label="${editor.field}"]`)!;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "DRAFT");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await select(host);
+      expect(pending).toBeTruthy();
+      pending = undefined; // Continue editing leaves the callback unexecuted.
+      expect((host.querySelector(`[aria-label="${editor.field}"]`) as HTMLInputElement).value).toBe("DRAFT");
+      expect((host.querySelector('[aria-label="平台工单"]') as HTMLSelectElement).value).toBe("");
+      await select(host);
+      await act(async () => { for (const k in dirty) delete dirty[k]; pending!(); });
+      expect(host.querySelector(`[aria-label="${editor.field}"]`)).toBeNull();
+      expect((host.querySelector('[aria-label="平台工单"]') as HTMLSelectElement).value).toBe("w");
+      expect(host.querySelector('[aria-label="物料需求详情"]')?.textContent).toContain("齿轮");
+      await click(editor.open);
+      expect((host.querySelector(`[aria-label="${editor.field}"]`) as HTMLInputElement).value).toBe("");
+    } finally { await act(async () => root.unmount()); }
+  });
+}

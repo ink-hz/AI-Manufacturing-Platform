@@ -33,6 +33,8 @@ export function MaterialControlWorkspace(
     [loading, setLoading] = useState(false);
   const [discardEpoch, setDiscardEpoch] = useState(0);
   const draft = useRef<Record<string, boolean>>({});
+  const resetTask = useRef<() => void>(() => {});
+  const resetExpedite = useRef<() => void>(() => {});
   const selection = useRef(selected);
   selection.current = selected;
   const childProps = {
@@ -45,6 +47,9 @@ export function MaterialControlWorkspace(
   const leave = (action: () => void) =>
     (p.requestLocalLeave || p.requestLeave)(() => {
       draft.current = {};
+      resetTask.current();
+      resetExpedite.current();
+      setActive(null);
       setDiscardEpoch((value) => value + 1);
       action();
     });
@@ -209,6 +214,7 @@ export function MaterialControlWorkspace(
                 }}
                 page={page}
                 requirement={requirement}
+                resetRef={resetTask}
                 active={active === "task"}
                 begin={(f) =>
                   leave(() => {
@@ -230,6 +236,7 @@ export function MaterialControlWorkspace(
                 }}
                 page={page}
                 requirement={requirement}
+                resetRef={resetExpedite}
                 active={active === "expedite"}
                 begin={(f) =>
                   leave(() => {

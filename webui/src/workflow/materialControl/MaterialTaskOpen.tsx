@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import type { OEMWorkspaceProps } from "../OEMWorkspace";
 import type { MaterialProject, MaterialRequirement } from "./types";
 import { useMaterialCommand } from "./useMaterialCommand";
@@ -9,12 +9,14 @@ export function MaterialTaskOpen({
   requirement,
   active,
   begin,
+  resetRef,
 }: {
   p: OEMWorkspaceProps;
   page: MaterialProject;
   requirement: MaterialRequirement;
   active: boolean;
   begin(f: () => void): void;
+  resetRef: RefObject<() => void>;
 }) {
   const command = useMaterialCommand(p.api, p.project.id);
   const [version, setVersion] = useState(p.project.version);
@@ -29,6 +31,19 @@ export function MaterialTaskOpen({
     [note, setNote] = useState("");
   const [error, setError] = useState(""),
     [saving, setSaving] = useState(false);
+  useEffect(() => {
+    resetRef.current = () => {
+      command.clear();
+      setKind(null);
+      setMembers([]);
+      setMember("");
+      setReference("");
+      setNote("");
+      setError("");
+      p.onDirty("material-task-open", false);
+    };
+    return () => { resetRef.current = () => {}; };
+  });
   const receipts = page.receipts.filter((r) =>
     requirement.receipt_ids.includes(r.id),
   );
