@@ -46,7 +46,7 @@
 
 - SAP：POST `/api/v1/manufacturing/sap/mrp/stock-requirements`，精确物料及工厂，HTTP200、SAP RETURN=S、4条MRP元素，request_id `094baaec-d12d-4885-9b72-647361658332`。没有运行MRP计划或业务过账。
 - MES：POST `/api/v1/manufacturing/mes/interfaces/iqc_receive/query`，精确已有检验单号，页1/限5，HTTP200、0条、总数0，request_id `868b05d0-9c7c-4b18-82c4-7a66e661c615`。这是实际空结果，不能视为已接收或不存在其它批次记录。
-- 两项响应均为 private/no-store，读取与审计来自实际适配器。私有测试配置只新增这两项固定读取允许项，原生产 MES 配置保持；原配置备份、完整响应和审计均在受控目录，文件0600。
+- 两项响应均为 private/no-store，读取与审计来自实际适配器。联调只新增这两项固定读取允许项，配置副本留在本次私有联调目录；原测试配置在核对无并发修改后已逐字节恢复，原生产 MES 配置保持。配置副本、原配置备份、完整响应和审计均在受控目录，文件0600。
 
 私有响应证据指纹：SAP `d6dc51c72927cb711f56635fa911038e8518ec8889583466750d1bb42c2da0b3`；MES `4bb171cb7cdb9e9175ab65504c53ebb9888d573704297454981c0efce086ed0a`。
 
