@@ -31,6 +31,7 @@ export function MaterialControlWorkspace(
     [error, setError] = useState(""),
     [active, setActive] = useState<"task" | "expedite" | null>(null),
     [loading, setLoading] = useState(false);
+  const [discardEpoch, setDiscardEpoch] = useState(0);
   const draft = useRef<Record<string, boolean>>({});
   const selection = useRef(selected);
   selection.current = selected;
@@ -44,6 +45,7 @@ export function MaterialControlWorkspace(
   const leave = (action: () => void) =>
     (p.requestLocalLeave || p.requestLeave)(() => {
       draft.current = {};
+      setDiscardEpoch((value) => value + 1);
       action();
     });
   useEffect(() => {
@@ -82,7 +84,7 @@ export function MaterialControlWorkspace(
   return (
     <section aria-label="料况">
       <h3>料况</h3>
-      <MesOrderMaterials p={childProps} leave={leave} />
+      <MesOrderMaterials p={childProps} leave={leave} discardEpoch={discardEpoch} />
       {error && <p role="alert">料况读取失败：{error}</p>}
       {!page ? (
         <p role="status">正在读取料况…</p>

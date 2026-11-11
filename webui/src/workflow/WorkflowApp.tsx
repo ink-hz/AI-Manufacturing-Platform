@@ -300,8 +300,8 @@ export function WorkflowApp({
       }
     });
   }
-  function changed(result: MutationAcknowledgement, stayOnTask = false) {
-    if (!("integration" in result)) setChosenAction(null);
+  function changed(result: MutationAcknowledgement, stayOnTask = false, preserveOwner = false) {
+    if (!("integration" in result) && !preserveOwner) setChosenAction(null);
     const version = Math.max(
       result.project_version,
       result.current_project_version || 0,
@@ -317,7 +317,7 @@ export function WorkflowApp({
     setRefresh((r) => r + 1);
     // Source intents have their own durable recovery identity and scoped dirty key.
     // Refresh data without destroying a frozen form or unrelated manual draft.
-    if ("integration" in result) return;
+    if ("integration" in result || preserveOwner) return;
     setDirtyKeys({});
     setCurrentTask(null);
     setEpoch((e) => e + 1);
@@ -643,6 +643,7 @@ export function WorkflowApp({
                 ) : workspace === "supply" ? (
                   <SupplyWorkspace
                     {...props}
+                    onMaterialChanged={result => changed(result, false, true)}
                     currentUserId={b.user.id}
                     handoffFilter={handoffFilters[props.project.id] ?? 'pending'}
                     onHandoffFilter={filter => setHandoffFilters(old => ({...old, [props.project.id]: filter}))}

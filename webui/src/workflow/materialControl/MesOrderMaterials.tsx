@@ -31,9 +31,11 @@ function message(e: unknown) {
 export function MesOrderMaterials({
   p,
   leave,
+  discardEpoch = 0,
 }: {
   p: OEMWorkspaceProps;
   leave(action: () => void): void;
+  discardEpoch?: number;
 }) {
   const [items, setItems] = useState<ObjectSummary[]>([]),
     [total, setTotal] = useState(0),
@@ -47,6 +49,7 @@ export function MesOrderMaterials({
     [revision, setRevision] = useState(0);
   const generation = useRef(0),
     requestEpoch = useRef(0),
+    authorityEpoch = useRef(0),
     draftVersion = useRef<number | null>(null),
     command = useMaterialCommand(p.api, p.project.id);
   const dirty = !!(shop || reason),
@@ -109,8 +112,10 @@ export function MesOrderMaterials({
         if (active) {
           setData(v);
           if (!v.can_manage) {
+            authorityEpoch.current++;
             setShop("");
             setReason("");
+            command.clear();
           }
           setLoading(false);
         }
@@ -121,6 +126,8 @@ export function MesOrderMaterials({
             e instanceof WorkflowError &&
             (e.status === 401 || e.status === 403)
           ) {
+            authorityEpoch.current++;
+            command.clear();
             setData(null);
             setShop("");
             setReason("");
@@ -136,14 +143,10 @@ export function MesOrderMaterials({
     };
   }, [p.api, p.project.id, p.project.version, selected, revision]);
   useEffect(() => {
-    if (p.readOnly) {
-      requestEpoch.current++;
-      setBusy(false);
-      setShop("");
-      setReason("");
-      command.clear();
-    }
-  }, [p.readOnly]);
+    setShop("");
+    setReason("");
+    command.clear();
+  }, [discardEpoch]);
   async function more() {
     const token = generation.current,
       epoch = requestEpoch.current;
@@ -171,7 +174,8 @@ export function MesOrderMaterials({
     if (!data || busy || loading || !data.can_manage || p.readOnly || stale)
       return;
     const token = generation.current,
-      epoch = requestEpoch.current;
+      epoch = requestEpoch.current,
+      authority = authorityEpoch.current;
     setBusy(true);
     setError("");
     try {
@@ -191,16 +195,14 @@ export function MesOrderMaterials({
             },
         p.project.version,
       );
-      if (
-        token === generation.current &&
-        epoch === requestEpoch.current &&
-        result
-      ) {
-        setShop("");
-        setReason("");
-        command.clear();
-        p.onChanged(result);
-        setRevision((x) => x + 1);
+      if (token === generation.current && authority === authorityEpoch.current && result) {
+        (p.onMaterialChanged || p.onChanged)(result);
+        if (epoch === requestEpoch.current) {
+          setShop("");
+          setReason("");
+          command.clear();
+          setRevision((x) => x + 1);
+        }
       }
     } catch (e) {
       if (token === generation.current && epoch === requestEpoch.current) {
@@ -208,6 +210,8 @@ export function MesOrderMaterials({
           e instanceof WorkflowError &&
           (e.status === 401 || e.status === 403)
         ) {
+          authorityEpoch.current++;
+          command.clear();
           setData(null);
           setShop("");
           setReason("");
@@ -232,7 +236,7 @@ export function MesOrderMaterials({
         .project(p.project.id)
         .then((v) => {
           if (token === generation.current && epoch === requestEpoch.current) {
-            p.onChanged({ project_id: v.id, project_version: v.version });
+            (p.onMaterialChanged || p.onChanged)({ project_id: v.id, project_version: v.version });
             setRevision((x) => x + 1);
           }
         })

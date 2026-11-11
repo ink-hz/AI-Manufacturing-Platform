@@ -71,6 +71,7 @@ const guidance = {
   authority: "维护责任范围与契约核验。责任登记、契约核验、系统连接分别展示。",
 };
 export interface OEMWorkspaceProps extends WorkspaceProps {
+  onMaterialChanged?: WorkspaceProps["onChanged"];
   requestLeave(action: () => void): void;
   requestLocalLeave?(action: () => void): void;
   configurationAdmin?: boolean;

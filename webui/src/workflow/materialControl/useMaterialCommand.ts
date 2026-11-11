@@ -7,9 +7,10 @@ export function useMaterialCommand(api:WorkflowApi,projectId:string){
  async function execute(fields:CommandFields,version:number){
   const key=JSON.stringify([fields,version]);
   if(!pending.current||pending.current.key!==key)pending.current={key,command:{...fields,expected_version:version,operation_id:crypto.randomUUID()}};
-  const result=await api.command(projectId,pending.current.command);
+  const entry=pending.current;
+  const result=await api.command(projectId,entry.command);
   if(!alive.current)return null;
-  pending.current=null;return result;
+  if(pending.current===entry)pending.current=null;return result;
  }
  return {execute,clear:()=>{pending.current=null;},isCurrent:()=>alive.current};
 }
