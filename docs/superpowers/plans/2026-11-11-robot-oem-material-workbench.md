@@ -135,14 +135,14 @@ Modify only `backend/app/manufacturing_paths.py`; test `backend/tests/test_manuf
 ("GET", "/projects/{project_id}/material-control/assignees"),
 ```
 
-- [ ] Observe new host tests fail for absent allowlist entries, add exactly these entries and verify all role cases retain anonymous401, authenticated GET policy, denied POST/extra suffix and authenticated unavailable503/no-store behavior. Run `PYTHONPATH=backend /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q backend/tests/test_manufacturing_material_routes.py`.
-- [ ] Test actual MF package mount against this host after frontend build; retain project-level authorization inside MF. This patch grants no new business-write route.
+- [x] Observe new host tests fail for absent allowlist entries, add exactly these entries and verify all role cases retain anonymous401, authenticated GET policy, denied POST/extra suffix and authenticated unavailable503/no-store behavior. Run `PYTHONPATH=backend /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q backend/tests/test_manufacturing_material_routes.py`.
+- [x] Test actual MF package mount against this host after frontend build; retain project-level authorization inside MF. This patch grants no new business-write route.
 
-- [ ] Run read and mutation flows together over actual local FastAPI HTTP and persistent SQLite. Cover partial IQC, original18/20 plus supplemental2, denial/revocation/replay/restart, unchanged inventory and legacy records.
-- [ ] Run backend workflow regression, access-layer regression, UI regression and production bundle. Record distinct environment-dependent exclusions rather than silently skipping failures.
-- [ ] Review full feature diff against all 13 spec sections, fix Critical/Important findings and rerun covering tests. Include any Minor review items in the ledger.
-- [ ] Verify original checkout preimages against `.superpowers/sdd/robot-material/baseline-files.json` before transferring owned changes back. Refuse overwriting concurrently changed files; reconcile them narrowly.
-- [ ] Produce commits, verification records and a concrete deployable candidate. Inspect current deployment mechanism/baseline before deciding production cutover; no blind release to a shared host.
+- [x] Run read and mutation flows together over actual local FastAPI HTTP and persistent SQLite. Cover partial IQC, original18/20 plus supplemental2, denial/revocation/replay/restart, unchanged inventory and legacy records.
+- [x] Run backend workflow regression, access-layer regression, UI regression and production bundle. Record distinct environment-dependent exclusions rather than silently skipping failures.
+- [x] Review full feature diff against all 13 spec sections, fix Critical/Important findings and rerun covering tests. Include any Minor review items in the ledger.
+- [x] Verify original checkout preimages against `.superpowers/sdd/robot-material/baseline-files.json` before transferring owned changes back. Refuse overwriting concurrently changed files; reconcile them narrowly.
+- [x] Produce commits, verification records and a concrete deployable candidate. Inspect current deployment mechanism/baseline before deciding production cutover; no blind release to a shared host.
 
 ## Execution status
 
@@ -153,7 +153,7 @@ Modify only `backend/app/manufacturing_paths.py`; test `backend/tests/test_manuf
 - [x] Task2.
 - [x] Task3.
 - [x] Task4.
-- [ ] Task5.
+- [x] Task5.
 
 ## Task 6: Connect fixed native MRP and IQC reads
 
@@ -183,3 +183,5 @@ Current PF host has no SAP/MES native access mounting, despite MF's public build
 - [x] TDD policy, optional mounting, unavailable/old release compatibility, two-source independence and trusted actor cases. Validate against the real MF Git-export package after Task6, review the exact two-repository candidate and retain actual source/controlled fixture acceptance separately.
 
 Native reader review and live acceptance: MF a05a9a3, PF 6153e319. SAP4MRPitems/SAP success; MES exactIQC-receive actual0rows. Same-object workflow closure remains pending pilot order/plant, not inferred from same-number samples. See docs/verification/robot-oem-material-workbench-2026-11-11.md.
+
+Local integration complete: MF main3be7fa9(codeunchanged by later evidence-onlycommits),PF master6153e319. Guarded originalpreimages backedup; unrelated .gitignore/README/knowledgeREADME preserved byte-for-byte. MergedMF96focusedtests andoriginalbundlepass; mergedPF296tests pass. Runtimeassets matchreviewedworktree exactly. Task7 remainsOPEN pendingactualpilotidentity; noonlinecutover.
