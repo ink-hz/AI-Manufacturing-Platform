@@ -569,7 +569,7 @@ it("preserves exact captured log bounds in editable candidate controls", async (
 it("explains project and stage before records, then expands SN beyond symptom filters", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     expect(v.host.textContent).toContain("测试环节");
     expect(
       v.requests.some((r) => r.url.pathname.endsWith("/observations")),
@@ -578,7 +578,7 @@ it("explains project and stage before records, then expands SN beyond symptom fi
     const start = v.requests
       .find((r) => r.url.searchParams.get("view") === "stages")!
       .url.searchParams.get("start");
-    await v.click("查看该范围异常");
+    await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     await v.click("查看 SN-A 履历");
     expect(v.host.textContent).toContain("通过 PASS");
@@ -609,7 +609,7 @@ it("explains project and stage before records, then expands SN beyond symptom fi
 it("preserves problem time while comparing explicit recent thirty minutes", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("上位机活动");
     await v.click("查看上位机 PC07");
     const original = v.requests
@@ -640,7 +640,7 @@ it("preserves problem time while comparing explicit recent thirty minutes", asyn
 it("explicitly saves one main, comparison and exact log references without inferring CSN", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -717,7 +717,7 @@ it("failed save blocks handoff and conflicts preserve local notes", async () => 
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("开始调查");
     await v.field("观察事实和待确认事项", "本机修改");
     await v.click("生成交接摘要");
@@ -747,7 +747,7 @@ it("cancels project reads even when transport ignores abort", async () => {
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.field("源项目", other.id);
     expect(signal?.aborted).toBe(true);
@@ -763,7 +763,7 @@ it("cancels project reads even when transport ignores abort", async () => {
 it("catalog clicks keep twenty digit identifiers without parent-ID input", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("工具与配置");
     await v.click("查看无线工具版本");
     expect(v.requests.at(-1)!.url.searchParams.get("parent_id")).toBe(
@@ -814,10 +814,12 @@ it("preserves nullable scopes and independent overview block states", async () =
         : undefined,
   );
   try {
-    expect(v.host.textContent).toContain("失败涉及 SN 12");
-    expect(v.host.textContent).toContain("趋势未取得");
-    await v.click("查看项目 A");
-    await v.click("查看该范围异常");
+    expect(v.host.textContent).toContain("失败 SN 12");
+    expect(v.host.querySelector('.pt-coverage[data-complete="false"]')?.textContent).toContain("部分数据未取得");
+    expect(v.host.querySelector(".pt-project-table tbody tr")?.textContent).toContain("未取得");
+    expect(v.host.querySelector(".pt-chart svg")).toBeNull();
+    await v.click("项目 A");
+    await v.click("查看该范围失败");
     await v.click("选择异常 源未提供错误码");
     expect(
       v.requests
@@ -852,7 +854,7 @@ it("read-only admin restores but cannot save, fork or generate", async () => {
 it("keeps original investigation time and persists subsidiary recent scope", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("开始调查");
     const original = v.saved().context.start;
     await v.click("上位机活动");
@@ -872,7 +874,7 @@ it("keeps original investigation time and persists subsidiary recent scope", asy
 it("restores main and comparison through project detach and remount without trusting metadata as raw parameters", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -942,7 +944,7 @@ it("preserves snapshot paging absolute offsets and history duplicate rows", asyn
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     expect(v.host.textContent).toContain("仅显示部分记录");
     expect(v.host.textContent).toContain("同时间多条记录，先后未确定");
@@ -991,7 +993,7 @@ it("rejects invalid ranges and never queries an unconfigured source", async () =
 it("does not silently move selected main outside its investigation when browsing another symptom", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -1047,7 +1049,7 @@ it("keeps independent pending resolve alive when restoring a handoff changes sel
 it("does not reattach old dependent selections when explicitly replacing the main", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -1083,7 +1085,7 @@ it("shows unknown activity gaps on partial captures and observed empty buckets o
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("上位机活动");
     expect(v.host.textContent).toContain("该时间格未知");
     expect(v.host.textContent).not.toContain("该格未观测到测试事件");
@@ -1098,7 +1100,7 @@ it("keeps local failed notes visibly unsaved on resume until explicit review", a
   );
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     expect(v.host.textContent).toContain("本机未保存修改");
     expect(
       (v.host.querySelector("textarea") as HTMLTextAreaElement).value,
@@ -1131,7 +1133,7 @@ it("limits saved logs to five and preserves escaped metadata / protected downloa
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -1164,7 +1166,7 @@ it("keeps query capability failure distinct from empty source records", async ()
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     expect(v.host.textContent).toContain("生产测试查询能力尚未配置");
     expect(
@@ -1216,9 +1218,9 @@ it("shows resolved stopover candidates with their real source kind and candidate
 it("uses actual row identity labels when history crosses tools and supports parameter search", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("选择无线测试 · 无线工具");
-    await v.click("查看该范围异常");
+    await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     await v.click("查看 SN-A 履历");
     await v.click("查看测试 3");
@@ -1236,7 +1238,7 @@ it("uses actual row identity labels when history crosses tools and supports para
 it("readable advanced selectors issue actual source IDs without exposing parent-ID entry", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.field("测试环节筛选", "7|8");
     await v.click("查询产测数据");
@@ -1311,8 +1313,8 @@ it("expands history independently while highlighting the original symptom and sh
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
-    await v.click("查看该范围异常");
+    await v.click("项目 A");
+    await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     await v.click("查看 SN-A 履历");
     expect(v.host.textContent).toContain("原症状命中");
@@ -1331,10 +1333,18 @@ it("retains last successful overview data with its timestamp during retry failur
       : undefined,
   );
   try {
-    expect(v.host.textContent).toContain("失败涉及 SN 12");
+    const failedSN = () => [...v.host.querySelectorAll(".pt-project-table tbody tr")]
+      .find((row) => row.querySelector("th button")?.textContent === project.name)
+      ?.querySelectorAll("td")[2].textContent;
+    const updated = () => v.host.querySelector(".pt-updated time");
+    expect(failedSN()).toBe("12");
+    expect(updated()?.getAttribute("datetime")).toBe(now);
+    expect(updated()?.textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     failRead = true;
     await v.click("重新读取");
-    expect(v.host.textContent).toContain("失败涉及 SN 12");
+    expect(failedSN()).toBe("12");
+    expect(updated()?.getAttribute("datetime")).toBe(now);
+    expect(v.host.textContent).toContain("显示上次数据，尚未更新。");
     expect(v.host.textContent).toContain("数据源暂不可用");
   } finally {
     await v.dispose();
@@ -1369,7 +1379,7 @@ it("offers an explicit latest actual window for an empty project without silentl
         : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     expect(v.host.textContent).toContain("当前范围无测试");
     const original = v.requests
       .filter((r) => r.url.searchParams.get("view") === "summary")
@@ -1388,7 +1398,7 @@ it("offers an explicit latest actual window for an empty project without silentl
 it("saves direct SN history independently from original issue SN filters", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查 SN");
     await v.field("精确 SN", "SN-A");
     await v.click("查询产测数据");
@@ -1400,12 +1410,18 @@ it("saves direct SN history independently from original issue SN filters", async
     await v.dispose();
   }
 });
-it("shows parent versus fresh readings, selected anomaly trend and version-record drill", async () => {
-  const v = await view();
+it("shows changed fresh readings, selected anomaly trend and version-record drill", async () => {
+  const v = await view((url) => url.searchParams.get("view") === "summary"
+    ? new Response(JSON.stringify({
+        captured_at: now,
+        complete: true,
+        items: [{ ...aggregate, records: "120", distinct_sn: "90" }],
+      })) : undefined);
   try {
-    await v.click("查看项目 A");
-    expect(v.host.textContent).toContain("父视图读取");
-    await v.click("查看该范围异常");
+    await v.click("项目 A");
+    expect(v.host.textContent).toContain("数据已变化：测试次数 100 → 120；测试 SN 80 → 90。");
+    expect(v.host.textContent).not.toContain("父视图读取");
+    await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     expect(v.host.querySelector('[aria-label="所选异常趋势"]')).not.toBeNull();
     await v.click("工具与配置");
@@ -1445,7 +1461,7 @@ it("I1 advances live overview then freezes drill interval", async () => {
       .at(-1)!
       .url.searchParams.get("end");
     expect(second).not.toBe(first);
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     vi.setSystemTime(new Date(+new Date(now) + 120000));
     await v.click("重新读取");
     expect(
@@ -1463,8 +1479,8 @@ it("I1 advances live overview then freezes drill interval", async () => {
 it("I2 overview scope is global and never carries project A filters into B", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
-    await v.click("查看该范围异常");
+    await v.click("项目 A");
+    await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     await v.click("限定上位机 PC07");
     await v.click("运行总览");
@@ -1473,7 +1489,7 @@ it("I2 overview scope is global and never carries project A filters into B", asy
         .value,
     ).toBe("");
     expect(v.host.querySelector(".pt-chips")?.textContent).toBe("");
-    await v.click("查看项目 B");
+    await v.click("项目 B");
     const q = v.requests
       .filter((r) => r.url.searchParams.get("view") === "stages")
       .at(-1)!.url;
@@ -1500,8 +1516,8 @@ for (const hasMain of [false, true])
       return undefined;
     });
     try {
-      await v.click("查看项目 A");
-      await v.click("查看该范围异常");
+      await v.click("项目 A");
+      await v.click("查看该范围失败");
       await v.click("选择异常 E1");
       if (hasMain) {
         await v.click("查看测试 1");
@@ -1541,8 +1557,8 @@ it("I2 recent drill keeps device and symptom predicates and original issue inter
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
-    await v.click("查看该范围异常");
+    await v.click("项目 A");
+    await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     await v.click("查看上位机 PC07");
     await v.click("开始调查");
@@ -1576,7 +1592,7 @@ it("I3 failed first POST resumes idless local notes without project click or dir
       ? new Response("{}", { status: 503 })
       : undefined,
   );
-  await v.click("查看项目 A");
+  await v.click("项目 A");
   await v.click("恢复调查");
   await v.field("观察事实和待确认事项", "首次创建失败仍须保留");
   await v.click("生成交接摘要");
@@ -1603,7 +1619,7 @@ it("I3 failed first POST resumes idless local notes without project click or dir
 });
 it("I3 active locator resumes authorized saved page without directory or selection", async () => {
   const v = await view();
-  await v.click("查看项目 A");
+  await v.click("项目 A");
   await v.click("查记录");
   await v.click("查看测试 1");
   await v.click("设为调查对象");
@@ -1640,7 +1656,7 @@ it("I4 replacement clears verified candidate ownership immediately", async () =>
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -1720,7 +1736,7 @@ it("I5 failed-save Back Stay reconciles native history before repeated Back Forw
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.field("源项目", other.id);
     await v.click("恢复调查");
     await v.field("观察事实和待确认事项", "B本机未保存");
@@ -1949,8 +1965,8 @@ it("I2 nullable recent bucket keeps exact missing predicates", async () => {
           : undefined,
   );
   try {
-    await v.click("查看项目 A");
-    await v.click("查看该范围异常");
+    await v.click("项目 A");
+    await v.click("查看该范围失败");
     await v.click("选择异常 源未提供错误码");
     await v.click("查看上位机 源未提供");
     await v.click("查看近况");
@@ -1997,9 +2013,9 @@ it("I3 active resume denial never displays local pending notes", async () => {
 it("Minor rejects different-tool comparison under an explicit tool investigation scope", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("选择无线测试 · 无线工具");
-    await v.click("查看该范围异常");
+    await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -2015,8 +2031,8 @@ it("Minor rejects different-tool comparison under an explicit tool investigation
 it("I2 explicit chip removal updates saved scope without retaining deleted predicates", async () => {
   const v = await view();
   try {
-    await v.click("查看项目 A");
-    await v.click("查看该范围异常");
+    await v.click("项目 A");
+    await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     await v.click("开始调查");
     await v.click("错误码：E1 ×");
@@ -2040,7 +2056,7 @@ for (const action of ["edit", "selection", "save"] as const) {
         : undefined,
     );
     try {
-      await v.click("查看项目 A");
+      await v.click("项目 A");
       await v.click("查记录");
       await v.click("开始调查");
       await v.field("交接号或内部恢复链接", handoffId);
@@ -2092,7 +2108,7 @@ for (const action of ["edit", "selection", "save"] as const) {
 
 it("I4 newer local edit retires cached startup metadata too", async () => {
   const first = await view();
-  await first.click("查看项目 A");
+  await first.click("项目 A");
   await first.click("开始调查");
   await first.dispose();
   let finish!: (response: Response) => void;
@@ -2148,7 +2164,7 @@ for (const transition of ["subject", "fresh", "same-subject-search"] as const) {
           : undefined,
     );
     try {
-      await v.click("查看项目 A");
+      await v.click("项目 A");
       await v.click("查记录");
       await v.click("查看 SN-A 履历");
       await v.click("下一页快照");
@@ -2237,7 +2253,7 @@ for (const operation of ["fork", "generate"] as const) {
         : undefined,
     );
     try {
-      await v.click("查看项目 A");
+      await v.click("项目 A");
       await v.click("查记录");
       await v.click("开始调查");
       if (operation === "fork") {
@@ -2305,7 +2321,7 @@ it("F4 actual candidate capture and F5 synchronous selection guard preserve acce
       (b) => b.textContent === "加入调查 " + id,
     )!;
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -2396,8 +2412,8 @@ it("F1 paged anomaly changes scope without reusing capture and back restores exa
       );
   });
   try {
-    await v.click("查看项目 A");
-    await v.click("查看该范围异常");
+    await v.click("项目 A");
+    await v.click("查看该范围失败");
     await v.click("选择异常 E1");
     await v.click("下一页快照");
     const n = v.requests.length;
@@ -2579,7 +2595,7 @@ it("F5 five unique accepted logs disable additions without extra PUTs", async ()
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -2614,7 +2630,7 @@ it("F3 own save acknowledgement advances revision while preserving newer pending
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("开始调查");
     await v.field("观察事实和待确认事项", "FIRST");
     await v.click("重试保存");
@@ -2659,7 +2675,7 @@ it("F3 same-project navigation retires a generated handoff adoption", async () =
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("开始调查");
     await v.click("生成交接摘要");
     await v.click("查记录");
@@ -2719,7 +2735,7 @@ it("F2 edited stage labels match the serialized scope after an earlier named dri
       : undefined,
   );
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("选择无线测试 · 无线工具");
     await v.click("查记录");
     await v.field("测试环节筛选", "70|80");
@@ -2755,7 +2771,7 @@ it("F5 failed add stays in the effective pending set for the next accepted add",
       return new Response("{}", { status: 503 });
   });
   try {
-    await v.click("查看项目 A");
+    await v.click("项目 A");
     await v.click("查记录");
     await v.click("查看测试 1");
     await v.click("设为调查对象");
@@ -2807,7 +2823,7 @@ for (const startingPage of ["initial", "paged"] as const) {
         : undefined,
     );
     try {
-      await v.click("查看项目 A");
+      await v.click("项目 A");
       await v.click("查记录");
       await v.click("查看 SN-A 履历");
       await v.field("精确 SN", "SN-A");
