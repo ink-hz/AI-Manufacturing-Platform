@@ -1207,6 +1207,8 @@ it("copies a complete immutable handoff summary with scope, events and candidate
   }
 });
 it("expands history independently while highlighting the original symptom and showing unknown source results", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(now));
   const v = await view((url) =>
     url.pathname.endsWith("/observations") && url.searchParams.get("sn")
       ? new Response(
@@ -1224,6 +1226,7 @@ it("expands history independently while highlighting the original symptom and sh
     expect(v.host.textContent).toContain("通过 PASS");
   } finally {
     await v.dispose();
+    vi.useRealTimers();
   }
 });
 it("retains last successful overview data with its timestamp during retry failure", async () => {

@@ -366,77 +366,87 @@ export function ProductionToolsWorkspace({
     <section
       ref={host}
       className="wf-production-tools"
+      data-pt-workspace
       aria-label="产测管理工作区"
     >
-      <header>
-        <h2>产测管理</h2>
-        <p>
-          从项目变化定位问题，再核对源事件和日志。外部产测源只读；记录与审核单不代表质量放行。
-        </p>
-        <nav className="pt-nav" aria-label="产测主导航">
-          {(
-            [
-              ["overview", "运行总览"],
-              ["anomalies", "测试异常"],
-              ["activity", "上位机活动"],
-            ] as const
-          ).map(([id, label]) => (
+      <header className="pt-workspace-header">
+        <div className="pt-workspace-heading">
+          <p className="pt-eyebrow">生产数据 · 问题定位与调查</p>
+          <h2>产测管理</h2>
+          <p className="pt-workspace-description">
+            从项目变化定位问题，再核对源事件和日志。外部产测源只读；记录与审核单不代表质量放行。
+          </p>
+        </div>
+        <div className="pt-workspace-navigation">
+          <nav className="pt-nav" aria-label="产测主导航">
+            {(
+              [
+                ["overview", "运行总览"],
+                ["anomalies", "测试异常"],
+                ["activity", "上位机活动"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                type="button"
+                key={id}
+                aria-pressed={loc.view === id}
+                onClick={() => board(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+          <div
+            className="pt-actions pt-workspace-actions"
+            role="group"
+            aria-label="调查与查询操作"
+          >
             <button
               type="button"
-              key={id}
-              aria-pressed={loc.view === id}
-              onClick={() => board(id)}
+              onClick={back}
+              disabled={navigation.index === 0}
             >
-              {label}
+              返回
             </button>
-          ))}
-        </nav>
-        <div className="pt-actions">
-          <button
-            type="button"
-            onClick={back}
-            disabled={navigation.index === 0}
-          >
-            返回
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              go({
-                ...loc,
-                view: "history",
-                historySN: lookup,
-                cursor: undefined,
-              })
-            }
-          >
-            查 SN
-          </button>
-          <button
-            type="button"
-            onClick={() => go({ ...loc, view: "records", cursor: undefined })}
-          >
-            查记录
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              host.current
-                ?.querySelector<HTMLInputElement>(
-                  '[aria-label="交接号或内部恢复链接"]',
-                )
-                ?.focus()
-            }
-          >
-            恢复调查
-          </button>
-          <button
-            type="button"
-            disabled={!loc.projectId}
-            onClick={() => go({ ...loc, view: "catalog" })}
-          >
-            工具与配置
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                go({
+                  ...loc,
+                  view: "history",
+                  historySN: lookup,
+                  cursor: undefined,
+                })
+              }
+            >
+              查 SN
+            </button>
+            <button
+              type="button"
+              onClick={() => go({ ...loc, view: "records", cursor: undefined })}
+            >
+              查记录
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                host.current
+                  ?.querySelector<HTMLInputElement>(
+                    '[aria-label="交接号或内部恢复链接"]',
+                  )
+                  ?.focus()
+              }
+            >
+              恢复调查
+            </button>
+            <button
+              type="button"
+              disabled={!loc.projectId}
+              onClick={() => go({ ...loc, view: "catalog" })}
+            >
+              工具与配置
+            </button>
+          </div>
         </div>
       </header>
       <ReadBlock label="来源配置" state={global}>
@@ -457,78 +467,84 @@ export function ProductionToolsWorkspace({
         </p>
       )}
       {directory.loading && <p role="status">正在读取源项目目录…</p>}
-      <div className="pt-scope">
-        <label>
-          源项目
-          <select
-            aria-label="源项目"
-            value={loc.projectId}
-            onChange={(e) => {
-              const p = projects.find((p) => p.id === e.target.value);
-              if (p)
-                go({
-                  view: "project",
-                  projectId: p.id,
-                  scope: { start: loc.scope.start, end: loc.scope.end },
-                  labels: { project: p.name },
-                  inherited: loc.inherited,
-                });
-              else if (!e.target.value)
-                go({
-                  ...loc,
-                  view: "overview",
-                  projectId: "",
-                  scope: { start: loc.scope.start, end: loc.scope.end },
-                  labels: {},
-                });
-            }}
-          >
-            <option value="">全部可访问源项目</option>
-            {loc.projectId && !projects.some((p) => p.id === loc.projectId) && (
-              <option value={loc.projectId}>
-                {loc.labels.project || `已保存源项目 ${loc.projectId}`}
-              </option>
-            )}
-            {projects.map((p) => (
-              <option value={p.id} key={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          开始时间
-          <input
-            aria-label="开始时间"
-            type="datetime-local"
-            value={range.start}
-            onChange={(e) => setRange({ ...range, start: e.target.value })}
-          />
-        </label>
-        <label>
-          结束时间
-          <input
-            aria-label="结束时间"
-            type="datetime-local"
-            value={range.end}
-            onChange={(e) => setRange({ ...range, end: e.target.value })}
-          />
-        </label>
-        <button type="button" onClick={applyRange}>
-          应用时间范围
-        </button>
-        <button type="button" onClick={reread}>
-          重新读取
-        </button>
-        {directory.data?.has_more && directory.data.next_before_id && (
-          <button
-            type="button"
-            onClick={() => setDirectoryBefore(directory.data!.next_before_id!)}
-          >
-            读取更多源项目
+      <section className="pt-range-panel" aria-label="数据范围">
+        <div className="pt-range-heading">
+          <h3>数据范围</h3>
+          <span className="pt-meta">按源项目与问题时段核对数据</span>
+        </div>
+        <div className="pt-scope">
+          <label>
+            源项目
+            <select
+              aria-label="源项目"
+              value={loc.projectId}
+              onChange={(e) => {
+                const p = projects.find((p) => p.id === e.target.value);
+                if (p)
+                  go({
+                    view: "project",
+                    projectId: p.id,
+                    scope: { start: loc.scope.start, end: loc.scope.end },
+                    labels: { project: p.name },
+                    inherited: loc.inherited,
+                  });
+                else if (!e.target.value)
+                  go({
+                    ...loc,
+                    view: "overview",
+                    projectId: "",
+                    scope: { start: loc.scope.start, end: loc.scope.end },
+                    labels: {},
+                  });
+              }}
+            >
+              <option value="">全部可访问源项目</option>
+              {loc.projectId && !projects.some((p) => p.id === loc.projectId) && (
+                <option value={loc.projectId}>
+                  {loc.labels.project || `已保存源项目 ${loc.projectId}`}
+                </option>
+              )}
+              {projects.map((p) => (
+                <option value={p.id} key={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            开始时间
+            <input
+              aria-label="开始时间"
+              type="datetime-local"
+              value={range.start}
+              onChange={(e) => setRange({ ...range, start: e.target.value })}
+            />
+          </label>
+          <label>
+            结束时间
+            <input
+              aria-label="结束时间"
+              type="datetime-local"
+              value={range.end}
+              onChange={(e) => setRange({ ...range, end: e.target.value })}
+            />
+          </label>
+          <button type="button" className="pt-button-primary" onClick={applyRange}>
+            应用时间范围
           </button>
-        )}
-      </div>
+          <button type="button" onClick={reread}>
+            重新读取
+          </button>
+          {directory.data?.has_more && directory.data.next_before_id && (
+            <button
+              type="button"
+              onClick={() => setDirectoryBefore(directory.data!.next_before_id!)}
+            >
+              读取更多源项目
+            </button>
+          )}
+        </div>
+      </section>
       <p className="pt-meta">
         {loc.labels.project || "全部可访问源项目"} · 问题时间{" "}
         {localTime(loc.scope.start)} — {localTime(loc.scope.end)} ·{" "}
@@ -586,7 +602,8 @@ export function ProductionToolsWorkspace({
       )}
       {(loc.view === "history" || loc.view === "records") && (
         <form
-          className="pt-search"
+          className="pt-search pt-search-panel"
+          aria-label="记录查询条件"
           onSubmit={(e) => {
             e.preventDefault();
             if (loc.view === "history") {
