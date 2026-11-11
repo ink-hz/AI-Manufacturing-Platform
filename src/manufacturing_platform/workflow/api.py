@@ -112,6 +112,9 @@ def build_workflow_router(
     def actor(request):
         return request.state.workflow_actor
 
+    from .material_control_api import register_material_control_routes
+    register_material_control_routes(router, service, actor)
+
     from ..production_tools.api import register_production_tools_routes
     from ..production_tools.service import ProductionToolsService
 
