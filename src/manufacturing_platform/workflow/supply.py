@@ -483,32 +483,32 @@ def available(tx, project_id, requirement_id, now) -> MaterialBalance:
                       FROM effective_supply_receipts r WHERE r.project_id=c.project_id AND r.commitment_id=c.id))),0) in_transit,
                   COALESCE(SUM((SELECT COALESCE(SUM(r.q_atoms),0) FROM effective_supply_receipts r WHERE r.project_id=c.project_id AND r.commitment_id=c.id)),0) received
            FROM supply_commitments c JOIN requirements prior ON prior.id=c.requirement_id
-           WHERE c.project_id=? AND prior.project_id=c.project_id AND prior.lineage_id=?""",
-        (str(project_id), req["lineage_id"]),
+           WHERE c.project_id=? AND prior.project_id=c.project_id AND prior.lineage_id=? AND prior.work_order_id=? AND prior.material_id=? AND prior.owner_id=? AND prior.unit=? AND prior.scale=?""",
+        (str(project_id), req["lineage_id"], req["work_order_id"], req["material_id"], req["owner_id"], req["unit"], req["scale"]),
     ).fetchone()
     qualified = tx.execute(
         """SELECT COALESCE(SUM(i.accepted_atoms),0),COALESCE(SUM(i.rejected_atoms),0)
            FROM supply_commitments c JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id
            JOIN effective_supply_receipts r ON r.commitment_id=c.id AND r.project_id=c.project_id
            JOIN effective_iqc_results i ON i.receipt_id=r.id AND i.project_id=r.project_id
-           WHERE c.project_id=? AND prior.lineage_id=?""",
-        (str(project_id), req["lineage_id"]),
+           WHERE c.project_id=? AND prior.lineage_id=? AND prior.work_order_id=? AND prior.material_id=? AND prior.owner_id=? AND prior.unit=? AND prior.scale=?""",
+        (str(project_id), req["lineage_id"], req["work_order_id"], req["material_id"], req["owner_id"], req["unit"], req["scale"]),
     ).fetchone()
     reserved = tx.execute(
         """SELECT COALESCE(SUM(v.confirmed_atoms),0) FROM effective_reservations v
            JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id
            WHERE v.project_id=? AND prior.lineage_id=? AND v.work_order_id=?
-             AND v.authority_receipt_id IS NOT NULL""",
-        (str(project_id), req["lineage_id"], req["work_order_id"]),
+             AND v.authority_receipt_id IS NOT NULL AND prior.material_id=? AND prior.owner_id=? AND prior.unit=? AND prior.scale=?""",
+        (str(project_id), req["lineage_id"], req["work_order_id"], req["material_id"], req["owner_id"], req["unit"], req["scale"]),
     ).fetchone()[0]
     from .material_eligibility import lot_unavailable_reason
 
     usable, movement_holds = 0, []
     for row in tx.execute(
-        "SELECT l.*,SUM(v.confirmed_atoms) confirmed FROM effective_reservations v JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id WHERE v.project_id=? AND prior.lineage_id=? AND v.work_order_id=? AND v.authority_receipt_id IS NOT NULL GROUP BY l.id",
-        (str(project_id), req["lineage_id"], req["work_order_id"]),
+        "SELECT l.*,SUM(v.confirmed_atoms) confirmed FROM effective_reservations v JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id WHERE v.project_id=? AND prior.lineage_id=? AND v.work_order_id=? AND v.authority_receipt_id IS NOT NULL AND prior.material_id=? AND prior.owner_id=? AND prior.unit=? AND prior.scale=? GROUP BY l.id",
+        (str(project_id), req["lineage_id"], req["work_order_id"], req["material_id"], req["owner_id"], req["unit"], req["scale"]),
     ):
-        hold = lot_unavailable_reason(tx, project_id, row, now)
+        hold = (lot_unavailable_reason(tx, project_id, row, now) if all(row[k] == req[k] for k in ("material_id", "owner_id", "unit", "scale")) else "Reservation lot scope mismatch")
         if hold:
             movement_holds.append(hold)
         else:
@@ -892,45 +892,45 @@ def _detail(tx, project_id, kind, object_id):
     )
 
 
-def _page_balances(tx, project_id, rows):
+def _page_balances(tx, project_id, rows, lot_cache=None):
     if not rows:
         return {}
     lineages = list(dict.fromkeys(r["lineage_id"] for r in rows))
     slots = ",".join("?" for _ in lineages)
     commitments = {
-        r["lineage_id"]: r
+        (r["lineage_id"], r["work_order_id"], r["material_id"], r["owner_id"], r["unit"], r["scale"]): r
         for r in tx.execute(
-            f"""SELECT prior.lineage_id,COALESCE(SUM(MAX(0,c.current_q_atoms-
+            f"""SELECT prior.lineage_id,prior.work_order_id,prior.material_id,prior.owner_id,prior.unit,prior.scale,COALESCE(SUM(MAX(0,c.current_q_atoms-
                       (SELECT COALESCE(SUM(sr.q_atoms),0) FROM effective_supply_receipts sr
                        WHERE sr.project_id=c.project_id AND sr.commitment_id=c.id))),0) in_transit,
                        COALESCE(SUM((SELECT COALESCE(SUM(sr.q_atoms),0) FROM effective_supply_receipts sr
                            WHERE sr.project_id=c.project_id AND sr.commitment_id=c.id)),0) received
                 FROM supply_commitments c JOIN requirements prior
                   ON prior.id=c.requirement_id AND prior.project_id=c.project_id
-                WHERE prior.project_id=? AND prior.lineage_id IN ({slots}) GROUP BY prior.lineage_id""",
+                WHERE prior.project_id=? AND prior.lineage_id IN ({slots}) GROUP BY prior.lineage_id,prior.work_order_id,prior.material_id,prior.owner_id,prior.unit,prior.scale""",
             (str(project_id), *lineages),
         )
     }
     inspections = {
-        r["lineage_id"]: r
+        (r["lineage_id"], r["work_order_id"], r["material_id"], r["owner_id"], r["unit"], r["scale"]): r
         for r in tx.execute(
-            f"""SELECT prior.lineage_id,COALESCE(SUM(i.accepted_atoms),0) qualified,
+            f"""SELECT prior.lineage_id,prior.work_order_id,prior.material_id,prior.owner_id,prior.unit,prior.scale,COALESCE(SUM(i.accepted_atoms),0) qualified,
                        COALESCE(SUM(i.rejected_atoms),0) rejected
                 FROM effective_iqc_results i JOIN effective_supply_receipts sr ON sr.id=i.receipt_id
                 JOIN supply_commitments c ON c.id=sr.commitment_id
                 JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id
-                WHERE prior.project_id=? AND prior.lineage_id IN ({slots}) GROUP BY prior.lineage_id""",
+                WHERE prior.project_id=? AND prior.lineage_id IN ({slots}) GROUP BY prior.lineage_id,prior.work_order_id,prior.material_id,prior.owner_id,prior.unit,prior.scale""",
             (str(project_id), *lineages),
         )
     }
     reservations = {
-        (r["lineage_id"], r["work_order_id"]): r["reserved"]
+        (r["lineage_id"], r["work_order_id"], r["material_id"], r["owner_id"], r["unit"], r["scale"]): r["reserved"]
         for r in tx.execute(
-            f"""SELECT prior.lineage_id,v.work_order_id,COALESCE(SUM(v.confirmed_atoms),0) reserved
+            f"""SELECT prior.lineage_id,v.work_order_id,prior.material_id,prior.owner_id,prior.unit,prior.scale,COALESCE(SUM(v.confirmed_atoms),0) reserved
                 FROM effective_reservations v JOIN requirements prior
                   ON prior.id=v.requirement_id AND prior.project_id=v.project_id
                 WHERE prior.project_id=? AND prior.lineage_id IN ({slots}) AND v.authority_receipt_id IS NOT NULL
-                GROUP BY prior.lineage_id,v.work_order_id""",
+                GROUP BY prior.lineage_id,v.work_order_id,prior.material_id,prior.owner_id,prior.unit,prior.scale""",
             (str(project_id), *lineages),
         )
     }
@@ -938,34 +938,38 @@ def _page_balances(tx, project_id, rows):
     from .clock import business_time
 
     now = business_time(tx)
-    held_atoms, hold_reasons, hold_cache = {}, {}, {}
+    held_atoms, hold_reasons = {}, {}
+    hold_cache = lot_cache if lot_cache is not None else {}
     for claim in tx.execute(
-        f"""SELECT l.*,prior.lineage_id,v.work_order_id,SUM(v.confirmed_atoms) confirmed FROM effective_reservations v
+        f"""SELECT l.*,prior.lineage_id,v.work_order_id,prior.material_id AS requirement_material,prior.owner_id AS requirement_owner,prior.unit AS requirement_unit,prior.scale AS requirement_scale,SUM(v.confirmed_atoms) confirmed FROM effective_reservations v
             JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id
             JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id
             WHERE v.project_id=? AND prior.lineage_id IN ({slots}) AND v.authority_receipt_id IS NOT NULL
-            GROUP BY l.id,prior.lineage_id,v.work_order_id""",
+            GROUP BY l.id,prior.lineage_id,v.work_order_id,prior.material_id,prior.owner_id,prior.unit,prior.scale""",
         (str(project_id), *lineages),
     ):
         if claim["id"] not in hold_cache:
             hold_cache[claim["id"]] = lot_unavailable_reason(tx, project_id, claim, now)
         reason = hold_cache[claim["id"]]
+        if (claim["material_id"], claim["owner_id"], claim["unit"], claim["scale"]) != (claim["requirement_material"], claim["requirement_owner"], claim["requirement_unit"], claim["requirement_scale"]):
+            reason = "Reservation lot scope mismatch"
         if reason:
-            lineage = (claim["lineage_id"], claim["work_order_id"])
+            lineage = (claim["lineage_id"], claim["work_order_id"], claim["requirement_material"], claim["requirement_owner"], claim["requirement_unit"], claim["requirement_scale"])
             held_atoms[lineage] = held_atoms.get(lineage, 0) + claim["confirmed"]
             hold_reasons.setdefault(lineage, []).append(reason)
     balances = {}
     for row in rows:
         lineage = row["lineage_id"]
-        c, i = commitments.get(lineage), inspections.get(lineage)
+        scope = (lineage, row["work_order_id"])
+        fact_scope = (*scope, row["material_id"], row["owner_id"], row["unit"], row["scale"])
+        c, i = commitments.get(fact_scope), inspections.get(fact_scope)
         in_transit, received = (c["in_transit"], c["received"]) if c else (0, 0)
         qualified, rejected = (i["qualified"], i["rejected"]) if i else (0, 0)
-        scope = (lineage, row["work_order_id"])
-        reserved = reservations.get(scope, 0)
+        reserved = reservations.get(fact_scope, 0)
         scale = row["scale"]
-        usable = max(0, reserved - held_atoms.get(scope, 0))
+        usable = max(0, reserved - held_atoms.get(fact_scope, 0))
         balances[row["id"]] = MaterialBalance(
-            blocking_reasons=hold_reasons.get(scope, [])
+            blocking_reasons=hold_reasons.get(fact_scope, [])
             if usable < row["q_atoms"]
             else [],
             required=amount(row["q_atoms"], scale),

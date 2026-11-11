@@ -936,7 +936,7 @@ def test_scheduler_additive_initialization_preserves_existing_schema23_business_
     result = rig.drain(limit=1)
     assert result.delivered == 1
     with rig.workflow.store.transaction() as tx:
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 26
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 27
         for name, rows in before.items():
             assert [tuple(row) for row in tx.execute(f"SELECT * FROM {name}")] == rows
         cursors = tx.execute(

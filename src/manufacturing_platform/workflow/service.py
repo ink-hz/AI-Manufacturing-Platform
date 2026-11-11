@@ -1105,6 +1105,8 @@ class WorkflowService:
                 and getattr(command, "receipt_use", None) == "line_side"
             ) and not self.resolve_subject(actor.user_id):
                 raise DomainError("FORBIDDEN", 403, "Receiver is inactive")
+            if command.action == "expedite.close" and not self.resolve_subject(actor.user_id):
+                raise DomainError("FORBIDDEN", 403, "Actor is inactive")
             material_tasks.authorize(tx, actor, project_id, command)
             if command.action in ("material_task.open", "material_task.reassign"):
                 kind = command.task_kind if command.action == "material_task.open" else tx.execute("SELECT task_kind FROM material_tasks WHERE project_id=? AND id=?", (str(project_id), str(command.task_id))).fetchone()[0]

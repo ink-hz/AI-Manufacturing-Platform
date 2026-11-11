@@ -1,4 +1,5 @@
 from uuid import UUID
+from typing import Literal
 from fastapi import Request, Query
 from .material_control import overview, project_view
 
@@ -11,8 +12,9 @@ def register_material_control_routes(router, service, actor):
     @router.get('/projects/{project_id}/material-control')
     def material_project(project_id: UUID, request: Request, limit: int = 50, offset: int = 0,
                          work_order_id: UUID | None = None, requirement_id: UUID | None = None,
-                         search: str = Query(default="", max_length=200)):
-        return project_view(service, actor(request), project_id, limit, offset, work_order_id, requirement_id, search)
+                         search: str = Query(default="", max_length=200),
+                         problem: Literal["all", "attention", "shortage", "urgent", "pending_iqc", "unreceived", "verification"] = "all"):
+        return project_view(service, actor(request), project_id, limit, offset, work_order_id, requirement_id, search, problem)
 
     @router.get('/projects/{project_id}/material-tasks')
     def project_material_tasks(project_id: UUID, request: Request, limit: int = 50, offset: int = 0):

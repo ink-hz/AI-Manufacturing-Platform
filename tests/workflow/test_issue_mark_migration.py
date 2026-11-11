@@ -27,7 +27,7 @@ def test_actual_frozen_schema23_ddl_and_business_rows_upgrade_additively(tmp_pat
     store = WorkflowStore(str(path), str(tmp_path / "authority.db"), DATASET)
     for _ in range(2):
         with store.transaction() as tx:
-            assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 26
+            assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 27
             assert tx.execute("SELECT COUNT(*) FROM issue_marks").fetchone()[0] == 0
             assert tx.execute("SELECT COUNT(*) FROM material_expedites").fetchone()[0] == 0
             for table, original in before.items():
@@ -41,12 +41,12 @@ def test_existing_preview24_without_issue_table_initializes_without_rewriting(wo
     w._client.close()
     with sqlite3.connect(w.paths.domain) as tx:
         tx.execute("DROP TABLE IF EXISTS issue_marks")
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 26
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 27
         before = rows(tx)
     w.reopen()
     assert w.client().get(f"{BASE}/projects/{pid}").status_code == 200
     with w.db() as tx:
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 26
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 27
         assert tx.execute("SELECT COUNT(*) FROM issue_marks").fetchone()[0] == 0
         for table, original in before.items():
             assert [tuple(r) for r in tx.execute(f'SELECT * FROM "{table}" ORDER BY rowid')] == original

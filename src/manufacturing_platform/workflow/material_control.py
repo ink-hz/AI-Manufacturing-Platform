@@ -1,12 +1,15 @@
 """Non-accounting material read projections from authorized workflow facts."""
 import json
 from decimal import Decimal
+from datetime import datetime
 
-from .authorization import require_project
+from .authorization import effective_permissions, require_project
+from uuid import UUID
 from .clock import business_time
 from .contracts import DomainError
 from .material_control_models import MaterialControlPage
-from .supply import amount, available, current_plan_id, receipt_presentation
+from .supply import amount, current_plan_id, receipt_presentation
+from .material_analysis import analyze
 
 ISSUE = "Evidence is bounded and may not represent complete external supply or inventory."
 
@@ -127,7 +130,7 @@ def _expedite_preview(tx, pid, ident):
     return {**value.model_dump(mode="json"), "progress_total": progress_total, "progress_truncated": progress_total > len(progress)}
 
 
-def project_view(service, actor, project_id, limit, offset, work_order_id=None, requirement_id=None, search=""):
+def project_view(service, actor, project_id, limit, offset, work_order_id=None, requirement_id=None, search="", problem="all"):
     service._pagination(limit, offset)
     pid = str(project_id)
     with service.store.transaction() as tx:
@@ -149,8 +152,14 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
             escaped = search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
             where += " AND (material_id LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM work_orders w WHERE w.project_id=requirements.project_id AND w.id=requirements.work_order_id AND w.source_external_id LIKE ? ESCAPE '\\'))"
             args.extend([f'%{escaped}%', f'%{escaped}%'])
-        total = tx.execute(f'SELECT COUNT(*) FROM requirements WHERE {where}', args).fetchone()[0]
-        rows = tx.execute(f'SELECT * FROM requirements WHERE {where} ORDER BY created_at,id LIMIT ? OFFSET ?', (*args, limit, offset)).fetchall()
+        scoped = tx.execute(f'SELECT requirements.*,(SELECT cutoff FROM plans p WHERE p.id=requirements.plan_id) cutoff,(SELECT source_version FROM plans p WHERE p.id=requirements.plan_id) source_version FROM requirements WHERE {where} ORDER BY requirements.created_at,requirements.id', args).fetchall()
+        balances, analysis, unknown_quality = analyze(tx, pid, scoped)
+        problem_counts = {key: sum(any(item['code'] == key for item in analysis[r['id']]) for r in scoped) for key in ('shortage','urgent','pending_iqc','unreceived','verification')}
+        problem_counts['attention'] = sum(bool(analysis[r['id']]) for r in scoped)
+        problem_counts['all'] = len(scoped)
+        matching = [r for r in scoped if problem == 'all' or (problem == 'attention' and analysis[r['id']]) or any(item['code'] == problem for item in analysis[r['id']])]
+        total = len(matching)
+        rows = matching[offset:offset + limit]
         now = business_time(tx)
         need_times = {}
         if rows:
@@ -177,11 +186,11 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
             rid, wid = row['id'], row['work_order_id']
             wo = tx.execute('SELECT * FROM work_orders WHERE project_id=? AND id=?', (pid, wid)).fetchone()
             add('work_orders', 'work_order', wid, {'title': wo['source_external_id']})
-            bal = available(tx, project_id, rid, now).model_dump(mode='json')
+            bal = balances[rid].model_dump(mode='json')
             exp = tx.execute('SELECT id FROM material_expedites WHERE project_id=? AND requirement_id=? ORDER BY seq LIMIT 201', (pid, rid)).fetchall()
-            rec = tx.execute('SELECT r.id,r.material_lot_id FROM effective_supply_receipts r JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id WHERE r.project_id=? AND prior.lineage_id=? ORDER BY r.created_at,r.id LIMIT 201', (pid, row['lineage_id'])).fetchall()
+            rec = tx.execute('SELECT r.id,r.material_lot_id FROM effective_supply_receipts r JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id WHERE r.project_id=? AND prior.lineage_id=? AND prior.work_order_id=? AND prior.material_id=? AND prior.owner_id=? AND prior.unit=? AND prior.scale=? ORDER BY r.created_at,r.id LIMIT 201', (pid, row['lineage_id'], wid, row['material_id'], row['owner_id'], row['unit'], row['scale'])).fetchall()
             marks = tx.execute('SELECT id FROM issue_marks WHERE project_id=? AND requirement_id=? ORDER BY seq LIMIT 201', (pid, rid)).fetchall()
-            hand = tx.execute('SELECT DISTINCT h.id,h.seq FROM material_handoffs h JOIN effective_supply_receipts r ON r.project_id=h.project_id AND r.material_lot_id=h.material_lot_id JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id WHERE h.project_id=? AND prior.lineage_id=? AND h.work_order_id=? ORDER BY h.seq LIMIT 201', (pid, row['lineage_id'], wid)).fetchall()
+            hand = tx.execute('SELECT DISTINCT h.id,h.seq FROM material_handoffs h JOIN effective_supply_receipts r ON r.project_id=h.project_id AND r.material_lot_id=h.material_lot_id JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id WHERE h.project_id=? AND prior.lineage_id=? AND h.work_order_id=? AND prior.work_order_id=? AND prior.material_id=? AND prior.owner_id=? AND prior.unit=? AND prior.scale=? ORDER BY h.seq LIMIT 201', (pid, row['lineage_id'], wid, wid, row['material_id'], row['owner_id'], row['unit'], row['scale'])).fetchall()
             if any(len(x) > 200 for x in (exp, rec, marks, hand)):
                 issues.append(f'Related evidence for requirement {rid} is truncated at 200 per type.')
             for x in exp[:200]: add('expedites', 'material_expedite', x['id'])
@@ -191,11 +200,43 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
             for x in hand[:200]: add('handoffs', 'material_handoff', x['id'])
             need_event = need_times.get(rid)
             need_count = need_event['n'] if need_event else 0
+            need_at = need_event['need_at'] if need_event and need_event['need_at'] else wo['planned_start']
+            timing_risk = 'unknown'
+            if need_at and any(item['code'] in ('shortage', 'pending_iqc', 'unreceived', 'urgent') for item in analysis[rid]):
+                parsed_need = datetime.fromisoformat(need_at.replace('Z', '+00:00'))
+                if parsed_need.utcoffset() is not None and parsed_need <= now:
+                    timing_risk = 'need_time_passed'
             requirements.append(dict(id=rid, work_order_id=wid, state='required' if row['plan_id'] == current_plan_id(tx, pid, wid) else 'superseded', material_id=row['material_id'], owner_id=row['owner_id'], unit=row['unit'],
                 **{k: bal[k] for k in ('required', 'received', 'qualified', 'rejected', 'reserved', 'shortage', 'in_transit')},
-                need_at=need_event['need_at'] if need_event and need_event['need_at'] else wo['planned_start'], need_at_basis='manual_requirement' if need_event and need_event['need_at'] else 'work_order_planned_start_proxy', need_time_history_count=need_count, timing_risk='unknown', coverage_issues=[ISSUE],
+                confirmed_satisfied=None if rid in unknown_quality else amount(row['q_atoms'] - int(Decimal(bal['shortage']) * 10 ** row['scale']), row['scale']), issues=analysis[rid],
+                need_at=need_at, need_at_basis='manual_requirement' if need_event and need_event['need_at'] else 'work_order_planned_start_proxy', need_time_history_count=need_count, timing_risk=timing_risk, coverage_issues=[ISSUE],
                 expedite_ids=[x['id'] for x in exp[:200]], receipt_ids=[x['id'] for x in rec[:200]], handoff_ids=[x['id'] for x in hand[:200]]))
-        return MaterialControlPage(project_id=pid, project_version=p['version'], read_at=now.isoformat(), coverage_issues=issues,
+        active_ids = {r[0] for r in tx.execute("SELECT user_id FROM project_grants WHERE project_id=? AND active=1 AND roles_json!='[]'", (pid,))}
+        if actor.configuration_admin:
+            active_ids.add(str(actor.user_id))
+        roles = effective_permissions(tx, actor, pid).roles
+        page = MaterialControlPage(project_id=pid, project_version=p['version'], read_at=now.isoformat(), coverage_issues=issues,
             source_modes=_modes(tx, pid), work_orders=work_orders, requirements=requirements, expedites=expedites,
-            handoffs=handoffs, receipts=receipts, issue_marks=issue_marks,
+            handoffs=handoffs, receipts=receipts, issue_marks=issue_marks, scope_total=len(scoped), problem_counts=problem_counts,
             material_task_counts={r[0]: r[1] for r in tx.execute("SELECT state,COUNT(*) FROM material_tasks WHERE project_id=? GROUP BY state", (pid,))}, total=total, limit=limit, offset=offset)
+
+    ids = sorted({i[key] for row in page.requirements for i in row['issues'] for key in ('assignee_id', 'proposed_assignee_id') if i[key] and i[key] in active_ids})
+    profiles = {}
+    for start in range(0, len(ids), 50):
+        try:
+            profiles.update(service.member_profiles(actor, project_id, [UUID(uid) for uid in ids[start:start + 50]]))
+        except DomainError:
+            # A grant may be revoked between the projection and directory lookup.
+            pass
+    for row in page.requirements:
+        for item in row['issues']:
+            for prefix in ('assignee', 'proposed_assignee'):
+                uid = item[prefix + '_id']
+                if uid and uid in profiles:
+                    item[prefix + '_name'] = profiles[uid]
+            action = item['next_action']
+            if action in ('arrange_iqc', 'trace') and (actor.read_only or not roles.intersection({'supply', 'project_owner'}) or p['mode'] != 'oem'):
+                item['next_action'] = 'view_object'
+            if action == 'confirm_time' and (actor.read_only or not roles.intersection({'supply', 'planner', 'project_owner'})):
+                item['next_action'] = 'view_object'
+    return page
