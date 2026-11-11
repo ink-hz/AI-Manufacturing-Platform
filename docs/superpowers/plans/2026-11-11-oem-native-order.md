@@ -13,7 +13,7 @@
 - 机器人OEM代工代料；保留既有急料、IQC、寻料、指定实收与项目授权，不能重造其事实。
 - 原生MES只读，固定`order_materials`和精确`shopOrder`；不接收任意接口、URL、过滤器、原始JSON或客户端核实证据。
 - MES工单核实仅建立MES身份；不能声明SAP等价、库存可用、齐套、质检放行或线边实收。
-- 组件采用`SHOP_ORDER`精确校验；身份为`RSNUM`+`RSPOS`，物料`MATNR`、需求`BDMNG`、已提料`ENMNG`、单位`MEINS`、位置`LGORT`。数量保留精确十进制字符串；不把已提料当签收。
+- 组件采用`SHOP_ORDER`精确校验；身份为`RSNUM`+`RSPOS`，物料`MATNR`、需求`BDMNG`、已提料`ENMNG`、单位`MEINS`、位置`LGORT`。已知数量保留精确十进制字符串；`BDMNG`必需，`ENMNG`为空/未提供时保留null、页面显示“未提供”，不能当零；非空非法数量仍拒绝。不把已提料当签收。
 - 单次采集最多100行、20页、每页5行（配置更小则使用配置上限并受20页限制）；总数稳定且每页预期行数准确、组件不重复、所有行身份/数量/单位有效才保存；集合读取不是源事务快照。超过范围或任一页失败保留旧读取结果。
 - 关联和刷新仅允许同时具备`configuration_admin`和项目`project_owner`或`engineering`权限且非只读的有效用户；项目读权限用户只能读已批准保存的关联及结果，无源查询入口。授权/重放/CAS先于私有配置与源I/O，并在提交时重查。
 - 稳定源命名空间取可信配置的规范化base_url、environment、site_id、site_code，排除密码；完整配置指纹仅在服务端临时用于采集中及提交前防变化，不返回或持久化。密码轮换不改变工单身份；切换环境/站点拒绝旧关联刷新，需明确更换关联。
@@ -42,7 +42,7 @@ Bind requires nonempty exact source rows. Existing association requires explicit
 
 - [ ] Write tests before implementation: exact12 rows/3pages; quantity precision; no data/wrong or missing order/duplicate component/bad amount/unit/changed total/short page/over100/second-page failure reject with zero mutations; configured max_rows respected.
 - [ ] Exercise command path: admin+project role required before config/I/O, read-only/inactive/cross-project blocked, idempotent retry without source query, changed payload conflict, CAS race/permission revocation/config change after preflight fails, explicit supersession history, namespace uniqueness and restart. GET reads stored snapshot without source I/O.
-- [ ] Implement source collector reusing native audit/allowed paths and config policy, freezing one config for all pages and validating unchanged current config. `order_materials` parse_float preserves numeric lexemes as strings, with profile compatibility tests. Validate finite nonnegative amounts, bounded identifiers and required units, preserve component rows separately.
+- [ ] Implement source collector reusing native audit/allowed paths and config policy, freezing one config for all pages and validating unchanged current config. `order_materials` parse_float preserves numeric lexemes as strings, with profile compatibility tests. Validate finite nonnegative known amounts, bounded identifiers and required units, preserve component rows separately. `withdrawn_quantity: string | null` must stay nullable through collector/schema/DTO and restart; null is no known quantity, nonempty malformed ENMNG rejects.
 - [ ] Add schema26 transactional migration from25 and freshDB; no fabricated seed. Persist binding history and typed snapshots (not raw source response); unique active indexes. Reuse central command parsing/idempotency/audit/CAS. Do not hold SQLite write/read transaction across source I/O. Recheck source configuration immediately before entering commit and actor/role/replay/version inside commit; resolve_subject checks actor activity.
 - [ ] Run `/private/tmp/manufacturing-contract-py311/bin/python -m pytest tests/workflow/test_native_materials.py tests/mes_access -q`, plus relevant command/schema/API tests; record red/green and actual outputs. Commit only owned files. Write DTO/examples and tests in report for Task3.
 
@@ -66,3 +66,7 @@ Bind requires nonempty exact source rows. Existing association requires explicit
 - [ ] Embed a compact `MES工单物料` section in料况 before requirement table. Pick platform work order by title, admins with `can_manage` may associate/explicitly replace and refresh; others view saved results. Show bound MES order, test/production环境/站点、读取时间、完整组件行数。Table columns: 组件行、物料、需求、MES已提料、单位、仓储位置. No fake shortage/readiness; one concise note explains MES已提料需另核对线边实收.
 - [ ] Handle auth loss/project selection/version changes/abort races without stale cross-project results; link selection/form drafts into existing dirty navigation protection. Use current project version after successful command, reset submitted fields; cancellation/discard clears discarded fields. Error gives concrete next action and leaves approved saved result visible.
 - [ ] Run focused Vitest plus `npm run test:bundle` and appropriate related workflow tests. Record component/API/browser/production boundaries. Update taskbook status and verification doc after reviews; commit source and generated assets.
+
+## 已核实的接口补充
+
+2026-11-11实际测试MES通过宿主工作流联调，旧严格校验因`ENMNG=null`拒绝关联；历史同单12行也均为空。需求、组件身份和单位有值。已据此修正已提料为可空字段，保留未知含义；该修正不放宽身份核实或完整分页条件。证据仅保存在私有测试目录，未将业务原文或凭据加入仓库。
