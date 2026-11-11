@@ -57,9 +57,9 @@ def test_expedite_lifecycle_and_derived_milestones(workflow):
     assert v["progress"][0]["actor_id"] == str(USERS["warehouse"])
     # close keeps history and frees the requirement for a new case
     w.command(pid, "expedite.close", actor_name="supply",
-              expedite_id=ident, outcome="fulfilled", reason="到货合格，已入线边")
+              expedite_id=ident, outcome="false_alarm", reason="协调员核对为重复误报")
     v = detail(w, pid, ident)["value"]
-    assert v["state"] == "closed" and v["closure"]["outcome"] == "fulfilled"
+    assert v["state"] == "closed" and v["closure"]["outcome"] == "false_alarm"
     assert [p["note"] for p in v["progress"]] == ["已联系供应商，运单在途"]
     w.command(pid, "expedite.progress", actor_name="warehouse",
               expedite_id=ident, note="late", expected_status=409)

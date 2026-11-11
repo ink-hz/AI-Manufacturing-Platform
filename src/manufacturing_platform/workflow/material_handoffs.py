@@ -10,6 +10,7 @@ from .contracts import DomainError, MutationResult
 from .laboratory import business, canonical
 from .material_handoff_models import (
     CancelMaterialHandoff,
+    ConfirmMaterialReceiptUse,
     ReceiveMaterialHandoff,
     RecordMaterialHandoff,
     ResolveMaterialHandoff,
@@ -42,7 +43,7 @@ def party_permits(tx, actor, pid, action, row):
     roles = effective_permissions(tx, actor, pid).roles
     if actor.read_only or not applicable(tx, pid):
         return False
-    if action == "material_handoff.receive":
+    if action in {"material_handoff.receive", "material_handoff.confirm_use"}:
         return str(actor.user_id) == row["receiver_id"] and bool(roles & RECEIVE_ROLES)
     return bool(roles & RECEIVE_ROLES) and (
         str(actor.user_id) == row["sender_id"]
@@ -70,6 +71,10 @@ def read_actions(tx, actor, pid, row):
         "pending": ["material_handoff.receive", "material_handoff.cancel"],
         "disputed": ["material_handoff.resolve"],
     }.get(row["state"], [])
+    if row["receipt_json"] and row["state"] != "cancelled":
+        receipt = json.loads(row["receipt_json"])
+        if receipt.get("receipt_use", "unspecified") == "unspecified":
+            candidates.append("material_handoff.confirm_use")
     return [a for a in candidates if party_permits(tx, actor, pid, a, row)]
 
 
@@ -187,6 +192,10 @@ def receive(tx, context, command):
     receipt = dict(**business(command), **actor_fact(context))
     receipt.pop("handoff_id")
     receipt.update(occurred_at=happened)
+    if command.receipt_use != "unspecified":
+        validate_receipt_use(tx, context.project_id, row, command)
+        receipt.update(scope_actor_id=str(context.actor.user_id),
+                       scope_recorded_at=context.now.isoformat(), scope_evidence=command.note)
     tx.execute(
         "UPDATE material_handoffs SET state=?,receipt_json=? WHERE project_id=? AND id=?",
         (
@@ -194,6 +203,39 @@ def receive(tx, context, command):
             str(context.project_id), str(command.handoff_id),
         ),
     )
+    return MutationResult(object_type="material_handoff", object_id=command.handoff_id)
+
+
+def validate_receipt_use(tx, pid, row, command):
+    if command.receipt_use != "line_side":
+        return
+    from .supply import current_plan_id
+
+    req = own(tx, "requirements", pid, command.requirement_id)
+    lot = own(tx, "material_lots", pid, row["material_lot_id"])
+    payload = json.loads(row["payload_json"])
+    if (req["plan_id"] != current_plan_id(tx, str(pid), req["work_order_id"])
+            or row["work_order_id"] != req["work_order_id"]
+            or lot["material_id"] != req["material_id"]
+            or lot["owner_id"] != req["owner_id"]
+            or lot["unit"] != req["unit"] or payload["unit"] != req["unit"]):
+        fail("Receipt use must match the current work-order material requirement", 422)
+
+
+def confirm_use(tx, context, command):
+    row = own(tx, "material_handoffs", context.project_id, command.handoff_id)
+    if row["state"] == "cancelled" or not row["receipt_json"]:
+        fail("Only an actual signed receipt can have its use confirmed")
+    receipt = json.loads(row["receipt_json"])
+    if receipt.get("receipt_use", "unspecified") != "unspecified":
+        fail("Receipt use is already confirmed")
+    validate_receipt_use(tx, context.project_id, row, command)
+    receipt.update(receipt_use=command.receipt_use,
+                   requirement_id=str(command.requirement_id) if command.requirement_id else None,
+                   scope_actor_id=str(context.actor.user_id),
+                   scope_recorded_at=context.now.isoformat(), scope_evidence=command.evidence)
+    tx.execute("UPDATE material_handoffs SET receipt_json=? WHERE project_id=? AND id=?",
+               (canonical(receipt), str(context.project_id), str(command.handoff_id)))
     return MutationResult(object_type="material_handoff", object_id=command.handoff_id)
 
 
@@ -228,6 +270,7 @@ def finish(tx, context, command, expected, state, column, payload):
 for model, handler, roles in [
     (RecordMaterialHandoff, record, CREATE_ROLES),
     (ReceiveMaterialHandoff, receive, RECEIVE_ROLES),
+    (ConfirmMaterialReceiptUse, confirm_use, RECEIVE_ROLES),
     (ResolveMaterialHandoff, resolve, RECEIVE_ROLES),
     (CancelMaterialHandoff, cancel, RECEIVE_ROLES),
 ]:

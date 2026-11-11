@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from .authority import register_reader
 from .commands import COMMAND_REGISTRY
-from .contracts import MutationResult, ObjectRelation, ObjectSummary
+from .contracts import DomainError, MutationResult, ObjectRelation, ObjectSummary
 from .expedite_models import (
     CloseExpedite,
     MaterialExpedite,
@@ -99,10 +99,19 @@ def close(tx, context, command):
     row = own(tx, "material_expedites", context.project_id, command.expedite_id)
     if row["state"] != "open":
         fail("Only open expedites may be closed")
+    proof = None
+    if command.outcome == "fulfilled":
+        from .expedite_fulfillment import evaluate
+
+        proof = evaluate(tx, context.project_id, row, now=context.now)
+        if not proof.can_fulfill:
+            raise DomainError("EXPEDITE_NOT_FULFILLED", 409, "急料满足条件尚未齐备。",
+                              blocking_reasons=proof.blocking_reasons)
     tx.execute(
         "UPDATE material_expedites SET state='closed',closure_json=? WHERE project_id=? AND id=?",
         (
-            canonical(dict(outcome=command.outcome, reason=command.reason, **actor_fact(context))),
+            canonical(dict(outcome=command.outcome, reason=command.reason, **actor_fact(context),
+                           fulfillment_proof=proof.model_dump(mode="json") if proof else None)),
             str(context.project_id), str(command.expedite_id),
         ),
     )
@@ -166,6 +175,8 @@ def milestones(tx, pid, payload):
 
 
 def value(tx, pid, row):
+    from .expedite_fulfillment import evaluate
+
     payload = json.loads(row["payload_json"])
     return MaterialExpedite(
         **payload,
@@ -180,6 +191,7 @@ def value(tx, pid, row):
             )
         ],
         closure=json.loads(row["closure_json"]) if row["closure_json"] else None,
+        fulfillment_check=evaluate(tx, pid, row),
     )
 
 

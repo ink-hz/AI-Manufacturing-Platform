@@ -2,7 +2,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime
+from pydantic import AwareDatetime, model_validator
 
 from .commands import WorkflowCommand
 from .contracts import DomainValue, NonnegativeQuantity, Quantity, SourceRef, StrictModel
@@ -29,6 +29,28 @@ class ReceiveMaterialHandoff(WorkflowCommand):
     received_location: Name
     occurred_at: AwareDatetime | None = None
     note: Text | None = None
+    receipt_use: Literal["unspecified", "transfer", "line_side"] = "unspecified"
+    requirement_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def scoped_use(self):
+        if (self.receipt_use == "line_side") != (self.requirement_id is not None):
+            raise ValueError("Line-side receipt must identify exactly one requirement")
+        return self
+
+
+class ConfirmMaterialReceiptUse(WorkflowCommand):
+    action: Literal["material_handoff.confirm_use"]
+    handoff_id: UUID
+    receipt_use: Literal["transfer", "line_side"]
+    requirement_id: UUID | None = None
+    evidence: Text
+
+    @model_validator(mode="after")
+    def scoped_use(self):
+        if (self.receipt_use == "line_side") != (self.requirement_id is not None):
+            raise ValueError("Line-side receipt must identify exactly one requirement")
+        return self
 
 
 class ResolveMaterialHandoff(WorkflowCommand):
@@ -54,6 +76,11 @@ class HandoffReceipt(HandoffActorFact):
     received_location: Name
     note: Text | None
     occurred_at: AwareDatetime
+    receipt_use: Literal["unspecified", "transfer", "line_side"] = "unspecified"
+    requirement_id: UUID | None = None
+    scope_actor_id: UUID | None = None
+    scope_recorded_at: AwareDatetime | None = None
+    scope_evidence: Text | None = None
 
 
 class HandoffResolution(HandoffActorFact):

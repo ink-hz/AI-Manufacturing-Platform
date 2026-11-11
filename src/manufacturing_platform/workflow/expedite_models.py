@@ -7,6 +7,7 @@ from pydantic import AwareDatetime, Field
 from .commands import WorkflowCommand
 from .contracts import DomainValue, SourceRef, StrictModel
 from .introduction_models import Name, Text
+from .expedite_fulfillment_models import ExpediteFulfillmentCheck
 
 
 class OpenExpedite(WorkflowCommand):
@@ -42,6 +43,7 @@ class ExpediteProgressEntry(ExpediteActorFact):
 class ExpediteClosure(ExpediteActorFact):
     outcome: Literal["fulfilled", "false_alarm", "superseded"]
     reason: Text
+    fulfillment_proof: ExpediteFulfillmentCheck | None = None
 
 
 class ExpediteMilestones(StrictModel):
@@ -72,3 +74,4 @@ class MaterialExpedite(DomainValue):
     milestones: ExpediteMilestones
     progress: list[ExpediteProgressEntry] = Field(default_factory=list)
     closure: ExpediteClosure | None = None
+    fulfillment_check: ExpediteFulfillmentCheck | None = None

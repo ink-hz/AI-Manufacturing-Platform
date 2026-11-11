@@ -189,7 +189,7 @@ def test_open_case_tasks_are_immediate_live_and_nonaccounting(workflow):
     assert w.client("production").get(f"{BASE}/tasks").json()["items"] == []
     w.command(pid, "expedite.progress", actor_name="supply", expedite_id=ident, note="催料中")
     w.command(pid, "expedite.close", actor_name="supply", expedite_id=ident,
-              outcome="fulfilled", reason="已完成")
+              outcome="false_alarm", reason="核对为误报，结束协调")
     assert expedite_tasks(w, pid) == []
     assert stock(w) == before
 
@@ -210,7 +210,7 @@ def test_positive_effective_iqc_changes_same_task_title_for_supply_and_productio
         assert rows[0]["title"] == (QUALIFIED if actor in {"supply", "production"} else GENERAL)
         assert rows[0]["target"]["state"] == "open"
     w.command(pid, "expedite.close", actor_name="supply", expedite_id=ident,
-              outcome="fulfilled", reason="已安排")
+              outcome="false_alarm", reason="已核对为重复协调事项")
     assert expedite_tasks(w, pid) == []
     assert stock(w) == before
 
@@ -264,7 +264,7 @@ def test_task_page_keeps_50_row_boundary_and_existing_handoff_responsibilities(w
     assert paged["items"] == page["items"][43:50] and paged["total"] == 50
     for index, ident in enumerate(sorted(cases)):
         w.command(pid, "expedite.close", actor_name="supply", expedite_id=ident,
-                  outcome="fulfilled", reason="清案")
+                  outcome="false_alarm", reason="历史重复误报清案")
         if index == 1:
             exact = tasks(w, pid, "production")
             assert len(exact["items"]) == exact["total"] == 50
