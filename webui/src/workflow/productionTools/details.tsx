@@ -1,3 +1,5 @@
+import "./details.css";
+import { Badge, EmptyState, Panel, ResultBadge } from "./visuals";
 import type { CapturedLog } from "./types";
 import { WorkflowError } from "../api";
 import { useState } from "react";
@@ -57,10 +59,13 @@ export function RecordTable({
   kind?: ObservationKind;
 }) {
   return (
-    <>
-      <Coverage data={page} />
+    <section className="pt-records" aria-label={kind === "stopover" ? "过站记录" : "测试记录"}>
+      <div className="pt-table-tools">
+        <div><strong>{kind === "stopover" ? "过站" : "测试"}记录</strong><p className="pt-meta">当前捕获页 {page.items.length} 条 · 行号在捕获内保持稳定</p></div>
+        <Coverage data={page} />
+      </div>
       {!page.complete && (
-        <p>
+        <p className="pt-callout" data-tone="warning">
           仅显示部分记录，不能由捕获样本推算全范围影响；可缩小时间或按 SN /
           上位机查询。
         </p>
@@ -69,9 +74,7 @@ export function RecordTable({
         <p>源已隐藏字段：{page.redacted_fields.join("、")}</p>
       )}
       {!page.items.length ? (
-        <p>
-          当前范围暂无{kind === "stopover" ? "过站" : "测试"}记录，范围外未知。
-        </p>
+        <EmptyState title={<>当前范围暂无{kind === "stopover" ? "过站" : "测试"}记录，范围外未知。</>} />
       ) : (
         <div
           className="pt-table"
@@ -94,9 +97,10 @@ export function RecordTable({
               {page.items.map((row, i) => (
                 <tr
                   key={`${page.snapshot_id}-${page.offset + i}`}
+                  data-result={row.status === "2" || row.status === 2 ? "fail" : undefined}
                   className={
                     l.view === "history" &&
-                    matchesContext({ ...l.scope, view: "history" }, row)
+                      matchesContext({ ...l.scope, view: "history" }, row)
                       ? "pt-symptom"
                       : undefined
                   }
@@ -152,9 +156,9 @@ export function RecordTable({
                         l.scope.status ||
                         l.scope.missing_fields?.length) &&
                       matchesContext({ ...l.scope, view: "history" }, row) && (
-                        <small>原症状命中</small>
+                        <small className="pt-symptom-label">原症状命中</small>
                       )}
-                    {result(row.status)}
+                    <ResultBadge value={row.status} />
                     <br />
                     {text(row.errorcode)}
                   </td>
@@ -172,7 +176,7 @@ export function RecordTable({
           </table>
         </div>
       )}
-      <div className="pt-actions">
+      <div className="pt-actions pt-pagination" aria-label="捕获分页">
         <button
           type="button"
           disabled={page.offset === 0}
@@ -209,7 +213,7 @@ export function RecordTable({
           下一页快照
         </button>
       </div>
-    </>
+    </section>
   );
 }
 export function Records(props: BoardProps) {
@@ -221,24 +225,26 @@ export function Records(props: BoardProps) {
         throw new WorkflowError(503, "PRODUCTION_CAPABILITY_UNAVAILABLE");
       return l.cursor
         ? api.productionSnapshot(
-            l.projectId,
-            l.cursor.id,
-            l.cursor.offset,
-            l.cursor.limit,
-            s,
-          )
+          l.projectId,
+          l.cursor.id,
+          l.cursor.offset,
+          l.cursor.limit,
+          s,
+        )
         : api.productionObservations(
-            l.projectId,
-            { ...l.scope, kind: "production" },
-            s,
-          );
+          l.projectId,
+          { ...l.scope, kind: "production" },
+          s,
+        );
     },
     [api, l.projectId, l.scope, l.cursor, l.readGeneration, refresh],
   );
   return (
-    <ReadBlock label="测试记录" state={state}>
-      {(page) => <RecordTable page={page} {...props} />}
-    </ReadBlock>
+    <Panel title="测试记录" description="按当前范围读取；选择事件查看详情，或进入 SN 履历。">
+      <ReadBlock label="测试记录" state={state}>
+        {(page) => <RecordTable page={page} {...props} />}
+      </ReadBlock>
+    </Panel>
   );
 }
 export function HistoryPage(props: BoardProps) {
@@ -248,22 +254,22 @@ export function HistoryPage(props: BoardProps) {
     (s) =>
       l.cursor?.kind === "production"
         ? api.productionSnapshot(
-            l.projectId,
-            l.cursor.id,
-            l.cursor.offset,
-            l.cursor.limit,
-            s,
-          )
+          l.projectId,
+          l.cursor.id,
+          l.cursor.offset,
+          l.cursor.limit,
+          s,
+        )
         : api.productionObservations(
-            l.projectId,
-            {
-              start: scope.start,
-              end: scope.end,
-              sn: scope.sn,
-              kind: "production",
-            },
-            s,
-          ),
+          l.projectId,
+          {
+            start: scope.start,
+            end: scope.end,
+            sn: scope.sn,
+            kind: "production",
+          },
+          s,
+        ),
     [
       api,
       l.projectId,
@@ -279,22 +285,22 @@ export function HistoryPage(props: BoardProps) {
     (s) =>
       l.cursor?.kind === "stopover"
         ? api.productionSnapshot(
-            l.projectId,
-            l.cursor.id,
-            l.cursor.offset,
-            l.cursor.limit,
-            s,
-          )
+          l.projectId,
+          l.cursor.id,
+          l.cursor.offset,
+          l.cursor.limit,
+          s,
+        )
         : api.productionObservations(
-            l.projectId,
-            {
-              start: scope.start,
-              end: scope.end,
-              sn: scope.sn,
-              kind: "stopover",
-            },
-            s,
-          ),
+          l.projectId,
+          {
+            start: scope.start,
+            end: scope.end,
+            sn: scope.sn,
+            kind: "stopover",
+          },
+          s,
+        ),
     [
       api,
       l.projectId,
@@ -307,8 +313,7 @@ export function HistoryPage(props: BoardProps) {
     ],
   );
   return (
-    <>
-      <h3>SN {l.historySN} · 当前范围记录</h3>
+    <Panel title={<>SN {l.historySN} · 当前范围记录</>} eyebrow="SN 履历" className="pt-history">
       <p>
         履历检索时间 {localTime(scope.start)} — {localTime(scope.end)}
         ；原问题时段仍保留在顶部。
@@ -323,7 +328,7 @@ export function HistoryPage(props: BoardProps) {
       <ReadBlock label="SN 过站履历" state={stopover}>
         {(page) => <RecordTable page={page} {...props} kind="stopover" />}
       </ReadBlock>
-    </>
+    </Panel>
   );
 }
 export function CatalogPage(props: BoardProps) {
@@ -341,9 +346,8 @@ export function CatalogPage(props: BoardProps) {
     [api, l.projectId, kind, l.parentId, before, refresh],
   );
   return (
-    <>
-      <h3>工具与配置</h3>
-      <nav>
+    <Panel title="工具与配置" eyebrow="来源目录" description={l.parentId ? `版本所属源记录 ${l.parentId}` : "查看来源定义与版本，再进入对应测试。"} className="pt-catalog">
+      <nav className="pt-actions" aria-label="目录分类">
         {(
           [
             ["software", "工具"],
@@ -354,6 +358,7 @@ export function CatalogPage(props: BoardProps) {
           <button
             type="button"
             key={id}
+            aria-pressed={kind === id || (id === "software" && kind === "software_versions") || (id === "configs" && kind === "config_versions")}
             onClick={() => {
               setBefore(undefined);
               go({ ...l, catalog: id, parentId: undefined });
@@ -367,38 +372,40 @@ export function CatalogPage(props: BoardProps) {
         {(page) => (
           <>
             <Coverage data={page} />
-            {page.items.map((row, i) => (
-              <article key={i}>
-                <h4>{text(row.name || row.versions || row.id)}</h4>
-                {(kind === "software" || kind === "configs") && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBefore(undefined);
-                      go({
-                        ...l,
-                        catalog:
-                          kind === "software"
-                            ? "software_versions"
-                            : "config_versions",
-                        parentId: String(row.id),
-                      });
-                    }}
-                  >
-                    查看{text(row.name)}版本
-                  </button>
-                )}
-                {(kind === "software_versions" || kind === "config_versions") &&
-                  Boolean(row.versions || row.version) && (
+            {!page.complete && <p className="pt-callout" data-tone="warning">目录仅部分读取；未出现的版本仍未知。</p>}
+            <div className="pt-catalog-list">
+              {page.items.map((row, i) => (
+                <article key={i}>
+                  <h4>{text(row.name || row.versions || row.id)}</h4>
+                  {(kind === "software" || kind === "configs") && (
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        setBefore(undefined);
                         go({
                           ...l,
-                          view: "records",
-                          scope:
-                            kind === "software_versions"
-                              ? {
+                          catalog:
+                            kind === "software"
+                              ? "software_versions"
+                              : "config_versions",
+                          parentId: String(row.id),
+                        });
+                      }}
+                    >
+                      查看{text(row.name)}版本
+                    </button>
+                  )}
+                  {(kind === "software_versions" || kind === "config_versions") &&
+                    Boolean(row.versions || row.version) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          go({
+                            ...l,
+                            view: "records",
+                            scope:
+                              kind === "software_versions"
+                                ? {
                                   ...l.scope,
                                   software_id: l.parentId,
                                   software_version: String(
@@ -411,7 +418,7 @@ export function CatalogPage(props: BoardProps) {
                                         k !== "software_version",
                                     ),
                                 }
-                              : {
+                                : {
                                   ...l.scope,
                                   config_log_id: String(row.id),
                                   config_version: String(
@@ -424,39 +431,40 @@ export function CatalogPage(props: BoardProps) {
                                         k !== "config_version",
                                     ),
                                 },
-                          cursor: undefined,
-                        })
-                      }
-                    >
-                      查看此版本测试
-                    </button>
-                  )}
-                <dl>
-                  {Object.entries(row)
-                    .filter(
-                      ([k]) =>
-                        !["url", "content", "password", "secret"].includes(k),
-                    )
-                    .map(([k, v]) => (
-                      <div key={k}>
-                        <dt>
-                          {(
-                            {
-                              name: "名称",
-                              versions: "版本",
-                              description: "版本说明",
-                              state: "源状态",
-                              orderid: "工具配置审核单",
-                              id: "源记录号",
-                            } as Record<string, string>
-                          )[k] || k}
-                        </dt>
-                        <dd>{text(v)}</dd>
-                      </div>
-                    ))}
-                </dl>
-              </article>
-            ))}
+                            cursor: undefined,
+                          })
+                        }
+                      >
+                        查看此版本测试
+                      </button>
+                    )}
+                  <dl>
+                    {Object.entries(row)
+                      .filter(
+                        ([k]) =>
+                          !["url", "content", "password", "secret"].includes(k),
+                      )
+                      .map(([k, v]) => (
+                        <div key={k}>
+                          <dt>
+                            {(
+                              {
+                                name: "名称",
+                                versions: "版本",
+                                description: "版本说明",
+                                state: "源状态",
+                                orderid: "工具配置审核单",
+                                id: "源记录号",
+                              } as Record<string, string>
+                            )[k] || k}
+                          </dt>
+                          <dd>{text(v)}</dd>
+                        </div>
+                      ))}
+                  </dl>
+                </article>
+              ))}
+            </div>
             {page.next_before_id && (
               <button
                 type="button"
@@ -465,11 +473,11 @@ export function CatalogPage(props: BoardProps) {
                 继续读取源记录
               </button>
             )}
-            {!page.items.length && <p>当前目录暂无记录</p>}
+            {!page.items.length && <EmptyState title="当前目录暂无记录" />}
           </>
         )}
       </ReadBlock>
-    </>
+    </Panel>
   );
 }
 export function Parameters({ row }: { row: ProductionRow }) {
@@ -478,9 +486,10 @@ export function Parameters({ row }: { row: ProductionRow }) {
   const valued = parameters.filter(
     ([, v]) => v !== null && v !== undefined && v !== "",
   );
+  const filtered = valued.filter(([k, v]) => `${k} ${text(v)}`.toLowerCase().includes(search.toLowerCase()));
   return (
-    <>
-      <h4>测试项与参数</h4>
+    <section className="pt-detail-section pt-parameters" aria-label="测试项与参数">
+      <header className="pt-detail-heading"><h4>测试项与参数</h4><Badge>{valued.length} 个有值字段</Badge></header>
       <p>保留源值；未验证判定规则的字段不推断通过 / 失败，单位和规格未提供。</p>
       <label>
         搜索参数
@@ -504,20 +513,17 @@ export function Parameters({ row }: { row: ProductionRow }) {
             </tr>
           </thead>
           <tbody>
-            {valued
-              .filter(([k, v]) =>
-                `${k} ${text(v)}`.toLowerCase().includes(search.toLowerCase()),
-              )
-              .map(([k, v]) => (
-                <tr key={k}>
-                  <th>{k}</th>
-                  <td>{text(v)}</td>
-                </tr>
-              ))}
+            {filtered.map(([k, v]) => (
+              <tr key={k}>
+                <th>{k}</th>
+                <td>{text(v)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
-      {!valued.length && <p>源未提供有值测试参数</p>}
+      {!valued.length && <EmptyState title="源未提供有值测试参数" />}
+      {valued.length > 0 && !filtered.length && <EmptyState title="没有匹配的参数" description="可调整搜索词；源参数仍保留。" />}
       <details>
         <summary>源返回空值（{parameters.length - valued.length}）</summary>
         {parameters
@@ -530,7 +536,7 @@ export function Parameters({ row }: { row: ProductionRow }) {
         <summary>辅助：原始脱敏 JSON</summary>
         <pre>{JSON.stringify(row, null, 2)}</pre>
       </details>
-    </>
+    </section>
   );
 }
 export function Compare({
@@ -542,21 +548,19 @@ export function Compare({
 }) {
   if (!primary || !comparison)
     return (
-      <p>
-        主要事件和对照参数尚未核对，请先恢复证据；不能将保存的定位信息当作原参数。
-      </p>
+      <EmptyState title="主要事件和对照参数尚未核对，请先恢复证据；不能将保存的定位信息当作原参数。" />
     );
   const keys = [
     ...new Set([...Object.keys(primary.row), ...Object.keys(comparison.row)]),
   ];
   return (
-    <>
-      <h3>记录对照</h3>
-      <p>
-        主要事件 {localTime(primary.row.timestamp)} ·{" "}
-        {result(primary.row.status)} / 对照{" "}
-        {localTime(comparison.row.timestamp)} · {result(comparison.row.status)}
-      </p>
+    <Panel title="记录对照" eyebrow="当前读取的源参数" className="pt-comparison">
+      <div className="pt-event-pair">
+        {([primary, comparison] as const).map((event, i) => <section key={i} className="pt-event-role" data-role={i === 0 ? "primary" : "comparison"} aria-label={i === 0 ? "主要事件" : "对照事件"}>
+          <h4>{i === 0 ? "主要事件" : "对照事件"}</h4><ResultBadge value={event.row.status} />
+          <p>{text(event.row.sn)} · {text(event.row.devicename)}</p><p className="pt-meta">{localTime(event.row.timestamp)}</p>
+        </section>)}
+      </div>
       <p>跨阶段、跨工具不自动称为复测；规格未提供时不计算超限。</p>
       <div
         className="pt-table"
@@ -579,24 +583,20 @@ export function Compare({
                 b = comparison.row[k],
                 absent = a == null || b == null || a === "" || b === "";
               return (
-                <tr key={k}>
-                  <th>{metadata[k] || k}</th>
-                  <td>
-                    {absent
-                      ? "未提供"
-                      : JSON.stringify(a) === JSON.stringify(b)
-                        ? "相同"
-                        : "不同"}
-                  </td>
-                  <td>{text(a)}</td>
-                  <td>{text(b)}</td>
+                <tr key={k} data-diff={!absent && JSON.stringify(a) !== JSON.stringify(b) ? "different" : undefined}>
+                  <th scope="row">{metadata[k] || k}</th>
+                  <td><Badge tone={absent || JSON.stringify(a) === JSON.stringify(b) ? "neutral" : "warning"}>
+                    {absent ? "未提供" : JSON.stringify(a) === JSON.stringify(b) ? "相同" : "不同"}
+                  </Badge></td>
+                  <td>{k === "status" ? <ResultBadge value={a} /> : text(a)}</td>
+                  <td>{k === "status" ? <ResultBadge value={b} /> : text(b)}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-    </>
+    </Panel>
   );
 }
 export function EventSidebar({
@@ -663,11 +663,23 @@ export function EventSidebar({
   );
   return (
     <aside className="pt-sidebar" aria-label="测试详情">
-      <button type="button" onClick={close}>
-        关闭测试详情
-      </button>
+      <header className="pt-drawer-header">
+        <div><p className="pt-eyebrow">事件浏览</p><h3>{event.kind === "production" ? "生产测试" : "过站"}详情</h3><ResultBadge value={event.row.status} /></div>
+        <button type="button" onClick={close}>关闭测试详情</button>
+      </header>
+      <section className="pt-detail-section" aria-label="调查选择">
+        <h4>调查选择</h4>
+        <div className="pt-selection-context">
+          <p><strong>当前主要事件</strong> · {investigation?.primary ? `${text(investigation.primary.descriptor.sn)} · ${localTime(investigation.primary.descriptor.timestamp)}` : "尚未选择"}</p>
+          <p><strong>当前对照事件</strong> · {investigation?.comparison ? `${text(investigation.comparison.descriptor.sn)} · ${localTime(investigation.comparison.descriptor.timestamp)}` : "尚未选择"}</p>
+        </div>
+        <div className="pt-actions">
+          <button type="button" className="pt-button-primary" disabled={readOnly} onClick={() => onPrimary(event)}>设为调查对象</button>
+          <button type="button" disabled={readOnly || !investigation?.primary} onClick={() => onComparison(event)}>选作对照</button>
+        </div>
+      </section>
       {logs ? (
-        <>
+        <section className="pt-detail-section" aria-label="候选日志">
           <button type="button" onClick={() => setLogs(false)}>
             返回测试详情
           </button>
@@ -793,16 +805,16 @@ export function EventSidebar({
                           </button>
                           {status.data?.capabilities.evidence_content
                             ?.available && (
-                            <a
-                              href={api.productionEvidenceUrl(
-                                event.projectId,
-                                row.id,
-                              )}
-                              download
-                            >
-                              下载日志证据
-                            </a>
-                          )}
+                              <a
+                                href={api.productionEvidenceUrl(
+                                  event.projectId,
+                                  row.id,
+                                )}
+                                download
+                              >
+                                下载日志证据
+                              </a>
+                            )}
                         </>
                       )}
                   </article>
@@ -818,100 +830,86 @@ export function EventSidebar({
               </>
             )}
           </ReadBlock>
-        </>
+        </section>
       ) : (
         <>
-          <h3>
-            {event.kind === "production" ? "生产测试" : "过站"}详情 ·{" "}
-            {result(event.row.status)}
-          </h3>
-          <dl>
-            {Object.entries(metadata).map(([key, label]) => (
-              <div key={key}>
-                <dt>{label}</dt>
-                <dd>
-                  {key === "timestamp"
-                    ? localTime(event.row[key])
-                    : key === "status"
-                      ? result(event.row[key])
-                      : key === "workstagesid"
-                        ? sourceName(l, "stage_id", event.row[key])
-                        : key === "softwareid"
-                          ? sourceName(l, "software_id", event.row[key])
-                          : text(event.row[key])}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <p>
-            读取 {localTime(event.captured_at)} ·
-            浏览本条记录不会自动替换调查对象。
-          </p>
-          <div className="pt-actions">
-            {typeof event.row.softwareid === "string" &&
-              /^[1-9][0-9]{0,19}$/.test(event.row.softwareid) && (
+          <section className="pt-detail-section" aria-label="事件核心事实">
+            <h4>事件核心事实</h4>
+            <dl>
+              {Object.entries(metadata).map(([key, label]) => (
+                <div key={key}>
+                  <dt>{label}</dt>
+                  <dd>
+                    {key === "timestamp"
+                      ? localTime(event.row[key])
+                      : key === "status"
+                        ? <ResultBadge value={event.row[key]} />
+                        : key === "workstagesid"
+                          ? sourceName(l, "stage_id", event.row[key])
+                          : key === "softwareid"
+                            ? sourceName(l, "software_id", event.row[key])
+                            : text(event.row[key])}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+          <section className="pt-detail-section" aria-label="来源与定位">
+            <h4>来源与定位</h4>
+            <p className="pt-meta">项目 {event.projectId} · 捕获 {event.snapshot_id} · 行号 {event.offset + 1}</p>
+            <p className="pt-meta">读取 {localTime(event.captured_at)} · 浏览本条记录不会自动替换调查对象。</p>
+            <div className="pt-actions">
+              {typeof event.row.softwareid === "string" &&
+                /^[1-9][0-9]{0,19}$/.test(event.row.softwareid) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      close();
+                      go({
+                        ...l,
+                        view: "catalog",
+                        catalog: "software_versions",
+                        parentId: String(event.row.softwareid),
+                      });
+                    }}
+                  >
+                    查看工具版本目录
+                  </button>
+                )}
+              <button type="button" onClick={() => setLogs(true)}>
+                查找候选日志
+              </button>
+              {event.row.sn && l.view !== "history" ? (
                 <button
                   type="button"
                   onClick={() => {
                     close();
                     go({
                       ...l,
-                      view: "catalog",
-                      catalog: "software_versions",
-                      parentId: String(event.row.softwareid),
+                      view: "history",
+                      historySN: String(event.row.sn),
+                      historyRange: { start: l.scope.start, end: l.scope.end },
+                      cursor: undefined,
                     });
                   }}
                 >
-                  查看工具版本目录
+                  查看 {String(event.row.sn)} 履历
                 </button>
-              )}
-            <button type="button" onClick={() => setLogs(true)}>
-              查找候选日志
-            </button>
-            <button
-              type="button"
-              disabled={readOnly}
-              onClick={() => onPrimary(event)}
-            >
-              设为调查对象
-            </button>
-            <button
-              type="button"
-              disabled={readOnly || !investigation?.primary}
-              onClick={() => onComparison(event)}
-            >
-              选作对照
-            </button>
-            {event.row.sn && l.view !== "history" ? (
+              ) : null}
               <button
                 type="button"
-                onClick={() => {
-                  close();
-                  go({
-                    ...l,
-                    view: "history",
-                    historySN: String(event.row.sn),
-                    historyRange: { start: l.scope.start, end: l.scope.end },
-                    cursor: undefined,
-                  });
-                }}
+                onClick={() =>
+                  void navigator.clipboard?.writeText(
+                    Object.entries(metadata)
+                      .map(([k, v]) => `${v}：${text(event.row[k])}`)
+                      .join("\n"),
+                  )
+                }
               >
-                查看 {String(event.row.sn)} 履历
+                复制这次测试信息
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() =>
-                void navigator.clipboard?.writeText(
-                  Object.entries(metadata)
-                    .map(([k, v]) => `${v}：${text(event.row[k])}`)
-                    .join("\n"),
-                )
-              }
-            >
-              复制这次测试信息
-            </button>
-          </div>
+            </div>
+          </section>
           <Parameters row={event.row} />
         </>
       )}

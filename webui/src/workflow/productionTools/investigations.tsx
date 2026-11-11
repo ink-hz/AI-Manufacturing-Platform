@@ -1,3 +1,5 @@
+import "./details.css";
+import { Badge, EmptyState, ResultBadge } from "./visuals";
 import { useState } from "react";
 import { fieldNames, localTime, text } from "./context";
 import { useInvestigation } from "./investigationState";
@@ -50,13 +52,39 @@ export function InvestigationPanel({
     [copyState, setCopyState] = useState("");
   return (
     <section className="pt-investigation" aria-label="当前调查">
-      <h3>当前调查</h3>
-      <p role="status">
-        {c.state}
-        {readOnly ? " · 只读管理员，本次修改不保存" : ""}
-      </p>
+      <header className="pt-section-heading">
+        <div><p className="pt-eyebrow">调查工作台</p><h3>当前调查</h3>
+          <p role="status"><Badge tone={c.conflict || c.error || c.dirty || c.browsingOtherScope ? "warning" : "info"}>{c.state}</Badge>{readOnly ? " · 只读管理员，本次修改不保存" : ""}</p>
+        </div>
+        <div className="pt-actions">
+          <button
+            type="button"
+            disabled={readOnly || !!c.handoff || !c.canStart}
+            onClick={() => void c.start()}
+          >
+            开始调查
+          </button>
+          <button
+            type="button"
+            className="pt-button-primary"
+            disabled={readOnly || !!c.handoff || (!c.draft && !c.canStart)}
+            onClick={() => void c.generate()}
+          >
+            生成交接摘要
+          </button>
+          {c.dirty && (
+            <button
+              type="button"
+              disabled={readOnly || !!c.conflict}
+              onClick={() => void c.flush(true)}
+            >
+              {c.localRecovered ? "提交本机修改" : "重试保存"}
+            </button>
+          )}
+        </div>
+      </header>
       {(c.browsingOtherScope || c.state.includes("当前浏览条件")) && (
-        <div>
+        <div className="pt-callout" data-tone="warning">
           <p>当前浏览范围与已保存调查不同；返回父页不会修改原调查范围。</p>
           <button
             type="button"
@@ -78,63 +106,41 @@ export function InvestigationPanel({
         </div>
       )}
       {c.error && <p role="alert">{c.error}</p>}
-      <div className="pt-actions">
-        <button
-          type="button"
-          disabled={readOnly || !!c.handoff || !c.canStart}
-          onClick={() => void c.start()}
-        >
-          开始调查
-        </button>
-        <button
-          type="button"
-          disabled={readOnly || !!c.handoff || (!c.draft && !c.canStart)}
-          onClick={() => void c.generate()}
-        >
-          生成交接摘要
-        </button>
-        {c.dirty && (
-          <button
-            type="button"
-            disabled={readOnly || !!c.conflict}
-            onClick={() => void c.flush(true)}
-          >
-            {c.localRecovered ? "提交本机修改" : "重试保存"}
-          </button>
-        )}
-      </div>
       {d && (
         <>
-          <p>
-            {c.handoff ? "固定交接号" : "个人调查号"} {d.id} · 修订 {d.version}{" "}
-            · 有效至 {localTime(d.expires_at)}
-          </p>
-          <p>
-            来源 {d.source_namespace} · 源项目 {d.source_project_id} · 问题时间{" "}
-            {localTime(d.context.start)} — {localTime(d.context.end)}
-          </p>
-          {d.context.symptom && <p>保存时范围说明：{d.context.symptom}</p>}
-          <p>
-            {Object.entries(fieldNames)
-              .flatMap(([key, label]) =>
-                d.context.missing_fields?.includes(key as never)
-                  ? [`${label}：源未提供`]
-                  : (d.context as unknown as Record<string, unknown>)[key] !==
+          <section className="pt-investigation-meta" aria-label="调查范围与版本">
+            <h4>调查范围与版本</h4>
+            <p>
+              {c.handoff ? "固定交接号" : "个人调查号"} {d.id} · 修订 {d.version}{" "}
+              · 有效至 {localTime(d.expires_at)}
+            </p>
+            <p>
+              来源 {d.source_namespace} · 源项目 {d.source_project_id} · 问题时间{" "}
+              {localTime(d.context.start)} — {localTime(d.context.end)}
+            </p>
+            {d.context.symptom && <p>保存时范围说明：{d.context.symptom}</p>}
+            <p>
+              {Object.entries(fieldNames)
+                .flatMap(([key, label]) =>
+                  d.context.missing_fields?.includes(key as never)
+                    ? [`${label}：源未提供`]
+                    : (d.context as unknown as Record<string, unknown>)[key] !==
                       undefined
-                    ? [
+                      ? [
                         `${label}：${text((d.context as unknown as Record<string, unknown>)[key])}`,
                       ]
-                    : [],
-              )
-              .join(" · ")}
-          </p>
-          {d.origin_handoff_id && (
-            <p>
-              接续自交接 {d.origin_handoff_id} · 版本 {d.origin_handoff_version}
+                      : [],
+                )
+                .join(" · ")}
             </p>
-          )}
+            {d.origin_handoff_id && (
+              <p>
+                接续自交接 {d.origin_handoff_id} · 版本 {d.origin_handoff_version}
+              </p>
+            )}
+          </section>
           {c.handoff && (
-            <>
+            <section className="pt-detail-section pt-handoff-snapshot" aria-label="固定交接内容">
               <h4>交接时内容 · 不随源更新</h4>
               <p>{d.note}</p>
               <button
@@ -168,13 +174,12 @@ export function InvestigationPanel({
                     .join(" · ");
                   const describe = (which: "primary" | "comparison") => {
                     const event = d[which];
-                    return `${which === "primary" ? "主要事件" : "对照事件"}：${
-                      event
+                    return `${which === "primary" ? "主要事件" : "对照事件"}：${event
                         ? descriptorEntries(event.descriptor)
-                            .map(([k, v]) => `${descriptorNames[k]}=${text(v)}`)
-                            .join(" · ")
+                          .map(([k, v]) => `${descriptorNames[k]}=${text(v)}`)
+                          .join(" · ")
                         : "尚未选择"
-                    }（保存的定位；原参数需核对）`;
+                      }（保存的定位；原参数需核对）`;
                   };
                   const impact = d.impact
                     ? `交接时影响（读取 ${localTime(d.impact.captured_at)}，覆盖 ${d.impact.state}）：失败记录 ${d.impact.failure_records.numerator ?? "未知"} / ${d.impact.failure_records.denominator ?? "未知"}；失败涉及 SN ${d.impact.failed_involved_sn.numerator ?? "未知"} / ${d.impact.failed_involved_sn.denominator ?? "未知"}`
@@ -203,11 +208,11 @@ export function InvestigationPanel({
               >
                 复制交接摘要与恢复链接
               </button>
-              {copyState && <p>{copyState}</p>}
-            </>
+              {copyState && <p role="status">{copyState}</p>}
+            </section>
           )}
           {d.impact && (
-            <div>
+            <section className="pt-detail-section" aria-label="保存时影响统计">
               <h4>保存时影响统计</h4>
               <p>
                 读取 {localTime(d.impact.captured_at)} · 覆盖 {d.impact.state}
@@ -218,140 +223,148 @@ export function InvestigationPanel({
                 · 失败涉及 SN {d.impact.failed_involved_sn.numerator ?? "未知"}{" "}
                 / 测试 SN {d.impact.failed_involved_sn.denominator ?? "未知"}
               </p>
-              <p>这是保存时源统计，与当前读取分别呈现；不是跨源原子快照。</p>
-            </div>
+              <p className="pt-meta">这是保存时源统计，与当前读取分别呈现；不是跨源原子快照。</p>
+            </section>
           )}
-          {(["primary", "comparison"] as const).map((which) => (
-            <div key={which}>
-              <h4>
-                {which === "primary"
-                  ? "主要事件（最多 1 条）"
-                  : "对照事件（最多 1 条）"}
-              </h4>
-              {d[which] ? (
-                <>
-                  <p>
-                    保存的定位：{text(d[which]!.descriptor.sn)} ·{" "}
-                    {localTime(d[which]!.descriptor.timestamp)} ·{" "}
-                    {text(d[which]!.descriptor.devicename)}
-                  </p>
-                  <details>
-                    <summary>保存的事件定位字段</summary>
-                    <dl>
-                      {descriptorEntries(d[which]!.descriptor).map(
-                        ([key, value]) => (
-                          <div key={key}>
-                            <dt>
-                              {(
-                                {
-                                  workstagesid: "阶段",
-                                  softwareid: "工具",
-                                  version: "软件版本",
-                                  configlogsid: "配置",
-                                  cversion: "配置版本",
-                                  devicename: "上位机",
-                                  orderid: "工具配置审核单",
-                                  status: "结果",
-                                  errorcode: "错误码",
-                                  timestamp: "事件时间",
-                                } as Record<string, string>
-                              )[key] || key}
-                            </dt>
-                            <dd>
-                              {key === "timestamp"
-                                ? localTime(value)
-                                : text(value)}
-                            </dd>
-                          </div>
-                        ),
-                      )}
-                    </dl>
-                  </details>
-                  <p>
-                    {c.resolved?.[which]
-                      ? stateLabel[c.resolved[which]!.state]
-                      : "事件待核对；尚未恢复原参数"}
-                  </p>
-                  {c.resolved?.[which]?.candidates.map((candidate, i) => (
-                    <button
-                      type="button"
-                      key={`${candidate.snapshot_id}-${candidate.offset}`}
-                      onClick={() =>
-                        onCandidate({
-                          ...candidate,
-                          projectId: d.source_project_id,
-                          kind: d[which]!.source_kind,
-                          captured_at: c.resolved!.captured_at,
-                        })
-                      }
-                    >
-                      核对{which === "primary" ? "主要" : "对照"}候选 {i + 1}
-                    </button>
-                  ))}
-                  {which === "comparison" && (
-                    <button
-                      type="button"
-                      disabled={readOnly || !!c.handoff || !c.canStart}
-                      onClick={() => void c.removeComparison()}
-                    >
-                      移除对照
-                    </button>
-                  )}
-                </>
-              ) : (
-                <p>尚未选择</p>
-              )}
-            </div>
-          ))}
-          <p>
-            按精确事件时间及 SN
-            的有界候选检索；问题时段保持不变。原定位与当前候选分别显示，候选不自动成为已恢复参数。
-          </p>
-          {c.resolved && (
-            <p>本次复查读取 {localTime(c.resolved.captured_at)}</p>
-          )}
-          <button type="button" onClick={c.resolve}>
-            按原条件复查证据
-          </button>
-          <button
-            type="button"
-            disabled={!d.primary || !d.comparison}
-            onClick={onCompare}
-          >
-            比较已选记录
-          </button>
-          <h4>日志引用（{d.logs.length} / 5）· 关联待核对</h4>
-          {d.logs.map((log) => (
-            <p key={log.source_log_id}>
-              {log.source_log_id} · CSN {text(log.descriptor.csn)} ·{" "}
-              {log.match_basis === "project_time_and_explicit_csn"
-                ? "项目、时间与显式 CSN"
-                : "项目与时间"}{" "}
-              ·{" "}
-              {c.resolved?.logs.find(
-                (x) => x.source_log_id === log.source_log_id,
-              )?.state || "未核对"}
-              <button
-                type="button"
-                disabled={readOnly || !!c.handoff || !c.canStart || c.logBusy}
-                onClick={() => void c.removeLog(log.source_log_id)}
-              >
-                移除日志 {log.source_log_id}
-              </button>
+          <div className="pt-event-pair">
+            {(["primary", "comparison"] as const).map((which) => (
+              <section key={which} className="pt-event-role" data-role={which} aria-label={which === "primary" ? "主要事件" : "对照事件"}>
+                <h4>
+                  {which === "primary"
+                    ? "主要事件（最多 1 条）"
+                    : "对照事件（最多 1 条）"}
+                </h4>
+                {d[which] ? (
+                  <>
+                    <p className="pt-meta">保存时结果 <ResultBadge value={d[which]!.descriptor.status} /></p>
+                    <p>
+                      保存的定位：{text(d[which]!.descriptor.sn)} ·{" "}
+                      {localTime(d[which]!.descriptor.timestamp)} ·{" "}
+                      {text(d[which]!.descriptor.devicename)}
+                    </p>
+                    <details>
+                      <summary>保存的事件定位字段</summary>
+                      <dl>
+                        {descriptorEntries(d[which]!.descriptor).map(
+                          ([key, value]) => (
+                            <div key={key}>
+                              <dt>
+                                {(
+                                  {
+                                    workstagesid: "阶段",
+                                    softwareid: "工具",
+                                    version: "软件版本",
+                                    configlogsid: "配置",
+                                    cversion: "配置版本",
+                                    devicename: "上位机",
+                                    orderid: "工具配置审核单",
+                                    status: "结果",
+                                    errorcode: "错误码",
+                                    timestamp: "事件时间",
+                                  } as Record<string, string>
+                                )[key] || key}
+                              </dt>
+                              <dd>
+                                {key === "timestamp" ? localTime(value) : key === "status" ? <ResultBadge value={value} /> : text(value)}
+                              </dd>
+                            </div>
+                          ),
+                        )}
+                      </dl>
+                    </details>
+                    <p><Badge tone={c.resolved?.[which]?.state === "verified" ? "info" : "warning"}>
+                      {c.resolved?.[which] ? stateLabel[c.resolved[which]!.state] : "事件待核对；尚未恢复原参数"}
+                    </Badge></p>
+                    {c.resolved?.[which]?.candidates.map((candidate, i) => (
+                      <button
+                        type="button"
+                        key={`${candidate.snapshot_id}-${candidate.offset}`}
+                        onClick={() =>
+                          onCandidate({
+                            ...candidate,
+                            projectId: d.source_project_id,
+                            kind: d[which]!.source_kind,
+                            captured_at: c.resolved!.captured_at,
+                          })
+                        }
+                      >
+                        核对{which === "primary" ? "主要" : "对照"}候选 {i + 1}
+                      </button>
+                    ))}
+                    {which === "comparison" && (
+                      <button
+                        type="button"
+                        disabled={readOnly || !!c.handoff || !c.canStart}
+                        onClick={() => void c.removeComparison()}
+                      >
+                        移除对照
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <EmptyState title="尚未选择" description={which === "primary" ? "在测试详情中设为调查对象。" : "在测试详情中选作对照。"} />
+                )}
+              </section>
+            ))}
+          </div>
+          <section className="pt-detail-section" aria-label="证据复查与比较">
+            <h4>证据复查与比较</h4>
+            <p className="pt-meta">
+              按精确事件时间及 SN
+              的有界候选检索；问题时段保持不变。原定位与当前候选分别显示，候选不自动成为已恢复参数。
             </p>
-          ))}
+            {c.resolved && (
+              <p>本次复查读取 {localTime(c.resolved.captured_at)}</p>
+            )}
+            <button type="button" onClick={c.resolve}>
+              按原条件复查证据
+            </button>
+            <button
+              type="button"
+              disabled={!d.primary || !d.comparison}
+              onClick={onCompare}
+            >
+              比较已选记录
+            </button>
+          </section>
+          <section className="pt-detail-section pt-investigation-logs" aria-label="日志引用">
+            <header className="pt-detail-heading"><h4>日志引用（{d.logs.length} / 5）· 关联待核对</h4></header>
+            {!d.logs.length && <EmptyState title="尚未选择日志" description="可在测试详情查找候选日志；日志关联仍需核对。" />}
+            {d.logs.map((log) => (
+              <div className="pt-log-reference" key={log.source_log_id}>
+                {log.source_log_id} · CSN {text(log.descriptor.csn)} ·{" "}
+                {log.match_basis === "project_time_and_explicit_csn"
+                  ? "项目、时间与显式 CSN"
+                  : "项目与时间"}{" "}
+                ·{" "}
+                {c.resolved?.logs.find(
+                  (x) => x.source_log_id === log.source_log_id,
+                )?.state || "未核对"}
+                <button
+                  type="button"
+                  disabled={readOnly || !!c.handoff || !c.canStart || c.logBusy}
+                  onClick={() => void c.removeLog(log.source_log_id)}
+                >
+                  移除日志 {log.source_log_id}
+                </button>
+              </div>
+            ))}
+          </section>
         </>
       )}
-      <label>
-        观察事实和待确认事项
-        <textarea
-          aria-label="观察事实和待确认事项"
-          maxLength={4000}
-          disabled={readOnly || !!c.handoff || !c.canStart}
-          value={c.note}
-          onChange={(e) => c.setNote(e.target.value)}
-        />
-      </label>
+      <section className="pt-detail-section" aria-label="调查备注">
+        <h4>调查备注</h4>
+        <label>
+          观察事实和待确认事项
+          <textarea
+            aria-label="观察事实和待确认事项"
+            maxLength={4000}
+            disabled={readOnly || !!c.handoff || !c.canStart}
+            value={c.note}
+            onChange={(e) => c.setNote(e.target.value)}
+          />
+        </label>
+      </section>
       {c.conflict && (
         <aside role="alert">
           <h4>修订冲突</h4>
@@ -367,17 +380,18 @@ export function InvestigationPanel({
           </button>
         </aside>
       )}
-      <details>
-        <summary>继续我的其他草稿</summary>
+      <section className="pt-detail-section" aria-label="继续我的其他草稿">
+        <h4>继续我的其他草稿</h4>
         {!c.list.length && <p>当前项目暂无其他个人草稿</p>}
         {c.list.map((d) => (
           <button type="button" key={d.id} onClick={() => void c.restore(d.id)}>
             继续调查 {d.id} · {localTime(d.updated_at)}
           </button>
         ))}
-      </details>
-      <details open={!!c.handoff}>
-        <summary>恢复调查</summary>
+      </section>
+      <section className="pt-detail-section pt-handoff-recovery" aria-label="交接与恢复">
+        <h4>恢复调查</h4>
+        <p className="pt-meta">输入固定交接号或本站内部链接以读取交接时内容。</p>
         <label>
           交接号或内部恢复链接
           <input
@@ -412,7 +426,7 @@ export function InvestigationPanel({
           读取交接
         </button>
         {linkError && <p role="alert">{linkError}</p>}
-      </details>
+      </section>
     </section>
   );
 }
