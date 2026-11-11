@@ -356,6 +356,40 @@ it("opens an expedite through the component against FastAPI with project version
         e.dispatchEvent(new Event("input", { bubbles: true }));
       });
     };
+    const setChoice = async (name: string, value: string) => {
+      const e = host.querySelector(
+        `[aria-label="${name}"]`,
+      ) as HTMLSelectElement;
+      expect(e, name).toBeTruthy();
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          HTMLSelectElement.prototype,
+          "value",
+        )!.set!.call(e, value);
+        e.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    };
+    await click("结束催料");
+    await setChoice("结果", "false_alarm");
+    await click("更新催料进展");
+    await click("继续编辑");
+    expect(
+      (host.querySelector('[aria-label="结果"]') as HTMLSelectElement).value,
+    ).toBe("false_alarm");
+    await click("更新催料进展");
+    await click("放弃并离开");
+    await click("结束催料");
+    expect(
+      (host.querySelector('[aria-label="结果"]') as HTMLSelectElement).value,
+    ).toBe("fulfilled");
+    await changeField("催料原因", "完成确认");
+    await click("确认结束");
+    await wait(() => !host.querySelector('[aria-label="催料原因"]'));
+    const closed = (await s.api.materialProject(p.id))
+      .expedites[0] as unknown as { closure: { outcome: string } };
+    expect(closed.closure.outcome).toBe("fulfilled");
+    await click("steel");
+    await click("发起催料");
     await changeField("催料原因", "待放弃草稿");
     await click("steel");
     await click("放弃并离开");
@@ -411,19 +445,6 @@ it("opens an expedite through the component against FastAPI with project version
       (host.querySelector('[aria-label="拒收数量"]') as HTMLInputElement).value,
     ).toBe("");
     await click("完成任务");
-    const setChoice = async (name: string, value: string) => {
-      const e = host.querySelector(
-        `[aria-label="${name}"]`,
-      ) as HTMLSelectElement;
-      expect(e, name).toBeTruthy();
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(
-          HTMLSelectElement.prototype,
-          "value",
-        )!.set!.call(e, value);
-        e.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-    };
     await setChoice("结果", "discrepancy");
     await click("更新进展");
     await click("放弃并离开");

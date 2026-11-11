@@ -1,3 +1,4 @@
+import {initialMaterialViewContext, type MaterialViewContext} from './materialControl/types';
 import {MaterialTaskPanel} from './materialControl/MaterialTaskPanel';
 import { clearProductionResume } from './productionTools/investigations';
 import { ProductionToolsWorkspace, validProductionHandoff } from "./productionTools/ProductionToolsWorkspace";
@@ -44,8 +45,9 @@ export function WorkflowApp({
 }) {
   const b = options.bootstrap!;
   const productionHandoff = b.configuration_admin ? validProductionHandoff(new URLSearchParams(window.location.search).get("production_handoff")) : undefined;
-  const materialTaskReturn = useRef<{projectId:string;projectWorkspace:boolean}|null>(null);
   const handoffReturn = useRef<{projectId: string; projectWorkspace: boolean} | null>(null);
+  const [materialContexts, setMaterialContexts] = useState<Record<string,MaterialViewContext>>({});
+  useEffect(()=>{setMaterialContexts({});},[b.user.id]);
   const [handoffFilters, setHandoffFilters] = useState<Record<string, MaterialHandoffFilter>>({});
   const [supplyMode, setSupplyMode] = useState<{projectId: string; mode: 'material' | 'handoff' | 'legacy'} | null>(null);
   const [ledgers, setLedgers] = useState(initialLedgerContexts);
@@ -76,6 +78,7 @@ export function WorkflowApp({
       null,
     ),
     [busy, setBusy] = useState(false);
+  const materialTaskReturn = useRef<{projectId:string;projectWorkspace:boolean;workspace:typeof workspace;supplyMode:'material'|'handoff'|'legacy'|null}|null>(null);
   const alive = useRef(true),
     callbacks = useRef(options),
     accountLock = useRef(false),
@@ -108,6 +111,7 @@ export function WorkflowApp({
     setProjects([]);
     setTarget(null);
     setCreating(false);
+    setMaterialContexts({});
     setDirtyKeys({});
     setPending(null);
     setAccountAction(null);
@@ -159,7 +163,7 @@ export function WorkflowApp({
           if (!alive.current) return;
           api.dispose();
           alive.current = false;
-          setDenied(true); setProject(null); setProjects([]); setDashboard(null); setDetail(null); setTarget(null); setCurrentTask(null); projectVersions.current.clear(); scroll.current=[];
+          setDenied(true); setMaterialContexts({}); setProject(null); setProjects([]); setDashboard(null); setDetail(null); setTarget(null); setCurrentTask(null); projectVersions.current.clear(); scroll.current=[];
         }
         else callbacks.current.onNavigatePlatform?.();
       } catch {
@@ -263,7 +267,7 @@ export function WorkflowApp({
         if (p.version < (projectVersions.current.get(p.id) || 0))
           throw new Error("项目版本已更新，请重试打开记录。");
         projectVersions.current.set(p.id, p.version);
-        if (t.kind === "material_task") materialTaskReturn.current={projectId:t.projectId,projectWorkspace:!!project&&!target};
+        if (t.kind === "material_task") materialTaskReturn.current={projectId:t.projectId,projectWorkspace:!!project&&!target,workspace,supplyMode:supplyMode?.projectId===t.projectId?supplyMode.mode:null};
         if (fromHandoffWorkspace) {
           captureHandoffWorkspaceOrigin(t.projectId);
         } else if (t.kind === 'material_handoff' && (!target || !handoffReturn.current)) {
@@ -575,8 +579,8 @@ export function WorkflowApp({
                           setCurrentTask(null);
                           setResolve(false);
                           if (target.kind === 'material_task' && materialTaskReturn.current?.projectId === target.projectId && materialTaskReturn.current.projectWorkspace) {
-                            setWorkspace('supply');
-                            setSupplyMode({projectId: target.projectId, mode: 'material'});
+                            setWorkspace(materialTaskReturn.current.workspace);
+                            if (materialTaskReturn.current.workspace === 'supply') setSupplyMode({projectId: target.projectId, mode: materialTaskReturn.current.supplyMode || (project.mode === 'oem' ? 'material' : 'legacy')});
                           } else if (handoffReturn.current?.projectId === target.projectId && handoffReturn.current.projectWorkspace) {
                             setWorkspace('supply');
                             setChosenAction(null);
@@ -642,6 +646,8 @@ export function WorkflowApp({
                     currentUserId={b.user.id}
                     handoffFilter={handoffFilters[props.project.id] ?? 'pending'}
                     onHandoffFilter={filter => setHandoffFilters(old => ({...old, [props.project.id]: filter}))}
+                    materialContext={materialContexts[String(b.user.id)+":"+props.project.id] || initialMaterialViewContext()}
+                    onMaterialContext={change => setMaterialContexts(old => {const key=String(b.user.id)+":"+props.project.id;return {...old,[key]:{...(old[key] || initialMaterialViewContext()),...change}};})}
                     supplyMode={supplyMode?.projectId === props.project.id ? supplyMode.mode : undefined}
                     onSupplyMode={mode => setSupplyMode({projectId: props.project.id, mode})}
                     onHandoffAction={() => captureHandoffWorkspaceOrigin(props.project.id)}

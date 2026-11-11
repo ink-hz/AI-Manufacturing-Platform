@@ -4,14 +4,30 @@ import { MaterialTaskOpen } from "./MaterialTaskOpen";
 import { ExpeditePanel } from "./ExpeditePanel";
 import { useEffect, useRef, useState } from "react";
 import type { OEMWorkspaceProps } from "../OEMWorkspace";
-import type { MaterialProject } from "./types";
-export function MaterialControlWorkspace(p: OEMWorkspaceProps) {
+import {
+  initialMaterialViewContext,
+  type MaterialProject,
+  type MaterialViewContext,
+} from "./types";
+export function MaterialControlWorkspace(
+  p: OEMWorkspaceProps & {
+    materialContext?: MaterialViewContext;
+    onMaterialContext?(change: Partial<MaterialViewContext>): void;
+  },
+) {
+  const [localContext, setLocalContext] = useState(initialMaterialViewContext);
+  const context = p.materialContext || localContext;
+  const change = (patch: Partial<MaterialViewContext>) =>
+    p.onMaterialContext
+      ? p.onMaterialContext(patch)
+      : setLocalContext((old) => ({ ...old, ...patch }));
+  const { offset, selected, filter, workOrder } = context;
+  const setOffset = (value: number) => change({ offset: value });
+  const setSelected = (value: string | null) => change({ selected: value });
+  const setFilter = (value: string) => change({ filter: value });
+  const setWorkOrder = (value: string) => change({ workOrder: value });
   const [page, setPage] = useState<MaterialProject | null>(null),
     [error, setError] = useState(""),
-    [offset, setOffset] = useState(0),
-    [selected, setSelected] = useState<string | null>(null),
-    [filter, setFilter] = useState(""),
-    [workOrder, setWorkOrder] = useState(""),
     [active, setActive] = useState<"task" | "expedite" | null>(null),
     [loading, setLoading] = useState(false);
   const draft = useRef<Record<string, boolean>>({});
@@ -229,7 +245,11 @@ export function MaterialControlWorkspace(p: OEMWorkspaceProps) {
           )}
         </>
       )}
-      <MaterialTaskList p={p} />
+      <MaterialTaskList
+        p={p}
+        offset={context.taskOffset}
+        onOffset={(taskOffset) => change({ taskOffset })}
+      />
     </section>
   );
 }

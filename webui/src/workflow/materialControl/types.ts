@@ -87,3 +87,18 @@ export interface MaterialOverview {
   offset: number;
   read_at: string;
 }
+
+export interface MaterialViewContext {
+  offset: number;
+  selected: string | null;
+  filter: string;
+  workOrder: string;
+  taskOffset: number;
+}
+export const initialMaterialViewContext = (): MaterialViewContext => ({
+  offset: 0,
+  selected: null,
+  filter: "",
+  workOrder: "",
+  taskOffset: 0,
+});

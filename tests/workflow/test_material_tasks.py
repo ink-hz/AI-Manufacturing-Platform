@@ -1,5 +1,6 @@
 """Material coordination never creates inventory or inspection results."""
 from uuid import uuid4
+import pytest
 
 from .conftest import BASE, USERS
 from .test_expedites import setup, accounting
@@ -43,7 +44,8 @@ def test_trace_found_quantity_is_not_signed_receipt(workflow):
               outcome="fulfilled", evidence="发现物料", expected_status=409)
 
 
-def test_trace_direct_close_accepts_compatible_signed_supplement(workflow):
+@pytest.mark.parametrize("outcome", ["fulfilled", "discrepancy", "false_alarm", "superseded"])
+def test_trace_direct_close_accepts_compatible_signed_supplement(workflow,outcome):
     w = workflow
     pid, rid, facts = setup(w)
     def handoff(q, actual):
@@ -58,10 +60,11 @@ def test_trace_direct_close_accepts_compatible_signed_supplement(workflow):
     task=w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='trace',
                    handoff_id=original,assignee_id=str(USERS['warehouse']),note='跟进短少')['object_id']
     w.command(pid,'material_task.accept',actor_name='warehouse',task_id=task)
-    w.command(pid,'material_task.close',actor_name='warehouse',task_id=task,outcome='fulfilled',
+    w.command(pid,'material_task.close',actor_name='warehouse',task_id=task,outcome=outcome,
               evidence='补交已签收',handoff_ids=[supplement])
     value=w.client('warehouse').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']
     assert value['evidence_handoff_ids']==[supplement]
+    assert value['history'][-1]['outcome']==outcome
     assert accounting(w)==before
 
 
@@ -168,9 +171,9 @@ def test_trace_rejects_unrelated_and_previously_allocated_evidence(workflow):
               handoff_ids=[supplement])
     w.command(pid,'material_task.close',actor_name='warehouse',task_id=second,outcome='fulfilled',evidence='重复',
               handoff_ids=[supplement],expected_status=422)
-    w.command(pid,'material_task.close',actor_name='warehouse',task_id=second,outcome='discrepancy',evidence='短少待处理')
+    w.command(pid,'material_task.close',actor_name='warehouse',task_id=second,outcome='discrepancy',evidence='短少待处理',expected_status=409)
     v=w.client('warehouse').get(f'{BASE}/projects/{pid}/objects/material_task/{second}').json()['value']
-    assert v['history'][-1]['outcome']=='discrepancy'
+    assert v['state']=='processing' and v['history'][-1]['action']=='accept'
 
 
 def test_verify_is_not_stale_authority_to_close(workflow):
@@ -278,8 +281,6 @@ def test_task_page_summary_does_not_load_history_or_evidence(workflow, monkeypat
     assert not any('SELECT handoff_id FROM material_task_evidence' in q for q in statements)
     assert any('COUNT(*) FROM material_task_history' in q for q in statements)
 
-
-import pytest
 
 @pytest.mark.parametrize('mismatch', ['lot', 'work_order', 'unit', 'project'])
 def test_trace_supplement_rejects_incompatible_signed_handoff(workflow, mismatch):
@@ -410,3 +411,52 @@ def test_iqc_receipt_rejects_incompatible_actual_lot_or_receipt_unit(workflow):
                   receipt_id=receipt, assignee_id=str(USERS['quality']), note='Wrong batch', expected_status=422)
         with sqlite3.connect(w.paths.domain) as db:
             db.execute(f'UPDATE {table} SET {field}=? WHERE id=?', (old, ident))
+
+@pytest.mark.parametrize('outcome', ['discrepancy', 'false_alarm', 'superseded'])
+def test_trace_close_requires_signed_completion_for_every_outcome(workflow, outcome):
+    w=workflow
+    pid,rid,facts=setup(w)
+    handoff=w.command(pid,'material_handoff.record',actor_name='warehouse',material_lot_id=facts['lot_id'],
+        work_order_id=facts['work_order_id'],quantity='20',unit='kg',from_location='仓库',to_location='产线',
+        receiver_id=str(USERS['production']))['object_id']
+    w.command(pid,'material_handoff.receive',actor_name='production',handoff_id=handoff,received_quantity='18',
+        received_location='产线',note='短收')
+    w.command(pid,'material_handoff.resolve',actor_name='warehouse',handoff_id=handoff,resolution='短少待处理')
+    task=w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='trace',handoff_id=handoff,
+        assignee_id=str(USERS['warehouse']),note='追踪')['object_id']
+    w.command(pid,'material_task.accept',actor_name='warehouse',task_id=task)
+    w.command(pid,'material_task.progress',actor_name='warehouse',task_id=task,note='找到两件',found_quantity='2',found_location='仓库')
+    partial=w.command(pid,'material_handoff.record',actor_name='warehouse',material_lot_id=facts['lot_id'],
+        work_order_id=facts['work_order_id'],quantity='1',unit='kg',from_location='仓库',to_location='产线',
+        receiver_id=str(USERS['production']))['object_id']
+    w.command(pid,'material_handoff.receive',actor_name='production',handoff_id=partial,received_quantity='1',
+        received_location='产线',note='部分签收')
+    detail_url=f'{BASE}/projects/{pid}/objects/material_task/{task}'
+    project_url=f'{BASE}/projects/{pid}/material-control'
+    before=w.client('warehouse').get(detail_url).json()['value']
+    counts=w.client('warehouse').get(project_url).json()['material_task_counts']
+    balance=accounting(w)
+    w.command(pid,'material_task.close',actor_name='warehouse',task_id=task,outcome=outcome,evidence='文本说明',handoff_ids=[partial],expected_status=409)
+    assert w.client('warehouse').get(detail_url).json()['value']==before
+    assert w.client('warehouse').get(project_url).json()['material_task_counts']==counts
+    assert any(item['target']['id']==task for item in w.client('warehouse').get(f'{BASE}/tasks',params={'project_id':pid}).json()['items'])
+    assert accounting(w)==balance
+
+@pytest.mark.parametrize('outcome', ['discrepancy', 'false_alarm', 'superseded'])
+@pytest.mark.parametrize('receipt_kind', ['unsigned', 'wrong_location'])
+def test_trace_close_rejects_unsigned_or_wrong_destination(workflow, outcome, receipt_kind):
+    w=workflow
+    pid,rid,facts=setup(w)
+    handoff=w.command(pid,'material_handoff.record',actor_name='warehouse',material_lot_id=facts['lot_id'],
+        work_order_id=facts['work_order_id'],quantity='20',unit='kg',from_location='仓库',to_location='产线',
+        receiver_id=str(USERS['production']))['object_id']
+    if receipt_kind=='wrong_location':
+        w.command(pid,'material_handoff.receive',actor_name='production',handoff_id=handoff,
+            received_quantity='20',received_location='暂存',note='位置不符')
+        w.command(pid,'material_handoff.resolve',actor_name='warehouse',handoff_id=handoff,resolution='待核对')
+    task=w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='trace',handoff_id=handoff,
+        assignee_id=str(USERS['warehouse']),note='核对交料')['object_id']
+    w.command(pid,'material_task.accept',actor_name='warehouse',task_id=task)
+    before=w.client('warehouse').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']
+    w.command(pid,'material_task.close',actor_name='warehouse',task_id=task,outcome=outcome,evidence='待处理',expected_status=409)
+    assert w.client('warehouse').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']==before

@@ -40,6 +40,7 @@ export function ExpeditePanel({
       setId(i);
       setReason("");
       setImpact("");
+      setOutcome("fulfilled");
       setError("");
     });
   async function submit() {

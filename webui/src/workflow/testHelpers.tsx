@@ -21,6 +21,8 @@ export async function workflowView(config: {
     readDashboard?: () => Promise<Dashboard>;
     readProjects?: () => Promise<ProjectDetail[]>;
     readProject?: () => Promise<ProjectDetail>;
+    readMaterialProject?: (offset:number,projectId:string) => Promise<import("./materialControl/types").MaterialProject>;
+    readMaterialTasks?: (offset:number) => Promise<ObjectPage>;
 } = {}) {
     const host = document.createElement('div');
     document.body.append(host);
@@ -45,7 +47,9 @@ export async function workflowView(config: {
         } else if (url.includes('/workflow/tasks?') && config.readTasks) {
             const u = new URL(url, 'http://localhost');
             value = await config.readTasks(Number(u.searchParams.get('limit')), Number(u.searchParams.get('offset')), u.searchParams.get('project_id') || undefined);
-        } else if (url.endsWith('/material-control?limit=50&offset=0')) value = {requirements:[],work_orders:[],expedites:[],receipts:[],handoffs:[],coverage_issues:[],source_modes:[],total:0};
+        } else if (url.includes('/material-control?') && config.readMaterialProject) value=await config.readMaterialProject(Number(new URL(url,'http://localhost').searchParams.get('offset')),new URL(url,'http://localhost').pathname.split('/').at(-2)!);
+        else if (url.includes('/material-tasks?') && config.readMaterialTasks) value=await config.readMaterialTasks(Number(new URL(url,'http://localhost').searchParams.get('offset')));
+        else if (url.endsWith('/material-control?limit=50&offset=0')) value = {requirements:[],work_orders:[],expedites:[],receipts:[],handoffs:[],coverage_issues:[],source_modes:[],total:0};
         else if (url.includes('/assistance?')) value = {items:[],unknowns:[],state:'no_evidence',truncated:false};
         else if (url.endsWith('/dashboard'))
             value = config.readDashboard ? await config.readDashboard() : { cards: [order], counts: { order_line: 1 }, project_ids: [project.id], project_count: 1 };

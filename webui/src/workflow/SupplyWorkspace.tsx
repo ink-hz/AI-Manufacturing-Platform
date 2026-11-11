@@ -1,3 +1,4 @@
+import type {MaterialViewContext} from './materialControl/types';
 import { MaterialControlWorkspace } from './materialControl/MaterialControlWorkspace';
 import {SystemStepPanel} from './integrations/SystemStepPanel';
 import { MaterialHandoffWorkspace } from "./MaterialHandoffWorkspace";
@@ -20,6 +21,8 @@ const actions: Record<string,string>={
 };
 export function SupplyWorkspace(p: OEMWorkspaceProps & {
   onReload?(): void;
+  materialContext?: MaterialViewContext;
+  onMaterialContext?(change: Partial<MaterialViewContext>): void;
   currentUserId?: string;
   handoffFilter?: MaterialHandoffFilter;
   onHandoffFilter?(filter: MaterialHandoffFilter): void;

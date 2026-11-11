@@ -515,6 +515,9 @@ export function MaterialTaskPanel(p: Props) {
               {form === "close" && detail.value.task_kind === "trace" && (
                 <fieldset>
                   <legend>补充已签收交料</legend>
+                  <p>
+                    短少或未签收时请更新进展并继续查料；实际签收完整后才能完成任务。
+                  </p>
                   {candidates.map((h) => (
                     <label key={h.id}>
                       <input

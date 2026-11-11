@@ -538,7 +538,7 @@ it("selects signed supplemental handoffs for trace closure", async () => {
   };
   await click("完成任务");
   expect(host.textContent).toContain("补充交料");
-  expect(host.textContent).not.toContain("未签收");
+  expect([...host.querySelectorAll("label")].some(label=>label.textContent?.includes("未签收") && label.querySelector("input[type=checkbox]"))).toBe(false);
   const check = host.querySelector("input[type=checkbox]") as HTMLInputElement;
   await act(async () => check.click());
   const e = host.querySelector('[aria-label="完成说明"]') as HTMLInputElement;

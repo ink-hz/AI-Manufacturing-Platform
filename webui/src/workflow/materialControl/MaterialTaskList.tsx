@@ -2,9 +2,17 @@ import { useEffect, useState } from "react";
 import type { OEMWorkspaceProps } from "../OEMWorkspace";
 import type { ObjectPage } from "../types";
 
-export function MaterialTaskList({ p }: { p: OEMWorkspaceProps }) {
+export function MaterialTaskList({
+  p,
+  offset,
+  onOffset,
+}: {
+  p: OEMWorkspaceProps;
+  offset: number;
+  onOffset(value: number): void;
+}) {
+  const setOffset = onOffset;
   const [page, setPage] = useState<ObjectPage | null>(null),
-    [offset, setOffset] = useState(0),
     [error, setError] = useState("");
   const [names, setNames] = useState<Record<string, string>>({});
   useEffect(() => {
