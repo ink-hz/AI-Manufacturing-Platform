@@ -67,6 +67,54 @@ def test_linked_expedite_and_handoff_preserve_details(workflow):
     assert response['requirements'][0]['expedite_ids'] == [expedite]
     assert response['requirements'][0]['handoff_ids'] == [handoff]
     assert response['expedites'][0]['source']['mode'] == 'manual'
+    assert response['expedites'][0]['progress_total'] == 0
+    assert response['expedites'][0]['progress_truncated'] is False
+    assert response['expedites'][0]['milestones'] == workflow.object(p['id'], 'material_expedite', expedite)['milestones']
     assert response['handoffs'][0]['to_location'] == 'Line'
     overview = workflow.client().get(f'{BASE}/material-control/overview').json()['items'][0]
     assert (overview['open_expedite_count'], overview['unreceived_handoff_count']) == (1, 1)
+
+
+def test_expedite_progress_is_a_bounded_preview(workflow):
+    import sqlite3
+    p, req, _ = workflow.material_requirement(mode='oem')
+    case = workflow.command(p['id'], 'expedite.open', actor_name='supply', requirement_id=req['id'], reason='late', impact='delay')['object_id']
+    workflow.command(p['id'], 'expedite.progress', actor_name='supply', expedite_id=case, note='first')
+    with sqlite3.connect(workflow.paths.domain) as db:
+        payload = db.execute('SELECT payload_json FROM expedite_progress WHERE expedite_id=?', (case,)).fetchone()[0]
+        db.executemany('INSERT INTO expedite_progress(project_id,expedite_id,payload_json) VALUES (?,?,?)', [(p['id'], case, payload)] * 25)
+    page = workflow.client().get(f"{BASE}/projects/{p['id']}/material-control").json()
+    item = page['expedites'][0]
+    assert len(item['progress']) == 20
+    assert item['progress_total'] == 26 and item['progress_truncated'] is True
+    assert item['source']['mode'] == 'manual' and item['milestones']['receipt_at']
+    assert any('progress' in issue for issue in page['coverage_issues'])
+
+
+def test_requirement_paging_and_filter_scope(workflow):
+    import sqlite3
+    first, req, related = workflow.material_requirement()
+    other, other_req, other_related = workflow.material_requirement()
+    # Two extra persisted requirements, one on a second work order in the same project.
+    extra_req, third_req, second_wo = str(uuid4()), str(uuid4()), str(uuid4())
+    with sqlite3.connect(workflow.paths.domain) as db:
+        db.row_factory = sqlite3.Row
+        def clone(table, ident, **updates):
+            row = dict(db.execute(f'SELECT * FROM {table} WHERE id=?', (ident,)).fetchone())
+            row.update(updates)
+            columns = list(row)
+            db.execute(f"INSERT INTO {table} ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})", [row[c] for c in columns])
+        clone('work_orders', related['work_order_id'], id=second_wo, source_external_id=str(uuid4()))
+        clone('requirements', req['id'], id=extra_req, lineage_id=str(uuid4()))
+        clone('requirements', req['id'], id=third_req, lineage_id=str(uuid4()), work_order_id=second_wo)
+    path = f"{BASE}/projects/{first['id']}/material-control"
+    pages = [workflow.client().get(path, params={'limit': 1, 'offset': i}).json() for i in range(3)]
+    assert all(p['total'] == 3 for p in pages)
+    assert len({p['requirements'][0]['id'] for p in pages}) == 3
+    assert [p['requirements'][0]['id'] for p in pages] == sorted([req['id'], extra_req, third_req])
+    filtered = workflow.client().get(path, params={'work_order_id': second_wo}).json()
+    assert filtered['total'] == 1 and filtered['requirements'][0]['id'] == third_req
+    assert workflow.client().get(path, params={'work_order_id': second_wo, 'requirement_id': req['id']}).status_code == 404
+    assert workflow.client().get(path, params={'work_order_id': other_related['work_order_id']}).status_code == 404
+    assert workflow.client().get(path, params={'requirement_id': other_req['id']}).status_code == 404
+    assert workflow.client('outsider').get(path, params={'requirement_id': other_req['id']}).status_code == 404

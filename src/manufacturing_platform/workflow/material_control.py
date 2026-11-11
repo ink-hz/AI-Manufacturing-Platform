@@ -56,6 +56,30 @@ def _detail(service, tx, pid, kind, ident):
     return {'id': str(ident), **value}
 
 
+def _expedite_preview(tx, pid, ident):
+    """Read a bounded progress preview without invoking the unbounded detail reader."""
+    from .expedite_models import MaterialExpedite
+
+    row = tx.execute("SELECT * FROM material_expedites WHERE project_id=? AND id=?", (pid, ident)).fetchone()
+    payload = json.loads(row["payload_json"])
+    scope = (pid, payload["requirement_id"])
+    queries = {
+        "receipt_at": ("SELECT r.created_at FROM supply_receipts r JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id WHERE r.project_id=? AND c.requirement_id=? ORDER BY r.created_at,r.id LIMIT 1", scope),
+        "inspection_at": ("SELECT i.created_at FROM iqc_results i JOIN supply_receipts r ON r.id=i.receipt_id AND r.project_id=i.project_id JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id WHERE i.project_id=? AND c.requirement_id=? ORDER BY i.created_at,i.id LIMIT 1", scope),
+        "arrival_at": ("SELECT json_extract(a.payload_json,'$.source.occurred_at') occurred FROM arrivals a JOIN arrival_matches m ON m.arrival_id=a.id AND m.project_id=a.project_id JOIN supply_receipts r ON r.id=m.receipt_id AND r.project_id=m.project_id JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id WHERE m.project_id=? AND c.requirement_id=? AND NOT EXISTS (SELECT 1 FROM arrival_matches newer WHERE newer.project_id=m.project_id AND newer.arrival_id=m.arrival_id AND newer.seq>m.seq) ORDER BY julianday(occurred),a.id LIMIT 1", scope),
+        "handoff_at": ("SELECT json_extract(h.receipt_json,'$.occurred_at') occurred FROM material_handoffs h JOIN supply_receipts r ON r.material_lot_id=h.material_lot_id AND r.project_id=h.project_id JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id WHERE h.project_id=? AND c.requirement_id=? AND h.work_order_id=? AND h.state IN ('received','resolved') AND CAST(json_extract(h.receipt_json,'$.received_quantity') AS NUMERIC)>0 ORDER BY julianday(occurred),h.seq LIMIT 1", (*scope, payload["work_order_id"])),
+    }
+    milestones = {"opened_at": payload["recorded_at"]}
+    for name, (sql, args) in queries.items():
+        fact = tx.execute(sql, args).fetchone()
+        milestones[name] = fact[0] if fact else None
+    progress_total = tx.execute("SELECT COUNT(*) FROM expedite_progress WHERE project_id=? AND expedite_id=?", (pid, ident)).fetchone()[0]
+    progress = [json.loads(r[0]) for r in tx.execute("SELECT payload_json FROM expedite_progress WHERE project_id=? AND expedite_id=? ORDER BY seq LIMIT 20", (pid, ident))]
+    value = MaterialExpedite(**payload, state=row["state"], milestones=milestones, progress=progress,
+                             closure=json.loads(row["closure_json"]) if row["closure_json"] else None)
+    return {**value.model_dump(mode="json"), "progress_total": progress_total, "progress_truncated": progress_total > len(progress)}
+
+
 def project_view(service, actor, project_id, limit, offset, work_order_id=None, requirement_id=None):
     service._pagination(limit, offset)
     pid = str(project_id)
@@ -83,7 +107,10 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
         def add(target, kind, ident, extra=None):
             if ident in seen[target]: return
             seen[target].add(ident)
-            item = _detail(service, tx, project_id, kind, ident)
+            item = (_expedite_preview(tx, pid, ident) if kind == 'material_expedite'
+                    else _detail(service, tx, project_id, kind, ident))
+            if kind == 'material_expedite' and item['progress_truncated']:
+                issues.append(f'Expedite {ident} progress preview is truncated; use object detail for full progress.')
             if extra: item.update(extra)
             locals_map[target].append(item)
         locals_map = dict(work_orders=work_orders, expedites=expedites, handoffs=handoffs, receipts=receipts, issue_marks=issue_marks)
