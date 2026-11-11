@@ -72,7 +72,13 @@ def open_task(tx, c, cmd):
         if not cmd.receipt_id or cmd.handoff_id: fail('IQC task requires one receipt',422)
         receipt = own(tx,'supply_receipts',c.project_id,cmd.receipt_id)
         commitment = own(tx,'supply_commitments',c.project_id,receipt['commitment_id'])
-        if commitment['requirement_id'] != str(cmd.requirement_id): fail('Receipt does not belong to requirement',422)
+        prior = own(tx,'requirements',c.project_id,commitment['requirement_id'])
+        lot = own(tx,'material_lots',c.project_id,receipt['material_lot_id'])
+        fields = ('lineage_id', 'work_order_id', 'material_id', 'owner_id', 'unit')
+        if (any(prior[field] != req[field] for field in fields)
+                or any(lot[field] != req[field] for field in ('material_id', 'owner_id', 'unit'))
+                or receipt['unit'] != req['unit']):
+            fail('Receipt does not belong to requirement',422)
         scope, ident_field = 'receipt_id', str(cmd.receipt_id)
     else:
         if not cmd.handoff_id or cmd.receipt_id: fail('Trace task requires one handoff',422)

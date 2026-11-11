@@ -332,3 +332,72 @@ def test_legacy_date_only_progress_history_remains_readable(workflow):
     response=w.client('quality').get(f'{BASE}/projects/{pid}/objects/material_task/{task}')
     assert response.status_code==200
     assert response.json()['value']['history'][-1]['expected_completion']=='2026-12-01'
+
+
+def test_iqc_task_accepts_replanned_requirement_and_prior_lineage_receipt(workflow):
+    from datetime import UTC, datetime, timedelta
+
+    w = workflow
+    pid, old_id, facts = setup(w, qualified='0')
+    receipt = w.receive(pid, facts['id'], quantity='20', lot_id=facts['lot_id'])['object_id']
+    old = w.object(pid, 'requirement', old_id)
+    plan = w.object(pid, 'plan', old['plan_id'])
+    now = datetime.now(UTC)
+    source = w.source(plan['source']['external_id'], object_type='plan', version=2)
+    source.update(occurred_at=(now-timedelta(minutes=2)).isoformat(), collected_at=(now-timedelta(minutes=1)).isoformat(), cutoff=(now-timedelta(minutes=2)).isoformat())
+    revised = w.command(pid, 'plan.receive', actor_name='planner', source=source,
+        input_revision_ids=[facts['revision_id']], input_order_versions=[{'order_line_id': facts['order_id'], 'version': 1}],
+        requirements=[{'work_order_id': facts['work_order_id'], 'execution_scope': 'trial', 'material_id': 'steel-1', 'owner_id': 'Customer 1', 'quantity': '50', 'unit': 'kg'}])
+    new_id = w.object(pid, 'plan', revised['object_id'])['requirement_ids'][0]
+    assert w.object(pid, 'requirement', new_id)['lineage_id'] == old['lineage_id']
+    page = w.client('supply').get(f'{BASE}/projects/{pid}/material-control').json()
+    assert page['requirements'][0]['id'] == new_id and receipt in page['requirements'][0]['receipt_ids']
+    before = accounting(w)
+    task = w.command(pid, 'material_task.open', actor_name='supply', requirement_id=new_id,
+        task_kind='iqc', receipt_id=receipt, assignee_id=str(USERS['quality']), note='Inspect prior receipt')['object_id']
+    value = w.client('quality').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']
+    assert value['requirement_id'] == new_id and value['receipt_id'] == receipt
+    assert accounting(w) == before
+    w.command(pid, 'material_task.accept', actor_name='quality', task_id=task)
+    w.inspect(pid, receipt, accepted='20', rejected='0')
+    w.command(pid, 'material_task.close', actor_name='quality', task_id=task, outcome='fulfilled', evidence='Inspected')
+
+
+def test_iqc_receipt_requires_matching_lineage_and_scope(workflow):
+    import sqlite3
+
+    w = workflow
+    pid, rid, facts = setup(w, qualified='0')
+    receipt = w.receive(pid, facts['id'], quantity='2', lot_id=facts['lot_id'])['object_id']
+    with sqlite3.connect(w.paths.domain) as db:
+        db.row_factory = sqlite3.Row
+        original = dict(db.execute('SELECT * FROM requirements WHERE id=?', (rid,)).fetchone())
+        variants = []
+        for field, value in [('lineage_id', str(uuid4())), ('work_order_id', str(uuid4())), ('material_id', 'other'), ('owner_id', 'other'), ('unit', 'other')]:
+            row = {**original, 'id': str(uuid4()), field: value}
+            columns = list(row)
+            db.execute(f"INSERT INTO requirements ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})", [row[c] for c in columns])
+            variants.append(row['id'])
+    for other_id in variants:
+        w.command(pid, 'material_task.open', actor_name='supply', requirement_id=other_id, task_kind='iqc',
+                  receipt_id=receipt, assignee_id=str(USERS['quality']), note='Wrong scope', expected_status=422)
+
+
+def test_iqc_receipt_rejects_incompatible_actual_lot_or_receipt_unit(workflow):
+    import sqlite3
+
+    w = workflow
+    pid, rid, facts = setup(w, qualified='0')
+    receipt = w.receive(pid, facts['id'], quantity='2', lot_id=facts['lot_id'])['object_id']
+    # Simulate inconsistent persisted facts; normal receipt commands enforce these fields.
+    for table, ident, field in [('material_lots', facts['lot_id'], 'material_id'),
+                                 ('material_lots', facts['lot_id'], 'owner_id'),
+                                 ('material_lots', facts['lot_id'], 'unit'),
+                                 ('supply_receipts', receipt, 'unit')]:
+        with sqlite3.connect(w.paths.domain) as db:
+            old = db.execute(f'SELECT {field} FROM {table} WHERE id=?', (ident,)).fetchone()[0]
+            db.execute(f'UPDATE {table} SET {field}=? WHERE id=?', ('other', ident))
+        w.command(pid, 'material_task.open', actor_name='supply', requirement_id=rid, task_kind='iqc',
+                  receipt_id=receipt, assignee_id=str(USERS['quality']), note='Wrong batch', expected_status=422)
+        with sqlite3.connect(w.paths.domain) as db:
+            db.execute(f'UPDATE {table} SET {field}=? WHERE id=?', (old, ident))
