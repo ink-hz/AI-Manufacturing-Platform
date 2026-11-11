@@ -41,6 +41,7 @@ WorkflowAction = Literal[
     "mes_order.refresh",
     "authority.register",
     "authority.verify",
+    "material.need_time",
     "material_handoff.record",
     "material_handoff.receive",
     "material_handoff.confirm_use",

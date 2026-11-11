@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from .commands import WorkflowCommand
+from .material_need_time import MaterialNeedTimeEvent
 from .contracts import (
     DomainValue,
     MaterialBalance,
@@ -114,6 +115,7 @@ class RequirementValue(DomainValue):
     unit: str
     balance: MaterialBalance
     unqualified_quantity: NonnegativeQuantity
+    need_time_events: list["MaterialNeedTimeEvent"] = Field(default_factory=list)
 
 
 class PromiseRevision(StrictModel):

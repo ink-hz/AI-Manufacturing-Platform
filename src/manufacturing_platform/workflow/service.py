@@ -21,6 +21,7 @@ from . import (  # noqa: F401 - trusted domain registration
     laboratory,
     material_handoff_reader,
     material_handoffs,
+    material_need_time,
     material_tasks,
     native_material_service,
     material_task_reader,
@@ -1096,6 +1097,14 @@ class WorkflowService:
             introduction.authorize(actor, command)
             delivery.authorize(tx, actor, project_id, command)
             material_handoffs.authorize(tx, actor, project_id, command)
+            if command.action == "material.need_time" and not self.resolve_subject(actor.user_id):
+                raise DomainError("FORBIDDEN", 403, "Actor is inactive")
+            if (
+                command.action == "material_handoff.confirm_use"
+                or command.action == "material_handoff.receive"
+                and getattr(command, "receipt_use", None) == "line_side"
+            ) and not self.resolve_subject(actor.user_id):
+                raise DomainError("FORBIDDEN", 403, "Receiver is inactive")
             material_tasks.authorize(tx, actor, project_id, command)
             if command.action in ("material_task.open", "material_task.reassign"):
                 kind = command.task_kind if command.action == "material_task.open" else tx.execute("SELECT task_kind FROM material_tasks WHERE project_id=? AND id=?", (str(project_id), str(command.task_id))).fetchone()[0]

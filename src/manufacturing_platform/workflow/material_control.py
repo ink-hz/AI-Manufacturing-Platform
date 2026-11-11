@@ -152,6 +152,12 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
         total = tx.execute(f'SELECT COUNT(*) FROM requirements WHERE {where}', args).fetchone()[0]
         rows = tx.execute(f'SELECT * FROM requirements WHERE {where} ORDER BY created_at,id LIMIT ? OFFSET ?', (*args, limit, offset)).fetchall()
         now = business_time(tx)
+        need_times = {}
+        if rows:
+            ids = [r['id'] for r in rows]
+            slots = ','.join('?' for _ in ids)
+            need_times = {r['requirement_id']: r for r in tx.execute(
+                f"SELECT e.requirement_id,e.need_at,counts.n FROM material_need_time_events e JOIN (SELECT requirement_id,MAX(seq) latest,COUNT(*) n FROM material_need_time_events WHERE project_id=? AND requirement_id IN ({slots}) GROUP BY requirement_id) counts ON counts.latest=e.seq", (pid, *ids))}
         requirements, expedites, handoffs, receipts, issue_marks, work_orders = [], [], [], [], [], []
         seen = {name: set() for name in ('work_orders', 'expedites', 'handoffs', 'receipts', 'issue_marks')}
         issues = [ISSUE, "Work order readiness and execution history, and receipt correction and confirmation history, are available in object detail."]
@@ -183,9 +189,11 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
                 add('receipts', 'receipt', x['id'])
             for x in marks[:200]: add('issue_marks', 'issue_mark', x['id'])
             for x in hand[:200]: add('handoffs', 'material_handoff', x['id'])
+            need_event = need_times.get(rid)
+            need_count = need_event['n'] if need_event else 0
             requirements.append(dict(id=rid, work_order_id=wid, state='required' if row['plan_id'] == current_plan_id(tx, pid, wid) else 'superseded', material_id=row['material_id'], owner_id=row['owner_id'], unit=row['unit'],
                 **{k: bal[k] for k in ('required', 'received', 'qualified', 'rejected', 'reserved', 'shortage', 'in_transit')},
-                need_at=wo['planned_start'], need_at_basis='work_order_planned_start_proxy', timing_risk='unknown', coverage_issues=[ISSUE],
+                need_at=need_event['need_at'] if need_event and need_event['need_at'] else wo['planned_start'], need_at_basis='manual_requirement' if need_event and need_event['need_at'] else 'work_order_planned_start_proxy', need_time_history_count=need_count, timing_risk='unknown', coverage_issues=[ISSUE],
                 expedite_ids=[x['id'] for x in exp[:200]], receipt_ids=[x['id'] for x in rec[:200]], handoff_ids=[x['id'] for x in hand[:200]]))
         return MaterialControlPage(project_id=pid, project_version=p['version'], read_at=now.isoformat(), coverage_issues=issues,
             source_modes=_modes(tx, pid), work_orders=work_orders, requirements=requirements, expedites=expedites,

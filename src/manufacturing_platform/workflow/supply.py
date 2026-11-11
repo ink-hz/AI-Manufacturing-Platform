@@ -644,6 +644,7 @@ def _detail(tx, project_id, kind, object_id):
             ObjectEvidence(reference=value.source.evidence, source=value.source)
         ]
     elif kind == "requirement":
+        from .material_need_time import events as need_time_events
         bal = available(tx, project_id, object_id, business_time(tx))
         value = RequirementValue(
             plan_id=row["plan_id"],
@@ -656,6 +657,7 @@ def _detail(tx, project_id, kind, object_id):
             quantity=amount(row["q_atoms"], row["scale"]),
             unit=row["unit"],
             balance=bal,
+            need_time_events=need_time_events(tx, project_id, object_id),
             unqualified_quantity=amount(
                 max(
                     0,
