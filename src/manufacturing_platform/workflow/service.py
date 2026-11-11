@@ -21,6 +21,8 @@ from . import (  # noqa: F401 - trusted domain registration
     laboratory,
     material_handoff_reader,
     material_handoffs,
+    material_tasks,
+    material_task_reader,
     orders,
     ownership,
     progress,
@@ -362,7 +364,7 @@ class WorkflowService:
             handoff_applicable = value.mode == "oem"
             value.allowed_actions = [
                 a for a in value.allowed_actions
-                if not a.startswith(("material_handoff.", "expedite.", "issue."))
+                if not a.startswith(("material_handoff.", "material_task.", "expedite.", "issue."))
                 or handoff_applicable
             ]
             if (
@@ -461,6 +463,9 @@ class WorkflowService:
                 (str(item.project_id), str(item.id)),
             ).fetchone()
             candidates = material_handoffs.read_actions(tx, actor, item.project_id, handoff)
+        if item.kind == ObjectKind.material_task:
+            task = tx.execute("SELECT * FROM material_tasks WHERE project_id=? AND id=?", (str(item.project_id), str(item.id))).fetchone()
+            candidates = material_tasks.read_actions(tx, actor, item.project_id, task)
         item.next_actions = list(dict.fromkeys(a for a in candidates if a in allowed))
         item.action_capabilities = [
             ActionCapability(action=a) for a in item.next_actions
@@ -521,6 +526,8 @@ class WorkflowService:
             FROM material_handoffs h WHERE h.project_id=? AND h.receiver_id=? AND h.state='pending' AND ?
             UNION ALL SELECT 'Receipt discrepancy requires sender resolution',h.sender_id,json_extract(h.payload_json,'$.sender_name'),h.id,'material_handoff','business'
             FROM material_handoffs h WHERE h.project_id=? AND h.sender_id=? AND h.state='disputed' AND ?
+            UNION ALL SELECT '物料协同待处理',t.assignee_id,'Current responsibility',t.id,'material_task','business'
+            FROM material_tasks t WHERE t.project_id=? AND (t.assignee_id=? OR t.proposed_assignee_id=?) AND t.state NOT IN ('closed','cancelled')
             UNION ALL SELECT CASE WHEN ? AND EXISTS (
                 SELECT 1 FROM effective_iqc_results i
                 JOIN supply_receipts r ON r.id=i.receipt_id AND r.project_id=i.project_id
@@ -533,7 +540,7 @@ class WorkflowService:
             ORDER BY category,id LIMIT 51""",
             (pid, str(actor.user_id), pid, str(actor.user_id),
              pid, str(actor.user_id), handoff_authorized, pid, str(actor.user_id), handoff_authorized,
-             qualified_reminder, pid, expedite_authorized),
+             pid, str(actor.user_id), str(actor.user_id), qualified_reminder, pid, expedite_authorized),
         ):
             if r["kind"] == "material_handoff":
                 row = tx.execute(
@@ -541,6 +548,9 @@ class WorkflowService:
                     (pid, r["id"]),
                 ).fetchone()
                 target = material_handoff_reader.summary(tx, pid, row)
+            elif r["kind"] == "material_task":
+                row = tx.execute("SELECT * FROM material_tasks WHERE project_id=? AND id=?", (pid, r["id"])).fetchone()
+                target = material_task_reader.summary(tx, pid, row)
             elif r["kind"] == "material_expedite":
                 row = tx.execute(
                     "SELECT * FROM material_expedites WHERE project_id=? AND id=?",
@@ -558,7 +568,7 @@ class WorkflowService:
                     blocking_reasons=[r["title"]],
                 )
             target = self._actions(tx, actor, target)
-            if r["kind"] in {"material_handoff", "material_expedite"} and not target.next_actions:
+            if r["kind"] in {"material_handoff", "material_expedite", "material_task"} and not target.next_actions:
                 continue
             tasks.append(
                 OwnedTask(
@@ -987,6 +997,19 @@ class WorkflowService:
         payload = {"project_id": str(project_id), **command.model_dump(mode="json")}
         profiles = None
         profile_error = None
+        if command.action.startswith("material_task."):
+            with self.store.transaction() as tx:
+                from .authorization import require_action
+                require_action(tx, actor, project_id, command.action)
+                material_tasks.authorize(tx, actor, project_id, command)
+            if not self.resolve_subject(actor.user_id):
+                raise DomainError("FORBIDDEN", 403, "Actor is inactive")
+            if command.action in ("material_task.open", "material_task.reassign"):
+                if not self.resolve_subject(command.assignee_id):
+                    raise DomainError("INVALID_SUBJECT", 422, "Assignee is inactive")
+                profiles = self.member_profiles(actor, project_id, [actor.user_id, command.assignee_id])
+                if str(command.assignee_id) not in profiles:
+                    raise DomainError("INVALID_SUBJECT", 422, "Assignee has no active directory profile")
         if (
             command.action == "delivery.accept" and command.issues
         ) or command.action == "material_handoff.record":
@@ -1036,6 +1059,11 @@ class WorkflowService:
             introduction.authorize(actor, command)
             delivery.authorize(tx, actor, project_id, command)
             material_handoffs.authorize(tx, actor, project_id, command)
+            material_tasks.authorize(tx, actor, project_id, command)
+            if command.action in ("material_task.open", "material_task.reassign"):
+                kind = command.task_kind if command.action == "material_task.open" else tx.execute("SELECT task_kind FROM material_tasks WHERE project_id=? AND id=?", (str(project_id), str(command.task_id))).fetchone()[0]
+                if not material_tasks.eligible(tx, actor, project_id, command.assignee_id, kind):
+                    raise DomainError("INVALID_SUBJECT", 422, "Assignee must be an active eligible member")
             expedite.authorize(tx, actor, project_id, command)
             issue_marks.authorize(tx, actor, project_id, command)
             if command.action == "release.decide":

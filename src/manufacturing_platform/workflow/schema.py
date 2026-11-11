@@ -5,7 +5,7 @@ from .arrival_schema import ARRIVAL_SCHEMA
 from .material_handoff_schema import HANDOFF_SCHEMA
 from .expedite_schema import EXPEDITE_SCHEMA, ISSUE_MARK_SCHEMA
 
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 EXECUTION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS units(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),work_order_id TEXT NOT NULL REFERENCES work_orders(id),revision_id TEXT NOT NULL REFERENCES engineering_revisions(id),sn TEXT NOT NULL,sn_key TEXT NOT NULL UNIQUE,state TEXT NOT NULL CHECK(state IN ('registered','start_pending','running','stopped')),mode TEXT,accepted_start_id TEXT,registered_seq INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS units_work_order ON units(project_id,work_order_id,registered_seq);
@@ -219,3 +219,6 @@ SCHEMA += AUTHORITY_SCHEMA + ARRIVAL_SCHEMA
 SCHEMA += HANDOFF_SCHEMA
 
 SCHEMA += EXPEDITE_SCHEMA + ISSUE_MARK_SCHEMA
+
+from .material_task_schema import MATERIAL_TASK_SCHEMA
+SCHEMA += MATERIAL_TASK_SCHEMA

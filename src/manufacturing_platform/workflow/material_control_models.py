@@ -15,6 +15,7 @@ class MaterialControlPage(BaseModel):
     handoffs: list[dict[str, Any]]
     receipts: list[dict[str, Any]]
     issue_marks: list[dict[str, Any]]
+    material_task_counts: dict[str, int] = {}
     total: int
     limit: int
     offset: int

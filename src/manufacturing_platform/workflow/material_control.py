@@ -47,6 +47,7 @@ def overview(service, actor, limit, offset):
                 work_order_count=_count(tx, 'work_orders', pid), requirement_count=_count(tx, 'requirements', pid),
                 open_expedite_count=_count(tx, 'material_expedites', pid, "AND state='open'"),
                 unreceived_handoff_count=_count(tx, 'material_handoffs', pid, "AND state='pending'"),
+                open_material_task_count=_count(tx, 'material_tasks', pid, "AND state NOT IN ('closed','cancelled')"),
                 coverage_issues=[ISSUE], source_modes=_modes(tx, pid)))
         return dict(items=items, total=total, limit=limit, offset=offset, read_at=now)
 
@@ -159,4 +160,5 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
                 expedite_ids=[x['id'] for x in exp[:200]], receipt_ids=[x['id'] for x in rec[:200]], handoff_ids=[x['id'] for x in hand[:200]]))
         return MaterialControlPage(project_id=pid, project_version=p['version'], read_at=now.isoformat(), coverage_issues=issues,
             source_modes=_modes(tx, pid), work_orders=work_orders, requirements=requirements, expedites=expedites,
-            handoffs=handoffs, receipts=receipts, issue_marks=issue_marks, total=total, limit=limit, offset=offset)
+            handoffs=handoffs, receipts=receipts, issue_marks=issue_marks,
+            material_task_counts={r[0]: r[1] for r in tx.execute("SELECT state,COUNT(*) FROM material_tasks WHERE project_id=? GROUP BY state", (pid,))}, total=total, limit=limit, offset=offset)

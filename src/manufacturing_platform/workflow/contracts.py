@@ -237,6 +237,7 @@ class ProjectQuantitySummary(StrictModel):
 class ObjectKind(str, Enum):
     authority_rule = "authority_rule"
     arrival = "arrival"
+    material_task = "material_task"
     material_handoff = "material_handoff"
     issue_mark = "issue_mark"
     material_expedite = "material_expedite"

@@ -63,7 +63,9 @@ def test_admin_sees_existing_and_new_projects_without_active_grants(workflow, ac
             COMMAND_REGISTRY._entries
         ) - {"delivery.resolve_issue", "material_handoff.record", "material_handoff.receive",
              "material_handoff.resolve", "material_handoff.cancel",
-             "expedite.open", "expedite.progress", "expedite.close", "issue.mark"}
+             "expedite.open", "expedite.progress", "expedite.close", "issue.mark",
+             "material_task.open", "material_task.accept", "material_task.reassign",
+             "material_task.progress", "material_task.verify", "material_task.close", "material_task.cancel"}
         assert detail.json()["release_kinds"] == [
             "manufacturing",
             "quality",
