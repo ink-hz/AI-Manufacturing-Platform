@@ -180,3 +180,53 @@ def test_overview_counts_quantity_not_handoff_resolution_state(workflow):
     over = record('1')
     workflow.command(pid, 'material_handoff.receive', actor_name='production', handoff_id=over, received_quantity='1.001', received_location='Other', note='over and wrong location')
     assert count() == 1
+
+
+def test_current_plans_filter_demand_but_explicit_history_remains_accessible(workflow):
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    p, old, related = workflow.material_requirement(mode='oem', qualified='0')
+    pid, wid = p['id'], related['work_order_id']
+    removed, other_req, other_wo = (str(uuid4()) for _ in range(3))
+    with sqlite3.connect(workflow.paths.domain) as db:
+        db.row_factory = sqlite3.Row
+        def clone(table, ident, **updates):
+            row = dict(db.execute(f'SELECT * FROM {table} WHERE id=?', (ident,)).fetchone())
+            row.update(updates)
+            columns = list(row)
+            db.execute(f"INSERT INTO {table} ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})", [row[c] for c in columns])
+        clone('work_orders', wid, id=other_wo, source_external_id=str(uuid4()))
+        clone('requirements', old['id'], id=removed, lineage_id=str(uuid4()), material_id='removed')
+        clone('requirements', old['id'], id=other_req, lineage_id=str(uuid4()), work_order_id=other_wo)
+    case = workflow.command(pid, 'expedite.open', actor_name='supply', requirement_id=old['id'], reason='late', impact='delay')['object_id']
+    original = workflow.object(pid, 'plan', workflow.object(pid, 'requirement', old['id'])['plan_id'])
+    now = datetime.now(UTC)
+    source = workflow.source(original['source']['external_id'], object_type='plan', version=2)
+    source.update(occurred_at=(now-timedelta(minutes=2)).isoformat(), collected_at=(now-timedelta(minutes=1)).isoformat(), cutoff=(now-timedelta(minutes=2)).isoformat())
+    details = dict(input_revision_ids=[related['revision_id']], input_order_versions=[{'order_line_id': related['order_id'], 'version': 1}], requirements=[{'work_order_id': wid, 'execution_scope': 'trial', 'material_id': 'steel-1', 'owner_id': 'Customer 1', 'quantity': '50', 'unit': 'kg'}])
+    revised = workflow.command(pid, 'plan.receive', actor_name='planner', source=source, **details)
+    plan = workflow.object(pid, 'plan', revised['object_id'])
+    assert plan['state'] == 'confirmed'
+    new_id = plan['requirement_ids'][0]
+    rejected_source = workflow.source(original['source']['external_id'], object_type='plan', version=3)
+    rejected_source.update(source, version=3, cutoff=None)
+    rejected = workflow.command(pid, 'plan.receive', actor_name='planner', source=rejected_source, **details)
+    assert workflow.object(pid, 'plan', rejected['object_id'])['state'] == 'rejected'
+
+    path = f'{BASE}/projects/{pid}/material-control'
+    pages = [workflow.client().get(path, params={'limit': 1, 'offset': i}).json() for i in range(3)]
+    assert all(page['total'] == 2 for page in pages)
+    assert {page['requirements'][0]['id'] for page in pages[:2]} == {new_id, other_req}
+    assert pages[2]['requirements'] == []
+    assert all(page['requirements'][0]['state'] == 'required' for page in pages[:2])
+    filtered = workflow.client().get(path, params={'work_order_id': wid}).json()
+    assert filtered['total'] == 1 and filtered['requirements'][0]['id'] == new_id
+    historical = workflow.client().get(path, params={'requirement_id': old['id']}).json()
+    assert historical['total'] == 1 and historical['requirements'][0]['state'] == 'superseded'
+    assert historical['requirements'][0]['expedite_ids'] == [case]
+    assert historical['expedites'][0]['id'] == case
+    removed_view = workflow.client().get(path, params={'requirement_id': removed}).json()
+    assert removed_view['requirements'][0]['state'] == 'superseded'
+    overview = workflow.client().get(f'{BASE}/material-control/overview').json()['items'][0]
+    assert overview['requirement_count'] == 2 and overview['open_expedite_count'] == 1

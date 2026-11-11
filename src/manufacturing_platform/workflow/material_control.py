@@ -6,9 +6,17 @@ from .authorization import require_project
 from .clock import business_time
 from .contracts import DomainError
 from .material_control_models import MaterialControlPage
-from .supply import amount, available, receipt_presentation
+from .supply import amount, available, current_plan_id, receipt_presentation
 
 ISSUE = "Evidence is bounded and may not represent complete external supply or inventory."
+
+# Match supply.current_plan_id: the latest confirmed plan containing this work order.
+_CURRENT_REQUIREMENT = """plan_id = (
+    SELECT p.id FROM plans p JOIN requirements candidate ON candidate.plan_id=p.id
+    WHERE p.project_id=requirements.project_id
+      AND candidate.work_order_id=requirements.work_order_id AND p.state='confirmed'
+    ORDER BY p.accepted_seq DESC LIMIT 1
+)"""
 
 
 def _count(tx, table, pid, extra="", args=()):
@@ -59,7 +67,7 @@ def overview(service, actor, limit, offset):
             pid = entry[0]
             p = require_project(tx, actor, pid)
             items.append(dict(project_id=pid, name=p['name'], customer_id=p['customer_id'], product=p['product'],
-                work_order_count=_count(tx, 'work_orders', pid), requirement_count=_count(tx, 'requirements', pid),
+                work_order_count=_count(tx, 'work_orders', pid), requirement_count=_count(tx, 'requirements', pid, f'AND {_CURRENT_REQUIREMENT}'),
                 open_expedite_count=_count(tx, 'material_expedites', pid, "AND state='open'"),
                 unreceived_handoff_count=_unreceived_handoffs(tx, pid),
                 open_material_task_count=_count(tx, 'material_tasks', pid, "AND state NOT IN ('closed','cancelled')"),
@@ -135,6 +143,8 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
             where += ' AND work_order_id=?'; args.append(str(work_order_id))
         if requirement_id:
             where += ' AND id=?'; args.append(str(requirement_id))
+        else:
+            where += f' AND {_CURRENT_REQUIREMENT}'
         total = tx.execute(f'SELECT COUNT(*) FROM requirements WHERE {where}', args).fetchone()[0]
         rows = tx.execute(f'SELECT * FROM requirements WHERE {where} ORDER BY created_at,id LIMIT ? OFFSET ?', (*args, limit, offset)).fetchall()
         now = business_time(tx)
@@ -169,7 +179,7 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
                 add('receipts', 'receipt', x['id'])
             for x in marks[:200]: add('issue_marks', 'issue_mark', x['id'])
             for x in hand[:200]: add('handoffs', 'material_handoff', x['id'])
-            requirements.append(dict(id=rid, work_order_id=wid, material_id=row['material_id'], owner_id=row['owner_id'], unit=row['unit'],
+            requirements.append(dict(id=rid, work_order_id=wid, state='required' if row['plan_id'] == current_plan_id(tx, pid, wid) else 'superseded', material_id=row['material_id'], owner_id=row['owner_id'], unit=row['unit'],
                 **{k: bal[k] for k in ('required', 'received', 'qualified', 'rejected', 'reserved', 'shortage', 'in_transit')},
                 need_at=wo['planned_start'], need_at_basis='work_order_planned_start_proxy', timing_risk='unknown', coverage_issues=[ISSUE],
                 expedite_ids=[x['id'] for x in exp[:200]], receipt_ids=[x['id'] for x in rec[:200]], handoff_ids=[x['id'] for x in hand[:200]]))
