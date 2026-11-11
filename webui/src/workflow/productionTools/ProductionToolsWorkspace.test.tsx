@@ -474,6 +474,21 @@ afterEach(() => {
   sessionStorage.clear();
   history.replaceState(null, "", "/");
 });
+it("keeps the initial project overview usable when its active navigation is clicked", async () => {
+  const v = await view();
+  try {
+    expect(v.host.querySelector('[aria-label="项目测试统计"]')).not.toBeNull();
+    const reads = () => v.requests.filter(r => r.url.pathname.endsWith("/production-tools/overview")).length;
+    const initialReads = reads();
+    await v.click("项目总览");
+    expect(reads()).toBe(initialReads + 1);
+    expect(v.host.querySelector('[aria-label="项目测试统计"]')).not.toBeNull();
+    expect(v.host.querySelector('[aria-label="运行总览"] [role="status"]')).toBeNull();
+    await v.click("项目总览");
+    expect(reads()).toBe(initialReads + 1);
+    expect(v.host.querySelector('[aria-label="项目测试统计"]')).not.toBeNull();
+  } finally { await v.dispose(); }
+});
 it("starts with compact controls and opens investigation recovery before focusing it", async () => {
   const v = await view();
   try {

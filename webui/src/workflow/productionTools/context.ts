@@ -249,7 +249,7 @@ export function useRead<T>(
             }));
         });
     return () => c.abort();
-  }, [...deps, enabled, tick]);
+  }, [...deps, enabled, tick, key]);
   return {
     ...(state.key === key
       ? state
