@@ -127,7 +127,7 @@ def _expedite_preview(tx, pid, ident):
     return {**value.model_dump(mode="json"), "progress_total": progress_total, "progress_truncated": progress_total > len(progress)}
 
 
-def project_view(service, actor, project_id, limit, offset, work_order_id=None, requirement_id=None):
+def project_view(service, actor, project_id, limit, offset, work_order_id=None, requirement_id=None, search=""):
     service._pagination(limit, offset)
     pid = str(project_id)
     with service.store.transaction() as tx:
@@ -145,6 +145,10 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
             where += ' AND id=?'; args.append(str(requirement_id))
         else:
             where += f' AND {_CURRENT_REQUIREMENT}'
+        if search:
+            escaped = search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            where += " AND (material_id LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM work_orders w WHERE w.project_id=requirements.project_id AND w.id=requirements.work_order_id AND w.source_external_id LIKE ? ESCAPE '\\'))"
+            args.extend([f'%{escaped}%', f'%{escaped}%'])
         total = tx.execute(f'SELECT COUNT(*) FROM requirements WHERE {where}', args).fetchone()[0]
         rows = tx.execute(f'SELECT * FROM requirements WHERE {where} ORDER BY created_at,id LIMIT ? OFFSET ?', (*args, limit, offset)).fetchall()
         now = business_time(tx)

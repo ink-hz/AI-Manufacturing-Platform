@@ -43,6 +43,7 @@ WorkflowAction = Literal[
     "authority.verify",
     "material_handoff.record",
     "material_handoff.receive",
+    "material_handoff.confirm_use",
     "material_handoff.resolve",
     "material_handoff.cancel",
     "material_task.open",

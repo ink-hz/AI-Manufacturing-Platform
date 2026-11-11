@@ -230,3 +230,27 @@ def test_current_plans_filter_demand_but_explicit_history_remains_accessible(wor
     assert removed_view['requirements'][0]['state'] == 'superseded'
     overview = workflow.client().get(f'{BASE}/material-control/overview').json()['items'][0]
     assert overview['requirement_count'] == 2 and overview['open_expedite_count'] == 1
+
+
+def test_search_matches_full_scope_before_pagination(workflow):
+    import sqlite3
+    p, req, related = workflow.material_requirement()
+    target = str(uuid4())
+    with sqlite3.connect(workflow.paths.domain) as db:
+        db.row_factory = sqlite3.Row
+        row = dict(db.execute('SELECT * FROM requirements WHERE id=?', (req['id'],)).fetchone())
+        for i in range(51):
+            clone = dict(row, id=target if i == 50 else str(uuid4()), lineage_id=str(uuid4()), material_id='needle-target' if i == 50 else f'other-{i}', created_at=f'2099-01-01T00:00:{i:02d}+00:00')
+            cols = list(clone)
+            db.execute(f"INSERT INTO requirements ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})", [clone[c] for c in cols])
+        db.execute('UPDATE work_orders SET source_external_id=? WHERE id=?', ('WO-needle', related['work_order_id']))
+    path = f"{BASE}/projects/{p['id']}/material-control"
+    response = workflow.client().get(path, params={'search': 'needle', 'limit': 1}).json()
+    assert response['total'] == 52
+    assert workflow.client().get(path, params={'search': 'needle', 'limit': 1, 'offset': 51}).json()['total'] == 52
+    target_page = workflow.client().get(path, params={'search': 'needle-target', 'limit': 1}).json()
+    assert target_page['total'] == 1 and target_page['requirements'][0]['id'] == target
+    response = workflow.client().get(path, params={'search': 'other-50', 'limit': 1}).json()
+    assert response['total'] == 0
+    response = workflow.client().get(path, params={'search': 'needle', 'work_order_id': related['work_order_id'], 'limit': 1}).json()
+    assert response['total'] == 52

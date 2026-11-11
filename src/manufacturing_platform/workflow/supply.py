@@ -501,14 +501,14 @@ def available(tx, project_id, requirement_id, now) -> MaterialBalance:
              AND v.authority_receipt_id IS NOT NULL""",
         (str(project_id), req["lineage_id"], req["work_order_id"]),
     ).fetchone()[0]
-    from .ownership import material_hold
+    from .material_eligibility import lot_unavailable_reason
 
     usable, movement_holds = 0, []
     for row in tx.execute(
         "SELECT l.*,SUM(v.confirmed_atoms) confirmed FROM effective_reservations v JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id WHERE v.project_id=? AND prior.lineage_id=? AND v.work_order_id=? AND v.authority_receipt_id IS NOT NULL GROUP BY l.id",
         (str(project_id), req["lineage_id"], req["work_order_id"]),
     ):
-        hold = material_hold(tx, project_id, row)
+        hold = lot_unavailable_reason(tx, project_id, row, now)
         if hold:
             movement_holds.append(hold)
         else:
@@ -922,32 +922,34 @@ def _page_balances(tx, project_id, rows):
         )
     }
     reservations = {
-        r["lineage_id"]: r["reserved"]
+        (r["lineage_id"], r["work_order_id"]): r["reserved"]
         for r in tx.execute(
-            f"""SELECT prior.lineage_id,COALESCE(SUM(v.confirmed_atoms),0) reserved
+            f"""SELECT prior.lineage_id,v.work_order_id,COALESCE(SUM(v.confirmed_atoms),0) reserved
                 FROM effective_reservations v JOIN requirements prior
                   ON prior.id=v.requirement_id AND prior.project_id=v.project_id
                 WHERE prior.project_id=? AND prior.lineage_id IN ({slots}) AND v.authority_receipt_id IS NOT NULL
-                GROUP BY prior.lineage_id""",
+                GROUP BY prior.lineage_id,v.work_order_id""",
             (str(project_id), *lineages),
         )
     }
-    from .ownership import material_hold
+    from .material_eligibility import lot_unavailable_reason
+    from .clock import business_time
 
+    now = business_time(tx)
     held_atoms, hold_reasons, hold_cache = {}, {}, {}
     for claim in tx.execute(
-        f"""SELECT l.*,prior.lineage_id,SUM(v.confirmed_atoms) confirmed FROM effective_reservations v
+        f"""SELECT l.*,prior.lineage_id,v.work_order_id,SUM(v.confirmed_atoms) confirmed FROM effective_reservations v
             JOIN requirements prior ON prior.id=v.requirement_id AND prior.project_id=v.project_id
             JOIN material_lots l ON l.id=v.material_lot_id AND l.project_id=v.project_id
             WHERE v.project_id=? AND prior.lineage_id IN ({slots}) AND v.authority_receipt_id IS NOT NULL
-            GROUP BY l.id,prior.lineage_id""",
+            GROUP BY l.id,prior.lineage_id,v.work_order_id""",
         (str(project_id), *lineages),
     ):
         if claim["id"] not in hold_cache:
-            hold_cache[claim["id"]] = material_hold(tx, project_id, claim)
+            hold_cache[claim["id"]] = lot_unavailable_reason(tx, project_id, claim, now)
         reason = hold_cache[claim["id"]]
         if reason:
-            lineage = claim["lineage_id"]
+            lineage = (claim["lineage_id"], claim["work_order_id"])
             held_atoms[lineage] = held_atoms.get(lineage, 0) + claim["confirmed"]
             hold_reasons.setdefault(lineage, []).append(reason)
     balances = {}
@@ -956,11 +958,12 @@ def _page_balances(tx, project_id, rows):
         c, i = commitments.get(lineage), inspections.get(lineage)
         in_transit, received = (c["in_transit"], c["received"]) if c else (0, 0)
         qualified, rejected = (i["qualified"], i["rejected"]) if i else (0, 0)
-        reserved = reservations.get(lineage, 0)
+        scope = (lineage, row["work_order_id"])
+        reserved = reservations.get(scope, 0)
         scale = row["scale"]
-        usable = max(0, reserved - held_atoms.get(lineage, 0))
+        usable = max(0, reserved - held_atoms.get(scope, 0))
         balances[row["id"]] = MaterialBalance(
-            blocking_reasons=hold_reasons.get(lineage, [])
+            blocking_reasons=hold_reasons.get(scope, [])
             if usable < row["q_atoms"]
             else [],
             required=amount(row["q_atoms"], scale),
