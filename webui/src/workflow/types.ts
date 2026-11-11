@@ -200,6 +200,8 @@ export type DeliveryCommand =
 export interface ShipmentReceiptDetail {key:string;unit_id:string;sn:string;work_order_id:string;order_line_id:string;box_id:string|null}
 export interface ContractAgreement {id:string;supersedes_agreement_id:string|null;revision_id:string;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string;project_version:number;recorded_at:string}
 export type CommandFields =
+  | {action:"mes_order.bind";work_order_id:string;shop_order:string;replace_binding_id:string|null;reason:string|null}
+  | {action:"mes_order.refresh";work_order_id:string;binding_id:string}
   | {action:"material_task.open";requirement_id:string;task_kind:"iqc"|"trace";receipt_id:string|null;handoff_id:string|null;assignee_id:string;note:string}
   | {action:"material_task.accept";task_id:string}
   | {action:"material_task.reassign";task_id:string;assignee_id:string;reason:string}

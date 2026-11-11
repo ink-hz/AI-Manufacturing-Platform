@@ -102,3 +102,10 @@ export const initialMaterialViewContext = (): MaterialViewContext => ({
   workOrder: "",
   taskOffset: 0,
 });
+
+export interface MesOrderMaterialsData {
+  work_order_id: string;
+  can_manage: boolean;
+  binding: { id: string; shop_order: string; environment: string; site_code: string; verified_at: string } | null;
+  snapshot: { id: string; collected_at: string; total: number; components: { component_key: string; material_id: string; required_quantity: string; withdrawn_quantity: string | null; unit: string; storage_location: string | null }[] } | null;
+}

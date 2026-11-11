@@ -1,3 +1,4 @@
+import { MesOrderMaterials } from "./MesOrderMaterials";
 import { MaterialFlowPanel } from "./MaterialFlowPanel";
 import { MaterialTaskList } from "./MaterialTaskList";
 import { MaterialTaskOpen } from "./MaterialTaskOpen";
@@ -81,6 +82,7 @@ export function MaterialControlWorkspace(
   return (
     <section aria-label="料况">
       <h3>料况</h3>
+      <MesOrderMaterials p={childProps} leave={leave} />
       {error && <p role="alert">料况读取失败：{error}</p>}
       {!page ? (
         <p role="status">正在读取料况…</p>
