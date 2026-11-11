@@ -22,6 +22,7 @@
 - Preserve prior business records and source identities; schema migrations are additive and must work from schema24.
 - Use `/private/tmp/manufacturing-contract-py311/bin/python` with `PYTHONPATH=src`; use existing `webui/node_modules`.
 - No live business writes, destructive database reset, or production cutover during development verification.
+- Latest user instruction: product-first UI. Main screens show business facts, responsibility and direct actions, not implementation/status jargon, source-coverage essays or debug metadata. Put provenance/audit/technical diagnostics behind on-demand details; missing necessary data becomes a concise concrete business problem with a useful next action.
 
 ## Task 1: Authorized project and material read projections
 
@@ -71,7 +72,7 @@ def test_material_projection_keeps_inspection_and_reservation_separate(workflow)
 
 **Files:** Create `workflow/material_task_models.py`, `workflow/material_task_schema.py`, `workflow/material_tasks.py`, `workflow/material_task_reader.py`; modify `commands.py`, `contracts.py`, `service.py`, `schema.py`, `store.py`, `material_control_api.py`, plus focused tests `tests/workflow/test_material_tasks.py`.
 
-**Interfaces:** New object kind `material_task`, command actions `material_task.open`, `material_task.accept`, `material_task.progress`, `material_task.verify`, `material_task.close`, `material_task.cancel`. GET `/projects/{project_id}/material-tasks?limit=50&offset=0` and GET `/material-control/tasks?project_id=...` expose scoped tasks. Existing `object_detail` exposes task detail; commands use the existing project commands endpoint.
+**Interfaces:** New object kind `material_task`, command actions `material_task.open`, `material_task.accept`, `material_task.progress`, `material_task.verify`, `material_task.close`, `material_task.cancel`. GET `/projects/{project_id}/material-tasks?limit=50&offset=0` and GET `/material-control/tasks?project_id=...` expose scoped tasks. GET `/projects/{project_id}/material-control/assignees?task_kind=iqc|trace` returns currently eligible active project members with IDs and display names; IQC eligibility requires current quality role and inspection qualification (or existing administrator capability). Existing `object_detail` exposes task detail; commands use the existing project commands endpoint.
 
 ```python
 {"action":"material_task.open", "requirement_id":"uuid", "task_kind":"iqc",
@@ -91,6 +92,7 @@ def test_material_projection_keeps_inspection_and_reservation_separate(workflow)
 - [ ] Add trace tests: original handoff20 with actual receipt18 remains incomplete; progress found2 is not receipt; explicit compatible signed supplemental handoff2 can be linked as evidence; reject unrelated/cross-project/wrong lot/work-order/unit/receiver and already allocated evidence; formal discrepancy outcome remains distinguishable from full receipt.
 - [ ] Observe failures with `pytest -q tests/workflow/test_material_tasks.py`, then implement an additive schema25 migration and registered typed commands/readers. Resolve active users through host directory, reuse source/actor audit, roles and existing project CAS/idempotency machinery. Assignee must have current project/role/qualification; acceptance only by designated person.
 - [ ] Maintain pending/processing/verification/closed/cancelled collaboration states and explicit outcomes; task-state completion never manufactures source results. A revoked assignee can be replaced by an authorized coordinator through a recorded reassignment path while retaining current responsibility until accepted; expose any added command in the report.
+- [ ] A normal user can finish with one direct `material_task.close` action: it verifies fresh source facts atomically in the same transaction; do not force users through a separate verify button or technical intermediate state. Keep verify available for background/on-demand validation. IQC results already fully inspected including rejected quantities permit finish; shortage follow-up remains separate. Trace progress/found quantity alone does not permit fulfilled closure without compatible actual signed receipt evidence.
 - [ ] Attach material tasks to project/global responsibility lists without broadening unrelated project access. Add full-scope counts for project views without depending on one result page.
 - [ ] Run targeted tasks, authorization, schema/restart and source invariants tests. Commit owned changes and write `.superpowers/sdd/robot-material/task-2-report.md`.
 
