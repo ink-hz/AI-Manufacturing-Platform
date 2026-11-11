@@ -4,6 +4,7 @@ export const labels: Record<string, string> = {
   "connected-mock":"模拟已连接", unexercised:"尚未运行验证", unconfigured:"未配置", degraded:"消费或回执异常", modeled:"建模契约", legacy:"旧连接器",
 
   "Awaiting designated receiver":"等待指定接收人确认", "Receipt discrepancy requires sender resolution":"接收差异等待交出方处理",
+  material_task:"物料任务", material_expedite:"催料", "material_task.accept":"接单", "material_task.progress":"更新进展", "material_task.close":"完成任务", "material_task.reassign":"转交任务", "material_task.cancel":"取消任务",
   material_handoff:"物料交接", "material_handoff.record":"发起物料交接", "material_handoff.receive":"确认接收", "material_handoff.resolve":"处理差异", "material_handoff.cancel":"取消交接",
   pass: "通过", fail: "不通过", completed: "已完成", manual: "人工登记",
   npi:"工程导入",npi_issue:"导入问题",reusable_asset:"可复用资产",asset_use:"资产采用",test_plan:"测试计划",test_run:"测试运行",calibration:"标定读回",component_link:"部件履历",arrival:"到件观察",authority_rule:"系统责任映射",

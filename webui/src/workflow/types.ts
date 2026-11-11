@@ -27,7 +27,7 @@ export type WorkflowTarget = {
   id: string;
 };
 export type ObjectKind =
-  | "material_handoff"
+  | "material_task" | "material_expedite" | "material_handoff"
   | "npi" | "npi_issue" | "reusable_asset" | "asset_use" | "test_plan" | "test_run" | "calibration" | "component_link" | "arrival" | "authority_rule"
   | "rma" | "capa"
   | "shipment" | "closure"
@@ -200,6 +200,15 @@ export type DeliveryCommand =
 export interface ShipmentReceiptDetail {key:string;unit_id:string;sn:string;work_order_id:string;order_line_id:string;box_id:string|null}
 export interface ContractAgreement {id:string;supersedes_agreement_id:string|null;revision_id:string;contract:ProjectCreate["contract"];customer_id:string;external_signatory:string;evidence:string;project_version:number;recorded_at:string}
 export type CommandFields =
+  | {action:"material_task.open";requirement_id:string;task_kind:"iqc"|"trace";receipt_id:string|null;handoff_id:string|null;assignee_id:string;note:string}
+  | {action:"material_task.accept";task_id:string}
+  | {action:"material_task.reassign";task_id:string;assignee_id:string;reason:string}
+  | {action:"material_task.progress";task_id:string;note:string;expected_completion:string|null;blocked_reason:string|null;found_quantity:string|null;found_location:string|null}
+  | {action:"material_task.close";task_id:string;outcome:"fulfilled"|"discrepancy"|"false_alarm"|"superseded";evidence:string;handoff_ids:string[]}
+  | {action:"material_task.cancel";task_id:string;reason:string}
+  | {action:"expedite.open";requirement_id:string;reason:string;impact:string}
+  | {action:"expedite.progress";expedite_id:string;note:string}
+  | {action:"expedite.close";expedite_id:string;outcome:"fulfilled"|"false_alarm"|"superseded";reason:string}
   | import("./integrations/types").IntegrationCommand
   | MaterialHandoffCommand
   | OEMCommands

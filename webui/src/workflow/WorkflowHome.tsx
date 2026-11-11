@@ -1,3 +1,4 @@
+import {MaterialControlOverview} from './materialControl/MaterialControlOverview';
 import {SystemStepPanel} from './integrations/SystemStepPanel';
 import { useEffect, useState } from 'react';
 import type { WorkflowApi } from './api';
@@ -7,10 +8,10 @@ import { homeMetrics, deliveryQuantity, priorityTasks, taskScope } from './homeP
 import { StatusBadge } from './StatusBadge';
 import { objectTitle, label } from './labels';
 export type HomeDestination = BusinessModule | 'tasks' | 'projects';
-export function WorkflowHome({data, projects, projectsReady, dashboardError, projectsError, api, refresh, active, onRefresh, onOpen, onNavigate, onDirty=()=>{}, requestLeave=f=>f(), readOnly=false}: {
+export function WorkflowHome({data, projects, projectsReady, dashboardError, projectsError, api, refresh, active, onRefresh, onOpen, onNavigate, onDirty=()=>{}, requestLeave=f=>f(), readOnly=false, onMaterialProject}: {
   data: Dashboard | null; projects: ProjectDetail[]; projectsReady: boolean;
   dashboardError: string; projectsError: string; api: WorkflowApi; refresh: number; active: boolean;
-  onRefresh(): void; onOpen(target: WorkflowTarget): void;
+  onRefresh(): void; onOpen(target: WorkflowTarget): void; onMaterialProject?(id:string):void;
   readOnly?:boolean; onDirty?(key:string,dirty:boolean):void; requestLeave?(action:()=>void):void;
   onNavigate(module: HomeDestination, kind?: ObjectKind, projectId?: string): void;
 }) {
@@ -44,6 +45,7 @@ export function WorkflowHome({data, projects, projectsReady, dashboardError, pro
     </article>)}</div>
     <div className="mf-actions" aria-label="工程与实验室入口"><button onClick={()=>onNavigate("introduction","npi")}>工程导入与资产</button><button onClick={()=>onNavigate("laboratory","test_run")}>测试运行与标定</button></div>
     <details><summary>项目 BI 截止快照</summary><label>BI 项目<select aria-label="BI 项目" value={biProjectId} onChange={e=>{const id=e.target.value;requestLeave(()=>setBiProjectId(id));}}><option value="">选择授权项目</option>{projects.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label>{biProject&&<SystemStepPanel api={api} project={biProject} context="home" selected={null} onChanged={()=>onRefresh()} onOpen={onOpen} onDirty={onDirty} requestLeave={requestLeave} readOnly={readOnly}/>}</details>
+    {active && onMaterialProject && <MaterialControlOverview api={api} refresh={refresh} onProject={onMaterialProject}/>}
     <div className="wf-home-columns">
       <section className="wf-panel wf-priority" aria-label="优先事项">
         <div className="wf-section-heading"><h2>优先事项</h2><button className="wf-text-link" onClick={() => onNavigate('tasks')}>查看全部事项</button></div>

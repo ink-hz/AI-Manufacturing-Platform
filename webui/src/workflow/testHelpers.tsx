@@ -45,7 +45,8 @@ export async function workflowView(config: {
         } else if (url.includes('/workflow/tasks?') && config.readTasks) {
             const u = new URL(url, 'http://localhost');
             value = await config.readTasks(Number(u.searchParams.get('limit')), Number(u.searchParams.get('offset')), u.searchParams.get('project_id') || undefined);
-        } else if (url.includes('/assistance?')) value = {items:[],unknowns:[],state:'no_evidence',truncated:false};
+        } else if (url.endsWith('/material-control?limit=50&offset=0')) value = {requirements:[],work_orders:[],expedites:[],receipts:[],handoffs:[],coverage_issues:[],source_modes:[],total:0};
+        else if (url.includes('/assistance?')) value = {items:[],unknowns:[],state:'no_evidence',truncated:false};
         else if (url.endsWith('/dashboard'))
             value = config.readDashboard ? await config.readDashboard() : { cards: [order], counts: { order_line: 1 }, project_ids: [project.id], project_count: 1 };
         else if (url.endsWith('/handbook'))

@@ -1,3 +1,4 @@
+import { MaterialControlWorkspace } from './materialControl/MaterialControlWorkspace';
 import {SystemStepPanel} from './integrations/SystemStepPanel';
 import { MaterialHandoffWorkspace } from "./MaterialHandoffWorkspace";
 import { OEMWorkspace, type OEMWorkspaceProps } from "./OEMWorkspace";
@@ -22,13 +23,13 @@ export function SupplyWorkspace(p: OEMWorkspaceProps & {
   currentUserId?: string;
   handoffFilter?: MaterialHandoffFilter;
   onHandoffFilter?(filter: MaterialHandoffFilter): void;
-  supplyMode?: 'handoff' | 'legacy';
-  onSupplyMode?(mode: 'handoff' | 'legacy'): void;
+  supplyMode?: 'material' | 'handoff' | 'legacy';
+  onSupplyMode?(mode: 'material' | 'handoff' | 'legacy'): void;
   onHandoffAction?(): void;
   onHandoffOpen?(target: WorkflowTarget): void;
 }) {
-  const initialMode = () => p.project.mode === 'oem' &&
-    (!p.initialAction || p.initialAction.startsWith('material_handoff.')) ? 'handoff' : 'legacy';
+  const initialMode = () => p.project.mode !== 'oem' ? 'legacy' :
+    !p.initialAction ? 'material' : p.initialAction.startsWith('material_handoff.') ? 'handoff' : 'legacy';
   const [mode, setMode] = useState(() => p.initialAction ? initialMode() : p.supplyMode || initialMode());
   const previousProject = useRef(p.project.id);
 
@@ -44,7 +45,7 @@ export function SupplyWorkspace(p: OEMWorkspaceProps & {
     }
   }, [p.project.id, p.project.mode, p.initialAction]);
 
-  function selectMode(next: 'handoff' | 'legacy') {
+  function selectMode(next: 'material' | 'handoff' | 'legacy') {
     p.requestLeave(() => {
       p.onSelectAction?.(null);
       p.onSupplyMode?.(next);
@@ -53,10 +54,11 @@ export function SupplyWorkspace(p: OEMWorkspaceProps & {
   }
   return <section>
     {p.project.mode === 'oem' && <div className="mf-tabs" aria-label="物料办理类型">
+      <button aria-pressed={mode === 'material'} onClick={() => selectMode('material')}>料况</button>
       <button aria-pressed={mode === 'handoff'} onClick={() => selectMode('handoff')}>物料交接</button>
       <button aria-pressed={mode === 'legacy'} onClick={() => selectMode('legacy')}>供应与到货</button>
     </div>}
-    {mode === 'handoff' && p.project.mode === 'oem'
+    {mode === 'material' && p.project.mode === 'oem' ? <MaterialControlWorkspace key={p.project.id} {...p}/> : mode === 'handoff' && p.project.mode === 'oem'
       ? <MaterialHandoffWorkspace key={p.project.id} {...p}/>
       : <LegacySupplyWorkspace {...p}/>}
   </section>;

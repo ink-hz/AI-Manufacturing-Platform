@@ -1,3 +1,4 @@
+import {materialControlApi} from './materialControl/api';
 import {productionApi} from './productionTools/productionApi';
 import type { ProductionStatus, SourceProjectPage, ProductionPage, ProductionStatistics, ObservationFilters, CatalogKind, CatalogFilters, EvidenceFilters } from './productionTools/types';
 import type {SystemDescriptor,SystemId,SourceKey,FactPage,FactDetail,FactLinkPage,IntentPage} from './integrations/types';
@@ -144,6 +145,7 @@ export function createWorkflowApi(
     ).toString();
   };
   return {
+    ...materialControlApi(request),
     ...productionApi(request, productionPath, productionQuery),
     productionProjects: (filters: {before_id?: string} = {}, signal?: AbortSignal) =>
       request<SourceProjectPage>("/production-tools/projects" + (filters.before_id === undefined ? "" : "?" + productionQuery(filters)), "GET", undefined, signal),

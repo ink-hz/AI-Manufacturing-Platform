@@ -1,3 +1,4 @@
+import {MaterialTaskPanel} from './materialControl/MaterialTaskPanel';
 import { clearProductionResume } from './productionTools/investigations';
 import { ProductionToolsWorkspace, validProductionHandoff } from "./productionTools/ProductionToolsWorkspace";
 import { oemActionWorkspace, oemObjectWorkspace } from "./oemNavigation";
@@ -43,9 +44,10 @@ export function WorkflowApp({
 }) {
   const b = options.bootstrap!;
   const productionHandoff = b.configuration_admin ? validProductionHandoff(new URLSearchParams(window.location.search).get("production_handoff")) : undefined;
+  const materialTaskReturn = useRef<{projectId:string;projectWorkspace:boolean}|null>(null);
   const handoffReturn = useRef<{projectId: string; projectWorkspace: boolean} | null>(null);
   const [handoffFilters, setHandoffFilters] = useState<Record<string, MaterialHandoffFilter>>({});
-  const [supplyMode, setSupplyMode] = useState<{projectId: string; mode: 'handoff' | 'legacy'} | null>(null);
+  const [supplyMode, setSupplyMode] = useState<{projectId: string; mode: 'material' | 'handoff' | 'legacy'} | null>(null);
   const [ledgers, setLedgers] = useState(initialLedgerContexts);
   const [taskContext, setTaskContext] = useState<TaskContext>({projectId:"",offset:0});
   const [denied, setDenied] = useState(false),
@@ -260,6 +262,7 @@ export function WorkflowApp({
         if (p.version < (projectVersions.current.get(p.id) || 0))
           throw new Error("项目版本已更新，请重试打开记录。");
         projectVersions.current.set(p.id, p.version);
+        if (t.kind === "material_task") materialTaskReturn.current={projectId:t.projectId,projectWorkspace:!!project&&!target};
         if (fromHandoffWorkspace) {
           captureHandoffWorkspaceOrigin(t.projectId);
         } else if (t.kind === 'material_handoff' && (!target || !handoffReturn.current)) {
@@ -292,7 +295,7 @@ export function WorkflowApp({
       }
     });
   }
-  function changed(result: MutationAcknowledgement) {
+  function changed(result: MutationAcknowledgement, stayOnTask = false) {
     if (!("integration" in result)) setChosenAction(null);
     const version = Math.max(
       result.project_version,
@@ -313,13 +316,13 @@ export function WorkflowApp({
     setDirtyKeys({});
     setCurrentTask(null);
     setEpoch((e) => e + 1);
-    if (result.exchange_id) {
+    if (!stayOnTask && result.exchange_id) {
       // An intent can reserve an ID before its business object exists.
       setTarget({projectId:result.project_id,kind:"exchange",id:result.exchange_id});
       setDetail(null);
       setResolve(false);
     } else if (
-      [
+      !stayOnTask && [
         "material_handoff", "rma", "capa", "npi", "npi_issue", "reusable_asset", "asset_use", "test_plan", "test_run", "calibration", "component_link", "arrival", "authority_rule",
         "eco",
         "demand",
@@ -461,10 +464,10 @@ export function WorkflowApp({
           {activeView === "production_tools" && b.configuration_admin && <ProductionToolsWorkspace api={api} userId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} handoffId={productionHandoff} onDirty={productionDirty} />}
           {activeView === "home" && !project && (
             <WorkflowHome readOnly={readOnly} onDirty={onDirty} requestLeave={requestLeave} data={dashboard} projects={projects} projectsReady={projectsReady} dashboardError={dashboardError} projectsError={projectsError} api={api} refresh={refresh} active={view === "home"} onRefresh={() => setRefresh(r => r + 1)} onOpen={open}
-              onNavigate={(module, kind, projectId) => navigate(module, {kind, projectId})} />
+              onNavigate={(module, kind, projectId) => navigate(module, {kind, projectId})} onMaterialProject={id=>requestLeave(()=>{const p=projects.find(x=>x.id===id);if(p){setProject(p);setWorkspace("supply");setSupplyMode({projectId:id,mode:"material"});setTarget(null);}})} />
           )}{" "}
           {activeView === "tasks" && !project && <GlobalTasks api={api} context={taskContext} onContext={context=>{cancelOpening();setTaskContext(context);}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open}/> }
-          {isBusinessModule(activeView) && !project && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>{cancelOpening();setLedgers(old=>({...old,[activeView]:context}));}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");})}/>}
+          {isBusinessModule(activeView) && !project && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>{cancelOpening();setLedgers(old=>({...old,[activeView]:context}));}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");if(activeView === "supply" && ledgers.supply.kind === "material_handoff")setSupplyMode({projectId:p.id,mode:"handoff"});})}/>}
           {(activeView === "projects" || project) &&
             (creating ? (
               <ProjectForm
@@ -570,18 +573,22 @@ export function WorkflowApp({
                           setDetail(null);
                           setCurrentTask(null);
                           setResolve(false);
-                          if (handoffReturn.current?.projectId === target.projectId && handoffReturn.current.projectWorkspace) {
+                          if (target.kind === 'material_task' && materialTaskReturn.current?.projectId === target.projectId && materialTaskReturn.current.projectWorkspace) {
+                            setWorkspace('supply');
+                            setSupplyMode({projectId: target.projectId, mode: 'material'});
+                          } else if (handoffReturn.current?.projectId === target.projectId && handoffReturn.current.projectWorkspace) {
                             setWorkspace('supply');
                             setChosenAction(null);
                             setSupplyMode({projectId: target.projectId, mode: 'handoff'});
                           } else if (activeView !== "projects") setProject(null);
                           handoffReturn.current = null;
+                          materialTaskReturn.current = null;
                         })
                       }
                     >
                       返回业务列表
                     </button>
-                    <WorkflowDetail
+                    {target.kind === "material_task" ? <MaterialTaskPanel key={target.projectId+target.id} api={api} project={project} taskId={target.id} readOnly={readOnly} onChanged={result=>changed(result,true)} onDirty={onDirty} requestLeave={requestLeave}/> : <><WorkflowDetail
                       key={target.projectId+target.kind+target.id}
                       api={api}
                       target={target}
@@ -593,6 +600,7 @@ export function WorkflowApp({
                       const prefix=action.split(".")[0];
                       setWorkspace(oemActionWorkspace(action) || (["shipment","delivery","ownership","stock_basis","closure"].includes(prefix)?"delivery":["supply","material","reservation","plan"].includes(prefix)?"supply":["production","execution","unit","first_article"].includes(prefix)?"execution":["test","nonconformance","rework","release"].includes(prefix)?"quality":["freeze","rma","capa"].includes(prefix)?"trace":["engineering","work_order","readiness","eco"].includes(prefix)?"engineering":["exchange","source"].includes(prefix)?"exchange":"orders"));
                     })}/>}
+                    </>}
                     {!readOnly &&
                       detail?.value.kind === "commitment_change" &&
                       detail.summary.next_actions.includes(
