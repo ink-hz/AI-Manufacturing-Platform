@@ -27,6 +27,18 @@ def analyze(tx, pid, rows):
         by_scope.setdefault((r['lineage_id'], r['work_order_id'], r['material_id'], r['owner_id'], r['unit'], r['scale']), []).append(r)
     result = {r['id']: [] for r in rows}
     requirement_scopes = {r['id']: (r['lineage_id'], r['work_order_id'], r['material_id'], r['owner_id'], r['unit'], r['scale']) for r in tx.execute('SELECT * FROM requirements WHERE project_id=?', (pid,))}
+    current_scopes = {}
+    for r in tx.execute("""SELECT r.* FROM requirements r WHERE r.project_id=? AND r.plan_id=(SELECT p.id FROM plans p JOIN requirements candidate ON candidate.plan_id=p.id WHERE p.project_id=r.project_id AND candidate.work_order_id=r.work_order_id AND p.state='confirmed' ORDER BY p.accepted_seq DESC LIMIT 1)""", (pid,)):
+        scope = requirement_scopes[r['id']]
+        current_scopes.setdefault(scope, []).append(r['id'])
+    current_ids = {rid for ids in current_scopes.values() for rid in ids}
+    def scoped_rows(requirement_id):
+        scope = requirement_scopes.get(requirement_id)
+        if scope is None:
+            return []
+        current = current_scopes.get(scope, [])
+        return [r for r in by_scope.get(scope, []) if r['id'] == requirement_id or (r['id'] in current_ids and len(current) == 1)]
+    related_handoffs = {r['id']: [] for r in rows}
     tasks = list(tx.execute("SELECT * FROM material_tasks WHERE project_id=? AND state NOT IN ('closed','cancelled')", (pid,)))
     iqc_tasks = {t['receipt_id']: t for t in tasks if t['task_kind'] == 'iqc'}
     trace_tasks = {t['handoff_id']: t for t in tx.execute("SELECT * FROM material_tasks WHERE project_id=? AND task_kind='trace' AND state!='cancelled' ORDER BY seq", (pid,))}
@@ -60,8 +72,8 @@ def analyze(tx, pid, rows):
         if Decimal(bal.shortage) > 0:
             result[r['id']].append(issue('shortage', '预留缺口', 'requirement', r['id'], bal.shortage, r['unit'], action='check_allocation'))
     for e in tx.execute("SELECT id,requirement_id FROM material_expedites WHERE project_id=? AND state='open'", (pid,)):
-        if e['requirement_id'] in result:
-            result[e['requirement_id']].append(issue('urgent', '在办急料', 'material_expedite', e['id'], action='expedite'))
+        for row in scoped_rows(e['requirement_id']):
+            result[row['id']].append(issue('urgent', '在办急料', 'material_expedite', e['id'], action='expedite'))
     lot_scopes = set()
     receipts = tx.execute("""SELECT r.id,r.q_atoms,r.unit,r.material_lot_id,l.scale,prior.lineage_id,prior.work_order_id,prior.material_id,prior.owner_id,
         COALESCE((SELECT SUM(i.accepted_atoms+i.rejected_atoms) FROM effective_iqc_results i WHERE i.project_id=r.project_id AND i.receipt_id=r.id),0) checked
@@ -94,21 +106,24 @@ def analyze(tx, pid, rows):
     for row in rows:
         key = (row['work_order_id'], row['material_id'], row['owner_id'], row['unit'])
         by_work_lot.setdefault(key, []).append(row)
-    for hand in tx.execute("""SELECT h.*,l.material_id,l.owner_id,l.unit FROM material_handoffs h JOIN material_lots l ON l.id=h.material_lot_id AND l.project_id=h.project_id WHERE h.project_id=? AND h.state!='cancelled'""", (pid,)):
-        candidates = [r for r in by_work_lot.get((hand['work_order_id'], hand['material_id'], hand['owner_id'], hand['unit']), []) if (hand['material_lot_id'], r['lineage_id'], r['work_order_id']) in lot_scopes]
-        if not candidates: continue
+    for hand in tx.execute("""SELECT h.*,l.material_id,l.owner_id,l.unit,l.scale FROM material_handoffs h JOIN material_lots l ON l.id=h.material_lot_id AND l.project_id=h.project_id WHERE h.project_id=? AND h.state!='cancelled'""", (pid,)):
+        candidates = [r for r in by_work_lot.get((hand['work_order_id'], hand['material_id'], hand['owner_id'], hand['unit']), []) if r['scale'] == hand['scale']]
         payload = json.loads(hand['payload_json'])
         signed = json.loads(hand['receipt_json']) if hand['receipt_json'] else None
         task = trace_tasks.get(hand['id'])
-        scoped = task['requirement_id'] if task else (signed.get('requirement_id') if signed and signed.get('receipt_use') == 'line_side' else None)
+        scoped = (task['requirement_id'] if task else None) or (signed.get('requirement_id') if signed and signed.get('receipt_use') == 'line_side' else None)
         if scoped:
-            target_scope = requirement_scopes.get(scoped)
-            candidates = [r for r in candidates if (r['lineage_id'], r['work_order_id'], r['material_id'], r['owner_id'], r['unit'], r['scale']) == target_scope]
+            target_ids = {r['id'] for r in scoped_rows(scoped)}
+            candidates = [r for r in candidates if r['id'] in target_ids]
+            for row in candidates:
+                related_handoffs[row['id']].append(hand['id'])
             if len(candidates) != 1:
                 for row in candidates:
                     result[row['id']].append(issue('verification', '交接归属待核对', 'material_handoff', hand['id'], unit=hand['unit'], action='check_allocation'))
                 continue
-        elif len(lot_demands.get((hand['material_lot_id'], hand['work_order_id']), set())) != 1:
+        else:
+            candidates = [r for r in candidates if (hand['material_lot_id'], r['lineage_id'], r['work_order_id']) in lot_scopes]
+        if not scoped and len(lot_demands.get((hand['material_lot_id'], hand['work_order_id']), set())) != 1:
             for row in candidates:
                 result[row['id']].append(issue('verification', '交接归属待核对', 'material_handoff', hand['id'], unit=hand['unit'], action='check_allocation'))
             continue
@@ -124,4 +139,4 @@ def analyze(tx, pid, rows):
                 received += sum((Decimal(item['received_quantity']) for item in linked), Decimal(0))
         if received < sent:
             result[candidates[0]['id']].append(issue('unreceived', '交接未足额签收', 'material_handoff', hand['id'], str(sent-received), hand['unit'], task, 'trace'))
-    return balances, result, unknown_quality | ambiguous_allocation
+    return balances, result, unknown_quality | ambiguous_allocation, related_handoffs

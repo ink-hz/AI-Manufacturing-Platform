@@ -153,7 +153,7 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
             where += " AND (material_id LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM work_orders w WHERE w.project_id=requirements.project_id AND w.id=requirements.work_order_id AND w.source_external_id LIKE ? ESCAPE '\\'))"
             args.extend([f'%{escaped}%', f'%{escaped}%'])
         scoped = tx.execute(f'SELECT requirements.*,(SELECT cutoff FROM plans p WHERE p.id=requirements.plan_id) cutoff,(SELECT source_version FROM plans p WHERE p.id=requirements.plan_id) source_version FROM requirements WHERE {where} ORDER BY requirements.created_at,requirements.id', args).fetchall()
-        balances, analysis, unknown_quality = analyze(tx, pid, scoped)
+        balances, analysis, unknown_quality, related_handoffs = analyze(tx, pid, scoped)
         problem_counts = {key: sum(any(item['code'] == key for item in analysis[r['id']]) for r in scoped) for key in ('shortage','urgent','pending_iqc','unreceived','verification')}
         problem_counts['attention'] = sum(bool(analysis[r['id']]) for r in scoped)
         problem_counts['all'] = len(scoped)
@@ -190,14 +190,16 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
             exp = tx.execute('SELECT id FROM material_expedites WHERE project_id=? AND requirement_id=? ORDER BY seq LIMIT 201', (pid, rid)).fetchall()
             rec = tx.execute('SELECT r.id,r.material_lot_id FROM effective_supply_receipts r JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id WHERE r.project_id=? AND prior.lineage_id=? AND prior.work_order_id=? AND prior.material_id=? AND prior.owner_id=? AND prior.unit=? AND prior.scale=? ORDER BY r.created_at,r.id LIMIT 201', (pid, row['lineage_id'], wid, row['material_id'], row['owner_id'], row['unit'], row['scale'])).fetchall()
             marks = tx.execute('SELECT id FROM issue_marks WHERE project_id=? AND requirement_id=? ORDER BY seq LIMIT 201', (pid, rid)).fetchall()
-            hand = tx.execute('SELECT DISTINCT h.id,h.seq FROM material_handoffs h JOIN effective_supply_receipts r ON r.project_id=h.project_id AND r.material_lot_id=h.material_lot_id JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id WHERE h.project_id=? AND prior.lineage_id=? AND h.work_order_id=? AND prior.work_order_id=? AND prior.material_id=? AND prior.owner_id=? AND prior.unit=? AND prior.scale=? ORDER BY h.seq LIMIT 201', (pid, row['lineage_id'], wid, wid, row['material_id'], row['owner_id'], row['unit'], row['scale'])).fetchall()
+            hand = tx.execute('SELECT DISTINCT h.id,h.seq FROM material_handoffs h JOIN effective_supply_receipts r ON r.project_id=h.project_id AND r.material_lot_id=h.material_lot_id JOIN supply_commitments c ON c.id=r.commitment_id AND c.project_id=r.project_id JOIN requirements prior ON prior.id=c.requirement_id AND prior.project_id=c.project_id JOIN material_lots l ON l.id=h.material_lot_id AND l.project_id=h.project_id WHERE r.unit=prior.unit AND l.material_id=prior.material_id AND l.owner_id=prior.owner_id AND l.unit=prior.unit AND l.scale=prior.scale AND h.project_id=? AND prior.lineage_id=? AND h.work_order_id=? AND prior.work_order_id=? AND prior.material_id=? AND prior.owner_id=? AND prior.unit=? AND prior.scale=? ORDER BY h.seq LIMIT 201', (pid, row['lineage_id'], wid, wid, row['material_id'], row['owner_id'], row['unit'], row['scale'])).fetchall()
+            exp = list(dict.fromkeys([x['id'] for x in exp] + [i['object_id'] for i in analysis[rid] if i['code'] == 'urgent']))
+            hand = list(dict.fromkeys([x['id'] for x in hand] + related_handoffs[rid]))
             if any(len(x) > 200 for x in (exp, rec, marks, hand)):
                 issues.append(f'Related evidence for requirement {rid} is truncated at 200 per type.')
-            for x in exp[:200]: add('expedites', 'material_expedite', x['id'])
+            for x in exp[:200]: add('expedites', 'material_expedite', x)
             for x in rec[:200]:
                 add('receipts', 'receipt', x['id'])
             for x in marks[:200]: add('issue_marks', 'issue_mark', x['id'])
-            for x in hand[:200]: add('handoffs', 'material_handoff', x['id'])
+            for x in hand[:200]: add('handoffs', 'material_handoff', x)
             need_event = need_times.get(rid)
             need_count = need_event['n'] if need_event else 0
             need_at = need_event['need_at'] if need_event and need_event['need_at'] else wo['planned_start']
@@ -210,7 +212,7 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
                 **{k: bal[k] for k in ('required', 'received', 'qualified', 'rejected', 'reserved', 'shortage', 'in_transit')},
                 confirmed_satisfied=None if rid in unknown_quality else amount(row['q_atoms'] - int(Decimal(bal['shortage']) * 10 ** row['scale']), row['scale']), issues=analysis[rid],
                 need_at=need_at, need_at_basis='manual_requirement' if need_event and need_event['need_at'] else 'work_order_planned_start_proxy', need_time_history_count=need_count, timing_risk=timing_risk, coverage_issues=[ISSUE],
-                expedite_ids=[x['id'] for x in exp[:200]], receipt_ids=[x['id'] for x in rec[:200]], handoff_ids=[x['id'] for x in hand[:200]]))
+                expedite_ids=exp[:200], receipt_ids=[x['id'] for x in rec[:200]], handoff_ids=hand[:200]))
         active_ids = {r[0] for r in tx.execute("SELECT user_id FROM project_grants WHERE project_id=? AND active=1 AND roles_json!='[]'", (pid,))}
         if actor.configuration_admin:
             active_ids.add(str(actor.user_id))

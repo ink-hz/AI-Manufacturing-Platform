@@ -290,3 +290,70 @@ def test_past_need_time_is_advisory_without_urgent_classification(workflow):
     row = workflow.client().get(path).json()['requirements'][0]
     assert row['need_at_basis'] == 'work_order_planned_start_proxy'
     assert row['timing_risk'] == 'unknown'
+
+
+def test_open_expedite_follows_compatible_api_replan_in_urgent_page(workflow):
+    from datetime import UTC, datetime, timedelta
+    from uuid import uuid4
+    from .test_expedites import setup, open_case
+    pid, rid, facts = setup(workflow)
+    case = open_case(workflow, pid, rid)['object_id']
+    now = datetime.now(UTC)
+    source = workflow.source(str(uuid4()), object_type='plan')
+    source.update(occurred_at=(now - timedelta(seconds=2)).isoformat(),
+                  collected_at=(now - timedelta(seconds=1)).isoformat(),
+                  cutoff=(now - timedelta(seconds=2)).isoformat())
+    plan = workflow.command(pid, 'plan.receive', actor_name='planner', source=source,
+        input_revision_ids=[facts['revision_id']],
+        input_order_versions=[{'order_line_id': facts['order_id'], 'version': 1}],
+        requirements=[dict(work_order_id=facts['work_order_id'], execution_scope='trial',
+                           material_id='steel-1', owner_id='Customer 1', quantity='100', unit='kg')])
+    current = workflow.object(pid, 'plan', plan['object_id'])['requirement_ids'][0]
+    page = workflow.client('supply').get(f'{BASE}/projects/{pid}/material-control', params={'problem': 'urgent'}).json()
+    assert page['total'] == page['problem_counts']['urgent'] == 1
+    row = page['requirements'][0]
+    assert row['id'] == current and case in row['expedite_ids']
+    assert any(i['code'] == 'urgent' and i['object_id'] == case for i in row['issues'])
+    assert any(x['id'] == case for x in page['expedites'])
+    historical = workflow.client('supply').get(f'{BASE}/projects/{pid}/material-control', params={'requirement_id': rid}).json()
+    assert case in historical['requirements'][0]['expedite_ids']
+    # An incompatible requirement and an ambiguous duplicate cannot inherit the case,
+    # even when the request filters all other requirements out.
+    with sqlite3.connect(workflow.paths.domain) as db:
+        db.row_factory = sqlite3.Row
+        template = dict(db.execute('SELECT * FROM requirements WHERE id=?', (current,)).fetchone())
+        def clone(**updates):
+            row = dict(template, id=str(uuid4()), **updates)
+            cols = list(row)
+            db.execute(f"INSERT INTO requirements ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})", [row[c] for c in cols])
+            return row['id']
+        incompatible = clone(material_id='other material')
+        duplicate = clone()
+    for other in (incompatible, duplicate, current):
+        filtered = workflow.client('supply').get(f'{BASE}/projects/{pid}/material-control', params={'requirement_id': other, 'problem': 'urgent'}).json()
+        assert filtered['total'] == 0
+
+
+def test_explicit_trace_on_authority_stock_without_local_receipt(workflow):
+    from .conftest import USERS
+    p, req, facts = workflow.material_requirement(mode='oem', qualified='0')
+    reservation = workflow.command(p['id'], 'reservation.request', actor_name='planner', work_order_id=facts['work_order_id'], requirement_id=req['id'], lot_id=facts['lot_id'], quantity='80', unit='kg')
+    workflow.grant(p['id'], 'warehouse', ['warehouse'])
+    workflow.grant(p['id'], 'production', ['production'])
+    stock(workflow, p, facts)
+    act(workflow, p, reservation)
+    hand = workflow.command(p['id'], 'material_handoff.record', actor_name='warehouse', material_lot_id=facts['lot_id'], work_order_id=facts['work_order_id'], quantity='20', unit='kg', from_location='warehouse', to_location='line', receiver_id=str(USERS['production']))['object_id']
+    task = workflow.command(p['id'], 'material_task.open', actor_name='supply', requirement_id=req['id'], task_kind='trace', handoff_id=hand, assignee_id=str(USERS['warehouse']), note='trace')['object_id']
+    page = workflow.client('supply').get(f"{BASE}/projects/{p['id']}/material-control", params={'problem': 'unreceived'}).json()
+    assert page['total'] == page['problem_counts']['unreceived'] == 1
+    row = page['requirements'][0]
+    assert hand in row['handoff_ids'] and any(x['id'] == hand for x in page['handoffs'])
+    assert any(i['code'] == 'unreceived' and i['object_id'] == hand and i['task_id'] == task and i['quantity'] == '20' for i in row['issues'])
+    signed = workflow.command(p['id'], 'material_handoff.record', actor_name='warehouse', material_lot_id=facts['lot_id'], work_order_id=facts['work_order_id'], quantity='20', unit='kg', from_location='warehouse', to_location='line', receiver_id=str(USERS['production']))['object_id']
+    workflow.command(p['id'], 'material_handoff.receive', actor_name='production', handoff_id=signed, received_quantity='18', received_location='line', note='short', receipt_use='line_side', requirement_id=req['id'])
+    unscoped = workflow.command(p['id'], 'material_handoff.record', actor_name='warehouse', material_lot_id=facts['lot_id'], work_order_id=facts['work_order_id'], quantity='5', unit='kg', from_location='warehouse', to_location='line', receiver_id=str(USERS['production']))['object_id']
+    page = workflow.client('supply').get(f"{BASE}/projects/{p['id']}/material-control").json()
+    row = page['requirements'][0]
+    assert signed in row['handoff_ids'] and any(x['id'] == signed for x in page['handoffs'])
+    assert any(i['code'] == 'unreceived' and i['object_id'] == signed and i['quantity'] == '2' for i in row['issues'])
+    assert unscoped not in row['handoff_ids'] and not any(i['object_id'] == unscoped for i in row['issues'])
