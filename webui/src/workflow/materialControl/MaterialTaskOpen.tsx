@@ -18,6 +18,7 @@ export function MaterialTaskOpen({
 }) {
   const command = useMaterialCommand(p.api, p.project.id);
   const [version, setVersion] = useState(p.project.version);
+  const [generation, setGeneration] = useState(0);
   const [kind, setKind] = useState<"iqc" | "trace" | null>(null);
   const [members, setMembers] = useState<
     { id: string; display_name: string }[]
@@ -55,13 +56,14 @@ export function MaterialTaskOpen({
         }
       });
     return () => c.abort();
-  }, [p.api, p.project.id, kind, active]);
+  }, [p.api, p.project.id, kind, active, generation]);
   function start(next: "iqc" | "trace") {
     begin(() => {
       command.clear();
       setVersion(p.project.version);
       setMembers([]);
       setKind(next);
+      setGeneration((n) => n + 1);
       setMember("");
       setReference("");
       setNote("");

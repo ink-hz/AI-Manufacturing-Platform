@@ -72,6 +72,7 @@ const guidance = {
 };
 export interface OEMWorkspaceProps extends WorkspaceProps {
   requestLeave(action: () => void): void;
+  requestLocalLeave?(action: () => void): void;
   configurationAdmin?: boolean;
   initialAction?: string | null;
   onSelectAction?(action: string | null): void;

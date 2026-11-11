@@ -70,11 +70,6 @@ export function MaterialControlOverview({
                       <button onClick={() => onProject(p.project_id)}>
                         查看料况
                       </button>
-                      {p.open_material_task_count > 0 && (
-                        <button onClick={() => onProject(p.project_id)}>
-                          处理物料任务
-                        </button>
-                      )}
                     </td>
                   </tr>
                 ))}

@@ -17,6 +17,7 @@ def summary(tx,pid,row):
     return ObjectSummary(
         id=row['id'], project_id=pid, kind='material_task', title=payload['note'],
         state=state, version=version, source=payload['source'],
+        assignee_id=row['assignee_id'], proposed_assignee_id=row['proposed_assignee_id'],
         next_actions=(['material_task.accept', 'material_task.reassign', 'material_task.cancel']
                       if state == 'pending' else
                       ['material_task.progress', 'material_task.verify', 'material_task.close',

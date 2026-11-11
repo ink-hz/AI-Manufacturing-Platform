@@ -340,6 +340,8 @@ export type WorkflowCommand = CommandFields & {
   expected_version: number;
 };
 export interface ObjectSummary {
+  assignee_id?: string | null;
+  proposed_assignee_id?: string | null;
   action_capabilities?:{action:string;variants:Record<string,{ready:boolean|null;blocking_reasons:string[]}>}[];
   revision_family_id?:string|null;
   revision_id?:string|null;

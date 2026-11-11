@@ -25,7 +25,7 @@ export function MaterialControlWorkspace(p: OEMWorkspaceProps) {
     },
   };
   const leave = (action: () => void) =>
-    p.requestLeave(() => {
+    (p.requestLocalLeave || p.requestLeave)(() => {
       draft.current = {};
       action();
     });
@@ -123,7 +123,12 @@ export function MaterialControlWorkspace(p: OEMWorkspaceProps) {
                         <td>
                           <button
                             className="wf-text-link"
-                            onClick={() => leave(() => setSelected(r.id))}
+                            onClick={() =>
+                              leave(() => {
+                                setActive(null);
+                                setSelected(r.id);
+                              })
+                            }
                           >
                             {r.material_id}
                           </button>

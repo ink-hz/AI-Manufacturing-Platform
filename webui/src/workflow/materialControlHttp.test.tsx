@@ -338,6 +338,47 @@ it("opens an expedite through the component against FastAPI with project version
     await act(async () =>
       root.render(<App options={{ ...s.options, bootstrap: boot }} />),
     );
+    await click("制造项目");
+    await click(p.name);
+    await click("供应与物料");
+    await click("steel");
+    await click("发起催料");
+    const changeField = async (name: string, value: string) => {
+      const e = host.querySelector(
+        `[aria-label="${name}"]`,
+      ) as HTMLInputElement;
+      expect(e, name).toBeTruthy();
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )!.set!.call(e, value);
+        e.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    await changeField("催料原因", "待放弃草稿");
+    await click("steel");
+    await click("放弃并离开");
+    expect(host.querySelector('[aria-label="催料原因"]')).toBeNull();
+    await click("发起催料");
+    await changeField("催料原因", "待放弃草稿");
+    await click("安排检验");
+    expect(host.querySelector('[role="dialog"]')).toBeTruthy();
+    await click("放弃并离开");
+    await wait(() => !!host.querySelector('[aria-label="任务说明"]'));
+    await wait(
+      () =>
+        host
+          .querySelector('[aria-label="检验人"]')
+          ?.textContent?.includes("owner") === true,
+    );
+    await click("安排检验");
+    await wait(
+      () =>
+        host
+          .querySelector('[aria-label="检验人"]')
+          ?.textContent?.includes("owner") === true,
+    );
     await click("事项");
     await click("检查钢材");
     await wait(() => !!host.querySelector('[aria-label="物料任务"]'));
@@ -351,6 +392,12 @@ it("opens an expedite through the component against FastAPI with project version
       await new Promise((r) => setTimeout(r, 100));
     });
     expect(host.querySelector('[aria-label="物料任务"]')).toBeTruthy();
+    await click("更新进展");
+    await changeField("进展", "待放弃进展");
+    await click("完成任务");
+    expect(host.querySelector('[role="dialog"]')).toBeTruthy();
+    await click("放弃并离开");
+    await wait(() => !!host.querySelector('[aria-label="完成说明"]'));
     await click("登记检验结果");
     for (const [name, value] of [
       ["合格数量", "1"],

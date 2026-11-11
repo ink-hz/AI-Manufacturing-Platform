@@ -1515,34 +1515,36 @@ it("shows the actual task owner and proposed recipient in the project queue", as
   document.body.append(host);
   root = createRoot(host);
   const api = {
-    materialProject: vi
-      .fn()
-      .mockResolvedValue({
-        requirements: [],
-        work_orders: [],
-        expedites: [],
-        receipts: [],
-        handoffs: [],
-        coverage_issues: [],
-        source_modes: [],
-        total: 0,
-      }),
-    materialTasks: vi
-      .fn()
-      .mockResolvedValue({
-        items: [{ id: "t", title: "查找齿轮", state: "processing" }],
-        total: 2,
-      }),
-    object: vi
-      .fn()
-      .mockResolvedValue({
-        value: {
-          kind: "material_task",
-          task_kind: "trace",
+    materialProject: vi.fn().mockResolvedValue({
+      requirements: [],
+      work_orders: [],
+      expedites: [],
+      receipts: [],
+      handoffs: [],
+      coverage_issues: [],
+      source_modes: [],
+      total: 0,
+    }),
+    materialTasks: vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "t",
+          title: "查找齿轮",
+          state: "processing",
           assignee_id: "a",
           proposed_assignee_id: "b",
         },
-      }),
+      ],
+      total: 2,
+    }),
+    object: vi.fn().mockResolvedValue({
+      value: {
+        kind: "material_task",
+        task_kind: "trace",
+        assignee_id: "a",
+        proposed_assignee_id: "b",
+      },
+    }),
     materialAssignees: vi.fn().mockResolvedValue({
       items: [
         { id: "a", display_name: "张工" },
@@ -1564,7 +1566,77 @@ it("shows the actual task owner and proposed recipient in the project queue", as
     ),
   );
   await flush();
+  expect(api.object).not.toHaveBeenCalled();
   expect(host.textContent).toContain("负责人：张工");
   expect(host.textContent).toContain("待接收：李工");
   expect(host.textContent).toContain("本页 1 条，共 2 条");
+});
+it("reloads the assignee choices when reopening the same task kind", async () => {
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  const api = {
+    materialProject: vi
+      .fn()
+      .mockResolvedValue({
+        requirements: [
+          {
+            id: "r",
+            material_id: "齿轮",
+            work_order_id: "w",
+            unit: "件",
+            required: "1",
+            reserved: "0",
+            qualified: "0",
+            shortage: "1",
+            received: "0",
+            rejected: "0",
+            in_transit: "0",
+            need_at: null,
+            expedite_ids: [],
+            receipt_ids: [],
+            handoff_ids: [],
+          },
+        ],
+        work_orders: [],
+        expedites: [],
+        receipts: [],
+        handoffs: [],
+        coverage_issues: [],
+        source_modes: [],
+        total: 1,
+      }),
+    materialAssignees: vi
+      .fn()
+      .mockResolvedValue({ items: [{ id: "i", display_name: "检验员" }] }),
+  };
+  await act(async () =>
+    root.render(
+      <SupplyWorkspace
+        api={api as never}
+        project={{
+          ...project,
+          mode: "oem",
+          allowed_actions: ["material_task.open"] as never,
+        }}
+        readOnly={false}
+        onChanged={() => {}}
+        onOpen={() => {}}
+        onDirty={() => {}}
+        requestLeave={(f) => f()}
+      />,
+    ),
+  );
+  await flush();
+  for (const t of ["齿轮", "安排检验", "安排检验"]) {
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((b) => b.textContent === t)!
+        .click(),
+    );
+    await flush();
+  }
+  expect(host.querySelector('[aria-label="检验人"]')?.textContent).toContain(
+    "检验员",
+  );
 });

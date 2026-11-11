@@ -76,6 +76,13 @@ def test_reassignment_retains_responsibility_until_new_assignee_accepts(workflow
     w.command(pid,'material_task.reassign',actor_name='supply',task_id=task,assignee_id=str(USERS['warehouse']),reason='调整责任人')
     v=w.client('supply').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']
     assert v['assignee_id']==str(USERS['quality']) and v['proposed_assignee_id']==str(USERS['warehouse'])
+    page=w.client('warehouse').get(f'{BASE}/projects/{pid}/material-tasks').json()
+    summary=next(item for item in page['items'] if item['id']==task)
+    assert summary['assignee_id']==str(USERS['quality']) and summary['proposed_assignee_id']==str(USERS['warehouse'])
+    own_tasks=w.client('warehouse').get(f'{BASE}/tasks',params={'project_id':pid}).json()['items']
+    own=next(item['target'] for item in own_tasks if item['target']['id']==task)
+    assert own['assignee_id']==str(USERS['quality']) and own['proposed_assignee_id']==str(USERS['warehouse'])
+    assert 'material_task.accept' in own['next_actions'] and 'material_task.progress' not in own['next_actions']
     w.command(pid,'material_task.accept',actor_name='quality',task_id=task,expected_status=403)
     w.command(pid,'material_task.accept',actor_name='warehouse',task_id=task)
     v=w.client('supply').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']
@@ -265,6 +272,8 @@ def test_task_page_summary_does_not_load_history_or_evidence(workflow, monkeypat
     monkeypatch.setattr(WorkflowStore,'transaction',traced)
     page=w.client('quality').get(f'{BASE}/projects/{pid}/material-tasks',params={'limit':1,'offset':0})
     assert page.status_code==200 and page.json()['items'][0]['version']==5
+    assert page.json()['items'][0]['assignee_id']==str(USERS['quality'])
+    assert page.json()['items'][0]['proposed_assignee_id'] is None
     assert not any('SELECT payload_json FROM material_task_history' in q for q in statements)
     assert not any('SELECT handoff_id FROM material_task_evidence' in q for q in statements)
     assert any('COUNT(*) FROM material_task_history' in q for q in statements)

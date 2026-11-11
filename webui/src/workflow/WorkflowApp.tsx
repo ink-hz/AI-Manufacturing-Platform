@@ -71,7 +71,7 @@ export function WorkflowApp({
     [refresh, setRefresh] = useState(0),
     [epoch, setEpoch] = useState(0),
     [dirtyKeys, setDirtyKeys] = useState<Record<string, boolean>>({}),
-    [pending, setPending] = useState<(() => void) | null>(null),
+    [pending, setPending] = useState<{action: () => void; preserveOwner: boolean} | null>(null),
     [accountAction, setAccountAction] = useState<"navigate" | "logout" | null>(
       null,
     ),
@@ -232,13 +232,14 @@ export function WorkflowApp({
     return () => controller.abort();
   }, [api, project?.id, project?.version, refresh]);
   const requestLeave = useCallback(
-    (action: () => void) => {
+    (action: () => void, preserveOwner = false) => {
       const leave = () => { cancelOpening(); action(); };
-      if (Object.values(dirtyKeys).some(Boolean)) setPending((existing) => existing || leave);
+      if (Object.values(dirtyKeys).some(Boolean)) setPending((existing) => existing || {action:leave, preserveOwner});
       else leave();
     },
     [dirtyKeys, cancelOpening],
   );
+  const requestLocalLeave = useCallback((action: () => void) => requestLeave(action, true), [requestLeave]);
   function account(action: "navigate" | "logout") {
     if (accountLock.current || !alive.current || pending) return;
     accountLock.current = true;
@@ -588,7 +589,7 @@ export function WorkflowApp({
                     >
                       返回业务列表
                     </button>
-                    {target.kind === "material_task" ? <MaterialTaskPanel key={target.projectId+target.id} api={api} project={project} taskId={target.id} readOnly={readOnly} onChanged={result=>changed(result,true)} onDirty={onDirty} requestLeave={requestLeave}/> : <><WorkflowDetail
+                    {target.kind === "material_task" ? <MaterialTaskPanel key={target.projectId+target.id} api={api} project={project} taskId={target.id} readOnly={readOnly} onChanged={result=>changed(result,true)} onDirty={onDirty} requestLeave={requestLocalLeave}/> : <><WorkflowDetail
                       key={target.projectId+target.kind+target.id}
                       api={api}
                       target={target}
@@ -647,6 +648,7 @@ export function WorkflowApp({
                     onHandoffOpen={target => open(target, true)}
                     initialAction={chosenAction} onSelectAction={setChosenAction} initialObject={currentTask}
                     requestLeave={requestLeave}
+                    requestLocalLeave={requestLocalLeave}
                     onReload={() => setRefresh((r) => r + 1)}
                   />
                 ) : workspace === "trace" ? (
@@ -709,11 +711,11 @@ export function WorkflowApp({
             </button>
             <button
               onClick={() => {
-                const action = pending;
+                const {action, preserveOwner} = pending;
                 setPending(null);
                 setDirtyKeys({});
                 callbacks.current.onDirtyChange?.(false);
-                setEpoch((e) => e + 1);
+                if (!preserveOwner) setEpoch((e) => e + 1);
                 action();
               }}
             >

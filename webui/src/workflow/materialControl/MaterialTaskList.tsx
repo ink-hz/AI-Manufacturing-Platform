@@ -2,18 +2,10 @@ import { useEffect, useState } from "react";
 import type { OEMWorkspaceProps } from "../OEMWorkspace";
 import type { ObjectPage } from "../types";
 
-type Responsibility = {
-  assignee_id: string;
-  proposed_assignee_id: string | null;
-  task_kind: "iqc" | "trace";
-};
 export function MaterialTaskList({ p }: { p: OEMWorkspaceProps }) {
   const [page, setPage] = useState<ObjectPage | null>(null),
     [offset, setOffset] = useState(0),
     [error, setError] = useState("");
-  const [responsibilities, setResponsibilities] = useState<
-    Record<string, Responsibility>
-  >({});
   const [names, setNames] = useState<Record<string, string>>({});
   useEffect(() => {
     if (typeof p.api.materialTasks !== "function") return;
@@ -21,49 +13,25 @@ export function MaterialTaskList({ p }: { p: OEMWorkspaceProps }) {
     const c = new AbortController();
     setPage(null);
     setError("");
-    setResponsibilities({});
     setNames({});
     p.api
       .materialTasks(p.project.id, 50, offset, c.signal)
       .then(async (value) => {
         if (!active) return;
         setPage(value);
-        const rows = await Promise.all(
-          value.items.map(async (item) => {
-            try {
-              const detail = await p.api.object(
-                p.project.id,
-                "material_task",
-                item.id,
-                c.signal,
-              );
-              return [
-                item.id,
-                detail.value as unknown as Responsibility,
-              ] as const;
-            } catch {
-              return null;
-            }
-          }),
-        );
-        const kinds = [
-          ...new Set(
-            rows.flatMap((row) =>
-              row?.[1]?.task_kind ? [row[1].task_kind] : [],
-            ),
-          ),
-        ];
-        const people = await Promise.all(
-          kinds.map((kind) =>
-            p.api
-              .materialAssignees(p.project.id, kind, c.signal)
-              .catch(() => ({ items: [], total: 0 })),
-          ),
-        );
+        const people =
+          value.items.some(
+            (item) => item.assignee_id || item.proposed_assignee_id,
+          ) && typeof p.api.materialAssignees === "function"
+            ? await Promise.all(
+                (["iqc", "trace"] as const).map((kind) =>
+                  p.api
+                    .materialAssignees(p.project.id, kind, c.signal)
+                    .catch(() => ({ items: [], total: 0 })),
+                ),
+              )
+            : [];
         if (active) {
-          setResponsibilities(
-            Object.fromEntries(rows.filter((row) => row !== null)),
-          );
           setNames(
             Object.fromEntries(
               people.flatMap((group) =>
@@ -98,7 +66,7 @@ export function MaterialTaskList({ p }: { p: OEMWorkspaceProps }) {
           ) : (
             <ul>
               {page.items.map((t) => {
-                const owner = responsibilities[t.id];
+                const owner = t;
                 return (
                   <li key={t.id}>
                     <button
@@ -125,7 +93,7 @@ export function MaterialTaskList({ p }: { p: OEMWorkspaceProps }) {
                         cancelled: "已取消",
                       } as Record<string, string>
                     )[t.state] || t.state}
-                    {owner &&
+                    {owner.assignee_id &&
                       ` · 负责人：${names[owner.assignee_id] || "成员资料不可用"}${owner.proposed_assignee_id ? ` · 待接收：${names[owner.proposed_assignee_id] || "成员资料不可用"}` : ""}`}
                   </li>
                 );

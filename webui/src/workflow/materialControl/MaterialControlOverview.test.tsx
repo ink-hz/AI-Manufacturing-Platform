@@ -1,4 +1,47 @@
 // @vitest-environment jsdom
-import {act} from 'react';import {createRoot} from 'react-dom/client';import {expect,it,vi} from 'vitest';
-import {MaterialControlOverview} from './MaterialControlOverview';
-it('opens a project from its material execution overview',async()=>{const host=document.createElement('div');const root=createRoot(host);const open=vi.fn();const api={materialOverview:vi.fn().mockResolvedValue({items:[{project_id:'p',name:'项目甲',product:'机器人',requirement_count:2,open_expedite_count:1,unreceived_handoff_count:1,open_material_task_count:1}],total:1})};await act(async()=>root.render(<MaterialControlOverview api={api as never} refresh={0} onProject={open}/>));await act(async()=>{});expect(host.textContent).toContain('项目甲');const b=[...host.querySelectorAll('button')].find(x=>x.textContent==='查看料况');expect(b).toBeTruthy();await act(async()=>b!.click());expect(open).toHaveBeenCalledWith('p');await act(async()=>root.unmount());});
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { expect, it, vi } from "vitest";
+import { MaterialControlOverview } from "./MaterialControlOverview";
+it("opens a project from its material execution overview", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const open = vi.fn();
+  const api = {
+    materialOverview: vi
+      .fn()
+      .mockResolvedValue({
+        items: [
+          {
+            project_id: "p",
+            name: "项目甲",
+            product: "机器人",
+            requirement_count: 2,
+            open_expedite_count: 1,
+            unreceived_handoff_count: 1,
+            open_material_task_count: 1,
+          },
+        ],
+        total: 1,
+      }),
+  };
+  await act(async () =>
+    root.render(
+      <MaterialControlOverview
+        api={api as never}
+        refresh={0}
+        onProject={open}
+      />,
+    ),
+  );
+  await act(async () => {});
+  expect(host.textContent).toContain("项目甲");
+  expect(host.textContent).not.toContain("处理物料任务");
+  const b = [...host.querySelectorAll("button")].find(
+    (x) => x.textContent === "查看料况",
+  );
+  expect(b).toBeTruthy();
+  await act(async () => b!.click());
+  expect(open).toHaveBeenCalledWith("p");
+  await act(async () => root.unmount());
+});
