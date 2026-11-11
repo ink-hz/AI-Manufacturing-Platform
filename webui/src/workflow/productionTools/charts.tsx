@@ -24,23 +24,24 @@ export function TrendChart({ data, scope, onRange }: { data: Analysis; scope: Sc
     )}</div>;
   }
   const totalMax = maximum(data.items, "records"), failMax = maximum(data.items, "fail_records");
+  const countMax = BigInt(totalMax) >= BigInt(failMax) ? totalMax : failMax;
   const bucket = (data.bucket_minutes || 5) * 60000;
   const timestamps = data.items.map((item) => +new Date(item.timestamp!));
   const first = Math.min(...timestamps), slots = Math.round((Math.max(...timestamps) - first) / bucket) + 1;
   const column = (i: number) => Math.round((timestamps[i] - first) / bucket);
   const width = slots * 128;
   return <div className="pt-time-chart">
-    <div className="pt-chart-legend"><span><i data-series="tests" />测试记录量（含所有结果）</span><span><i data-series="failures" />失败记录量</span><span>上下图带分别按各自最大值缩放；空白位置仅表示未返回时间格</span></div>
+    <div className="pt-chart-legend"><span><i data-series="tests" />测试次数</span><span><i data-series="failures" />其中失败</span><span>空白位置仅表示未返回时间格</span></div>
     {!data.complete && <p className="pt-chart-partial">趋势部分读取；未取得时间格未知</p>}
-    <div className="pt-chart-scales"><span>测试记录量 · 最大 {totalMax}</span><span>失败记录量 · 最大 {failMax}</span></div>
+    <div className="pt-chart-scales"><span>数量刻度 0 — {countMax}</span></div>
     <div className="pt-chart-scroll" role="region" aria-label="时间趋势图及时间格操作" tabIndex={0}>
       <div style={{ minWidth: Math.max(480, width) }}>
         <svg role="img" aria-label="测试与失败时间趋势" viewBox={`0 0 ${width} 260`} preserveAspectRatio="none">
           <line x1="0" x2={width} y1="120" y2="120" className="pt-chart-axis" />
           <line x1="0" x2={width} y1="250" y2="250" className="pt-chart-axis" />
           {data.items.map((item, i) => {
-            const total = boundedPercent(item.records, totalMax), failed = boundedPercent(item.fail_records, failMax);
-            return <g key={item.key || i}><title>{localTime(item.timestamp)} · 测试 {item.records} · 失败 {item.fail_records} · 未知 {item.unknown_records}</title>
+            const total = boundedPercent(item.records, countMax), failed = boundedPercent(item.fail_records, countMax);
+            return <g key={item.key || i}><title>{localTime(item.timestamp)} · 测试次数 {item.records} · 其中失败 {item.fail_records} · 未知 {item.unknown_records}</title>
               <rect className="pt-chart-tests" x={column(i) * 128 + 30} y={120 - total} width="68" height={total} rx="3" />
               <rect className="pt-chart-failures" x={column(i) * 128 + 30} y={250 - failed} width="68" height={failed} rx="3" />
             </g>;
@@ -51,7 +52,7 @@ export function TrendChart({ data, scope, onRange }: { data: Analysis; scope: Sc
             const start = Math.max(+new Date(scope.start), +new Date(item.timestamp!));
             const end = Math.min(+new Date(scope.end), +new Date(item.timestamp!) + (data.bucket_minutes || 5) * 60000);
             return <button type="button" key={item.key || i} style={{ gridColumn: column(i) + 1 }} disabled={!(end > start)} onClick={() => onRange({ ...scope, start: new Date(start).toISOString(), end: new Date(end).toISOString() })}>
-              {localTime(item.timestamp)}<br />测试 {item.records} · 失败 {item.fail_records} · 未知 {item.unknown_records}
+              {localTime(item.timestamp)}<br />测试次数 {item.records} · 其中失败 {item.fail_records} · 未知 {item.unknown_records}
             </button>;
           })}
         </div>

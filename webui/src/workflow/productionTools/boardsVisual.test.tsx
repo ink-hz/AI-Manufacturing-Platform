@@ -18,22 +18,22 @@ it("shows exact page-only KPI totals and distinguishes unavailable project stati
   const overview: Overview = { source_namespace: "native", captured_at: scope.end, complete: false, has_more: true, next_before_id: "2", items: [{ id: "1", name: "项目 A", state: "ready", statistics: aggregate, trend: [], latest_at: null, blocks: { statistics: block, trend: block, latest: block } }, { id: "2", name: "项目 B", state: "unavailable", statistics: null, trend: [], latest_at: null, blocks: { statistics: { ...block, complete: false, state: "unavailable" }, trend: block, latest: block } }] };
   const p = props(apiFor(analysis([]), overview));
   await render(<OverviewBoard {...p} />);
-  expect(host.querySelector('[role="group"][aria-label="测试记录"]')?.textContent).toContain("99999999999999999999");
+  expect(host.querySelector('[role="group"][aria-label="测试次数"]')?.textContent).toContain("99999999999999999999");
   expect(host.querySelector('[role="group"][aria-label="测试 SN"]')?.textContent).toContain("9007199254740993");
-  expect(host.textContent).toContain("仅汇总本页完整统计"); expect(host.textContent).toContain("遗漏分组和时间格未知"); expect(host.textContent).toContain("本次概览实际范围"); expect(host.textContent).toContain("统计未取得，不能计作零");
-  const projectEntry = [...host.querySelectorAll("button")].find((button) => button.textContent === "查看项目 A")!;
-  expect(projectEntry.classList.contains("pt-button-primary")).toBe(true);
+  expect(host.textContent).toContain("仅汇总本页完整统计"); expect(host.textContent).toContain("遗漏分组和时间格未知"); expect(host.textContent).toContain("统计未取得"); expect(host.textContent).toContain("还有后续项目");
+  const projectEntry = [...host.querySelectorAll("button")].find((button) => button.textContent === "项目 A")!;
+  expect(projectEntry.classList.contains("pt-project-name")).toBe(true);
   await act(async () => projectEntry.click());
   expect(p.go.mock.calls[0][0]).toMatchObject({ view: "project", projectId: "1", labels: { project: "项目 A" }, scope, inherited: true });
 });
 it("keeps zero failures neutral and missing statistics visibly unknown", async () => {
   await render(<><Counts item={{ ...aggregate, fail_records: "0", failed_sn: "0" }} /><Counts item={null} /></>);
-  expect(host.querySelector('[aria-label="失败涉及 SN"]')?.getAttribute("data-tone")).toBe("neutral"); expect(host.textContent).toContain("失败涉及 SN 0"); expect(host.textContent).toContain("统计未取得，不能计作零");
+  expect(host.querySelector('[aria-label="失败 SN"]')?.getAttribute("data-tone")).toBe("neutral"); expect(host.textContent).toContain("失败 SN 0"); expect(host.textContent).toContain("统计未取得，不能计作零");
 });
 it("draws test and failure series with exact labels and reachable clamped drills", async () => {
   const data = analysis([{ ...aggregate, timestamp: "2026-11-10T00:00:00Z" }, { ...aggregate, key: "b", records: "50000000000000000000", timestamp: "2026-11-10T00:05:00Z" }], false); const p = props(apiFor(data)); await render(<ProjectBoard {...p} />);
   expect(host.querySelector('svg[aria-label="测试与失败时间趋势"]')).not.toBeNull();
-  const trend = host.querySelector('[aria-label="测试趋势"]')!; expect(trend.textContent).toContain("测试记录量（含所有结果）"); expect(trend.textContent).toContain("失败记录量"); expect(trend.textContent).toContain("99999999999999999999");
+  const trend = host.querySelector('[aria-label="测试趋势"]')!; expect(trend.textContent).toContain("测试次数"); expect(trend.textContent).toContain("其中失败"); expect(trend.textContent).toContain("99999999999999999999");
   const buttons = [...trend.querySelectorAll("button")]; expect(buttons.length).toBe(2); buttons[0].focus(); expect(document.activeElement).toBe(buttons[0]);
   await act(async () => { buttons[0].click(); buttons[1].click(); });
   expect(p.go.mock.calls.map(([l]) => l.scope)).toEqual([{ ...scope, end: "2026-11-10T00:05:00.000Z", start: "2026-11-10T00:02:00.000Z" }, { ...scope, start: "2026-11-10T00:05:00.000Z", end: "2026-11-10T00:08:00.000Z" }]);
@@ -54,7 +54,7 @@ it("does not present an all-unavailable overview as zero tests", async () => {
   const unavailable = { ...block, state: "unavailable" as const, complete: false };
   const overview: Overview = { source_namespace: "native", captured_at: scope.end, complete: false, has_more: false, next_before_id: null, items: [{ id: "1", name: "项目 A", state: "unavailable", statistics: null, trend: [], latest_at: null, blocks: { statistics: unavailable, trend: unavailable, latest: unavailable } }] };
   await render(<OverviewBoard {...props(apiFor(analysis([]), overview))} />);
-  expect(host.querySelector('[role="group"][aria-label="测试记录"]')?.textContent).toContain("—");
+  expect(host.querySelector('[role="group"][aria-label="测试次数"]')?.textContent).toContain("—");
   expect(host.textContent).not.toContain("测试 SN 0");
   expect(host.textContent).not.toContain("当前无观测失败");
 });
@@ -79,4 +79,13 @@ it("groups exception rankings with comparable bars and preserves the symptom dri
   const button = [...host.querySelectorAll("button")].find((b) => b.textContent === "选择异常 E1")!;
   await act(async () => button.click());
   expect(p.go.mock.calls[0][0]).toMatchObject({ selectedError: true, scope: { ...scope, stage_id: "7", software_id: "8", error_code: "E1", status: "2" } });
+});
+
+it("shows actual reread count changes concisely without repeating read provenance", async () => {
+  const loc = { ...location, parentRead: { captured_at: scope.start, records: "100", distinct_sn: "10", scope } };
+  await render(<ProjectBoard {...props(apiFor(analysis([{ ...aggregate, timestamp: scope.start }])), loc)} />);
+  expect(host.textContent).toContain("测试次数 100 → 99999999999999999999");
+  expect(host.textContent).not.toContain("父视图读取"); expect(host.textContent).not.toContain("各次读取不是跨源原子快照");
+  const trend = host.querySelector('[aria-label="测试趋势"]')!;
+  expect(trend.querySelectorAll(".pt-updated time")).toHaveLength(1);
 });

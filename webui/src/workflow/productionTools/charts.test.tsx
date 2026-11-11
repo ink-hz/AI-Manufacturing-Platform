@@ -45,3 +45,11 @@ it("keeps sparse mini-trend buckets distinct at their actual timestamps in both 
   expect(host.textContent).toContain("部分读取；空白时段未知");
   expect(host.textContent).not.toContain("PASS");
 });
+
+it("uses one count scale so ten failures are one tenth of one hundred tests", async () => {
+  await act(async () => root.render(<TrendChart data={{ ...data, items: [{ ...item, records: "100", fail_records: "10", unknown_records: "0" }] }} scope={scope} onRange={vi.fn()} />));
+  const height = (selector: string) => Number(host.querySelector(selector)?.getAttribute("height"));
+  expect(height(".pt-chart-failures") / height(".pt-chart-tests")).toBeCloseTo(0.1);
+  expect(host.textContent).toContain("测试次数"); expect(host.textContent).toContain("其中失败");
+  expect(host.textContent).not.toContain("含所有结果"); expect(host.textContent).not.toContain("各自最大值");
+});

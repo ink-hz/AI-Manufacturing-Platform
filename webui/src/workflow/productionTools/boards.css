@@ -64,3 +64,18 @@
 .mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-device-summaries article { background: var(--pt-group); margin: 0; }
 .mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-device-summaries .pt-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-device-summaries .pt-metric { background: var(--pt-surface); }
+
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-read-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin:8px 0 12px; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-read-meta .pt-coverage { margin:0; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-project-table table { width:100%; border-collapse:collapse; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-project-table th, .mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-project-table td { padding:10px 12px; text-align:right; vertical-align:middle; font-variant-numeric:tabular-nums; white-space:nowrap; border-bottom:1px solid var(--pt-border); }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-project-table th:first-child { text-align:left; min-width:160px; white-space:normal; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-project-table th:last-child, .mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-project-table td:last-child { text-align:left; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-project-name { color:var(--pt-blue); background:transparent; border:0; padding:4px 0; font-weight:600; text-align:left; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-project-warning { display:block; color:#8a4b08; font-size:12px; font-weight:400; margin-top:4px; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-project-table [data-failed="true"] { color:var(--pt-danger); font-weight:600; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-zero-projects, .mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-statistics-help { margin:12px 0; color:var(--pt-muted); font-size:13px; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-zero-projects summary, .mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-statistics-help summary { cursor:pointer; padding:6px 0; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-zero-projects ul { padding:0; margin:8px 0; list-style:none; }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-zero-projects li { display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px; padding:8px 12px; border-bottom:1px solid var(--pt-border); }
+.mf-root.wf-root .wf-production-tools[data-pt-workspace] .pt-statistics-help p { margin:8px 0; }
