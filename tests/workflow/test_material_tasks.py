@@ -210,3 +210,125 @@ def test_cross_project_and_invalid_assignee_are_rejected(workflow):
               assignee_id=str(USERS['warehouse']),note='资质不符',expected_status=422)
     w.command(pid,'material_task.open',actor_name='production',requirement_id=rid,task_kind='iqc',receipt_id=receipt,
               assignee_id=str(USERS['quality']),note='越权',expected_status=403)
+
+
+def test_iqc_all_close_outcomes_require_inspected_scope(workflow):
+    w = workflow
+    pid, rid, facts = setup(w, qualified='0')
+    receipt = w.receive(pid, facts['id'], quantity='20', lot_id=facts['lot_id'])['object_id']
+    task = w.command(pid, 'material_task.open', actor_name='supply', requirement_id=rid,
+                     task_kind='iqc', receipt_id=receipt, assignee_id=str(USERS['quality']), note='待检')['object_id']
+    w.command(pid, 'material_task.accept', actor_name='quality', task_id=task)
+    for outcome in ('fulfilled', 'discrepancy', 'false_alarm', 'superseded'):
+        w.command(pid, 'material_task.close', actor_name='quality', task_id=task,
+                  outcome=outcome, evidence='处理结果', expected_status=409)
+    w.inspect(pid, receipt, accepted='12', rejected='8')
+    w.command(pid, 'material_task.close', actor_name='quality', task_id=task,
+              outcome='discrepancy', evidence='检验完成，另行处理不合格')
+
+
+def test_progress_deadline_preserves_aware_time_and_rejects_naive(workflow):
+    w=workflow
+    pid,rid,facts=setup(w,qualified='0')
+    receipt=w.receive(pid,facts['id'],quantity='2',lot_id=facts['lot_id'])['object_id']
+    task=w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='iqc',receipt_id=receipt,
+                   assignee_id=str(USERS['quality']),note='待检')['object_id']
+    w.command(pid,'material_task.accept',actor_name='quality',task_id=task)
+    w.command(pid,'material_task.progress',actor_name='quality',task_id=task,note='预计下午',
+              expected_completion='2026-12-01T14:00:00+08:00')
+    w.command(pid,'material_task.progress',actor_name='quality',task_id=task,note='未确定',expected_completion=None)
+    w.command(pid,'material_task.progress',actor_name='quality',task_id=task,note='没有时区',
+              expected_completion='2026-12-01T14:00:00',expected_status=422)
+    v=w.client('quality').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']
+    assert v['history'][-2]['expected_completion']=='2026-12-01T14:00:00+08:00'
+    assert v['history'][-1]['expected_completion'] is None
+
+
+def test_task_page_summary_does_not_load_history_or_evidence(workflow, monkeypatch):
+    from contextlib import contextmanager
+    from manufacturing_platform.workflow.store import WorkflowStore
+    w=workflow
+    pid,rid,facts=setup(w,qualified='0')
+    receipt=w.receive(pid,facts['id'],quantity='2',lot_id=facts['lot_id'])['object_id']
+    task=w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='iqc',receipt_id=receipt,
+                   assignee_id=str(USERS['quality']),note='待检')['object_id']
+    w.command(pid,'material_task.accept',actor_name='quality',task_id=task)
+    for i in range(3):
+        w.command(pid,'material_task.progress',actor_name='quality',task_id=task,note=f'记录{i}')
+    statements=[]
+    original=WorkflowStore.transaction
+    @contextmanager
+    def traced(store, **kwargs):
+        with original(store, **kwargs) as tx:
+            tx.set_trace_callback(statements.append)
+            yield tx
+    monkeypatch.setattr(WorkflowStore,'transaction',traced)
+    page=w.client('quality').get(f'{BASE}/projects/{pid}/material-tasks',params={'limit':1,'offset':0})
+    assert page.status_code==200 and page.json()['items'][0]['version']==5
+    assert not any('SELECT payload_json FROM material_task_history' in q for q in statements)
+    assert not any('SELECT handoff_id FROM material_task_evidence' in q for q in statements)
+    assert any('COUNT(*) FROM material_task_history' in q for q in statements)
+
+
+import pytest
+
+@pytest.mark.parametrize('mismatch', ['lot', 'work_order', 'unit', 'project'])
+def test_trace_supplement_rejects_incompatible_signed_handoff(workflow, mismatch):
+    w = workflow
+    pid, rid, facts = setup(w)
+    def signed(project, lot, work_order, unit, quantity, received):
+        ident = w.command(project, 'material_handoff.record', actor_name='warehouse',
+                          material_lot_id=lot, work_order_id=work_order, quantity=quantity,
+                          unit=unit, from_location='仓库', to_location='产线',
+                          receiver_id=str(USERS['production']))['object_id']
+        w.command(project, 'material_handoff.receive', actor_name='production', handoff_id=ident,
+                  received_quantity=received, received_location='产线', note='签收核对')
+        return ident
+    original = signed(pid, facts['lot_id'], facts['work_order_id'], 'kg', '20', '18')
+    lot, work_order, unit, project = facts['lot_id'], facts['work_order_id'], 'kg', pid
+    if mismatch in ('lot', 'unit'):
+        unit = 'piece' if mismatch == 'unit' else 'kg'
+        lot = w.command(pid, 'material.define', actor_name='supply', material_id='other-material' if mismatch == 'unit' else 'steel-1',
+                        lot_id='alternate-lot', owner_id='Customer 1', unit=unit,
+                        scale=0 if unit == 'piece' else 3, expiry='2030-01-01',
+                        source=w.source(str(uuid4()), object_type='material_lot'))['object_id']
+    elif mismatch == 'work_order':
+        demand = w.command(pid, 'demand.record', kind='firm', product='Camera', quantity='1',
+                           unit='piece', due_date='2026-12-01', source=w.source(str(uuid4())))['object_id']
+        for dimension in ('technical', 'material', 'capacity', 'commercial', 'quality'):
+            w.command(pid, 'demand.review', demand_id=demand, dimension=dimension,
+                      decision='approved', evidence='已评审')
+        order = w.command(pid, 'order.register', demand_id=demand,
+                          source=w.source(str(uuid4()), object_type='order_line'), quantity='1',
+                          unit='piece', due_date='2026-12-01')['object_id']
+        work_order = w.command(pid, 'work_order.register', actor_name='planner', order_line_id=order,
+                               revision_id=facts['revision_id'], source=w.source(str(uuid4()), object_type='work_order'),
+                               quantity='1', unit='piece', purpose='trial', trial_quantity='1',
+                               planned_start='2026-12-01T00:00:00Z', planned_end='2026-12-02T00:00:00Z')['object_id']
+    elif mismatch == 'project':
+        project, _, other = setup(w)
+        lot, work_order = other['lot_id'], other['work_order_id']
+    supplement = signed(project, lot, work_order, unit, '2', '2')
+    task = w.command(pid, 'material_task.open', actor_name='supply', requirement_id=rid, task_kind='trace',
+                     handoff_id=original, assignee_id=str(USERS['warehouse']), note='查料')['object_id']
+    w.command(pid, 'material_task.accept', actor_name='warehouse', task_id=task)
+    w.command(pid, 'material_task.close', actor_name='warehouse', task_id=task, outcome='fulfilled',
+              evidence='核对补交', handoff_ids=[supplement], expected_status=404 if mismatch == 'project' else 422)
+    value = w.client('warehouse').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']
+    assert value['state'] == 'processing' and value['evidence_handoff_ids'] == []
+
+
+def test_legacy_date_only_progress_history_remains_readable(workflow):
+    import sqlite3
+    w=workflow
+    pid,rid,facts=setup(w,qualified='0')
+    receipt=w.receive(pid,facts['id'],quantity='2',lot_id=facts['lot_id'])['object_id']
+    task=w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='iqc',receipt_id=receipt,
+                   assignee_id=str(USERS['quality']),note='待检')['object_id']
+    w.command(pid,'material_task.accept',actor_name='quality',task_id=task)
+    w.command(pid,'material_task.progress',actor_name='quality',task_id=task,note='旧日期')
+    with sqlite3.connect(w.paths.domain) as tx:
+        tx.execute("UPDATE material_task_history SET payload_json=json_set(payload_json,'$.expected_completion','2026-12-01') WHERE task_id=? AND json_extract(payload_json,'$.action')='progress'", (task,))
+    response=w.client('quality').get(f'{BASE}/projects/{pid}/objects/material_task/{task}')
+    assert response.status_code==200
+    assert response.json()['value']['history'][-1]['expected_completion']=='2026-12-01'

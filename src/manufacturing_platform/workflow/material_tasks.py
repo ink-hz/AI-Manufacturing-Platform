@@ -157,7 +157,7 @@ def close(tx,c,cmd):
     row=active(tx,c,cmd)
     if row['state']=='pending': fail('Task must be accepted')
     link_evidence(tx,c,row,cmd.handoff_ids)
-    if cmd.outcome=='fulfilled' and not proof(tx,c.project_id,row): fail('Current source evidence does not complete the task')
+    if (row['task_kind']=='iqc' or cmd.outcome=='fulfilled') and not proof(tx,c.project_id,row): fail('Current source evidence does not complete the task')
     tx.execute("UPDATE material_tasks SET state='closed',closure_json=? WHERE id=?",(canonical(dict(outcome=cmd.outcome,evidence=cmd.evidence,**actor_fact(c))),row['id']))
     history(tx,c,row['id'],'close',outcome=cmd.outcome,evidence=cmd.evidence,handoff_ids=[str(i) for i in cmd.handoff_ids]); return result(row['id'])
 

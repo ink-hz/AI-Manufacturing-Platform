@@ -30,7 +30,7 @@ class ProgressMaterialTask(WorkflowCommand):
     action: Literal['material_task.progress']
     task_id: UUID
     note: Text
-    expected_completion: date | None = None
+    expected_completion: AwareDatetime | None = None
     blocked_reason: Text | None = None
     found_quantity: NonnegativeQuantity | None = None
     found_location: Name | None = None
@@ -63,7 +63,7 @@ class TaskHistory(StrictModel):
     evidence: Text | None = None
     outcome: str | None = None
     assignee_id: UUID | None = None
-    expected_completion: date | None = None
+    expected_completion: AwareDatetime | date | None = None
     blocked_reason: Text | None = None
     found_quantity: NonnegativeQuantity | None = None
     found_location: Name | None = None
