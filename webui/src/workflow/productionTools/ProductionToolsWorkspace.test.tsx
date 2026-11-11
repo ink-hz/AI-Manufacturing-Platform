@@ -1423,6 +1423,8 @@ it("shows changed fresh readings, selected anomaly trend and version-record dril
     expect(v.host.textContent).not.toContain("父视图读取");
     await v.click("查看该范围失败");
     await v.click("选择异常 E1");
+    expect(v.host.querySelector('[aria-label="所选异常趋势"]')).toBeNull();
+    await v.click("查看趋势");
     expect(v.host.querySelector('[aria-label="所选异常趋势"]')).not.toBeNull();
     await v.click("工具与配置");
     await v.click("查看无线工具版本");
@@ -3053,5 +3055,46 @@ it("restores saved catalog scope into version usage after an explicit nested dir
     expect(v.host.querySelector('[aria-label="目录分类"]')).toBeNull();
     const request = v.requests.filter(r => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === "versions").at(-1)!.url;
     for (const [key, value] of Object.entries(exact)) expect(request.searchParams.get(key)).toBe(Array.isArray(value) ? value.join(",") : value);
+  } finally { await v.dispose(); }
+});
+
+it("follows a version combination through a machine symptom to SN and event detail without losing scope", async () => {
+  const v = await view();
+  try {
+    await v.click("版本使用"); await v.click("查看版本");
+    const versionRead = v.requests.filter(r => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === "versions").at(-1)!.url;
+    const exact = { start: versionRead.searchParams.get("start")!, end: versionRead.searchParams.get("end")!, stage_id: "7", software_id: "8", software_version: "v2", config_log_id: "9", config_version: "c2" };
+    await v.click("查看上位机"); await v.click("进入上位机");
+    expect(v.host.querySelector('[aria-label="上位机症状"] table')).not.toBeNull();
+    const machineRead = v.requests.filter(r => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === "errors").at(-1)!.url;
+    for (const [key, value] of Object.entries({ ...exact, device: "PC07" })) expect(machineRead.searchParams.get(key)).toBe(value);
+    await v.click("分析此症状");
+    const errors = v.requests.filter(r => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === "errors").at(-1)!.url;
+    for (const [key, value] of Object.entries({ ...exact, device: "PC07" })) expect(errors.searchParams.get(key)).toBe(value);
+    expect(errors.searchParams.has("status")).toBe(false); expect(errors.searchParams.has("error_code")).toBe(false);
+    const distribution = v.requests.filter(r => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === "devices").at(-1)!.url;
+    for (const [key, value] of Object.entries({ ...exact, device: "PC07", status: "2", error_code: "E1" })) expect(distribution.searchParams.get(key)).toBe(value);
+    await v.click("查看失败记录");
+    const records = v.requests.filter(r => r.url.pathname.endsWith("/observations")).at(-1)!.url;
+    for (const [key, value] of Object.entries({ ...exact, device: "PC07", status: "2", error_code: "E1" })) expect(records.searchParams.get(key)).toBe(value);
+    await v.click("查看 SN-A 履历");
+    const history = v.requests.filter(r => r.url.pathname.endsWith("/observations") && r.url.searchParams.get("sn") === "SN-A").at(-1)!.url;
+    expect(history.searchParams.get("start")).toBe(exact.start); expect(history.searchParams.get("end")).toBe(exact.end);
+    for (const key of ["stage_id", "software_id", "software_version", "config_log_id", "config_version", "device", "error_code", "status"]) expect(history.searchParams.has(key)).toBe(false);
+    await v.click("查看测试 1");
+    expect(v.host.querySelector('[aria-label="测试详情"]')).not.toBeNull();
+    expect(v.host.textContent).toContain("SN-A");
+  } finally { await v.dispose(); }
+});
+
+it("opens failed version tests directly and keeps their SN and detail journey reachable", async () => {
+  const v = await view();
+  try {
+    await v.click("版本使用"); await v.click("查看版本"); await v.click("查看失败");
+    const records = v.requests.filter(r => r.url.pathname.endsWith("/observations")).at(-1)!.url;
+    for (const [key, value] of Object.entries({ stage_id: "7", software_id: "8", software_version: "v2", config_log_id: "9", config_version: "c2", status: "2" })) expect(records.searchParams.get(key)).toBe(value);
+    expect(records.searchParams.has("error_code")).toBe(false);
+    await v.click("查看 SN-A 履历"); await v.click("查看测试 1");
+    expect(v.host.querySelector('[aria-label="测试详情"]')).not.toBeNull();
   } finally { await v.dispose(); }
 });

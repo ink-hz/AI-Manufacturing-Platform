@@ -47,7 +47,7 @@ it("labels activity failure, observed, complete-empty and partial-unknown separa
 });
 it("makes the 96-bucket display limit explicit without changing the requested scope", async () => {
   const long = { ...location, view: "activity" as const, scope: { start: "2026-11-10T00:00:00Z", end: "2026-11-11T00:00:00Z" } }; await render(<ActivityBoard {...props(apiFor(analysis([{ ...aggregate, device: "PC01", timestamp: "2026-11-10T00:00:00Z" }])), long)} />);
-  expect(host.querySelectorAll("thead th").length).toBe(97); expect(host.textContent).toContain("仅展示前 96 个时间格"); expect(host.textContent).toContain("其余请求时段未在此图展示"); expect(host.querySelector("thead th:nth-child(2)")?.getAttribute("title")).toBeTruthy(); expect(host.querySelector("thead th:nth-child(2)")?.getAttribute("aria-label")).toBe(host.querySelector("thead th:nth-child(2)")?.getAttribute("title"));
+  expect(host.querySelectorAll(".pt-activity-map thead th").length).toBe(97); expect(host.textContent).toContain("仅展示前 96 个时间格"); expect(host.textContent).toContain("其余请求时段未在此图展示"); expect(host.querySelector(".pt-activity-map thead th:nth-child(2)")?.getAttribute("title")).toBeTruthy(); expect(host.querySelector(".pt-activity-map thead th:nth-child(2)")?.getAttribute("aria-label")).toBe(host.querySelector(".pt-activity-map thead th:nth-child(2)")?.getAttribute("title"));
 });
 
 it("does not present an all-unavailable overview as zero tests", async () => {
@@ -68,14 +68,18 @@ it("leaves returned trend buckets at their actual time positions", async () => {
 });
 
 
-it("groups exception rankings with comparable bars and preserves the symptom drill", async () => {
+it("groups exception rankings in compact semantic rows and preserves the symptom drill", async () => {
   const rows = [{ ...aggregate, key: "a", error_code: "E1", stage_id: "7", software_id: "8", failed_sn: "99999999999999999999" }, { ...aggregate, key: "b", error_code: "E2", failed_sn: "50000000000000000000" }];
   const api = { productionAnalysis: vi.fn(async () => analysis(rows)) } as unknown as Api;
   const p = props(api, { ...location, view: "anomalies" });
   await render(<AnomaliesBoard {...p} />);
   expect([...host.querySelectorAll("h3")].map((h) => h.textContent)).toContain("异常排行");
-  const bars = [...host.querySelectorAll<HTMLElement>(".pt-ranking-track > span")];
-  expect(bars.map((b) => b.style.width)).toEqual(["100%", "50%"]);
+  const table = host.querySelector('[aria-label="症状排行"]')!;
+  expect(table).not.toBeNull();
+  expect([...table.querySelectorAll("thead th")].map(h => h.textContent)).toEqual(["错误", "工具 / 环节", "失败 SN", "失败次数", "适用样本"]);
+  expect(table.querySelectorAll("tbody tr")).toHaveLength(2);
+  expect(table.querySelectorAll('[role="group"]')).toHaveLength(0);
+  expect(table.querySelector("tbody tr")?.textContent).toContain("99999999999999999999");
   const button = [...host.querySelectorAll("button")].find((b) => b.textContent === "选择异常 E1")!;
   await act(async () => button.click());
   expect(p.go.mock.calls[0][0]).toMatchObject({ selectedError: true, scope: { ...scope, stage_id: "7", software_id: "8", error_code: "E1", status: "2" } });
@@ -88,4 +92,60 @@ it("shows actual reread count changes concisely without repeating read provenanc
   expect(host.textContent).not.toContain("父视图读取"); expect(host.textContent).not.toContain("各次读取不是跨源原子快照");
   const trend = host.querySelector('[aria-label="测试趋势"]')!;
   expect(trend.querySelectorAll(".pt-updated time")).toHaveLength(1);
+});
+
+
+it("keeps same-code tool identities and missing-error groups separate with only supplied denominators", async () => {
+  const rows = [
+    { ...aggregate, key: "tool-a", error_code: "E1", stage_id: "7", software_id: "8", software_name: "工具甲", denominator_records: "99999999999999999999", failed_sn: "9007199254740994" },
+    { ...aggregate, key: "tool-b", error_code: "E1", stage_id: "17", software_id: "18", software_name: "工具乙", failed_sn: "9007199254740993" },
+    { ...aggregate, key: "missing", error_code: null, stage_id: null, software_id: null, failed_sn: "1" },
+  ];
+  const api = { productionAnalysis: vi.fn(async () => analysis(rows)) } as unknown as Api;
+  const p = props(api, { ...location, view: "anomalies" }); await render(<AnomaliesBoard {...p} />);
+  const table = host.querySelector('[aria-label="症状排行"]')!;
+  expect(table).not.toBeNull();
+  const ranked = [...table.querySelectorAll("tbody tr")];
+  expect(ranked).toHaveLength(3);
+  expect(ranked.map(row => row.querySelector("td:last-child")?.textContent)).toEqual(["99999999999999999999", "—", "—"]);
+  await act(async () => ranked[1].querySelector<HTMLButtonElement>("button")!.click());
+  expect(p.go.mock.calls[0][0].scope).toMatchObject({ stage_id: "17", software_id: "18", error_code: "E1", status: "2" });
+  await act(async () => ranked[2].querySelector<HTMLButtonElement>("button")!.click());
+  expect(p.go.mock.calls[1][0].scope).toMatchObject({ missing_fields: ["stage_id", "software_id", "error_code"], status: "2" });
+});
+
+it("mounts selected symptom trend only after its action and preserves selected and all-test scopes", async () => {
+  const selected: Location = { ...location, view: "anomalies", selectedError: true, scope: { ...scope, stage_id: "7", software_id: "8", error_code: "E1", status: "2" } };
+  const api = { productionAnalysis: vi.fn(async () => analysis([{ ...aggregate, device: null, timestamp: "2026-11-10T00:00:00Z" }])), productionStatus: vi.fn(async () => ({ configured: true, capabilities: { production: { available: true } } })), productionObservations: vi.fn(async () => ({ items: [], redacted_fields: [], complete: true, captured_at: scope.end })) } as unknown as Api;
+  const p = props(api, selected); await render(<AnomaliesBoard {...p} />);
+  const requests = () => vi.mocked(api.productionAnalysis).mock.calls.map(([, q]) => q);
+  expect(requests().find(q => q.view === "errors")).toEqual({ ...scope, stage_id: "7", software_id: "8", missing_fields: undefined, view: "errors" });
+  expect(requests().find(q => q.view === "devices")).toEqual({ ...selected.scope, view: "devices" });
+  expect(host.querySelector('[aria-label="症状影响分布"] table')).not.toBeNull();
+  expect(host.querySelector('svg')).toBeNull(); expect(requests().some(q => q.view === "trend")).toBe(false);
+  const click = async (label: string) => act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === label)!.click());
+  await click("查看趋势"); expect(requests().find(q => q.view === "trend")).toEqual({ ...selected.scope, view: "trend" });
+  expect(host.querySelector('svg')).not.toBeNull();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="所选异常趋势"] .pt-chart-buckets button')!.click());
+  expect(p.go.mock.calls.at(-1)![0].scope).toEqual({ ...selected.scope, start: "2026-11-10T00:02:00.000Z", end: "2026-11-10T00:05:00.000Z" });
+  await click("查看失败记录"); expect(p.go.mock.calls.at(-1)![0]).toMatchObject({ view: "records", scope: selected.scope });
+  await click("查看全部测试"); expect(p.go.mock.calls.at(-1)![0]).toMatchObject({ view: "records", scope: { ...scope, stage_id: "7", software_id: "8" }, selectedError: false });
+  await click("查看上位机 源未提供"); expect(p.go.mock.calls.at(-1)![0].scope).toEqual({ ...selected.scope, missing_fields: ["device"] });
+});
+
+it("puts a compact machine table before activity and keeps device investigation actions scoped", async () => {
+  const p = props(apiFor(analysis([{ ...aggregate, device: "PC01", timestamp: "2026-11-10T00:00:00Z" }])), { ...location, view: "activity" });
+  await render(<ActivityBoard {...p} />);
+  expect(host.querySelector("h3")?.textContent).toBe("现场上位机");
+  const table = host.querySelector('[aria-label="上位机名单"]')!;
+  expect(table).not.toBeNull();
+  expect([...table.querySelectorAll("thead th")].map(h => h.textContent)).toEqual(["上位机", "测试 SN", "失败 SN", "测试次数", "最近测试", "操作"]);
+  expect(table.querySelectorAll('[role="group"]')).toHaveLength(0);
+  expect(table.compareDocumentPosition(host.querySelector(".pt-activity-map")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await act(async () => table.querySelector<HTMLButtonElement>("button")!.click());
+  expect(p.go.mock.calls[0][0]).toMatchObject({ view: "device", scope: { ...scope, device: "PC01" } });
+  await render(<ActivityBoard {...p} location={{ ...location, view: "device", scope: { ...scope, device: "PC01" } }} />);
+  expect(host.querySelector('[aria-label="上位机症状"] table')).not.toBeNull();
+  expect(host.querySelector('[aria-label="上位机版本"] table')).not.toBeNull();
+  expect([...host.querySelectorAll("button")].some(b => b.textContent === "查看该时段测试")).toBe(true);
 });

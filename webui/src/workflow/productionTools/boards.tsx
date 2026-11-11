@@ -14,7 +14,7 @@ import {
 } from "./context";
 import { Records } from "./details";
 import { Metric, Panel, EmptyState, boundedPercent } from "./visuals";
-import { TrendChart, RankingBar, maximum } from "./charts";
+import { TrendChart, maximum } from "./charts";
 import "./boards.css";
 export type Api = ReturnType<typeof createWorkflowApi>;
 export interface BoardProps {
@@ -402,362 +402,125 @@ export function ProjectBoard(props: BoardProps) {
     </>
   );
 }
+function SymptomTrend({ api, location: l, refresh, go }: BoardProps) {
+  const trend = useRead(
+    (signal) => api.productionAnalysis(l.projectId, { ...l.scope, view: "trend" }, signal),
+    [api, l.projectId, l.scope, refresh],
+  );
+  return <ReadBlock label="所选异常趋势" state={trend}>{data => <Trend data={data} scope={l.scope} onRange={scope => go({ ...l, scope }, "scope")} />}</ReadBlock>;
+}
+function InvestigationTable({ label, columns, children }: { label: string; columns: string[]; children: ReactNode }) {
+  return <div className="pt-table pt-investigation-table" role="region" aria-label={label} tabIndex={0}><table>
+    <thead><tr>{columns.map(column => <th scope="col" key={column}>{column}</th>)}</tr></thead><tbody>{children}</tbody>
+  </table></div>;
+}
+const symptomScope = (scope: Scope, item: Aggregate): Scope => ({ ...drill(scope, item, ["stage_id", "software_id", "error_code"]), status: "2" });
+const versionFields = ["stage_id", "software_id", "software_version", "config_log_id", "config_version"] as const;
 export function AnomaliesBoard(props: BoardProps) {
   const { api, location: l, refresh } = props;
   const go = (next: Location) => props.go(next, "scope");
-  const [distribution, setDistribution] = useState<"devices" | "versions">(
-    "devices",
-  );
+  const [distribution, setDistribution] = useState<"devices" | "versions">("devices");
+  const [trendFor, setTrendFor] = useState<string>();
+  const identity = JSON.stringify([l.projectId, l.scope]);
   const errors = useRead(
-    (s) =>
-      api.productionAnalysis(
-        l.projectId,
-        { ...baseline(l.scope), view: "errors" },
-        s,
-      ),
+    (s) => api.productionAnalysis(l.projectId, { ...baseline(l.scope), view: "errors" }, s),
     [api, l.projectId, l.scope, refresh],
   );
   const groups = useRead(
-    (s) =>
-      api.productionAnalysis(
-        l.projectId,
-        { ...l.scope, view: distribution },
-        s,
-      ),
-    [api, l.projectId, l.scope, distribution, refresh],
-    !!l.selectedError,
+    (s) => api.productionAnalysis(l.projectId, { ...l.scope, view: distribution }, s),
+    [api, l.projectId, l.scope, distribution, refresh], !!l.selectedError,
   );
   const summary = useRead(
-    (s) =>
-      api.productionAnalysis(l.projectId, { ...l.scope, view: "summary" }, s),
-    [api, l.projectId, l.scope, refresh],
-    !!l.selectedError,
+    (s) => api.productionAnalysis(l.projectId, { ...l.scope, view: "summary" }, s),
+    [api, l.projectId, l.scope, refresh], !!l.selectedError,
   );
-  const trend = useRead(
-    (s) =>
-      api.productionAnalysis(l.projectId, { ...l.scope, view: "trend" }, s),
-    [api, l.projectId, l.scope, refresh],
-    !!l.selectedError,
-  );
-  const failedSnMax = errors.data ? maximum(errors.data.items, "failed_sn") : "0";
-  return (
-    <>
-      <h3>失败分析</h3>
-      <div className="pt-master-detail">
-        <Panel title="异常排行" className="pt-error-rankings"><ReadBlock label="异常列表" state={errors}>
-          {(d) => (
-            <>
-              <Coverage data={d} />
-              {!d.items.length && (
-                <p>当前范围未观测到失败。</p>
-              )}
-              {[...d.items]
-                .sort((a, b) =>
-                  BigInt(a.failed_sn) > BigInt(b.failed_sn) ? -1 : 1,
-                )
-                .map((a, i) => (
-                  <article className="pt-error-card" key={a.key || i} data-selected={!!l.selectedError && (a.error_code ?? null) === (l.scope.error_code ?? null) && (a.stage_id ?? null) === (l.scope.stage_id ?? null) && (a.software_id ?? null) === (l.scope.software_id ?? null)}>
-                    <RankingBar value={a.failed_sn} max={failedSnMax} label="失败 SN" />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        go({
-                          ...l,
-                          scope: {
-                            ...drill(l.scope, a, [
-                              "stage_id",
-                              "software_id",
-                              "error_code",
-                            ]),
-                            status: "2",
-                          },
-                          selectedError: true,
-                          parentRead: {
-                            captured_at: d.captured_at,
-                            records: a.records,
-                            distinct_sn: a.distinct_sn,
-                            scope: {
-                              ...drill(l.scope, a, [
-                                "stage_id",
-                                "software_id",
-                                "error_code",
-                              ]),
-                              status: "2",
-                            },
-                          },
-                          labels: {
-                            ...l.labels,
-                            stage_id: a.stage_name || "源未提供",
-                            software_id: a.software_name || "源未提供",
-                          },
-                        })
-                      }
-                    >
-                      选择异常 {a.error_code || "源未提供错误码"}
-                    </button>
-                    <p>
-                      {a.stage_name || "源未提供阶段"} ·{" "}
-                      {a.software_name || "源未提供工具"}
-                    </p>
-                    <Counts item={a} />
-                    <p>
-                      范围内首次 {localTime(a.first_time)} · 最近{" "}
-                      {localTime(a.last_time)}
-                    </p>
-                  </article>
-                ))}
-            </>
-          )}
-        </ReadBlock>
-        </Panel>{l.selectedError && (
-          <div>
-            <Panel title="所选症状影响" eyebrow={`错误码 ${l.scope.error_code ?? "源未提供"}`}><ReadBlock label="所选症状影响" state={summary}>
-              {(d) => (
-                <>
-                  <Counts item={d.items[0] || null} />
-                  <ReadingDifference location={l} data={d} />
-                  <Coverage data={d} />
-                  <StatisticsHelp><p>分母保留项目、时段、环节及其他条件，移除错误码与结果；不同错误的失败 SN 不相加。</p></StatisticsHelp>
-                </>
-              )}
-            </ReadBlock>
-            </Panel><Panel title="影响分布"><label>
-              影响分布
-              <select
-                value={distribution}
-                onChange={(e) =>
-                  setDistribution(e.target.value as typeof distribution)
-                }
-              >
-                <option value="devices">上位机</option>
-                <option value="versions">工具及配置版本</option>
-              </select>
-            </label>
-            <ReadBlock label="影响分布" state={groups}>
-              {(d) => (
-                <>
-                  <Coverage data={d} />
-                  {d.items.map((a, i) => (
-                    <article key={a.key || i}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          go({
-                            ...l,
-                            scope: drill(
-                              l.scope,
-                              a,
-                              distribution === "devices"
-                                ? ["device"]
-                                : [
-                                    "software_id",
-                                    "software_version",
-                                    "config_log_id",
-                                    "config_version",
-                                  ],
-                            ),
-                          })
-                        }
-                      >
-                        限定
-                        {distribution === "devices"
-                          ? `上位机 ${text(a.device)}`
-                          : `版本 ${text(a.software_version)} / ${text(a.config_version)}`}
-                      </button>
-                      {distribution === "devices" && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            go({
-                              ...l,
-                              view: "device",
-                              scope: drill(l.scope, a, ["device"]),
-                              inherited: true,
-                            })
-                          }
-                        >
-                          查看上位机 {text(a.device)}
-                        </button>
-                      )}
-                      <Counts item={a} />
-                    </article>
-                  ))}
-                </>
-              )}
-            </ReadBlock>
-            </Panel><button
-              type="button"
-              onClick={() =>
-                go({ ...l, view: "records", scope: baseline(l.scope) })
-              }
-            >
-              查看全部测试
-            </button>
-          </div>
-        )}
-      </div>
-      {l.selectedError && (
-        <Panel title="所选异常趋势"><ReadBlock label="所选异常趋势" state={trend}>
-          {(d) => (
-            <Trend
-              data={d}
-              scope={l.scope}
-              onRange={(scope) => go({ ...l, scope })}
-            />
-          )}
-        </ReadBlock></Panel>
-      )}
-      {l.selectedError && <Records {...props} />}
-    </>
-  );
+  const distributionScope = (item: Aggregate) => drill(l.scope, item, distribution === "devices" ? ["device"] : [...versionFields]);
+  return <>
+    <h3>失败分析</h3>
+    <div className="pt-failure-workflow">
+      <Panel title="异常排行" className="pt-error-rankings"><ReadBlock label="异常列表" state={errors}>{data => <>
+        <Coverage data={data} />
+        {!data.items.length && <p>{data.complete ? "当前范围未观测到失败。" : "失败结果未完整显示，请缩小范围"}</p>}
+        {!!data.items.length && <InvestigationTable label="症状排行" columns={["错误", "工具 / 环节", "失败 SN", "失败次数", "适用样本"]}>
+          {[...data.items].sort((a, b) => BigInt(a.failed_sn) === BigInt(b.failed_sn) ? 0 : BigInt(a.failed_sn) > BigInt(b.failed_sn) ? -1 : 1).map((item, index) => <tr key={item.key || index} aria-selected={!!l.selectedError && (item.error_code ?? null) === (l.scope.error_code ?? null) && (item.stage_id ?? null) === (l.scope.stage_id ?? null) && (item.software_id ?? null) === (l.scope.software_id ?? null)}>
+            <th scope="row"><button type="button" onClick={() => go({ ...l, scope: symptomScope(l.scope, item), selectedError: true, parentRead: { captured_at: data.captured_at, records: item.records, distinct_sn: item.distinct_sn, scope: symptomScope(l.scope, item) }, labels: { ...l.labels, stage_id: item.stage_name || "源未提供", software_id: item.software_name || "源未提供" } })}>选择异常 {item.error_code || "源未提供错误码"}</button></th>
+            <td>{item.software_name || "源未提供工具"}<span className="pt-row-secondary">{item.stage_name || "源未提供阶段"}</span></td>
+            <td data-failed={item.failed_sn !== "0"}>{item.failed_sn}</td><td>{item.fail_records}</td><td>{item.denominator_records ?? "—"}</td>
+          </tr>)}
+        </InvestigationTable>}
+      </>}</ReadBlock></Panel>
+      {l.selectedError && <>
+        <Panel title="所选症状影响" eyebrow={`错误码 ${l.scope.error_code ?? "源未提供"}`}>
+          <ReadBlock label="所选症状影响" state={summary}>{data => <>
+            {data.items[0] ? <dl className="pt-symptom-scale"><div><dt>失败 SN</dt><dd>{data.items[0].failed_sn}</dd></div><div><dt>失败次数</dt><dd>{data.items[0].fail_records}</dd></div>{data.items[0].denominator_records != null && <div><dt>适用样本</dt><dd>{data.items[0].denominator_records}</dd></div>}</dl> : <EmptyState title="统计未取得" />}
+            <ReadingDifference location={l} data={data} /><Coverage data={data} />
+          </>}</ReadBlock>
+          <div className="pt-actions"><button type="button" className="pt-button-primary" onClick={() => go({ ...l, view: "records" })}>查看失败记录</button>
+            <button type="button" onClick={() => go({ ...l, view: "records", scope: baseline(l.scope), selectedError: false, cursor: undefined })}>查看全部测试</button>
+            <button type="button" aria-expanded={trendFor === identity} onClick={() => setTrendFor(trendFor === identity ? undefined : identity)}>{trendFor === identity ? "收起趋势" : "查看趋势"}</button></div>
+        </Panel>
+        <Panel title="影响分布"><label>影响分布<select value={distribution} onChange={event => setDistribution(event.target.value as typeof distribution)}><option value="devices">上位机</option><option value="versions">工具及配置版本</option></select></label>
+          <ReadBlock label="影响分布" state={groups}>{data => <>
+            <Coverage data={data} />
+            {!data.items.length && <p>{data.complete ? "暂无分布记录" : "部分结果未显示，请缩小范围"}</p>}
+            {!!data.items.length && <InvestigationTable label="症状影响分布" columns={[distribution === "devices" ? "上位机" : "工具 / 配置版本", "失败 SN", "失败次数", "操作"]}>
+              {data.items.map((item, index) => <tr key={item.key || index}>
+                <th scope="row">{distribution === "devices" ? text(item.device) : <>{item.software_name || "源未提供工具"} · {text(item.software_version)}<span className="pt-row-secondary">{item.stage_name || "源未提供阶段"} · 配置 {text(item.config_version)}</span></>}</th>
+                <td data-failed={item.failed_sn !== "0"}>{item.failed_sn}</td><td>{item.fail_records}</td>
+                <td><div className="pt-actions"><button type="button" onClick={() => go({ ...l, scope: distributionScope(item) })}>限定{distribution === "devices" ? `上位机 ${text(item.device)}` : `版本 ${text(item.software_version)} / ${text(item.config_version)}`}</button>
+                  {distribution === "devices" && <button type="button" onClick={() => go({ ...l, view: "device", scope: drill(l.scope, item, ["device"]), inherited: true })}>查看上位机 {text(item.device)}</button>}
+                  <button type="button" onClick={() => go({ ...l, view: "records", scope: distributionScope(item), cursor: undefined })}>查看记录</button></div></td>
+              </tr>)}
+            </InvestigationTable>}
+          </>}</ReadBlock>
+        </Panel>
+        {trendFor === identity && <Panel title="所选异常趋势"><SymptomTrend {...props} /></Panel>}
+      </>}
+    </div>
+    {l.selectedError && <Records {...props} />}
+  </>;
 }
 export function ActivityBoard(props: BoardProps) {
   const { api, location: l, refresh } = props;
   const go = (next: Location) => props.go(next, "scope");
-  const [recentRange, setRecentRange] = useState<Scope | null>(
-    l.recentRange || null,
-  );
-  const devices = useRead(
-    (s) =>
-      api.productionAnalysis(l.projectId, { ...l.scope, view: "devices" }, s),
-    [api, l.projectId, l.scope, refresh],
-  );
-  const activity = useRead(
-    (s) =>
-      api.productionAnalysis(l.projectId, { ...l.scope, view: "activity" }, s),
-    [api, l.projectId, l.scope, refresh],
-  );
-  const latest = useRead(
-    (s) =>
-      api.productionAnalysis(
-        l.projectId,
-        { ...l.scope, ...recentRange!, view: "activity" },
-        s,
-      ),
-    [api, l.projectId, l.scope, recentRange, refresh],
-    !!recentRange,
-  );
-  const errors = useRead(
-    (s) =>
-      api.productionAnalysis(l.projectId, { ...l.scope, view: "errors" }, s),
-    [api, l.projectId, l.scope, refresh],
-    l.view === "device",
-  );
-  const versions = useRead(
-    (s) =>
-      api.productionAnalysis(l.projectId, { ...l.scope, view: "versions" }, s),
-    [api, l.projectId, l.scope, refresh],
-    l.view === "device",
-  );
-  return (
-    <>
-      <h3>
-        {l.view === "device"
-          ? `上位机 ${l.scope.device || "源未提供"} · 问题当时`
-          : "上位机活动"}
-      </h3>
-
-      <Panel title="上位机规模"><ReadBlock label="上位机规模" state={devices}>
-        {(d) => (
-          <>
-            <Coverage data={d} />
-            <div className="pt-device-summaries">{d.items.map((a, i) => (
-              <article key={a.key || i}>
-                <button
-                  type="button"
-                  onClick={() =>
-                    go({
-                      ...l,
-                      view: "device",
-                      scope: drill(l.scope, a, ["device"]),
-                    })
-                  }
-                >
-                  查看上位机 {text(a.device)}
-                </button>
-                <Counts item={a} />
-                <p>范围内最后测试 {localTime(a.last_time)}</p>
-              </article>
-            ))}</div>
-          </>
-        )}
-      </ReadBlock>
-      </Panel><Panel title="问题时段活动"><ReadBlock label="问题时段活动" state={activity}>
-        {(d) => (
-          <>
-            <Coverage data={d} />
-            <ActivityGrid data={d} location={l} go={go} />
-            {!d.items.length && (
-              <p>{d.complete ? "该时段未观测到测试事件" : "时间格未知"}</p>
-            )}
-          </>
-        )}
-      </ReadBlock>
-      </Panel>{l.view === "device" && (
-        <>
-          <ReadBlock label="问题时段异常" state={errors}>
-            {(d) => (
-              <>
-                {d.items.map((a, i) => (
-                  <p key={i}>
-                    {text(a.error_code)} · 失败涉及 SN {a.failed_sn} · 失败记录{" "}
-                    {a.fail_records}
-                  </p>
-                ))}
-                <Coverage data={d} />
-              </>
-            )}
-          </ReadBlock>
-          <ReadBlock label="问题时段版本" state={versions}>
-            {(d) => (
-              <>
-                {d.items.map((a, i) => (
-                  <p key={i}>
-                    {text(a.software_version)} / {text(a.config_version)} · 测试{" "}
-                    {a.records}
-                  </p>
-                ))}
-                <Coverage data={d} />
-                <StatisticsHelp><p>版本为源记录上报，不代表安装切换；无事件不能推断设备离线。</p></StatisticsHelp>
-              </>
-            )}
-          </ReadBlock>
-          <button
-            type="button"
-            onClick={() => {
-              const scope = recent(30);
-              setRecentRange(scope);
-              props.onRecent?.(scope);
-            }}
-          >
-            查看近况
-          </button>
-          <button type="button" onClick={() => go({ ...l, view: "records" })}>
-            查看该时段测试
-          </button>
-          {recentRange && (
-            <aside>
-              <h4>最近 30 分钟 · 独立对照</h4>
-              <p>
-                {localTime(recentRange.start)} — {localTime(recentRange.end)}
-              </p>
-              <ReadBlock label="近况活动" state={latest}>
-                {(d) => (
-                  <Trend
-                    data={d}
-                    scope={{ ...l.scope, ...recentRange }}
-                    onRange={(scope) =>
-                      props.go({ ...l, view: "records", scope }, "browse")
-                    }
-                  />
-                )}
-              </ReadBlock>
-            </aside>
-          )}
-        </>
-      )}
-    </>
-  );
+  const [recentRange, setRecentRange] = useState<Scope | null>(l.recentRange || null);
+  const devices = useRead((s) => api.productionAnalysis(l.projectId, { ...l.scope, view: "devices" }, s), [api, l.projectId, l.scope, refresh]);
+  const activity = useRead((s) => api.productionAnalysis(l.projectId, { ...l.scope, view: "activity" }, s), [api, l.projectId, l.scope, refresh]);
+  const latest = useRead((s) => api.productionAnalysis(l.projectId, { ...l.scope, ...recentRange!, view: "activity" }, s), [api, l.projectId, l.scope, recentRange, refresh], !!recentRange);
+  const errors = useRead((s) => api.productionAnalysis(l.projectId, { ...l.scope, view: "errors" }, s), [api, l.projectId, l.scope, refresh], l.view === "device");
+  const versions = useRead((s) => api.productionAnalysis(l.projectId, { ...l.scope, view: "versions" }, s), [api, l.projectId, l.scope, refresh], l.view === "device");
+  return <>
+    <h3>{l.view === "device" ? `上位机 ${l.scope.device || "源未提供"} · 问题当时` : "现场上位机"}</h3>
+    <Panel title="上位机名单"><ReadBlock label="上位机规模" state={devices}>{data => <>
+      <Coverage data={data} />
+      {!data.items.length && <p>{data.complete ? "该时段未观测到上位机测试" : "部分上位机未显示，请缩小范围"}</p>}
+      {!!data.items.length && <InvestigationTable label="上位机名单" columns={["上位机", "测试 SN", "失败 SN", "测试次数", "最近测试", "操作"]}>
+        {data.items.map((item, index) => <tr key={item.key || index}><th scope="row">{text(item.device)}</th><td>{item.distinct_sn}</td><td data-failed={item.failed_sn !== "0"}>{item.failed_sn}</td><td>{item.records}</td><td>{localTime(item.last_time)}</td><td><button type="button" onClick={() => go({ ...l, view: "device", scope: drill(l.scope, item, ["device"]) })}>查看上位机 {text(item.device)}</button></td></tr>)}
+      </InvestigationTable>}
+    </>}</ReadBlock></Panel>
+    {l.view === "device" && <>
+      <div className="pt-actions"><button type="button" className="pt-button-primary" onClick={() => go({ ...l, view: "records" })}>查看该时段测试</button><button type="button" onClick={() => { const scope = recent(30); setRecentRange(scope); props.onRecent?.(scope); }}>查看近况</button></div>
+      <Panel title="问题时段异常"><ReadBlock label="问题时段异常" state={errors}>{data => <>
+        <Coverage data={data} />
+        {!data.items.length && <p>{data.complete ? "该时段未观测到失败" : "失败结果未完整显示，请缩小范围"}</p>}
+        {!!data.items.length && <InvestigationTable label="上位机症状" columns={["错误", "工具 / 环节", "失败 SN", "失败次数", "操作"]}>
+          {data.items.map((item, index) => <tr key={item.key || index}><th scope="row">{item.error_code || "源未提供错误码"}</th><td>{item.software_name || "源未提供工具"}<span className="pt-row-secondary">{item.stage_name || "源未提供阶段"}</span></td><td>{item.failed_sn}</td><td>{item.fail_records}</td><td><div className="pt-actions"><button type="button" onClick={() => go({ ...l, view: "anomalies", scope: symptomScope(l.scope, item), selectedError: true })}>分析此症状</button><button type="button" onClick={() => go({ ...l, view: "records", scope: symptomScope(l.scope, item), cursor: undefined })}>查看失败记录</button></div></td></tr>)}
+        </InvestigationTable>}
+      </>}</ReadBlock></Panel>
+      <Panel title="问题时段版本"><ReadBlock label="问题时段版本" state={versions}>{data => <>
+        <Coverage data={data} />
+        {!data.items.length && <p>{data.complete ? "该时段无版本记录" : "部分版本未显示，请缩小范围"}</p>}
+        {!!data.items.length && <InvestigationTable label="上位机版本" columns={["工具 / 版本", "环节 / 配置版本", "测试次数", "失败 SN", "操作"]}>
+          {data.items.map((item, index) => <tr key={item.key || index}><th scope="row">{item.software_name || "源未提供工具"} · {text(item.software_version)}</th><td>{item.stage_name || "源未提供阶段"}<span className="pt-row-secondary">配置 {text(item.config_version)}</span></td><td>{item.records}</td><td>{item.failed_sn}</td><td><button type="button" onClick={() => go({ ...l, view: "records", scope: drill(l.scope, item, [...versionFields]), cursor: undefined })}>查看版本记录</button></td></tr>)}
+        </InvestigationTable>}
+      </>}</ReadBlock></Panel>
+    </>}
+    <Panel title="问题时段活动"><ReadBlock label="问题时段活动" state={activity}>{data => <><Coverage data={data} /><ActivityGrid data={data} location={l} go={go} /></>}</ReadBlock></Panel>
+    {l.view === "device" && recentRange && <aside>
+      <h4>最近 30 分钟 · 独立对照</h4><p>{localTime(recentRange.start)} — {localTime(recentRange.end)}</p>
+      <ReadBlock label="近况活动" state={latest}>{data => <Trend data={data} scope={{ ...l.scope, ...recentRange }} onRange={scope => props.go({ ...l, view: "records", scope }, "browse")} />}</ReadBlock>
+    </aside>}
+  </>;
 }
 
 function ActivityGrid({ data, location: l, go }: { data: Analysis; location: Location; go: BoardProps["go"] }) {
