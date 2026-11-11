@@ -1,5 +1,6 @@
 """Non-accounting material read projections from authorized workflow facts."""
 import json
+from decimal import Decimal
 
 from .authorization import require_project
 from .clock import business_time
@@ -12,6 +13,20 @@ ISSUE = "Evidence is bounded and may not represent complete external supply or i
 
 def _count(tx, table, pid, extra="", args=()):
     return tx.execute(f"SELECT COUNT(*) FROM {table} WHERE project_id=? {extra}", (pid, *args)).fetchone()[0]
+
+
+def _unreceived_handoffs(tx, pid):
+    """Count unsigned and short-signed quantities with exact decimal comparison."""
+    count = 0
+    for row in tx.execute("SELECT payload_json, receipt_json FROM material_handoffs WHERE project_id=? AND state!='cancelled'", (pid,)):
+        if row["receipt_json"] is None:
+            count += 1
+            continue
+        sent = Decimal(json.loads(row["payload_json"])["quantity"])
+        received = Decimal(json.loads(row["receipt_json"])["received_quantity"])
+        if received < sent:
+            count += 1
+    return count
 
 
 def _modes(tx, pid):
@@ -46,7 +61,7 @@ def overview(service, actor, limit, offset):
             items.append(dict(project_id=pid, name=p['name'], customer_id=p['customer_id'], product=p['product'],
                 work_order_count=_count(tx, 'work_orders', pid), requirement_count=_count(tx, 'requirements', pid),
                 open_expedite_count=_count(tx, 'material_expedites', pid, "AND state='open'"),
-                unreceived_handoff_count=_count(tx, 'material_handoffs', pid, "AND state='pending'"),
+                unreceived_handoff_count=_unreceived_handoffs(tx, pid),
                 open_material_task_count=_count(tx, 'material_tasks', pid, "AND state NOT IN ('closed','cancelled')"),
                 coverage_issues=[ISSUE], source_modes=_modes(tx, pid)))
         return dict(items=items, total=total, limit=limit, offset=offset, read_at=now)

@@ -153,3 +153,30 @@ def test_overview_uses_sql_pagination_with_grant_scope(workflow, monkeypatch):
     workflow.grant(second['id'], 'supply', ['supply'], active=False)
     page = workflow.client('supply').get(f'{BASE}/material-control/overview').json()
     assert page['total'] == 1 and page['items'][0]['project_id'] == first['id']
+
+
+def test_overview_counts_quantity_not_handoff_resolution_state(workflow):
+    from .conftest import USERS
+    p, _, related = workflow.material_requirement(mode='oem')
+    workflow.grant(p['id'], 'warehouse', ['warehouse'])
+    workflow.grant(p['id'], 'production', ['production'])
+    pid = p['id']
+    def record(quantity):
+        return workflow.command(pid, 'material_handoff.record', actor_name='warehouse', material_lot_id=related['lot_id'], work_order_id=related['work_order_id'], quantity=quantity, unit='kg', from_location='Warehouse', to_location='Line', receiver_id=str(USERS['production']))['object_id']
+    def count():
+        return workflow.client().get(f'{BASE}/material-control/overview').json()['items'][0]['unreceived_handoff_count']
+    short = record('20')
+    assert count() == 1
+    workflow.command(pid, 'material_handoff.receive', actor_name='production', handoff_id=short, received_quantity='18', received_location='Line', note='short')
+    assert count() == 1
+    workflow.command(pid, 'material_handoff.resolve', actor_name='warehouse', handoff_id=short, resolution='noted')
+    assert count() == 1
+    full = record('1')
+    workflow.command(pid, 'material_handoff.receive', actor_name='production', handoff_id=full, received_quantity='1', received_location='Line')
+    cancelled = record('1')
+    workflow.command(pid, 'material_handoff.cancel', actor_name='warehouse', handoff_id=cancelled, reason='duplicate')
+    misplaced = record('1')
+    workflow.command(pid, 'material_handoff.receive', actor_name='production', handoff_id=misplaced, received_quantity='1', received_location='Other', note='wrong location')
+    over = record('1')
+    workflow.command(pid, 'material_handoff.receive', actor_name='production', handoff_id=over, received_quantity='1.001', received_location='Other', note='over and wrong location')
+    assert count() == 1
