@@ -20,7 +20,7 @@ it("shows exact page-only KPI totals and distinguishes unavailable project stati
   await render(<OverviewBoard {...p} />);
   expect(host.querySelector('[role="group"][aria-label="测试次数"]')?.textContent).toContain("99999999999999999999");
   expect(host.querySelector('[role="group"][aria-label="测试 SN"]')?.textContent).toContain("9007199254740993");
-  expect(host.textContent).toContain("仅汇总本页完整统计"); expect(host.textContent).toContain("遗漏分组和时间格未知"); expect(host.textContent).toContain("统计未取得"); expect(host.textContent).toContain("还有后续项目");
+  expect(host.textContent).toContain("本页可用统计"); expect(host.textContent).toContain("部分结果未显示，请缩小范围"); expect(host.textContent).toContain("统计未取得"); expect(host.textContent).toContain("还有更多项目");
   const projectEntry = [...host.querySelectorAll("button")].find((button) => button.textContent === "项目 A")!;
   expect(projectEntry.classList.contains("pt-project-name")).toBe(true);
   await act(async () => projectEntry.click());
@@ -28,7 +28,7 @@ it("shows exact page-only KPI totals and distinguishes unavailable project stati
 });
 it("keeps zero failures neutral and missing statistics visibly unknown", async () => {
   await render(<><Counts item={{ ...aggregate, fail_records: "0", failed_sn: "0" }} /><Counts item={null} /></>);
-  expect(host.querySelector('[aria-label="失败 SN"]')?.getAttribute("data-tone")).toBe("neutral"); expect(host.textContent).toContain("失败 SN 0"); expect(host.textContent).toContain("统计未取得，不能计作零");
+  expect(host.querySelector('[aria-label="失败 SN"]')?.getAttribute("data-tone")).toBe("neutral"); expect(host.textContent).toContain("失败 SN 0"); expect(host.textContent).toContain("统计未取得");
 });
 it("draws test and failure series with exact labels and reachable clamped drills", async () => {
   const data = analysis([{ ...aggregate, timestamp: "2026-11-10T00:00:00Z" }, { ...aggregate, key: "b", records: "50000000000000000000", timestamp: "2026-11-10T00:05:00Z" }], false); const p = props(apiFor(data)); await render(<ProjectBoard {...p} />);
@@ -47,7 +47,7 @@ it("labels activity failure, observed, complete-empty and partial-unknown separa
 });
 it("makes the 96-bucket display limit explicit without changing the requested scope", async () => {
   const long = { ...location, view: "activity" as const, scope: { start: "2026-11-10T00:00:00Z", end: "2026-11-11T00:00:00Z" } }; await render(<ActivityBoard {...props(apiFor(analysis([{ ...aggregate, device: "PC01", timestamp: "2026-11-10T00:00:00Z" }])), long)} />);
-  expect(host.querySelectorAll(".pt-activity-map thead th").length).toBe(97); expect(host.textContent).toContain("仅展示前 96 个时间格"); expect(host.textContent).toContain("其余请求时段未在此图展示"); expect(host.querySelector(".pt-activity-map thead th:nth-child(2)")?.getAttribute("title")).toBeTruthy(); expect(host.querySelector(".pt-activity-map thead th:nth-child(2)")?.getAttribute("aria-label")).toBe(host.querySelector(".pt-activity-map thead th:nth-child(2)")?.getAttribute("title"));
+  expect(host.querySelectorAll(".pt-activity-map thead th").length).toBe(97); expect(host.textContent).toContain("已显示时段"); expect(host.textContent).toContain("更多时段请缩小范围"); expect(host.querySelector(".pt-activity-map thead th:nth-child(2)")?.getAttribute("title")).toBeTruthy(); expect(host.querySelector(".pt-activity-map thead th:nth-child(2)")?.getAttribute("aria-label")).toBe(host.querySelector(".pt-activity-map thead th:nth-child(2)")?.getAttribute("title"));
 });
 
 it("does not present an all-unavailable overview as zero tests", async () => {
@@ -64,7 +64,7 @@ it("leaves returned trend buckets at their actual time positions", async () => {
   await render(<ProjectBoard {...props(apiFor(analysis([{ ...aggregate, timestamp: "2026-11-10T00:00:00Z" }, { ...aggregate, key: "b", timestamp: "2026-11-10T00:10:00Z" }])), loc)} />);
   const bars = [...host.querySelectorAll('svg[aria-label="测试与失败时间趋势"] .pt-chart-tests')];
   expect(Number(bars[1].getAttribute("x")) - Number(bars[0].getAttribute("x"))).toBe(256);
-  expect(host.textContent).toContain("空白位置仅表示未返回时间格");
+  expect(host.textContent).toContain("空白：未知");
 });
 
 
@@ -91,7 +91,7 @@ it("shows actual reread count changes concisely without repeating read provenanc
   expect(host.textContent).toContain("测试次数 100 → 99999999999999999999");
   expect(host.textContent).not.toContain("父视图读取"); expect(host.textContent).not.toContain("各次读取不是跨源原子快照");
   const trend = host.querySelector('[aria-label="测试趋势"]')!;
-  expect(trend.querySelectorAll(".pt-updated time")).toHaveLength(1);
+  expect(trend.querySelectorAll(".pt-updated time")).toHaveLength(0);
 });
 
 

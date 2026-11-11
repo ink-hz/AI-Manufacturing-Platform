@@ -28,17 +28,17 @@ it("uses explicit source result pills and symptom attention while preserving cap
   expect(rows.map((row) => row.querySelector("[data-tone]")?.getAttribute("data-tone"))).toEqual(["danger", "success", "neutral"]);
   expect(rows[2].textContent).toContain("结果未知（PASS）");
   expect(rows[0].textContent).toContain("原症状命中");
-  expect(host.textContent).toContain("仅显示部分记录");
-  await act(async () => button("查看测试 13").click());
+  expect(host.textContent).toContain("部分结果未显示，请缩小范围");
+  await act(async () => button("查看测试 1").click());
   expect(inspect).toHaveBeenCalledWith(event);
-  await act(async () => button("下一页快照").click());
+  await act(async () => button("下一页").click());
   expect(go.mock.calls[0][0].cursor).toEqual({ id: "capture-a", offset: 15, limit: 3, kind: "production" });
 });
 it("groups drawer facts, metadata, selection and parameters with stable actions", async () => {
   const onPrimary = vi.fn(), close = vi.fn();
   await render(<EventSidebar api={{} as Api} event={event} location={location} go={vi.fn()} close={close} investigation={draft} readOnly={false} onPrimary={onPrimary} onComparison={vi.fn()} onLog={vi.fn()} logBusy={false} onEvidenceScope={vi.fn()} />);
   expect(host.querySelector("header")?.textContent).toContain("生产测试详情");
-  for (const label of ["事件核心事实", "来源与定位", "调查选择", "测试项与参数"]) expect(host.querySelector(`section[aria-label="${label}"]`)).not.toBeNull();
+  for (const label of ["事件核心事实", "相关记录", "调查选择", "测试项与参数"]) expect(host.querySelector(`section[aria-label="${label}"]`)).not.toBeNull();
   expect(host.querySelector('[aria-label="调查选择"]')?.textContent).toContain("当前主要事件");
   expect(host.querySelector('[aria-label="调查选择"]')?.textContent).toContain("当前对照事件");
   await act(async () => button("设为调查对象").click());
@@ -68,10 +68,10 @@ it("keeps parameters searchable and distinguishes a search miss from missing sou
 it("separates investigation evidence, notes and always-visible handoff recovery", async () => {
   const c = controller();
   await render(<InvestigationPanel controller={c} readOnly={false} onCompare={vi.fn()} onCandidate={vi.fn()} />);
-  for (const label of ["主要事件", "对照事件", "日志引用", "调查备注", "交接与恢复"]) expect(host.querySelector(`section[aria-label="${label}"]`)).not.toBeNull();
+  for (const label of ["主要事件", "对照事件", "调查备注", "交接与恢复"]) expect(host.querySelector(`section[aria-label="${label}"]`)).not.toBeNull();
   expect(host.querySelector("header [role=status]")?.textContent).toContain("已保存");
   expect(button("读取交接").closest("details")).toBeNull();
-  expect(host.querySelector('[aria-label="日志引用"]')?.textContent).toContain("尚未选择日志");
+  expect(host.querySelector('[aria-label="日志引用"]')).toBeNull();
   await act(async () => button("生成交接摘要").click());
   expect(c.generate).toHaveBeenCalledTimes(1);
 });
@@ -79,7 +79,7 @@ it("preserves visible conflict recovery and readonly restrictions", async () => 
   const acceptServer = vi.fn(), retainLocal = vi.fn();
   const c = controller({ state: "修订冲突", conflict: { ...draft, version: 4, note: "服务端备注" }, acceptServer, retainLocal });
   await render(<InvestigationPanel controller={c} readOnly onCompare={vi.fn()} onCandidate={vi.fn()} />);
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain("服务端修订 4");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("服务端内容");
   expect(button("生成交接摘要").disabled).toBe(true);
   expect(host.querySelector("textarea")!.disabled).toBe(true);
   expect(host.textContent).toContain("只读管理员");

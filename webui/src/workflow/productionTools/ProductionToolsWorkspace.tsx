@@ -164,8 +164,8 @@ export function ProductionToolsWorkspace({
         ...(old.projectId === d.source_project_id ? old.labels : {}),
         project:
           old.projectId === d.source_project_id
-            ? old.labels.project || `源项目 ${d.source_project_id}`
-            : `源项目 ${d.source_project_id}`,
+            ? old.labels.project || `项目 ${d.source_project_id}`
+            : `项目 ${d.source_project_id}`,
       },
       selectedError: !!(
         d.context.error_code || d.context.missing_fields?.includes("error_code")
@@ -184,7 +184,7 @@ export function ProductionToolsWorkspace({
       projectId,
       view: context.view,
       scope: queryScope(context),
-      labels: { project: `源项目 ${projectId}` },
+      labels: { project: `项目 ${projectId}` },
       historySN: context.history_sn,
       historyRange: context.history_range,
       recentRange: context.recent_range,
@@ -368,6 +368,17 @@ export function ProductionToolsWorkspace({
     );
   }
   const activeDraft = investigation.handoff || investigation.draft;
+  const investigationScopeLabels: Record<string, string> = {};
+  if (activeDraft?.source_project_id === loc.projectId) {
+    for (const key of Object.keys(fieldNames)) {
+      const savedValue = (activeDraft.context as unknown as Record<string, unknown>)[key];
+      if (savedValue === undefined || savedValue !== (loc.scope as unknown as Record<string, unknown>)[key]) continue;
+      const label = key === "status"
+        ? savedValue === "1" ? "通过 PASS" : savedValue === "2" ? "失败 FAIL" : "未知"
+        : loc.labels[`${key}:${String(savedValue)}`] || loc.labels[key];
+      if (label) investigationScopeLabels[key] = label;
+    }
+  }
   // The controller stays mounted; only its unused presentation is deferred.
   const showInvestigation = !!(
     investigationOpen ||
@@ -472,26 +483,26 @@ export function ProductionToolsWorkspace({
         {(s) => (
           <>
             {!s.configured && (
-              <p>尚未配置产测数据源，请联系管理员；不显示全零看板。</p>
+              <p>尚未配置产测数据源，请联系管理员。</p>
             )}
           </>
         )}
       </ReadBlock>
       {directory.error && (
         <p role="alert">
-          源项目目录暂不可用，已授权保存内容仍可恢复。
+          项目列表暂不可用，可重试或恢复调查。
           <button type="button" onClick={directory.retry}>
-            重试源项目目录
+            重试项目列表
           </button>
         </p>
       )}
-      {directory.loading && <p role="status">正在读取源项目目录…</p>}
+      {directory.loading && <p role="status">正在加载项目…</p>}
       <section className="pt-range-panel" aria-label="数据范围">
         <div className="pt-scope">
           <label>
-            源项目
+            项目
             <select
-              aria-label="源项目"
+              aria-label="项目"
               value={loc.projectId}
               onChange={(e) => {
                 const p = projects.find((p) => p.id === e.target.value);
@@ -521,10 +532,10 @@ export function ProductionToolsWorkspace({
                   });
               }}
             >
-              <option value="">全部可访问源项目</option>
+              <option value="">全部项目</option>
               {loc.projectId && !projects.some((p) => p.id === loc.projectId) && (
                 <option value={loc.projectId}>
-                  {loc.labels.project || `已保存源项目 ${loc.projectId}`}
+                  {loc.labels.project || `已保存项目 ${loc.projectId}`}
                 </option>
               )}
               {projects.map((p) => (
@@ -565,7 +576,7 @@ export function ProductionToolsWorkspace({
               type="button"
               onClick={() => setDirectoryBefore(directory.data!.next_before_id!)}
             >
-              读取更多源项目
+              更多项目
             </button>
           )}
         </div>
@@ -597,7 +608,8 @@ export function ProductionToolsWorkspace({
               {label}：
               {loc.scope.missing_fields?.includes(key as never)
                 ? "源未提供"
-                : loc.labels[key] ||
+                : key === "status" ? (loc.scope.status === "1" ? "通过 PASS" : loc.scope.status === "2" ? "失败 FAIL" : "未知")
+                : loc.labels[`${key}:${String((loc.scope as unknown as Record<string, unknown>)[key])}`] || loc.labels[key] ||
                   text(
                     (loc.scope as unknown as Record<string, unknown>)[key],
                   )}{" "}
@@ -759,7 +771,7 @@ export function ProductionToolsWorkspace({
                   </select>
                 </label>
                 {orders.data && !orders.data.complete && (
-                  <p>审核目录部分读取，可在工具与配置继续浏览。</p>
+                  <p>部分审核单未显示，请到工具与配置查看。</p>
                 )}
 
                 {(
@@ -784,9 +796,6 @@ export function ProductionToolsWorkspace({
                     />
                   </label>
                 ))}
-                <p>
-                  阶段、工具及配置由项目环节、分布或目录点击带入；审核单指工具配置审核流程。
-                </p>
               </details>
             </>
           )}
@@ -817,7 +826,7 @@ export function ProductionToolsWorkspace({
                 <p>请输入 SN，在当前项目与时间内查找。</p>
               )
             ) : loc.view === "catalog" ? (
-              loc.catalog ? <CatalogPage {...props} /> : <VersionUsageBoard {...props} />
+              loc.catalog ? <CatalogPage key={JSON.stringify([loc.projectId, loc.catalog, loc.parentId])} {...props} /> : <VersionUsageBoard {...props} />
             ) : loc.view === "compare" ? (
               <Compare {...investigation.raw} />
             ) : null}
@@ -827,6 +836,8 @@ export function ProductionToolsWorkspace({
       {showInvestigation && (
         <InvestigationPanel
           controller={investigation}
+          projectName={projects.find(p => p.id === activeDraft?.source_project_id)?.name || (activeDraft?.source_project_id === loc.projectId ? loc.labels.project : undefined)}
+          scopeLabels={investigationScopeLabels}
           restoreFocusRequest={restoreFocusRequest}
           readOnly={readOnly}
           onCompare={() => go({ ...loc, view: "compare" })}

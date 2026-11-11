@@ -48,7 +48,12 @@ export function localTime(value: unknown) {
   );
   return isNaN(d.getTime())
     ? text(value)
-    : d.toLocaleString(undefined, { timeZoneName: "short" });
+    : d.toLocaleString(undefined, {
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        fractionalSecondDigits: d.getMilliseconds() ? 3 : undefined,
+        hour12: false,
+      });
 }
 export function localInput(value: string) {
   const d = new Date(value);
@@ -185,7 +190,7 @@ export function locationQueryKey(location: Location): string {
 export function errorText(error: unknown) {
   if (error instanceof WorkflowError) {
     if (error.code === "PRODUCTION_CAPABILITY_UNAVAILABLE")
-      return "生产测试查询能力尚未配置；配置可用性不代表实时连通状态。";
+      return "生产测试查询能力尚未配置，请联系管理员。";
     if (error.status === 401 || error.status === 403)
       return "无权访问产测管理，请重新登录或联系管理员。";
     if (error.status === 410)

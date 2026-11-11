@@ -31,8 +31,8 @@ export function TrendChart({ data, scope, onRange }: { data: Analysis; scope: Sc
   const column = (i: number) => Math.round((timestamps[i] - first) / bucket);
   const width = slots * 128;
   return <div className="pt-time-chart">
-    <div className="pt-chart-legend"><span><i data-series="tests" />测试次数</span><span><i data-series="failures" />其中失败</span><span>空白位置仅表示未返回时间格</span></div>
-    {!data.complete && <p className="pt-chart-partial">趋势部分读取；未取得时间格未知</p>}
+    <div className="pt-chart-legend"><span><i data-series="tests" />测试次数</span><span><i data-series="failures" />其中失败</span><span>空白：未知</span></div>
+    {!data.complete && <p className="pt-chart-partial">部分时段未显示，请缩小范围</p>}
     <div className="pt-chart-scales"><span>数量刻度 0 — {countMax}</span></div>
     <div className="pt-chart-scroll" role="region" aria-label="时间趋势图及时间格操作" tabIndex={0}>
       <div style={{ minWidth: Math.max(480, width) }}>
@@ -62,7 +62,7 @@ export function TrendChart({ data, scope, onRange }: { data: Analysis; scope: Sc
 }
 
 export function MiniTrend({ items, complete }: { items: Aggregate[]; complete: boolean }) {
-  if (!items.length) return <p className="pt-meta">{complete ? "当前范围未观测到测试事件" : "趋势部分读取；空白时段未知"}</p>;
+  if (!items.length) return <p className="pt-meta">{complete ? "当前范围未观测到测试事件" : "部分时段未知，请缩小范围"}</p>;
   const total = maximum(items, "records"), failures = maximum(items, "fail_records");
   const timestamps = items.map((item) => +new Date(item.timestamp!));
   const first = Math.min(...timestamps), span = Math.max(...timestamps) - first;
@@ -71,7 +71,7 @@ export function MiniTrend({ items, complete }: { items: Aggregate[]; complete: b
   // Keep a visible gap even when returned time buckets are unevenly spaced.
   const barWidth = ordered.slice(1).reduce((width, position, i) => Math.min(width, (position - ordered[i]) * .8), 9);
   return <figure className="pt-mini-trend">
-    <figcaption>近期已返回时间格 · 测试量 / 失败量各自缩放{!complete && " · 部分读取；空白时段未知"}</figcaption>
+    <figcaption>近期测试 / 失败（独立刻度）{!complete && " · 部分时段未知"}</figcaption>
     <svg role="img" aria-label="项目近期测试与失败趋势" viewBox={`0 0 ${items.length * 12} 56`} preserveAspectRatio="none">
       {items.map((item, i) => <g key={item.key || i}><title>{localTime(item.timestamp)} · 测试 {item.records} · 失败 {item.fail_records} · 未知 {item.unknown_records}</title><rect className="pt-chart-tests" x={positions[i]} y={26 - boundedPercent(item.records, total) * .24} width={barWidth} height={boundedPercent(item.records, total) * .24} /><rect className="pt-chart-failures" x={positions[i]} y={54 - boundedPercent(item.fail_records, failures) * .24} width={barWidth} height={boundedPercent(item.fail_records, failures) * .24} /></g>)}
     </svg>

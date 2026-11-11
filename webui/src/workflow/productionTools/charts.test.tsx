@@ -42,7 +42,7 @@ it("keeps sparse mini-trend buckets distinct at their actual timestamps in both 
     expect((bars[2].x - bars[0].x) / (bars[1].x - bars[0].x)).toBeCloseTo(12);
   }
   expect([...svg.querySelectorAll("title")].map((title) => title.textContent)).toEqual(items.map((entry) => `${localTime(entry.timestamp)} · 测试 ${entry.records} · 失败 ${entry.fail_records} · 未知 ${entry.unknown_records}`));
-  expect(host.textContent).toContain("部分读取；空白时段未知");
+  expect(host.textContent).toContain("部分时段未知");
   expect(host.textContent).not.toContain("PASS");
 });
 

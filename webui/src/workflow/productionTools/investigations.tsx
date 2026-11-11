@@ -1,5 +1,5 @@
 import "./details.css";
-import { Badge, EmptyState, ResultBadge } from "./visuals";
+import { Badge, ResultBadge } from "./visuals";
 import { useEffect, useRef, useState } from "react";
 import { fieldNames, localTime, text } from "./context";
 import { useInvestigation } from "./investigationState";
@@ -27,8 +27,9 @@ const descriptorEntries = (row: Record<string, unknown>) =>
 export { useInvestigation } from "./investigationState";
 export { clearProductionResume } from "./resume";
 export type InvestigationController = ReturnType<typeof useInvestigation>;
+const logStateLabel = new Map([["verified", "已核对"], ["ambiguous", "多条候选，待核对"], ["changed", "内容变化，待核对"], ["not_found", "未找到"], ["partial", "未查全"], ["unavailable", "暂不可用"], ["unverified", "未核对"]]);
 const stateLabel: Record<Resolution["state"], string> = {
-  verified: "内容已核对（不证明源事件唯一性）",
+  verified: "内容已核对",
   ambiguous: "事件待核对：多条候选",
   changed: "事件待核对：源内容可能变化",
   not_found: "事件待核对：未找到",
@@ -41,12 +42,16 @@ export function InvestigationPanel({
   onCompare,
   onCandidate,
   restoreFocusRequest = 0,
+  projectName,
+  scopeLabels = {},
 }: {
   controller: InvestigationController;
   readOnly: boolean;
   onCompare: () => void;
   onCandidate: (event: ViewedEvent) => void;
   restoreFocusRequest?: number;
+  projectName?: string;
+  scopeLabels?: Record<string, string>;
 }) {
   const d = c.handoff || c.draft;
   const [restoreText, setRestoreText] = useState(""),
@@ -60,7 +65,7 @@ export function InvestigationPanel({
     <section className="pt-investigation" aria-label="当前调查">
       <header className="pt-section-heading">
         <div><h3>当前调查</h3>
-          <p role="status"><Badge tone={c.conflict || c.error || c.dirty || c.browsingOtherScope ? "warning" : "info"}>{c.state}</Badge>{readOnly ? " · 只读管理员，本次修改不保存" : ""}</p>
+          <p role="status"><Badge tone={c.conflict || c.error || c.dirty || c.browsingOtherScope ? "warning" : "info"}>{c.state.startsWith("已保存") ? "已保存" : c.state.startsWith("当前浏览条件") ? "当前浏览条件与调查不同" : c.state.startsWith("修订冲突") ? "修订冲突" : c.state}</Badge>{readOnly ? " · 只读管理员" : ""}</p>
         </div>
         <div className="pt-actions">
           <button
@@ -91,7 +96,7 @@ export function InvestigationPanel({
       </header>
       {(c.browsingOtherScope || c.state.includes("当前浏览条件")) && (
         <div className="pt-callout" data-tone="warning">
-          <p>当前浏览范围与已保存调查不同；返回父页不会修改原调查范围。</p>
+          <p>当前浏览范围与已保存调查不同。</p>
           <button
             type="button"
             disabled={readOnly}
@@ -114,17 +119,17 @@ export function InvestigationPanel({
       {c.error && <p role="alert">{c.error}</p>}
       {d && (
         <>
-          <section className="pt-investigation-meta" aria-label="调查范围与版本">
-            <h4>调查范围与版本</h4>
+          <section className="pt-investigation-meta" aria-label="调查范围">
+            <h4>调查范围</h4>
             <p>
-              {c.handoff ? "固定交接号" : "个人调查号"} {d.id} · 修订 {d.version}{" "}
+              {c.handoff ? "固定交接号" : "个人调查号"} {d.id}{c.handoff ? ` · 版本 ${d.version}` : ""}{" "}
               · 有效至 {localTime(d.expires_at)}
             </p>
             <p>
-              来源 {d.source_namespace} · 源项目 {d.source_project_id} · 问题时间{" "}
+              {projectName || "已保存项目"} · 问题时间{" "}
               {localTime(d.context.start)} — {localTime(d.context.end)}
             </p>
-            {d.context.symptom && <p>保存时范围说明：{d.context.symptom}</p>}
+            {d.context.symptom && <p>{d.context.symptom}</p>}
             <p>
               {Object.entries(fieldNames)
                 .flatMap(([key, label]) =>
@@ -133,7 +138,7 @@ export function InvestigationPanel({
                     : (d.context as unknown as Record<string, unknown>)[key] !==
                       undefined
                       ? [
-                        `${label}：${text((d.context as unknown as Record<string, unknown>)[key])}`,
+                        `${label}：${scopeLabels[key] || text((d.context as unknown as Record<string, unknown>)[key])}`,
                       ]
                       : [],
                 )
@@ -174,7 +179,7 @@ export function InvestigationPanel({
                       return d.context.missing_fields?.includes(key as never)
                         ? [`${label}：源未提供`]
                         : value !== undefined
-                          ? [`${label}：${text(value)}`]
+                          ? [`${label}：${scopeLabels[key] || text(value)}`]
                           : [];
                     })
                     .join(" · ");
@@ -185,15 +190,15 @@ export function InvestigationPanel({
                           .map(([k, v]) => `${descriptorNames[k]}=${text(v)}`)
                           .join(" · ")
                         : "尚未选择"
-                      }（保存的定位；原参数需核对）`;
+                      }`;
                   };
                   const impact = d.impact
-                    ? `交接时影响（读取 ${localTime(d.impact.captured_at)}，覆盖 ${d.impact.state}）：失败记录 ${d.impact.failure_records.numerator ?? "未知"} / ${d.impact.failure_records.denominator ?? "未知"}；失败涉及 SN ${d.impact.failed_involved_sn.numerator ?? "未知"} / ${d.impact.failed_involved_sn.denominator ?? "未知"}`
+                    ? `交接时影响：失败记录 ${d.impact.failure_records.numerator ?? "未知"} / ${d.impact.failure_records.denominator ?? "未知"}；失败涉及 SN ${d.impact.failed_involved_sn.numerator ?? "未知"} / ${d.impact.failed_involved_sn.denominator ?? "未知"}${d.impact.state !== "available" ? "；部分统计未取得" : ""}`
                     : "交接时影响统计未取得";
                   const summary = [
                     `交接号 ${d.id} · 版本 ${d.version}`,
                     `生成 ${localTime(d.created_at)} · 有效至 ${localTime(d.expires_at)}`,
-                    `来源 ${d.source_namespace} · 项目 ${d.source_project_id}`,
+                    projectName || "已保存项目",
                     d.context.symptom || "",
                     `问题时间 ${localTime(d.context.start)} — ${localTime(d.context.end)}`,
                     scopeText,
@@ -220,56 +225,38 @@ export function InvestigationPanel({
           {d.impact && (
             <section className="pt-detail-section" aria-label="保存时影响统计">
               <h4>保存时影响统计</h4>
-              <p>
-                读取 {localTime(d.impact.captured_at)} · 覆盖 {d.impact.state}
-              </p>
+              {d.impact.state !== "available" && <p>部分统计未取得，请复查证据。</p>}
               <p>
                 失败记录 {d.impact.failure_records.numerator ?? "未知"} /
                 同范围全部测试 {d.impact.failure_records.denominator ?? "未知"}{" "}
                 · 失败涉及 SN {d.impact.failed_involved_sn.numerator ?? "未知"}{" "}
                 / 测试 SN {d.impact.failed_involved_sn.denominator ?? "未知"}
               </p>
-              <p className="pt-meta">这是保存时源统计，与当前读取分别呈现；不是跨源原子快照。</p>
             </section>
           )}
           <div className="pt-event-pair">
-            {(["primary", "comparison"] as const).map((which) => (
+            {(["primary", "comparison"] as const).filter(which => d[which]).map((which) => (
               <section key={which} className="pt-event-role" data-role={which} aria-label={which === "primary" ? "主要事件" : "对照事件"}>
                 <h4>
                   {which === "primary"
-                    ? "主要事件（最多 1 条）"
-                    : "对照事件（最多 1 条）"}
+                    ? "主要事件"
+                    : "对照事件"}
                 </h4>
                 {d[which] ? (
                   <>
                     <p className="pt-meta">保存时结果 <ResultBadge value={d[which]!.descriptor.status} /></p>
                     <p>
-                      保存的定位：{text(d[which]!.descriptor.sn)} ·{" "}
+                      {text(d[which]!.descriptor.sn)} ·{" "}
                       {localTime(d[which]!.descriptor.timestamp)} ·{" "}
                       {text(d[which]!.descriptor.devicename)}
                     </p>
                     <details>
-                      <summary>保存的事件定位字段</summary>
+                      <summary>事件信息</summary>
                       <dl>
                         {descriptorEntries(d[which]!.descriptor).map(
                           ([key, value]) => (
                             <div key={key}>
-                              <dt>
-                                {(
-                                  {
-                                    workstagesid: "阶段",
-                                    softwareid: "工具",
-                                    version: "软件版本",
-                                    configlogsid: "配置",
-                                    cversion: "配置版本",
-                                    devicename: "上位机",
-                                    orderid: "工具配置审核单",
-                                    status: "结果",
-                                    errorcode: "错误码",
-                                    timestamp: "事件时间",
-                                  } as Record<string, string>
-                                )[key] || key}
-                              </dt>
+                              <dt>{descriptorNames[key]}</dt>
                               <dd>
                                 {key === "timestamp" ? localTime(value) : key === "status" ? <ResultBadge value={value} /> : text(value)}
                               </dd>
@@ -307,21 +294,12 @@ export function InvestigationPanel({
                       </button>
                     )}
                   </>
-                ) : (
-                  <EmptyState title="尚未选择" description={which === "primary" ? "在测试详情中设为调查对象。" : "在测试详情中选作对照。"} />
-                )}
+                ) : null}
               </section>
             ))}
           </div>
           <section className="pt-detail-section" aria-label="证据复查与比较">
             <h4>证据复查与比较</h4>
-            <p className="pt-meta">
-              按精确事件时间及 SN
-              的有界候选检索；问题时段保持不变。原定位与当前候选分别显示，候选不自动成为已恢复参数。
-            </p>
-            {c.resolved && (
-              <p>本次复查读取 {localTime(c.resolved.captured_at)}</p>
-            )}
             <button type="button" onClick={c.resolve}>
               按原条件复查证据
             </button>
@@ -333,9 +311,8 @@ export function InvestigationPanel({
               比较已选记录
             </button>
           </section>
-          <section className="pt-detail-section pt-investigation-logs" aria-label="日志引用">
+          {!!d.logs.length && <section className="pt-detail-section pt-investigation-logs" aria-label="日志引用">
             <header className="pt-detail-heading"><h4>日志引用（{d.logs.length} / 5）· 关联待核对</h4></header>
-            {!d.logs.length && <EmptyState title="尚未选择日志" description="可在测试详情查找候选日志；日志关联仍需核对。" />}
             {d.logs.map((log) => (
               <div className="pt-log-reference" key={log.source_log_id}>
                 {log.source_log_id} · CSN {text(log.descriptor.csn)} ·{" "}
@@ -343,9 +320,9 @@ export function InvestigationPanel({
                   ? "项目、时间与显式 CSN"
                   : "项目与时间"}{" "}
                 ·{" "}
-                {c.resolved?.logs.find(
+                {logStateLabel.get(c.resolved?.logs.find(
                   (x) => x.source_log_id === log.source_log_id,
-                )?.state || "未核对"}
+                )?.state || "unverified") || "待核对"}
                 <button
                   type="button"
                   disabled={readOnly || !!c.handoff || !c.canStart || c.logBusy}
@@ -355,7 +332,7 @@ export function InvestigationPanel({
                 </button>
               </div>
             ))}
-          </section>
+          </section>}
         </>
       )}
       <section className="pt-detail-section" aria-label="调查备注">
@@ -375,7 +352,7 @@ export function InvestigationPanel({
         <aside role="alert">
           <h4>修订冲突</h4>
           <p>
-            服务端修订 {c.conflict.version}：{c.conflict.note}
+            服务端内容：{c.conflict.note}
           </p>
           <p>本机修改：{c.note}</p>
           <button type="button" onClick={() => void c.acceptServer()}>
@@ -386,18 +363,16 @@ export function InvestigationPanel({
           </button>
         </aside>
       )}
-      <section className="pt-detail-section" aria-label="继续我的其他草稿">
+      {!!c.list.length && <section className="pt-detail-section" aria-label="继续我的其他草稿">
         <h4>继续我的其他草稿</h4>
-        {!c.list.length && <p>当前项目暂无其他个人草稿</p>}
         {c.list.map((d) => (
           <button type="button" key={d.id} onClick={() => void c.restore(d.id)}>
-            继续调查 {d.id} · {localTime(d.updated_at)}
+            继续调查 {d.context.symptom || d.note || d.id}
           </button>
         ))}
-      </section>
+      </section>}
       <section className="pt-detail-section pt-handoff-recovery" aria-label="交接与恢复">
         <h4>恢复调查</h4>
-        <p className="pt-meta">输入固定交接号或本站内部链接以读取交接时内容。</p>
         <label>
           交接号或内部恢复链接
           <input

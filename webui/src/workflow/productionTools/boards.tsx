@@ -37,7 +37,7 @@ export function ReadBlock<T>({
 }) {
   return (
     <section className="pt-read-block" aria-label={label}>
-      {state.loading && <p role="status">正在读取{label}…</p>}
+      {state.loading && <p role="status">正在加载{label}…</p>}
       {state.error && (
         <p role="alert">
           {label}：{state.error}
@@ -64,24 +64,14 @@ export function Coverage({
 }: {
   data: { captured_at: string; complete: boolean; truncation_reason?: string | null };
 }) {
-  return (
-    <div className="pt-read-meta">
-      <UpdatedAt capturedAt={data.captured_at} />
-      {!data.complete && <p className="pt-meta pt-coverage" data-complete="false">部分数据未取得；遗漏分组和时间格未知，不能视为零{data.truncation_reason ? `（${data.truncation_reason}）` : ""}</p>}
-    </div>
-  );
-}
-function UpdatedAt({ capturedAt }: { capturedAt: string }) {
-  return <span className="pt-meta pt-updated">更新 <time dateTime={capturedAt} title={localTime(capturedAt)}>{new Date(capturedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}</time></span>;
+  if (data.complete) return null;
+  return <p className="pt-meta pt-coverage" data-complete="false">部分结果未显示，请缩小范围</p>;
 }
 function DeferredDetails({ children, summary, className }: { children: ReactNode; summary: string; className: string }) {
   const [open, setOpen] = useState(false);
   return <details className={className} onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>{summary}</summary>{open && <div>{children}</div>}
   </details>;
-}
-function StatisticsHelp({ children }: { children: ReactNode }) {
-  return <DeferredDetails className="pt-statistics-help" summary="统计说明">{children}</DeferredDetails>;
 }
 
 export function Counts({ item }: { item: Aggregate | null }) {
@@ -93,7 +83,7 @@ export function Counts({ item }: { item: Aggregate | null }) {
       <Metric label="其中失败" value={item.fail_records} tone="danger" detail={item.denominator_records ? `适用样本 ${item.denominator_records}` : undefined} />
     </div>
     <p className="pt-meta">通过 {item.pass_records} · 未知 {item.unknown_records}</p>
-  </div> : <EmptyState title="统计未取得，不能计作零" />;
+  </div> : <EmptyState title="统计未取得" />;
 }
 export function OverviewBoard({
   api,
@@ -151,7 +141,7 @@ export function OverviewBoard({
           checked={auto}
           onChange={(e) => setAuto(e.target.checked)}
         />
-        每 60 秒更新
+        自动刷新
       </label>
       <label>
         项目排序
@@ -202,7 +192,7 @@ export function OverviewBoard({
           return (
             <>
               <Coverage data={data} />
-              {(valid.length !== data.items.length || data.has_more || before) && <p className="pt-meta pt-overview-limit">仅汇总本页完整统计（{valid.length}/{data.items.length} 项目）{data.has_more ? "；还有后续项目" : ""}{before ? "；当前为后续页" : ""}</p>}
+              {(valid.length !== data.items.length || data.has_more || before) && <p className="pt-meta pt-overview-limit">本页可用统计（{valid.length}/{data.items.length} 项目）{data.has_more ? "；还有更多项目" : ""}{before ? "；当前为后续页" : ""}</p>}
               <div className="pt-metrics" aria-label="本页完整项目统计">
                 <Metric label="有测试项目" value={valid.length || (!data.items.length && data.complete) ? String(valid.filter((p) => BigInt(p.statistics!.records) > 0n).length) : null} />
                 <Metric label="测试次数" value={valid.length || (!data.items.length && data.complete) ? sum("records") : null} tone="info" />
@@ -217,7 +207,7 @@ export function OverviewBoard({
                   const partial = !unavailable && (!p.blocks.statistics.complete || p.blocks.statistics.state === "partial");
                   return <tr key={p.id}>
                     <th scope="row"><button type="button" className="pt-project-name" onClick={() => openProject(p, chooser ? task : "project")}>{p.name}</button>
-                      {(unavailable || partial) && <span className="pt-project-warning">{unavailable ? "统计未取得" : "统计未完整"}{p.blocks.statistics.error || p.blocks.statistics.truncation_reason ? `：${p.blocks.statistics.error || p.blocks.statistics.truncation_reason}` : ""}</span>}
+                      {(unavailable || partial) && <span className="pt-project-warning">{unavailable ? "统计未取得" : "统计未完整"}</span>}
                     </th>
                     {(["records", "distinct_sn", "failed_sn", "fail_records"] as const).map((key) => <td key={key} data-failed={(key === "failed_sn" || key === "fail_records") && !unavailable && BigInt(p.statistics![key]) > 0n}>{unavailable ? "—" : p.statistics![key]}</td>)}
                     <td>{latest(p)}{p.blocks.latest.state === "partial" && <span className="pt-project-warning">时间未完整</span>}</td>
@@ -236,16 +226,12 @@ export function OverviewBoard({
                   }}>查看最近测试时段</button>}
                 </li>)}</ul>
               </DeferredDetails>}
-              <StatisticsHelp>
-                <p>测试记录不是成品数量；测试 SN 按来源、项目及 SN 区分，失败 SN 不是最终不良。仅汇总本页完整统计。</p>
-                <p>统计范围 {localTime(data.requested_scope.start)} — {localTime(data.requested_scope.end)}；来源 {data.source_namespace}。最近测试独立于所选时段。</p>
-              </StatisticsHelp>
               {data.has_more && data.next_before_id && (
                 <button
                   type="button"
                   onClick={() => setBefore(data.next_before_id!)}
                 >
-                  读取更多项目概览
+                  更多项目
                 </button>
               )}
             </>
@@ -256,7 +242,7 @@ export function OverviewBoard({
   );
 }
 function Trend({ data, scope, onRange }: { data: Analysis; scope: Scope; onRange: (scope: Scope) => void }) {
-  return <><UpdatedAt capturedAt={data.captured_at} /><TrendChart data={data} scope={scope} onRange={onRange} /></>;
+  return <TrendChart data={data} scope={scope} onRange={onRange} />;
 }
 export function ProjectBoard(props: BoardProps) {
   const { api, location: l, refresh } = props;
@@ -304,15 +290,14 @@ export function ProjectBoard(props: BoardProps) {
       </ReadBlock>
       </Panel>{summary.data?.items[0]?.records === "0" && (
         <aside>
-          <p>当前范围无测试；可调整时间，或显式查看最近实际有数据的窗口。</p>
+          <p>当前范围无测试，请调整时间。</p>
           <ReadBlock label="最近实际测试" state={availability}>
             {(a) => (
               <>
                 {a.latest_at ? (
                   <>
                     <p>
-                      独立最近事件 {localTime(a.latest_at)} · 读取{" "}
-                      {localTime(a.captured_at)}
+                      最近测试 {localTime(a.latest_at)}
                     </p>
                     <button
                       type="button"
@@ -539,7 +524,7 @@ function ActivityGrid({ data, location: l, go }: { data: Analysis; location: Loc
   const max = maximum(data.items, "records");
   return <>
     <div className="pt-chart-legend pt-activity-legend" aria-label="活动图例"><span><i data-activity="observed" />观测活动</span><span><i data-activity="failure" />● 观测失败</span><span><i data-activity="empty" />完整范围无事件</span><span><i data-activity="unknown" />? 部分范围未知</span></div>
-    {requestedBuckets > 96 && <p className="pt-chart-partial">仅展示前 96 个时间格：{localTime(new Date(start).toISOString())} — {localTime(new Date(Math.min(end, first + 96 * width)).toISOString())}；其余请求时段未在此图展示，请缩小时间范围查看。</p>}
+    {requestedBuckets > 96 && <p className="pt-chart-partial">已显示时段：{localTime(new Date(start).toISOString())} — {localTime(new Date(Math.min(end, first + 96 * width)).toISOString())}；更多时段请缩小范围。</p>}
     {!devices.length && <EmptyState title={data.complete ? "该时段未观测到测试事件" : "时间格未知"} />}
     <div className="pt-table pt-activity-map" role="region" tabIndex={0} aria-label="上位机活动时间格"><table>
       <thead><tr><th scope="col">上位机</th>{times.map((t) => <th scope="col" key={t} aria-label={localTime(new Date(Math.max(start, t)).toISOString())} title={localTime(new Date(Math.max(start, t)).toISOString())}><time dateTime={new Date(Math.max(start, t)).toISOString()}>{new Date(Math.max(start, t)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}</time></th>)}</tr></thead>
@@ -566,7 +551,7 @@ function ReadingDifference({
   if (!previous) return null;
   const current = data.items[0];
   const sameScope = JSON.stringify(previous.scope) === JSON.stringify(l.scope);
-  if (!sameScope) return <StatisticsHelp><p>上次范围测试次数 {previous.records}、测试 SN {previous.distinct_sn}，与当前范围不同。上次数据时间 {localTime(previous.captured_at)}。</p></StatisticsHelp>;
+  if (!sameScope) return null;
   if (current?.records === previous.records && current?.distinct_sn === previous.distinct_sn) return null;
   return <p className="pt-meta">数据已变化：测试次数 {previous.records} → {current?.records ?? "未知"}；测试 SN {previous.distinct_sn} → {current?.distinct_sn ?? "未知"}。</p>;
 }

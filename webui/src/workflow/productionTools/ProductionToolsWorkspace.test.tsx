@@ -482,7 +482,7 @@ it("starts with compact controls and opens investigation recovery before focusin
     expect(v.host.querySelector("textarea")).toBeNull();
     expect(v.host.textContent).not.toContain("生产数据 · 问题定位与调查");
     expect(v.host.textContent).not.toContain("外部产测源只读");
-    expect(v.host.textContent).not.toContain("按源项目与问题时段核对数据");
+    expect(v.host.textContent).not.toContain("按项目与问题时段核对数据");
     expect(v.host.textContent).not.toContain("查看截至");
     expect(v.host.querySelector('[aria-label="交接号或内部恢复链接"]')).toBeNull();
     await v.click("恢复调查");
@@ -513,10 +513,10 @@ for (const task of ["anomalies", "activity", "catalog"] as const) {
     try {
       await v.click(label);
       expect(v.host.textContent).not.toContain("不逐项目扫描 SN");
-      await v.field("源项目", project.id);
+      await v.field("项目", project.id);
       expect(v.host.querySelector('[aria-label="产测主导航"] [aria-pressed="true"]')?.textContent).toBe(label);
       expect(v.requests.some((r) => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === (task === "anomalies" ? "errors" : task === "activity" ? "devices" : "versions"))).toBe(true);
-      await v.field("源项目", "");
+      await v.field("项目", "");
       expect(v.host.querySelector('[aria-label="产测主导航"] [aria-pressed="true"]')?.textContent).toBe(label);
     } finally {
       await v.dispose();
@@ -749,7 +749,7 @@ it("cancels project reads even when transport ignores abort", async () => {
   try {
     await v.click("项目 A");
     await v.click("查记录");
-    await v.field("源项目", other.id);
+    await v.field("项目", other.id);
     expect(signal?.aborted).toBe(true);
     await act(async () =>
       finish(new Response(JSON.stringify(page([{ sn: "PRIVATE-OLD" }])))),
@@ -815,7 +815,7 @@ it("preserves nullable scopes and independent overview block states", async () =
   );
   try {
     expect(v.host.textContent).toContain("失败 SN 12");
-    expect(v.host.querySelector('.pt-coverage[data-complete="false"]')?.textContent).toContain("部分数据未取得");
+    expect(v.host.querySelector('.pt-coverage[data-complete="false"]')?.textContent).toContain("部分结果未显示，请缩小范围");
     expect(v.host.querySelector(".pt-project-table tbody tr")?.textContent).toContain("未取得");
     expect(v.host.querySelector(".pt-chart svg")).toBeNull();
     await v.click("项目 A");
@@ -882,8 +882,8 @@ it("restores main and comparison through project detach and remount without trus
     await v.click("查看测试 2");
     await v.click("选作对照");
     await v.click("关闭测试详情");
-    await v.field("源项目", other.id);
-    await v.field("源项目", project.id);
+    await v.field("项目", other.id);
+    await v.field("项目", project.id);
     expect(v.host.textContent).toContain(draftId);
     expect(v.saved().comparison.offset).toBe(1);
     expect(v.requests.some((r) => r.url.pathname.endsWith("/resolve"))).toBe(
@@ -923,7 +923,7 @@ it("restores main and comparison through project detach and remount without trus
   try {
     expect(next.host.textContent).toContain(draftId);
     await next.click("比较已选记录");
-    expect(next.host.textContent).toContain("主要事件和对照参数尚未核对");
+    expect(next.host.textContent).toContain("参数尚未核对，请先复查证据");
     expect(next.host.textContent).not.toContain("measurement");
   } finally {
     await next.dispose();
@@ -946,10 +946,10 @@ it("preserves snapshot paging absolute offsets and history duplicate rows", asyn
   try {
     await v.click("项目 A");
     await v.click("查记录");
-    expect(v.host.textContent).toContain("仅显示部分记录");
+    expect(v.host.textContent).toContain("部分结果未显示，请缩小范围");
     expect(v.host.textContent).toContain("同时间多条记录，先后未确定");
-    await v.click("下一页快照");
-    await v.click("查看测试 51");
+    await v.click("下一页");
+    await v.click("查看测试 1");
     await v.click("设为调查对象");
     expect(
       v.requests.find(
@@ -960,7 +960,7 @@ it("preserves snapshot paging absolute offsets and history duplicate rows", asyn
     ).toContain('"offset":50');
     await v.click("关闭测试详情");
     await v.click("查看 SN-A 履历");
-    await v.click("下一页快照");
+    await v.click("下一页");
     expect(v.requests.at(-1)!.url.pathname).toContain("/snapshots/");
   } finally {
     await v.dispose();
@@ -1003,7 +1003,7 @@ it("does not silently move selected main outside its investigation when browsing
     await act(async () => {
       await new Promise((r) => setTimeout(r, 400));
     });
-    expect(v.host.textContent).toContain("当前浏览条件与主要事件不一致");
+    expect(v.host.textContent).toContain("当前浏览条件与调查不同");
     expect(v.saved().context.sn).not.toBe("DIFFERENT");
   } finally {
     await v.dispose();
@@ -1205,12 +1205,12 @@ it("shows resolved stopover candidates with their real source kind and candidate
     { handoffId },
   );
   try {
-    expect(v.host.textContent).toContain("精确事件时间及 SN 的有界候选");
+    expect(v.host.textContent).toContain("按原条件复查证据");
     await v.click("核对主要候选 1");
     expect(
       v.host.querySelector('[aria-label="测试详情"]')?.textContent,
     ).toContain("过站详情");
-    expect(v.host.textContent).toContain("原定位与当前候选分别显示");
+    expect(v.host.querySelector('[aria-label="主要事件"]')?.textContent).toContain("SN-A");
   } finally {
     await v.dispose();
   }
@@ -1325,7 +1325,7 @@ it("expands history independently while highlighting the original symptom and sh
     vi.useRealTimers();
   }
 });
-it("retains last successful overview data with its timestamp during retry failure", async () => {
+it("retains last successful overview data with a stale warning during retry failure", async () => {
   let failRead = false;
   const v = await view((url) =>
     failRead && url.pathname.endsWith("/overview")
@@ -1338,12 +1338,12 @@ it("retains last successful overview data with its timestamp during retry failur
       ?.querySelectorAll("td")[2].textContent;
     const updated = () => v.host.querySelector(".pt-updated time");
     expect(failedSN()).toBe("12");
-    expect(updated()?.getAttribute("datetime")).toBe(now);
-    expect(updated()?.textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    expect(updated()).toBeNull();
+
     failRead = true;
     await v.click("重新读取");
     expect(failedSN()).toBe("12");
-    expect(updated()?.getAttribute("datetime")).toBe(now);
+    expect(updated()).toBeNull();
     expect(v.host.textContent).toContain("显示上次数据，尚未更新。");
     expect(v.host.textContent).toContain("数据源暂不可用");
   } finally {
@@ -1487,7 +1487,7 @@ it("I2 overview scope is global and never carries project A filters into B", asy
     await v.click("限定上位机 PC07");
     await v.click("项目总览");
     expect(
-      (v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement)
+      (v.host.querySelector('[aria-label="项目"]') as HTMLSelectElement)
         .value,
     ).toBe("");
     expect(v.host.querySelector(".pt-chips")?.textContent).toBe("");
@@ -1636,14 +1636,14 @@ it("I3 active locator resumes authorized saved page without directory or selecti
   );
   try {
     expect(restored.host.textContent).toContain(draftId);
-    expect(restored.host.textContent).toContain("保存的定位：SN-A");
+    expect(restored.host.textContent).toContain("SN-A");
     expect(
       restored.requests.some((r) => r.url.pathname.endsWith("/" + draftId)),
     ).toBe(true);
     expect(
       (
         restored.host.querySelector(
-          '[aria-label="源项目"]',
+          '[aria-label="项目"]',
         ) as HTMLSelectElement
       ).value,
     ).toBe(project.id);
@@ -1739,7 +1739,7 @@ it("I5 failed-save Back Stay reconciles native history before repeated Back Forw
   );
   try {
     await v.click("项目 A");
-    await v.field("源项目", other.id);
+    await v.field("项目", other.id);
     await v.click("恢复调查");
     await v.field("观察事实和待确认事项", "B本机未保存");
     const originalIndex = history.state.productionWorkbench.index;
@@ -1752,7 +1752,7 @@ it("I5 failed-save Back Stay reconciles native history before repeated Back Forw
     await v.click("留在原页");
     expect(history.state.productionWorkbench.index).toBe(originalIndex);
     expect(
-      (v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement)
+      (v.host.querySelector('[aria-label="项目"]') as HTMLSelectElement)
         .value,
     ).toBe(other.id);
     await act(async () => history.back());
@@ -1766,7 +1766,7 @@ it("I5 failed-save Back Stay reconciles native history before repeated Back Forw
     });
     await flush();
     expect(
-      (v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement)
+      (v.host.querySelector('[aria-label="项目"]') as HTMLSelectElement)
         .value,
     ).toBe(project.id);
     await act(async () => history.forward());
@@ -1775,7 +1775,7 @@ it("I5 failed-save Back Stay reconciles native history before repeated Back Forw
     });
     await flush();
     expect(
-      (v.host.querySelector('[aria-label="源项目"]') as HTMLSelectElement)
+      (v.host.querySelector('[aria-label="项目"]') as HTMLSelectElement)
         .value,
     ).toBe(other.id);
     expect(
@@ -2169,7 +2169,7 @@ for (const transition of ["subject", "fresh", "same-subject-search"] as const) {
       await v.click("项目 A");
       await v.click("查记录");
       await v.click("查看 SN-A 履历");
-      await v.click("下一页快照");
+      await v.click("下一页");
       const n = v.requests.length;
       if (transition !== "fresh") {
         await v.field("精确 SN", transition === "subject" ? "SN-B" : "SN-A");
@@ -2417,7 +2417,7 @@ it("F1 paged anomaly changes scope without reusing capture and back restores exa
     await v.click("项目 A");
     await v.click("查看该范围失败");
     await v.click("选择异常 E1");
-    await v.click("下一页快照");
+    await v.click("下一页");
     const n = v.requests.length;
     await v.click("选择异常 E2");
     const reads = v.requests
@@ -2829,7 +2829,7 @@ for (const startingPage of ["initial", "paged"] as const) {
       await v.click("查记录");
       await v.click("查看 SN-A 履历");
       await v.field("精确 SN", "SN-A");
-      if (startingPage === "paged") await v.click("下一页快照");
+      if (startingPage === "paged") await v.click("下一页");
       const before = v.requests.length;
       generation = "AFTER";
       await v.click("查询产测数据");
@@ -3037,11 +3037,11 @@ it("switches between version usage and explicit directory while preserving proje
     await v.click("版本使用"); await v.click("查看版本");
     expect(v.host.querySelector('[aria-label="实际版本组合"]')).not.toBeNull();
     await v.click("工具与配置"); expect(v.host.querySelector('[aria-label="目录分类"]')).not.toBeNull();
-    await v.field("源项目", other.id);
+    await v.field("项目", other.id);
     expect(v.host.querySelector('[aria-label="目录分类"]')).not.toBeNull();
     await v.click("版本使用"); expect(v.host.querySelector('[aria-label="实际版本组合"]')).not.toBeNull();
     expect(v.host.querySelector('[aria-label="目录分类"]')).toBeNull();
-    await v.field("源项目", ""); await v.click("项目 A");
+    await v.field("项目", ""); await v.click("项目 A");
     expect(v.host.querySelector('[aria-label="实际版本组合"]')).not.toBeNull();
   } finally { await v.dispose(); }
 });
@@ -3096,5 +3096,23 @@ it("opens failed version tests directly and keeps their SN and detail journey re
     expect(records.searchParams.has("error_code")).toBe(false);
     await v.click("查看 SN-A 履历"); await v.click("查看测试 1");
     expect(v.host.querySelector('[aria-label="测试详情"]')).not.toBeNull();
+  } finally { await v.dispose(); }
+});
+
+it("starts a new project directory without the prior project's pagination cursor", async () => {
+  const oldCursor = "9007199254740999";
+  const v = await view(url => url.pathname.includes("/catalog/") ? new Response(JSON.stringify(page(
+    [{ id: "99999999999999999999", name: "合成工具" }],
+    { next_before_id: url.searchParams.has("before_id") ? null : oldCursor },
+  ))) : undefined);
+  try {
+    await v.click("项目 A"); await v.click("工具与配置"); await v.click("下一页");
+    const oldReads = v.requests.filter(r => r.url.pathname.includes("/catalog/"));
+    expect(oldReads.at(-1)!.url.searchParams.get("before_id")).toBe(oldCursor);
+    await v.field("项目", other.id);
+    const firstNewRead = v.requests.find(r => r.url.pathname.includes(`/projects/${other.id}/`) && r.url.pathname.includes("/catalog/"))!;
+    expect(firstNewRead).toBeTruthy();
+    expect(firstNewRead.url.searchParams.has("before_id")).toBe(false);
+    expect(firstNewRead.url.searchParams.has("parent_id")).toBe(false);
   } finally { await v.dispose(); }
 });

@@ -38,8 +38,8 @@ it("keeps active and unavailable projects in a compact table and mounts known ze
   await act(async () => host.querySelector<HTMLButtonElement>('tbody th button')!.click()); expect(go.mock.calls[1][0]).toMatchObject({ view: "project", projectId: "1", scope });
   await toggle("本时段无测试的项目（1）"); expect(host.textContent).toContain("合成项目乙");
   await toggle("本时段无测试的项目（1）"); expect(host.textContent).not.toContain("合成项目乙");
-  await toggle("统计说明"); expect(host.textContent).toContain("测试记录不是成品数量");
-  await toggle("统计说明"); expect(host.textContent).not.toContain("测试记录不是成品数量");
+  expect(host.textContent).not.toContain("统计说明");
+  expect(host.textContent).toContain("自动刷新");
 });
 it.each([["anomalies", "失败分析", "查看失败"], ["activity", "现场上位机", "查看上位机"], ["catalog", "版本使用", "查看版本"]] as const)("keeps the %s project chooser on its task", async (view, title, action) => {
   const go = await overview(view);
@@ -53,10 +53,10 @@ it("keeps incomplete zero statistics visible and marks them partial", async () =
   expect(host.querySelector("tbody")?.textContent).toContain("合成项目乙"); expect(host.textContent).toContain("统计未完整");
   expect(host.textContent).not.toContain("本时段无测试的项目"); expect(host.textContent).not.toContain("当前无观测失败");
 });
-it("removes successful coverage prose while retaining one update time", async () => {
+it("removes successful coverage metadata and statistics help", async () => {
   await overview("overview", [items[0]], true);
-  expect(host.querySelectorAll(".pt-updated time")).toHaveLength(1);
-  expect(host.querySelector(".pt-updated time")?.textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  expect(host.querySelector(".pt-updated")).toBeNull();
+  expect(host.textContent).not.toContain("统计说明");
   expect(host.textContent).not.toContain("本次范围读取完整"); expect(host.textContent).not.toContain("本页已读取");
 });
 it("keeps an empty incomplete overview unknown rather than claiming zero tests", async () => {
