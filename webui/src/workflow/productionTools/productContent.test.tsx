@@ -78,7 +78,7 @@ it("formats business event times without a repeated zone suffix and retains mill
   expect(shown).not.toMatch(/GMT|UTC/);
 });
 it("omits empty comparison sections and uses available investigation business names", async () => {
-  await render(<InvestigationPanel controller={controller({ draft: { ...draft, context: { ...draft.context, software_id: "8" } } })} projectName="合成项目" scopeLabels={{ software_id: "合成工具" }} readOnly={false} onCompare={vi.fn()} onCandidate={vi.fn()} />);
+  await render(<InvestigationPanel controller={controller({ draft: { ...draft, context: { ...draft.context, software_id: "8" } } })} projectName="合成项目" names={{ projectId: "7", labels: { "software_id:8": "合成工具" } }} readOnly={false} onCompare={vi.fn()} onCandidate={vi.fn()} />);
   expect(host.querySelector('[aria-label="对照事件"]')).toBeNull();
   expect(host.textContent).toContain("合成项目"); expect(host.textContent).toContain("工具：合成工具");
 });
@@ -91,4 +91,47 @@ it("keeps an unknown log verification state actionable", async () => {
   const c = controller({ draft: { ...draft, logs: [{ source_log_id: "88", descriptor: { csn: "SYNTHETIC-CSN" }, state: "unverified" }] }, resolved: { logs: [{ source_log_id: "88", state: "constructor" }] } });
   await render(<InvestigationPanel controller={c} readOnly={false} onCompare={vi.fn()} onCandidate={vi.fn()} />);
   expect(host.querySelector(".pt-log-reference")?.textContent).toMatch(/项目与时间\s*·\s*待核对/);
+});
+
+const ownedNames = { projectId: "7", labels: { "stage_id:71717171": "合成阶段", "software_id:81818181": "合成工具", "config_log_id:91919191": "合成配置", "software_id:82828282": "合成工具" } };
+const factRow = { timestamp: "2026-11-10T00:00:00.123Z", sn: "SYNTHETIC-SN", status: "2", workstagesid: "71717171", softwareid: "81818181", configlogsid: "91919191", measurement: "99999999999999999999" };
+const factEvent = { ...event, row: factRow };
+const comparisonRow = (label: string) => [...host.querySelectorAll('tbody tr')].find(row => row.querySelector("th")?.textContent === label)!;
+it("comparison resolves owned business names while comparing exact identities and formatting facts", async () => {
+  await render(<Compare primary={factEvent} comparison={{ ...factEvent, row: { ...factRow, softwareid: "82828282", status: "1", measurement: "10" } }} names={ownedNames} />);
+  for (const label of ["阶段", "工具", "配置"]) expect(comparisonRow(label).textContent).not.toMatch(/71717171|81818181|82828282|91919191/);
+  const tool = comparisonRow("工具"); expect(tool.textContent).toContain("不同");
+  expect([...tool.querySelectorAll("td")].slice(1).map(td => td.textContent)).toEqual(["合成工具", "合成工具"]);
+  expect(comparisonRow("事件时间").textContent).toContain(localTime(factRow.timestamp));
+  expect(comparisonRow("结果").textContent).toContain("失败 FAIL");
+  expect(comparisonRow("measurement").textContent).toContain("99999999999999999999");
+});
+it("comparison translates own name aliases and never borrows another project's names", async () => {
+  const named = { ...factEvent, projectId: "other-project", row: { ...factRow, softwarename: "记录自带工具", workstagesname: "记录自带阶段", configlogsname: "记录自带配置" } };
+  await render(<Compare primary={named} comparison={{ ...factEvent, projectId: "other-project" }} names={ownedNames} />);
+  expect(host.textContent).not.toMatch(/softwarename|workstagesname|configlogsname|71717171|81818181|91919191/);
+  for (const [label, own] of [["工具", "记录自带工具"], ["阶段", "记录自带阶段"], ["配置", "记录自带配置"]]) {
+    const cells = comparisonRow(label).querySelectorAll("td");
+    expect(cells[1].textContent).toBe(own); expect(cells[2].textContent).toContain("名称暂不可用");
+  }
+  expect(comparisonRow("工具名称").textContent).toContain("记录自带工具");
+});
+it.each([true, false])("saved evidence and copied summary use own names or unavailable fallback with owned metadata %s", async available => {
+  const descriptor = { ...factRow, ...(available ? { softwarename: "记录自带工具", workstagesname: "记录自带阶段", configlogsname: "记录自带配置" } : {}) };
+  const handoff = { ...draft, context: { ...draft.context, stage_id: factRow.workstagesid, software_id: factRow.softwareid, config_log_id: factRow.configlogsid, status: "2" }, primary: { ...selection, descriptor } };
+  const writeText = vi.fn(async (_text: string) => {});
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  await render(<InvestigationPanel controller={controller({ handoff, browsingOtherScope: true })} names={available ? ownedNames : { projectId: "other-project", labels: ownedNames.labels }} readOnly={false} onCompare={vi.fn()} onCandidate={vi.fn()} />);
+  const details = host.querySelector<HTMLDetailsElement>('[aria-label="主要事件"] details')!;
+  await act(async () => { details.open = true; details.dispatchEvent(new Event("toggle")); });
+  expect(details.textContent).not.toMatch(/71717171|81818181|91919191|softwarename|workstagesname|configlogsname/);
+  expect(details.textContent).toContain(available ? "记录自带工具" : "名称暂不可用");
+  expect(details.textContent).toContain(localTime(factRow.timestamp));
+  const savedScope = host.querySelector('[aria-label="调查范围"]')!;
+  expect(savedScope.textContent).toContain("结果：失败 FAIL"); expect(savedScope.textContent).not.toMatch(/71717171|81818181|91919191/);
+  await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "复制交接摘要与恢复链接")!.click());
+  const copied = writeText.mock.calls[0][0];
+  expect(copied).not.toMatch(/71717171|81818181|91919191|softwarename|workstagesname|configlogsname/);
+  expect(copied).toContain("结果：失败 FAIL"); expect(copied).toContain("结果=失败 FAIL"); expect(copied).toContain(localTime(factRow.timestamp));
+  expect(copied).toContain(available ? "记录自带工具" : "名称暂不可用");
 });

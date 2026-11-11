@@ -1,29 +1,11 @@
 import "./details.css";
 import { Badge, ResultBadge } from "./visuals";
 import { useEffect, useRef, useState } from "react";
-import { fieldNames, localTime, text } from "./context";
+import { localTime, text } from "./context";
 import { useInvestigation } from "./investigationState";
 import type { Resolution, ViewedEvent } from "./types";
+import { factNames, factValue, knownFacts, scopeDescription, type BusinessNames } from "./businessPresentation";
 
-const descriptorNames: Record<string, string> = {
-  timestamp: "事件时间",
-  time: "事件时间",
-  sn: "SN",
-  barcode: "条码",
-  status: "结果",
-  workstagesid: "阶段",
-  softwareid: "工具",
-  version: "软件版本",
-  configlogsid: "配置",
-  cversion: "配置版本",
-  devicename: "上位机",
-  errorcode: "错误码",
-  orderid: "工具配置审核单",
-  workselectid: "测试项选择",
-  softwarename: "工具名称",
-};
-const descriptorEntries = (row: Record<string, unknown>) =>
-  Object.entries(row).filter(([key]) => key in descriptorNames);
 export { useInvestigation } from "./investigationState";
 export { clearProductionResume } from "./resume";
 export type InvestigationController = ReturnType<typeof useInvestigation>;
@@ -43,7 +25,7 @@ export function InvestigationPanel({
   onCandidate,
   restoreFocusRequest = 0,
   projectName,
-  scopeLabels = {},
+  names,
 }: {
   controller: InvestigationController;
   readOnly: boolean;
@@ -51,7 +33,7 @@ export function InvestigationPanel({
   onCandidate: (event: ViewedEvent) => void;
   restoreFocusRequest?: number;
   projectName?: string;
-  scopeLabels?: Record<string, string>;
+  names?: BusinessNames;
 }) {
   const d = c.handoff || c.draft;
   const [restoreText, setRestoreText] = useState(""),
@@ -130,20 +112,7 @@ export function InvestigationPanel({
               {localTime(d.context.start)} — {localTime(d.context.end)}
             </p>
             {d.context.symptom && <p>{d.context.symptom}</p>}
-            <p>
-              {Object.entries(fieldNames)
-                .flatMap(([key, label]) =>
-                  d.context.missing_fields?.includes(key as never)
-                    ? [`${label}：源未提供`]
-                    : (d.context as unknown as Record<string, unknown>)[key] !==
-                      undefined
-                      ? [
-                        `${label}：${scopeLabels[key] || text((d.context as unknown as Record<string, unknown>)[key])}`,
-                      ]
-                      : [],
-                )
-                .join(" · ")}
-            </p>
+            <p>{scopeDescription(d.context, d.source_project_id, names, [d.primary?.descriptor, d.comparison?.descriptor].filter((row): row is NonNullable<typeof row> => !!row))}</p>
             {d.origin_handoff_id && (
               <p>
                 接续自交接 {d.origin_handoff_id} · 版本 {d.origin_handoff_version}
@@ -171,23 +140,12 @@ export function InvestigationPanel({
                   url.search = "";
                   url.hash = "";
                   url.searchParams.set("production_handoff", d.id);
-                  const scopeText = Object.entries(fieldNames)
-                    .flatMap(([key, label]) => {
-                      const value = (
-                        d.context as unknown as Record<string, unknown>
-                      )[key];
-                      return d.context.missing_fields?.includes(key as never)
-                        ? [`${label}：源未提供`]
-                        : value !== undefined
-                          ? [`${label}：${scopeLabels[key] || text(value)}`]
-                          : [];
-                    })
-                    .join(" · ");
+                  const scopeText = scopeDescription(d.context, d.source_project_id, names, [d.primary?.descriptor, d.comparison?.descriptor].filter((row): row is NonNullable<typeof row> => !!row));
                   const describe = (which: "primary" | "comparison") => {
                     const event = d[which];
                     return `${which === "primary" ? "主要事件" : "对照事件"}：${event
-                        ? descriptorEntries(event.descriptor)
-                          .map(([k, v]) => `${descriptorNames[k]}=${text(v)}`)
+                        ? knownFacts(event.descriptor)
+                          .map(([k]) => `${factNames.get(k)}=${factValue(k, event.descriptor, d.source_project_id, names)}`)
                           .join(" · ")
                         : "尚未选择"
                       }`;
@@ -253,12 +211,12 @@ export function InvestigationPanel({
                     <details>
                       <summary>事件信息</summary>
                       <dl>
-                        {descriptorEntries(d[which]!.descriptor).map(
+                        {knownFacts(d[which]!.descriptor).map(
                           ([key, value]) => (
                             <div key={key}>
-                              <dt>{descriptorNames[key]}</dt>
+                              <dt>{factNames.get(key)}</dt>
                               <dd>
-                                {key === "timestamp" ? localTime(value) : key === "status" ? <ResultBadge value={value} /> : text(value)}
+                                {key === "status" ? <ResultBadge value={value} /> : factValue(key, d[which]!.descriptor, d.source_project_id, names)}
                               </dd>
                             </div>
                           ),

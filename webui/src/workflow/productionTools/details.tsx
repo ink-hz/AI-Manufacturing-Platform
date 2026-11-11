@@ -5,9 +5,9 @@ import { WorkflowError } from "../api";
 import { useState } from "react";
 import type { Api, BoardProps } from "./boards";
 import { Coverage, ReadBlock } from "./boards";
+import { businessResult, factNames, factValue, knownFacts, type BusinessNames } from "./businessPresentation";
 import {
   matchesContext,
-  sourceName,
   localInput,
   localTime,
   text,
@@ -23,28 +23,7 @@ import type {
   Scope,
   ViewedEvent,
 } from "./types";
-export function result(value: unknown) {
-  return String(value) === "1"
-    ? "通过 PASS"
-    : String(value) === "2"
-      ? "失败 FAIL"
-      : `结果未知（${text(value)}）`;
-}
-const metadata: Record<string, string> = {
-  timestamp: "事件时间",
-  sn: "SN",
-  barcode: "条码",
-  status: "结果",
-  errorcode: "错误码",
-  workstagesid: "阶段",
-  softwareid: "工具",
-  version: "软件版本",
-  configlogsid: "配置",
-  cversion: "配置版本",
-  devicename: "上位机",
-  orderid: "工具配置审核单",
-  workselectid: "测试项选择",
-};
+export const result = businessResult;
 export function RecordTable({
   page,
   location: l,
@@ -155,8 +134,8 @@ export function RecordTable({
                     {text(row.errorcode)}
                   </td>
                   <td>
-                    {sourceName(l, "stage_id", row.workstagesid)} /{" "}
-                    {sourceName(l, "software_id", row.softwareid)}
+                    {factValue("workstagesid", row, l.projectId, { projectId: l.projectId, labels: l.labels })} /{" "}
+                    {factValue("softwareid", row, l.projectId, { projectId: l.projectId, labels: l.labels })}
                   </td>
                   <td>{text(row.devicename)}</td>
                   <td>
@@ -462,7 +441,7 @@ export function CatalogPage(props: BoardProps) {
 }
 export function Parameters({ row }: { row: ProductionRow }) {
   const [search, setSearch] = useState("");
-  const parameters = businessEntries(row).filter(([k]) => !(k in metadata));
+  const parameters = businessEntries(row).filter(([k]) => !factNames.has(k));
   const valued = parameters.filter(
     ([, v]) => v !== null && v !== undefined && v !== "",
   );
@@ -521,9 +500,11 @@ export function Parameters({ row }: { row: ProductionRow }) {
 export function Compare({
   primary,
   comparison,
+  names,
 }: {
   primary: ViewedEvent | null;
   comparison: ViewedEvent | null;
+  names?: BusinessNames;
 }) {
   if (!primary || !comparison)
     return (
@@ -562,12 +543,12 @@ export function Compare({
                 absent = a == null || b == null || a === "" || b === "";
               return (
                 <tr key={k} data-diff={!absent && JSON.stringify(a) !== JSON.stringify(b) ? "different" : undefined}>
-                  <th scope="row">{metadata[k] || k}</th>
+                  <th scope="row">{factNames.get(k) || k}</th>
                   <td><Badge tone={absent || JSON.stringify(a) === JSON.stringify(b) ? "neutral" : "warning"}>
                     {absent ? "未提供" : JSON.stringify(a) === JSON.stringify(b) ? "相同" : "不同"}
                   </Badge></td>
-                  <td>{k === "status" ? <ResultBadge value={a} /> : text(a)}</td>
-                  <td>{k === "status" ? <ResultBadge value={b} /> : text(b)}</td>
+                  <td>{k === "status" ? <ResultBadge value={a} /> : factValue(k, primary.row, primary.projectId, names)}</td>
+                  <td>{k === "status" ? <ResultBadge value={b} /> : factValue(k, comparison.row, comparison.projectId, names)}</td>
                 </tr>
               );
             })}
@@ -808,19 +789,11 @@ export function EventSidebar({
           <section className="pt-detail-section" aria-label="事件核心事实">
             <h4>事件核心事实</h4>
             <dl>
-              {Object.entries(metadata).map(([key, label]) => (
+              {knownFacts(event.row).map(([key]) => (
                 <div key={key}>
-                  <dt>{label}</dt>
+                  <dt>{factNames.get(key)}</dt>
                   <dd>
-                    {key === "timestamp"
-                      ? localTime(event.row[key])
-                      : key === "status"
-                        ? <ResultBadge value={event.row[key]} />
-                        : key === "workstagesid"
-                          ? sourceName(l, "stage_id", event.row[key])
-                          : key === "softwareid"
-                            ? sourceName(l, "software_id", event.row[key])
-                            : text(event.row[key])}
+                    {key === "status" ? <ResultBadge value={event.row[key]} /> : factValue(key, event.row, event.projectId, { projectId: l.projectId, labels: l.labels })}
                   </dd>
                 </div>
               ))}
@@ -870,8 +843,8 @@ export function EventSidebar({
                 type="button"
                 onClick={() =>
                   void navigator.clipboard?.writeText(
-                    Object.entries(metadata)
-                      .map(([k, v]) => `${v}：${text(event.row[k])}`)
+                    knownFacts(event.row)
+                      .map(([k]) => `${factNames.get(k)}：${factValue(k, event.row, event.projectId, { projectId: l.projectId, labels: l.labels })}`)
                       .join("\n"),
                   )
                 }

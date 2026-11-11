@@ -1226,7 +1226,7 @@ it("uses actual row identity labels when history crosses tools and supports para
     await v.click("查看测试 3");
     expect(
       v.host.querySelector('[aria-label="测试详情"]')?.textContent,
-    ).toContain("工具 18（名称未取得）");
+    ).toContain("工具名称暂不可用");
     await v.field("搜索参数", "measurement");
     expect(
       v.host.querySelector('[aria-label="测试参数表"]')?.textContent,
@@ -3114,5 +3114,31 @@ it("starts a new project directory without the prior project's pagination cursor
     expect(firstNewRead).toBeTruthy();
     expect(firstNewRead.url.searchParams.has("before_id")).toBe(false);
     expect(firstNewRead.url.searchParams.has("parent_id")).toBe(false);
+  } finally { await v.dispose(); }
+});
+
+it("restores same-project B without reusing A scope names or copying them into its handoff", async () => {
+  const ids = { stage_id: "71717171", software_id: "81818181", config_log_id: "91919191" };
+  const restored = { ...initialDraft(), id: handoffId, context: { ...range, ...ids, status: "2", view: "anomalies" }, primary: { ...selection(0), descriptor: { ...fail, workstagesid: ids.stage_id, softwareid: ids.software_id, configlogsid: ids.config_log_id } } };
+  const writeText = vi.fn(async (_text: string) => {});
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  const v = await view(u => u.pathname.endsWith("/handoffs/" + handoffId) ? new Response(JSON.stringify(restored)) : undefined);
+  try {
+    await v.click("项目 A"); await v.click("查看该范围失败"); await v.click("选择异常 E1");
+    expect(v.host.querySelector(".pt-chips")?.textContent).toContain("无线工具");
+    await v.click("恢复调查"); await v.field("交接号或内部恢复链接", handoffId); await v.click("读取交接");
+    const savedScope = v.host.querySelector('[aria-label="调查范围"]')!;
+    expect(savedScope.textContent).not.toContain("无线工具"); expect(savedScope.textContent).not.toContain("无线测试");
+    expect(v.host.querySelector(".pt-chips")?.textContent).not.toMatch(/无线工具|无线测试/);
+    expect(savedScope.textContent).toContain("名称暂不可用");
+    await v.click("复制交接摘要与恢复链接");
+    expect(writeText).toHaveBeenCalledOnce();
+    const copied = writeText.mock.calls[0][0];
+    expect(copied).not.toMatch(/无线工具|无线测试|71717171|81818181|91919191/);
+    expect(copied).toContain("结果：失败 FAIL"); expect(copied).toContain("结果=失败 FAIL");
+    expect(v.handed().context).toEqual(restored.context);
+    expect(v.handed().primary.descriptor).toEqual(restored.primary.descriptor);
+    const read = v.requests.filter(r => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === "errors").at(-1)!.url;
+    expect(read.searchParams.get("software_id")).toBe(ids.software_id);
   } finally { await v.dispose(); }
 });

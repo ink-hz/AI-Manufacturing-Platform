@@ -39,6 +39,7 @@ import "./productionTools.css";
 import { useProductionNavigation } from "./navigation";
 import { activeProductionProject } from "./resume";
 import { VersionUsageBoard } from "./VersionUsageBoard";
+import { scopeValue } from "./businessPresentation";
 export function validProductionHandoff(value: string | null) {
   return value &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -161,7 +162,10 @@ export function ProductionToolsWorkspace({
       evidenceRange: d.context.evidence_range,
       candidateCSN: d.context.candidate_csn,
       labels: {
-        ...(old.projectId === d.source_project_id ? old.labels : {}),
+        ...(old.projectId === d.source_project_id ? Object.fromEntries(Object.entries(old.labels).filter(([key]) =>
+          !["stage_id", "software_id", "config_log_id"].includes(key) ||
+          (old.scope as unknown as Record<string, unknown>)[key] === (d.context as unknown as Record<string, unknown>)[key],
+        )) : {}),
         project:
           old.projectId === d.source_project_id
             ? old.labels.project || `项目 ${d.source_project_id}`
@@ -368,17 +372,7 @@ export function ProductionToolsWorkspace({
     );
   }
   const activeDraft = investigation.handoff || investigation.draft;
-  const investigationScopeLabels: Record<string, string> = {};
-  if (activeDraft?.source_project_id === loc.projectId) {
-    for (const key of Object.keys(fieldNames)) {
-      const savedValue = (activeDraft.context as unknown as Record<string, unknown>)[key];
-      if (savedValue === undefined || savedValue !== (loc.scope as unknown as Record<string, unknown>)[key]) continue;
-      const label = key === "status"
-        ? savedValue === "1" ? "通过 PASS" : savedValue === "2" ? "失败 FAIL" : "未知"
-        : loc.labels[`${key}:${String(savedValue)}`] || loc.labels[key];
-      if (label) investigationScopeLabels[key] = label;
-    }
-  }
+  const businessNames = { projectId: loc.projectId, labels: loc.labels };
   // The controller stays mounted; only its unused presentation is deferred.
   const showInvestigation = !!(
     investigationOpen ||
@@ -608,11 +602,7 @@ export function ProductionToolsWorkspace({
               {label}：
               {loc.scope.missing_fields?.includes(key as never)
                 ? "源未提供"
-                : key === "status" ? (loc.scope.status === "1" ? "通过 PASS" : loc.scope.status === "2" ? "失败 FAIL" : "未知")
-                : loc.labels[`${key}:${String((loc.scope as unknown as Record<string, unknown>)[key])}`] || loc.labels[key] ||
-                  text(
-                    (loc.scope as unknown as Record<string, unknown>)[key],
-                  )}{" "}
+                : scopeValue(key, (loc.scope as unknown as Record<string, unknown>)[key], loc.projectId, businessNames)}{" "}
               ×
             </button>
           ))}
@@ -828,7 +818,7 @@ export function ProductionToolsWorkspace({
             ) : loc.view === "catalog" ? (
               loc.catalog ? <CatalogPage key={JSON.stringify([loc.projectId, loc.catalog, loc.parentId])} {...props} /> : <VersionUsageBoard {...props} />
             ) : loc.view === "compare" ? (
-              <Compare {...investigation.raw} />
+              <Compare {...investigation.raw} names={businessNames} />
             ) : null}
           </main>
         )
@@ -837,7 +827,7 @@ export function ProductionToolsWorkspace({
         <InvestigationPanel
           controller={investigation}
           projectName={projects.find(p => p.id === activeDraft?.source_project_id)?.name || (activeDraft?.source_project_id === loc.projectId ? loc.labels.project : undefined)}
-          scopeLabels={investigationScopeLabels}
+          names={businessNames}
           restoreFocusRequest={restoreFocusRequest}
           readOnly={readOnly}
           onCompare={() => go({ ...loc, view: "compare" })}
