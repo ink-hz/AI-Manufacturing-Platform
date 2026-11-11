@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "system": "mes",
+  "base_url": "http://mes.orbbec.com/",
+  "username": "",
+  "password": "",
+  "authentication": {
+    "mode": "form_session",
+    "status": "not_verified",
+    "login_path": "/j_spring_security_check",
+    "username_field": "username",
+    "password_field": "password",
+    "additional_form_fields": {
+      "loginMode": "default",
+      "siteId": null
+    },
+    "session_cookie_name": "JSESSIONID"
+  },
+  "connect_timeout_seconds": 10,
+  "read_timeout_seconds": 30,
+  "enabled": false,
+  "read_only": true,
+  "allowed_api_paths": [
+    "/venken/prodcpdb/prodcpdbAction!queryMshoporderresb.action",
+    "/venken/prodcpdb/prodcpdbAction!queryMshoporderafvc.action",
+    "/orbbec/orderItemGrade/orderItemGradeAction!query.action",
+    "/venken/iqcTestInput/iqcTestInputAction!getList.action",
+    "/venken/prodcpdb/prodcpdbAction!query.action",
+    "/orbbec/wmsInventoryCheck/wmsInventoryCheckAction!query.action",
+    "/orbbec/iqcInspection/iqcInspectionAction!query.action",
+    "/orbbec/customCommon/customCommonAction!query.action",
+    "/orbbec/appointIssue/appointIssueAction!queryInventoryOptions.action"
+  ],
+  "environment": "production",
+  "allow_http_production": false,
+  "site_code": "1000",
+  "max_response_bytes": 2097152,
+  "max_rows": 5
+}

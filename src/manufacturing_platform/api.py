@@ -17,7 +17,7 @@ from .project_api import register_project_routes
 from .collaboration_api import register_collaboration_routes
 
 
-def build_router(*, database_path: str, assets_dir: str, authorize, release: str = 'development'):
+def build_router(*, database_path: str, assets_dir: str, authorize, release: str = 'development', sap_access=None, mes_access=None):
     """Build routes using a trusted host callback; the host enforces session/CSRF.
 
     ``authorize(request, write=False)`` returns user_id, display_name, read_only.
@@ -152,4 +152,17 @@ def build_router(*, database_path: str, assets_dir: str, authorize, release: str
     for path in ('', '/{unmatched_path:path}'):
         router.add_api_route(path, unmatched, methods=['GET'], include_in_schema=False, route_class_override=PrivateFallbackRoute)
 
+    if sap_access is not None or mes_access is not None:
+        combined = APIRouter()
+        # Private integration namespaces must precede the legacy broad fallback.
+        if sap_access is not None:
+            from .sap_access import build_sap_access_router
+
+            combined.include_router(build_sap_access_router(service=sap_access, authorize=authorize))
+        if mes_access is not None:
+            from .mes_access import build_mes_access_router
+
+            combined.include_router(build_mes_access_router(service=mes_access, authorize=authorize))
+        combined.include_router(router)
+        return combined
     return router

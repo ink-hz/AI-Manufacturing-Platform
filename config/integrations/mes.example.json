@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "system": "mes",
+  "base_url": "http://mes.orbbec.com/",
+  "username": "",
+  "password": "",
+  "authentication": {
+    "mode": "form_session",
+    "status": "not_verified",
+    "login_path": "/j_spring_security_check",
+    "username_field": "username",
+    "password_field": "password",
+    "additional_form_fields": {
+      "loginMode": null,
+      "siteId": null
+    },
+    "session_cookie_name": "JSESSIONID"
+  },
+  "connect_timeout_seconds": 10,
+  "read_timeout_seconds": 30,
+  "enabled": false,
+  "read_only": true,
+  "allowed_api_paths": [],
+  "environment": "production"
+}

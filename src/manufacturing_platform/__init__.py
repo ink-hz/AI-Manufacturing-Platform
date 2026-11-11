@@ -14,11 +14,39 @@ def build_native_config(config_path: str, snapshot_path: str):
     return factory(config_path, snapshot_path)
 
 
+def build_sap_access_service(config_path: str, audit_path: str):
+    from .sap_access import build_sap_access_service as factory
+
+    return factory(config_path, audit_path)
+
+
+def build_sap_access_router(*, service, authorize):
+    from .sap_access import build_sap_access_router as factory
+
+    return factory(service=service, authorize=authorize)
+
+
+def build_mes_access_service(config_path: str, audit_path: str):
+    from .mes_access import build_mes_access_service as factory
+
+    return factory(config_path, audit_path)
+
+
+def build_mes_access_router(*, service, authorize):
+    from .mes_access import build_mes_access_router as factory
+
+    return factory(service=service, authorize=authorize)
+
+
 __all__ = [
     "NATIVE_PRODUCTION_PROTOCOL",
     "WORKFLOW_API_VERSION",
     "build_native_config",
+    "build_mes_access_router",
+    "build_mes_access_service",
     "build_router",
+    "build_sap_access_router",
+    "build_sap_access_service",
     "build_workflow_router",
     "validate_snapshot_path",
 ]

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "transport": "rfc",
+  "environment": "test",
+  "application_server": "10.10.16.247",
+  "system_number": "10",
+  "system_id": "S4D",
+  "client": "300",
+  "username": "",
+  "password": "",
+  "enabled": false,
+  "read_only": true,
+  "allowed_functions": []
+}
