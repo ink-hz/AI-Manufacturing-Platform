@@ -181,7 +181,7 @@ export function OverviewBoard({
                 不是最终不良。
               </p>
               {!data.items.length && <p>源项目目录暂无项目</p>}
-              <div className="pt-projects">
+              <div className="pt-projects pt-overview-projects">
                 {rows.map((p) => (
                   <article className="pt-project-card" key={p.id}>
                     <header className="pt-project-heading"><h4>{p.name}</h4><Badge tone={!p.statistics || !p.blocks.statistics.complete ? "warning" : p.statistics?.failed_sn !== "0" && p.statistics ? "danger" : "neutral"}>{!p.statistics ? "统计未取得" : !p.blocks.statistics.complete ? "统计未完整" : p.statistics?.failed_sn !== "0" && p.statistics ? "观测到 FAIL" : "当前无观测失败"}</Badge></header>
@@ -196,6 +196,7 @@ export function OverviewBoard({
                     {p.blocks.trend.state === "unavailable" ? <EmptyState title="趋势未取得" /> : <MiniTrend items={p.trend} complete={p.blocks.trend.complete} />}
                     <button
                       type="button"
+                      className="pt-button-primary"
                       onClick={() =>
                         go({
                           ...location,

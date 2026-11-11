@@ -16,10 +16,15 @@ function apiFor(data: Analysis, overview?: Overview): Api { return { productionA
 const props = (api: Api, loc = location) => ({ api, location: loc, refresh: 0, go: vi.fn(), inspect: vi.fn() });
 it("shows exact page-only KPI totals and distinguishes unavailable project statistics", async () => {
   const overview: Overview = { source_namespace: "native", captured_at: scope.end, complete: false, has_more: true, next_before_id: "2", items: [{ id: "1", name: "项目 A", state: "ready", statistics: aggregate, trend: [], latest_at: null, blocks: { statistics: block, trend: block, latest: block } }, { id: "2", name: "项目 B", state: "unavailable", statistics: null, trend: [], latest_at: null, blocks: { statistics: { ...block, complete: false, state: "unavailable" }, trend: block, latest: block } }] };
-  await render(<OverviewBoard {...props(apiFor(analysis([]), overview))} />);
+  const p = props(apiFor(analysis([]), overview));
+  await render(<OverviewBoard {...p} />);
   expect(host.querySelector('[role="group"][aria-label="测试记录"]')?.textContent).toContain("99999999999999999999");
   expect(host.querySelector('[role="group"][aria-label="测试 SN"]')?.textContent).toContain("9007199254740993");
   expect(host.textContent).toContain("仅汇总本页完整统计"); expect(host.textContent).toContain("遗漏分组和时间格未知"); expect(host.textContent).toContain("本次概览实际范围"); expect(host.textContent).toContain("统计未取得，不能计作零");
+  const projectEntry = [...host.querySelectorAll("button")].find((button) => button.textContent === "查看项目 A")!;
+  expect(projectEntry.classList.contains("pt-button-primary")).toBe(true);
+  await act(async () => projectEntry.click());
+  expect(p.go.mock.calls[0][0]).toMatchObject({ view: "project", projectId: "1", labels: { project: "项目 A" }, scope, inherited: true });
 });
 it("keeps zero failures neutral and missing statistics visibly unknown", async () => {
   await render(<><Counts item={{ ...aggregate, fail_records: "0", failed_sn: "0" }} /><Counts item={null} /></>);

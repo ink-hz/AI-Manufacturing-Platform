@@ -65,11 +65,14 @@ export function MiniTrend({ items, complete }: { items: Aggregate[]; complete: b
   const total = maximum(items, "records"), failures = maximum(items, "fail_records");
   const timestamps = items.map((item) => +new Date(item.timestamp!));
   const first = Math.min(...timestamps), span = Math.max(...timestamps) - first;
-  const x = (i: number) => span > 0 ? (timestamps[i] - first) / span * (items.length * 12 - 10) + 1 : i * 12 + 1;
+  const positions = timestamps.map((timestamp, i) => span > 0 ? (timestamp - first) / span * (items.length * 12 - 10) + 1 : i * 12 + 1);
+  const ordered = [...new Set(positions)].sort((a, b) => a - b);
+  // Keep a visible gap even when returned time buckets are unevenly spaced.
+  const barWidth = ordered.slice(1).reduce((width, position, i) => Math.min(width, (position - ordered[i]) * .8), 9);
   return <figure className="pt-mini-trend">
     <figcaption>近期已返回时间格 · 测试量 / 失败量各自缩放{!complete && " · 部分读取；空白时段未知"}</figcaption>
     <svg role="img" aria-label="项目近期测试与失败趋势" viewBox={`0 0 ${items.length * 12} 56`} preserveAspectRatio="none">
-      {items.map((item, i) => <g key={item.key || i}><title>{localTime(item.timestamp)} · 测试 {item.records} · 失败 {item.fail_records} · 未知 {item.unknown_records}</title><rect className="pt-chart-tests" x={x(i)} y={26 - boundedPercent(item.records, total) * .24} width="9" height={boundedPercent(item.records, total) * .24} /><rect className="pt-chart-failures" x={x(i)} y={54 - boundedPercent(item.fail_records, failures) * .24} width="9" height={boundedPercent(item.fail_records, failures) * .24} /></g>)}
+      {items.map((item, i) => <g key={item.key || i}><title>{localTime(item.timestamp)} · 测试 {item.records} · 失败 {item.fail_records} · 未知 {item.unknown_records}</title><rect className="pt-chart-tests" x={positions[i]} y={26 - boundedPercent(item.records, total) * .24} width={barWidth} height={boundedPercent(item.records, total) * .24} /><rect className="pt-chart-failures" x={positions[i]} y={54 - boundedPercent(item.fail_records, failures) * .24} width={barWidth} height={boundedPercent(item.fail_records, failures) * .24} /></g>)}
     </svg>
   </figure>;
 }
