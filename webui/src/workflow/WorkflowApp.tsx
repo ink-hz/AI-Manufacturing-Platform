@@ -340,7 +340,7 @@ export function WorkflowApp({
       });
       setDetail(null);
       setResolve(false);
-    } else {
+    } else if (!stayOnTask) {
       setTarget(null);
     }
   }
