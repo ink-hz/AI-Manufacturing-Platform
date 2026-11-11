@@ -26,7 +26,6 @@ import {
   investigationContextFromLocation,
   fieldNames,
   localInput,
-  localTime,
   queryScope,
   recent,
   removeScope,
@@ -74,6 +73,8 @@ export function ProductionToolsWorkspace({
     [validation, setValidation] = useState(""),
     [filterNotice, setFilterNotice] = useState(""),
     [replacement, setReplacement] = useState<ViewedEvent | null>(null),
+    [investigationOpen, setInvestigationOpen] = useState(false),
+    [restoreFocusRequest, setRestoreFocusRequest] = useState(0),
     [investigationProject, setInvestigationProject] = useState(() =>
       handoffId ? "" : activeProductionProject(userId),
     ),
@@ -362,6 +363,16 @@ export function ProductionToolsWorkspace({
     );
   }
   const activeDraft = investigation.handoff || investigation.draft;
+  // The controller stays mounted; only its unused presentation is deferred.
+  const showInvestigation = !!(
+    investigationOpen ||
+    activeDraft ||
+    investigation.dirty ||
+    investigation.error ||
+    investigation.conflict ||
+    investigation.localRecovered ||
+    investigation.note
+  );
   return (
     <section
       ref={host}
@@ -370,19 +381,12 @@ export function ProductionToolsWorkspace({
       aria-label="产测管理工作区"
     >
       <header className="pt-workspace-header">
-        <div className="pt-workspace-heading">
-          <p className="pt-eyebrow">生产数据 · 问题定位与调查</p>
-          <h2>产测管理</h2>
-          <p className="pt-workspace-description">
-            从项目变化定位问题，再核对源事件和日志。外部产测源只读；记录与审核单不代表质量放行。
-          </p>
-        </div>
         <div className="pt-workspace-navigation">
           <nav className="pt-nav" aria-label="产测主导航">
             {(
               [
                 ["overview", "运行总览"],
-                ["anomalies", "测试异常"],
+                ["anomalies", "失败分析"],
                 ["activity", "上位机活动"],
               ] as const
             ).map(([id, label]) => (
@@ -427,15 +431,24 @@ export function ProductionToolsWorkspace({
             >
               查记录
             </button>
+            {!showInvestigation && (
+              <button
+                type="button"
+                disabled={readOnly || !investigation.canStart}
+                onClick={() => {
+                  setInvestigationOpen(true);
+                  void investigation.start();
+                }}
+              >
+                开始调查
+              </button>
+            )}
             <button
               type="button"
-              onClick={() =>
-                host.current
-                  ?.querySelector<HTMLInputElement>(
-                    '[aria-label="交接号或内部恢复链接"]',
-                  )
-                  ?.focus()
-              }
+              onClick={() => {
+                setInvestigationOpen(true);
+                setRestoreFocusRequest((request) => request + 1);
+              }}
             >
               恢复调查
             </button>
@@ -468,10 +481,6 @@ export function ProductionToolsWorkspace({
       )}
       {directory.loading && <p role="status">正在读取源项目目录…</p>}
       <section className="pt-range-panel" aria-label="数据范围">
-        <div className="pt-range-heading">
-          <h3>数据范围</h3>
-          <span className="pt-meta">按源项目与问题时段核对数据</span>
-        </div>
         <div className="pt-scope">
           <label>
             源项目
@@ -482,7 +491,10 @@ export function ProductionToolsWorkspace({
                 const p = projects.find((p) => p.id === e.target.value);
                 if (p)
                   go({
-                    view: "project",
+                    view:
+                      loc.view === "anomalies" || loc.view === "activity"
+                        ? loc.view
+                        : "project",
                     projectId: p.id,
                     scope: { start: loc.scope.start, end: loc.scope.end },
                     labels: { project: p.name },
@@ -491,7 +503,10 @@ export function ProductionToolsWorkspace({
                 else if (!e.target.value)
                   go({
                     ...loc,
-                    view: "overview",
+                    view:
+                      loc.view === "anomalies" || loc.view === "activity"
+                        ? loc.view
+                        : "overview",
                     projectId: "",
                     scope: { start: loc.scope.start, end: loc.scope.end },
                     labels: {},
@@ -516,6 +531,7 @@ export function ProductionToolsWorkspace({
             <input
               aria-label="开始时间"
               type="datetime-local"
+              step="0.001"
               value={range.start}
               onChange={(e) => setRange({ ...range, start: e.target.value })}
             />
@@ -525,6 +541,7 @@ export function ProductionToolsWorkspace({
             <input
               aria-label="结束时间"
               type="datetime-local"
+              step="0.001"
               value={range.end}
               onChange={(e) => setRange({ ...range, end: e.target.value })}
             />
@@ -545,13 +562,6 @@ export function ProductionToolsWorkspace({
           )}
         </div>
       </section>
-      <p className="pt-meta">
-        {loc.labels.project || "全部可访问源项目"} · 问题时间{" "}
-        {localTime(loc.scope.start)} — {localTime(loc.scope.end)} ·{" "}
-        {Intl.DateTimeFormat().resolvedOptions().timeZone} ·{" "}
-        {loc.view === "overview" ? "范围见上" : "固定问题时间，已暂停自动更新"}{" "}
-        · 查看截至 {localTime(loc.scope.end)} 的数据
-      </p>
       <div className="pt-chips">
         {Object.entries(fieldNames)
           .filter(
@@ -779,12 +789,7 @@ export function ProductionToolsWorkspace({
       )}
       {global.data?.configured &&
       (loc.view === "overview" || !loc.projectId) ? (
-        <>
-          <OverviewBoard {...props} />
-          {!loc.projectId && loc.view !== "overview" && (
-            <p>先选择项目及时间范围，不逐项目扫描 SN。</p>
-          )}
-        </>
+        <OverviewBoard {...props} />
       ) : (
         global.data?.configured &&
         loc.projectId && (
@@ -811,12 +816,15 @@ export function ProductionToolsWorkspace({
           </main>
         )
       )}
-      <InvestigationPanel
-        controller={investigation}
-        readOnly={readOnly}
-        onCompare={() => go({ ...loc, view: "compare" })}
-        onCandidate={setEvent}
-      />
+      {showInvestigation && (
+        <InvestigationPanel
+          controller={investigation}
+          restoreFocusRequest={restoreFocusRequest}
+          readOnly={readOnly}
+          onCompare={() => go({ ...loc, view: "compare" })}
+          onCandidate={setEvent}
+        />
+      )}
       {replacement && (
         <aside role="alert">
           <p>

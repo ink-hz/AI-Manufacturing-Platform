@@ -718,6 +718,7 @@ export function EventSidebar({
               <input
                 aria-label="日志开始时间"
                 type="datetime-local"
+                step="0.001"
                 value={localInput(form.start)}
                 onChange={(e) =>
                   e.target.value &&
@@ -733,6 +734,7 @@ export function EventSidebar({
               <input
                 aria-label="日志结束时间"
                 type="datetime-local"
+                step="0.001"
                 value={localInput(form.end)}
                 onChange={(e) =>
                   e.target.value &&

@@ -118,3 +118,23 @@ it("clears account-scoped production resume data on successful logout", async ()
     await v.dispose();
   }
 });
+
+it("keeps one production title and omits only production provenance and eyebrow", async () => {
+  const v = await shell();
+  try {
+    await v.click("制造项目");
+    const otherBadge = v.host.querySelector(".mf-badge")?.textContent;
+    const otherEyebrow = v.host.querySelector(".mf-console-page-heading p")?.textContent;
+    expect(otherBadge).toBeTruthy();
+    expect(otherEyebrow).toBeTruthy();
+    await v.click("产测管理");
+    expect([...v.host.querySelectorAll("h1, h2")].filter((h) => h.textContent === "产测管理")).toHaveLength(1);
+    expect(v.host.querySelector(".mf-badge")).toBeNull();
+    expect(v.host.querySelector(".mf-console-page-heading p")).toBeNull();
+    await v.click("制造项目");
+    expect(v.host.querySelector(".mf-badge")?.textContent).toBe(otherBadge);
+    expect(v.host.querySelector(".mf-console-page-heading p")?.textContent).toBe(otherEyebrow);
+  } finally {
+    await v.dispose();
+  }
+});

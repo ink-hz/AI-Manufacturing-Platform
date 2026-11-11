@@ -439,14 +439,16 @@ export function WorkflowApp({
         }
         onLogout={options.onLogout ? () => account("logout") : undefined}
       >
-        <p className="mf-badge">
-          {activeView === "production_tools" ? "产测源数据 · 只读查询" : <>{b.dataset?.label} ·{" "}
-          {b.dataset?.mode === "production"
-            ? "生产数据"
-            : b.dataset?.mode === "demo"
-              ? "隔离演示数据"
-              : "隔离测试数据"}</>}
-        </p>
+        {activeView !== "production_tools" && (
+          <p className="mf-badge">
+            {b.dataset?.label} ·{" "}
+            {b.dataset?.mode === "production"
+              ? "生产数据"
+              : b.dataset?.mode === "demo"
+                ? "隔离演示数据"
+                : "隔离测试数据"}
+          </p>
+        )}
         {readOnly && <p>当前只读</p>}
         {error && (
           <p role="alert">

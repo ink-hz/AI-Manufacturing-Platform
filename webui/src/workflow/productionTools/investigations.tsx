@@ -1,6 +1,6 @@
 import "./details.css";
 import { Badge, EmptyState, ResultBadge } from "./visuals";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fieldNames, localTime, text } from "./context";
 import { useInvestigation } from "./investigationState";
 import type { Resolution, ViewedEvent } from "./types";
@@ -40,20 +40,26 @@ export function InvestigationPanel({
   readOnly,
   onCompare,
   onCandidate,
+  restoreFocusRequest = 0,
 }: {
   controller: InvestigationController;
   readOnly: boolean;
   onCompare: () => void;
   onCandidate: (event: ViewedEvent) => void;
+  restoreFocusRequest?: number;
 }) {
   const d = c.handoff || c.draft;
   const [restoreText, setRestoreText] = useState(""),
     [linkError, setLinkError] = useState(""),
     [copyState, setCopyState] = useState("");
+  const restoreInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (restoreFocusRequest) restoreInput.current?.focus();
+  }, [restoreFocusRequest]);
   return (
     <section className="pt-investigation" aria-label="当前调查">
       <header className="pt-section-heading">
-        <div><p className="pt-eyebrow">调查工作台</p><h3>当前调查</h3>
+        <div><h3>当前调查</h3>
           <p role="status"><Badge tone={c.conflict || c.error || c.dirty || c.browsingOtherScope ? "warning" : "info"}>{c.state}</Badge>{readOnly ? " · 只读管理员，本次修改不保存" : ""}</p>
         </div>
         <div className="pt-actions">
@@ -395,6 +401,7 @@ export function InvestigationPanel({
         <label>
           交接号或内部恢复链接
           <input
+            ref={restoreInput}
             aria-label="交接号或内部恢复链接"
             value={restoreText}
             onChange={(e) => setRestoreText(e.target.value)}

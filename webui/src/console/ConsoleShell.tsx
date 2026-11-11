@@ -367,9 +367,11 @@ export function ConsoleShell({
         <main className="mf-console-content" id={`${id}-content`} tabIndex={-1}>
           <div className="mf-console-page-heading">
             <div>
-              <p>
-                {view === "home" ? "交付协同 · 日常工作" : "制造业务工作区"}
-              </p>
+              {view !== "production_tools" && (
+                <p>
+                  {view === "home" ? "交付协同 · 日常工作" : "制造业务工作区"}
+                </p>
+              )}
               <h1>{title}</h1>
             </div>
             <div className="mf-actions">

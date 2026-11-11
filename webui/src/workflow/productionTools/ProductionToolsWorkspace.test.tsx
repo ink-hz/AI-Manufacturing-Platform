@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createWorkflowApi } from "../api";
 import { flush } from "../testHelpers";
 import { ProductionToolsWorkspace } from "./ProductionToolsWorkspace";
+import { localInput } from "./context";
 const project = { id: "99999999999999999999", name: "项目 A" },
   other = { id: "9007199254740993", name: "项目 B" };
 const now = "2026-11-10T08:00:00Z",
@@ -432,7 +433,7 @@ async function view(
   await flush();
   const click = async (label: string) => {
     const b = [...host.querySelectorAll("button")].find(
-      (b) => b.textContent === label,
+      (b) => b.textContent === label || b.getAttribute("aria-label") === label,
     );
     expect(b, label).toBeTruthy();
     await act(async () => b!.click());
@@ -460,6 +461,7 @@ async function view(
     click,
     field,
     saved: () => saved,
+    handed: () => handed,
     dispose: async () => {
       await act(async () => root.unmount());
       api.dispose();
@@ -471,6 +473,98 @@ afterEach(() => {
   vi.unstubAllGlobals();
   sessionStorage.clear();
   history.replaceState(null, "", "/");
+});
+it("starts with compact controls and opens investigation recovery before focusing it", async () => {
+  const v = await view();
+  try {
+    expect(v.host.querySelector("h2")).toBeNull();
+    expect(v.host.querySelector('[aria-label="当前调查"]')).toBeNull();
+    expect(v.host.querySelector("textarea")).toBeNull();
+    expect(v.host.textContent).not.toContain("生产数据 · 问题定位与调查");
+    expect(v.host.textContent).not.toContain("外部产测源只读");
+    expect(v.host.textContent).not.toContain("按源项目与问题时段核对数据");
+    expect(v.host.textContent).not.toContain("查看截至");
+    expect(v.host.querySelector('[aria-label="交接号或内部恢复链接"]')).toBeNull();
+    await v.click("恢复调查");
+    const input = v.host.querySelector('[aria-label="交接号或内部恢复链接"]');
+    expect(input).not.toBeNull();
+    expect(document.activeElement).toBe(input);
+    await v.field("交接号或内部恢复链接", "invalid");
+    await v.click("读取交接");
+    expect(v.host.querySelector('[aria-label="当前调查"]')?.textContent).toContain("请输入有效交接号");
+  } finally {
+    await v.dispose();
+  }
+});
+it("keeps a failed linked restore visible without an explicit panel open", async () => {
+  const v = await view((u) => u.pathname.endsWith("/handoffs/" + handoffId)
+    ? new Response("{}", { status: 410 }) : undefined, { handoffId });
+  try {
+    expect(v.host.querySelector('[aria-label="当前调查"]')?.textContent).toContain("已过期");
+    expect(v.host.querySelector('[aria-label="交接号或内部恢复链接"]')).not.toBeNull();
+  } finally {
+    await v.dispose();
+  }
+});
+for (const task of ["anomalies", "activity"] as const) {
+  it(`preserves the ${task} task when selecting and clearing source projects`, async () => {
+    const v = await view();
+    const label = task === "anomalies" ? "失败分析" : "上位机活动";
+    try {
+      await v.click(label);
+      expect(v.host.textContent).not.toContain("不逐项目扫描 SN");
+      await v.field("源项目", project.id);
+      expect(v.host.querySelector('[aria-label="产测主导航"] [aria-pressed="true"]')?.textContent).toBe(label);
+      expect(v.requests.some((r) => r.url.pathname.endsWith("/analysis") && r.url.searchParams.get("view") === (task === "anomalies" ? "errors" : "devices"))).toBe(true);
+      await v.field("源项目", "");
+      expect(v.host.querySelector('[aria-label="产测主导航"] [aria-pressed="true"]')?.textContent).toBe(label);
+    } finally {
+      await v.dispose();
+    }
+  });
+}
+it("round-trips exact query seconds and milliseconds through local time controls", async () => {
+  const exact = { start: "2026-11-10T01:40:59.123Z", end: "2026-11-10T02:50:31.456Z" };
+  expect(new Date(localInput(exact.start)).toISOString()).toBe(exact.start);
+  const v = await view((u) => u.pathname.endsWith("/handoffs/" + handoffId)
+    ? new Response(JSON.stringify({ ...initialDraft(), id: handoffId, context: { ...exact, view: "anomalies" } })) : undefined, { handoffId });
+  try {
+    for (const [label, value] of [["开始时间", exact.start], ["结束时间", exact.end]]) {
+      const input = v.host.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+      expect(input.step).toBe("0.001");
+      expect(input.validity.stepMismatch).toBe(false);
+      expect(new Date(input.value).toISOString()).toBe(value);
+    }
+    await v.click("应用时间范围");
+    const query = v.requests.filter((r) => r.url.pathname.endsWith("/analysis")).at(-1)!.url;
+    expect(query.searchParams.get("start")).toBe(exact.start);
+    expect(query.searchParams.get("end")).toBe(exact.end);
+    expect(v.handed().context).toMatchObject(exact);
+  } finally {
+    await v.dispose();
+  }
+});
+it("preserves exact captured log bounds in editable candidate controls", async () => {
+  const exact = { start: "2026-11-10T01:40:59.123Z", end: "2026-11-10T02:50:31.456Z" };
+  const v = await view((u) => u.pathname.endsWith("/handoffs/" + handoffId)
+    ? new Response(JSON.stringify({ ...initialDraft(), id: handoffId, primary: selection(0), context: { ...range, view: "anomalies", evidence_range: exact } })) : undefined, { handoffId });
+  try {
+    await v.click("核对主要候选 1");
+    await v.click("查找候选日志");
+    for (const [label, value] of [["日志开始时间", exact.start], ["日志结束时间", exact.end]]) {
+      const input = v.host.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+      expect(input.step).toBe("0.001");
+      expect(input.validity.stepMismatch).toBe(false);
+      expect(new Date(input.value).toISOString()).toBe(value);
+    }
+    await v.click("查找日志");
+    const query = v.requests.filter((r) => r.url.pathname.endsWith("/evidence")).at(-1)!.url;
+    expect(query.searchParams.get("start")).toBe(exact.start);
+    expect(query.searchParams.get("end")).toBe(exact.end);
+    expect(v.handed().context.evidence_range).toEqual(exact);
+  } finally {
+    await v.dispose();
+  }
 });
 it("explains project and stage before records, then expands SN beyond symptom filters", async () => {
   const v = await view();
@@ -747,7 +841,7 @@ it("read-only admin restores but cannot save, fork or generate", async () => {
     for (const label of ["开始调查", "另存为我的调查", "生成交接摘要"])
       expect(
         [...v.host.querySelectorAll("button")].find(
-          (b) => b.textContent === label,
+          (b) => b.textContent === label || b.getAttribute("aria-label") === label,
         )?.disabled,
       ).toBe(true);
     expect(v.requests.every((r) => r.init?.method === "GET")).toBe(true);
@@ -1483,6 +1577,7 @@ it("I3 failed first POST resumes idless local notes without project click or dir
       : undefined,
   );
   await v.click("查看项目 A");
+  await v.click("恢复调查");
   await v.field("观察事实和待确认事项", "首次创建失败仍须保留");
   await v.click("生成交接摘要");
   expect(v.host.textContent).toContain("保存失败");
@@ -1627,6 +1722,7 @@ it("I5 failed-save Back Stay reconciles native history before repeated Back Forw
   try {
     await v.click("查看项目 A");
     await v.field("源项目", other.id);
+    await v.click("恢复调查");
     await v.field("观察事实和待确认事项", "B本机未保存");
     const originalIndex = history.state.productionWorkbench.index;
     await act(async () => history.back());
@@ -2008,6 +2104,7 @@ it("I4 newer local edit retires cached startup metadata too", async () => {
       : undefined,
   );
   try {
+    await v.click("恢复调查");
     await v.field("观察事实和待确认事项", "EDIT-DURING-STARTUP-RESTORE");
     await act(async () =>
       finish(
