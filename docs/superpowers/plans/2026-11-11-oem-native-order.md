@@ -58,14 +58,14 @@ Bind requires nonempty exact source rows. Existing association requires explicit
 
 ### Task 3: 料况页关联工单、完整组件查看与刷新
 
-**Files:** Create `webui/src/workflow/materialControl/MesOrderMaterials.tsx` and `.test.tsx`; modify `materialControl/{api,types,MaterialControlWorkspace}.ts(x)`, needed existing test fixtures only; rebuild tracked assets through existing bundle task.
+**Files:** Create `webui/src/workflow/materialControl/MesOrderMaterials.tsx` and `.test.tsx`; modify `materialControl/{api,types,MaterialControlWorkspace}.ts(x)`, command union types and needed existing test fixtures only; rebuild assets through existing bundle task (dist目前为ignored产物，记录校验而不强制入Git).
 
 **Interfaces:** Use Task1 GET+commands exactly; add API method `mesOrderMaterials(projectId,workOrderId,signal?)`. Load work-order choices with existing `api.objects(projectId, 'work_order', 50, offset)` and a load-more action, using object titles; `page.work_orders` only contains the current requirement page and cannot support initial binding before a supply plan exists. Reuse existing guarded draft/leave/reload+command handling. No native admin/raw query endpoints on the page.
 
 - [ ] Add failing component tests for human-readable work-order selection before any plan/requirement exists, loading additional work-order choices, business MES工单 input, unbound/read-only capability, successful bind/read/refresh, exact quantity strings and units, replacement reason, and failure retaining previous saved result.
 - [ ] Embed a compact `MES工单物料` section in料况 before requirement table. Pick platform work order by title, admins with `can_manage` may associate/explicitly replace and refresh; others view saved results. Show bound MES order, test/production环境/站点、读取时间、完整组件行数。Table columns: 组件行、物料、需求、MES已提料、单位、仓储位置. No fake shortage/readiness; one concise note explains MES已提料需另核对线边实收.
 - [ ] Handle auth loss/project selection/version changes/abort races without stale cross-project results; link selection/form drafts into existing dirty navigation protection. Use current project version after successful command, reset submitted fields; cancellation/discard clears discarded fields. Error gives concrete next action and leaves approved saved result visible.
-- [ ] Run focused Vitest plus `npm run test:bundle` and appropriate related workflow tests. Record component/API/browser/production boundaries. Update taskbook status and verification doc after reviews; commit source and generated assets.
+- [ ] Run focused Vitest plus `npm run test:bundle` and appropriate related workflow tests. Record component/API/browser/production boundaries. Update taskbook status and verification doc after reviews; commit owned source files and keep the verified bundle for integration.
 
 ## 已核实的接口补充
 
