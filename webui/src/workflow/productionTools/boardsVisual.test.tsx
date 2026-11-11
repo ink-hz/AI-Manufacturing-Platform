@@ -149,3 +149,23 @@ it("puts a compact machine table before activity and keeps device investigation 
   expect(host.querySelector('[aria-label="上位机版本"] table')).not.toBeNull();
   expect([...host.querySelectorAll("button")].some(b => b.textContent === "查看该时段测试")).toBe(true);
 });
+
+it("highlights a missing-dimension symptom only for explicit missing predicates", async () => {
+  const rows = [
+    { ...aggregate, key: "missing", error_code: "E1", stage_id: null, software_id: null },
+    { ...aggregate, key: "known", error_code: "E1", stage_id: "7", software_id: "8" },
+  ];
+  const api = { productionAnalysis: vi.fn(async () => analysis(rows)), productionStatus: vi.fn(async () => ({ configured: true, capabilities: { production: { available: true } } })), productionObservations: vi.fn(async () => ({ items: [], redacted_fields: [], complete: true, captured_at: scope.end })) } as unknown as Api;
+  const broad: Location = { ...location, view: "anomalies", selectedError: true, scope: { ...scope, error_code: "E1", status: "2" } };
+  await render(<AnomaliesBoard {...props(api, broad)} />);
+  const highlighted = () => [...host.querySelectorAll('[aria-label="症状排行"] tbody tr[aria-selected="true"]')];
+  expect(highlighted()).toHaveLength(0);
+  const explicit: Location = { ...broad, scope: { ...broad.scope, missing_fields: ["stage_id", "software_id"] } };
+  await render(<AnomaliesBoard {...props(api, explicit)} />);
+  expect(highlighted()).toHaveLength(1);
+  expect(highlighted()[0].querySelector("button")?.textContent).toBe("选择异常 E1");
+  expect(highlighted()[0]).toBe(host.querySelector('[aria-label="症状排行"] tbody tr'));
+  await render(<AnomaliesBoard {...props(api, { ...broad, scope: { ...broad.scope, stage_id: "7", software_id: "8" } })} />);
+  expect(highlighted()).toHaveLength(1);
+  expect(highlighted()[0]).toBe(host.querySelector('[aria-label="症状排行"] tbody tr:nth-child(2)'));
+});
