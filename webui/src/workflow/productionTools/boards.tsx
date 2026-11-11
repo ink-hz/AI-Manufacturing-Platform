@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { createWorkflowApi } from "../api";
 import type { Aggregate, Analysis, Scope, ViewedEvent } from "./types";
 import {
@@ -13,6 +13,9 @@ import {
   type Read,
 } from "./context";
 import { Records } from "./details";
+import { Badge, Metric, Panel, EmptyState, boundedPercent } from "./visuals";
+import { TrendChart, MiniTrend, RankingBar, maximum } from "./charts";
+import "./boards.css";
 export type Api = ReturnType<typeof createWorkflowApi>;
 export interface BoardProps {
   api: Api;
@@ -33,7 +36,7 @@ export function ReadBlock<T>({
   label: string;
 }) {
   return (
-    <section aria-label={label}>
+    <section className="pt-read-block" aria-label={label}>
       {state.loading && <p role="status">正在读取{label}…</p>}
       {state.error && (
         <p role="alert">
@@ -62,7 +65,7 @@ export function Coverage({
   data: { captured_at: string; complete: boolean };
 }) {
   return (
-    <p className="pt-meta">
+    <p className="pt-meta pt-coverage" data-complete={data.complete}>
       读取 {localTime(data.captured_at)} ·{" "}
       {data.complete
         ? "本次范围读取完整"
@@ -71,24 +74,15 @@ export function Coverage({
   );
 }
 export function Counts({ item }: { item: Aggregate | null }) {
-  return item ? (
+  return item ? <div className="pt-counts-summary">
     <div className="pt-counts">
-      <span>测试记录 {item.records}</span>
-      <span>测试 SN {item.distinct_sn}</span>
-      <strong>失败涉及 SN {item.failed_sn}</strong>
-      <span>
-        失败记录 {item.fail_records}
-        {item.denominator_records
-          ? ` / 适用样本 ${item.denominator_records}`
-          : ""}
-      </span>
-      <span>
-        通过 {item.pass_records} · 未知 {item.unknown_records}
-      </span>
+      <Metric label="测试记录" value={item.records} tone="info" />
+      <Metric label="测试 SN" value={item.distinct_sn} />
+      <Metric label="失败涉及 SN" value={item.failed_sn} tone="danger" />
+      <Metric label="失败记录" value={item.fail_records} tone="danger" detail={item.denominator_records ? `适用样本 ${item.denominator_records}` : undefined} />
     </div>
-  ) : (
-    <p>统计未取得，不能计作零</p>
-  );
+    <p className="pt-meta">通过 {item.pass_records} · 未知 {item.unknown_records}</p>
+  </div> : <EmptyState title="统计未取得，不能计作零" />;
 }
 export function OverviewBoard({
   api,
@@ -134,7 +128,7 @@ export function OverviewBoard({
   }, [auto, onOverviewRefresh]);
   return (
     <>
-      <h3>今天哪里需要关注</h3>
+      <header className="pt-board-heading"><h3>今天哪里需要关注</h3><Badge tone="info">运行总览</Badge></header><div className="pt-board-tools">
       <label>
         <input
           type="checkbox"
@@ -150,7 +144,7 @@ export function OverviewBoard({
           <option value="latest">最近测试时间</option>
         </select>
       </label>
-      <ReadBlock label="运行总览" state={state}>
+      </div><ReadBlock label="运行总览" state={state}>
         {(data) => {
           const rows = [...data.items].sort((a, b) =>
             sort === "latest"
@@ -163,7 +157,7 @@ export function OverviewBoard({
           const valid = data.items.filter(
             (p) => p.statistics && p.blocks.statistics.complete,
           );
-          const sum = (key: "distinct_sn" | "failed_sn") =>
+          const sum = (key: "records" | "distinct_sn" | "failed_sn") =>
             valid
               .reduce((n, p) => n + BigInt(p.statistics![key]), 0n)
               .toString();
@@ -174,12 +168,13 @@ export function OverviewBoard({
                 本次概览实际范围 {localTime(data.requested_scope.start)} —{" "}
                 {localTime(data.requested_scope.end)}
               </p>
-              <p>
-                本页已读取 {valid.length} / {data.items.length} 项目 ·
-                有测试的项目{" "}
-                {valid.filter((p) => p.statistics!.records !== "0").length} ·
-                测试 SN {sum("distinct_sn")} · 失败涉及 SN {sum("failed_sn")}
-              </p>
+              <p className="pt-meta">本页已读取 {valid.length} / {data.items.length} 项目完整统计{data.has_more ? " · 目录仍有后续项目，当前指标不代表全部项目" : ""}</p>
+              <div className="pt-metrics" aria-label="本页完整项目统计">
+                <Metric label="有测试的项目" value={valid.length || !data.items.length ? String(valid.filter((p) => p.statistics!.records !== "0").length) : null} detail={`完整统计 ${valid.length} / 本页 ${data.items.length} 项目`} />
+                <Metric label="测试记录" value={valid.length || !data.items.length ? sum("records") : null} detail="仅汇总本页完整统计" tone="info" />
+                <Metric label="测试 SN" value={valid.length || !data.items.length ? sum("distinct_sn") : null} detail="按来源、项目及 SN 区分" />
+                <Metric label="失败涉及 SN" value={valid.length || !data.items.length ? sum("failed_sn") : null} detail="失败涉及不代表最终不良" tone="danger" />
+              </div>
               <p className="pt-meta">
                 按来源、项目及 SN
                 区分；仅汇总本页完整统计。测试记录不是成品数量，失败涉及 SN
@@ -188,8 +183,8 @@ export function OverviewBoard({
               {!data.items.length && <p>源项目目录暂无项目</p>}
               <div className="pt-projects">
                 {rows.map((p) => (
-                  <article key={p.id}>
-                    <h4>{p.name}</h4>
+                  <article className="pt-project-card" key={p.id}>
+                    <header className="pt-project-heading"><h4>{p.name}</h4><Badge tone={!p.statistics || !p.blocks.statistics.complete ? "warning" : p.statistics?.failed_sn !== "0" && p.statistics ? "danger" : "neutral"}>{!p.statistics ? "统计未取得" : !p.blocks.statistics.complete ? "统计未完整" : p.statistics?.failed_sn !== "0" && p.statistics ? "观测到 FAIL" : "当前无观测失败"}</Badge></header>
                     <Counts item={p.statistics} />
                     <p>范围内最后测试：{localTime(p.statistics?.last_time)}</p>
                     <p>
@@ -198,15 +193,7 @@ export function OverviewBoard({
                         ? "未取得"
                         : localTime(p.latest_at)}
                     </p>
-                    <p>
-                      {p.blocks.trend.state === "unavailable"
-                        ? "趋势未取得"
-                        : !p.blocks.trend.complete
-                          ? "趋势部分读取；空白时段未知"
-                          : p.trend.length
-                            ? `近期时间格 ${p.trend.length}；失败记录 ${p.trend.map((x) => x.fail_records).join(" → ")}`
-                            : "当前范围未观测到测试事件"}
-                    </p>
+                    {p.blocks.trend.state === "unavailable" ? <EmptyState title="趋势未取得" /> : <MiniTrend items={p.trend} complete={p.blocks.trend.complete} />}
                     <button
                       type="button"
                       onClick={() =>
@@ -272,54 +259,8 @@ export function OverviewBoard({
     </>
   );
 }
-function Trend({
-  data,
-  scope,
-  onRange,
-}: {
-  data: Analysis;
-  scope: Scope;
-  onRange: (scope: Scope) => void;
-}) {
-  return (
-    <>
-      <Coverage data={data} />
-      {data.items.length ? (
-        <div className="pt-trend">
-          {data.items.map((item, i) => (
-            <button
-              type="button"
-              key={item.key || i}
-              onClick={() => {
-                const start = Math.max(
-                    +new Date(scope.start),
-                    +new Date(item.timestamp!),
-                  ),
-                  end = Math.min(
-                    +new Date(scope.end),
-                    +new Date(item.timestamp!) +
-                      (data.bucket_minutes || 5) * 60000,
-                  );
-                if (end > start)
-                  onRange({
-                    ...scope,
-                    start: new Date(start).toISOString(),
-                    end: new Date(end).toISOString(),
-                  });
-              }}
-            >
-              {localTime(item.timestamp)}
-              <br />
-              测试 {item.records} · 失败 {item.fail_records} · 未知{" "}
-              {item.unknown_records}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p>{data.complete ? "当前范围未观测到测试事件" : "时间格未知"}</p>
-      )}
-    </>
-  );
+function Trend({ data, scope, onRange }: { data: Analysis; scope: Scope; onRange: (scope: Scope) => void }) {
+  return <><Coverage data={data} /><TrendChart data={data} scope={scope} onRange={onRange} /></>;
 }
 export function ProjectBoard(props: BoardProps) {
   const { api, location: l, refresh } = props;
@@ -356,7 +297,7 @@ export function ProjectBoard(props: BoardProps) {
   return (
     <>
       <h3>{l.labels.project || "源项目"} · 项目运行详情</h3>
-      <ReadBlock label="项目规模" state={summary}>
+      <Panel title="范围内测试规模" description="当前筛选范围的源记录统计"><ReadBlock label="项目规模" state={summary}>
         {(d) => (
           <>
             <Counts item={d.items[0] || null} />
@@ -365,7 +306,7 @@ export function ProjectBoard(props: BoardProps) {
           </>
         )}
       </ReadBlock>
-      {summary.data?.items[0]?.records === "0" && (
+      </Panel>{summary.data?.items[0]?.records === "0" && (
         <aside>
           <p>当前范围无测试；可调整时间，或显式查看最近实际有数据的窗口。</p>
           <ReadBlock label="最近实际测试" state={availability}>
@@ -401,7 +342,7 @@ export function ProjectBoard(props: BoardProps) {
           </ReadBlock>
         </aside>
       )}
-      <h4>测试环节</h4>
+      <Panel title="测试环节" description="选择阶段和工具继续下钻">
       <ReadBlock label="测试环节" state={stages}>
         {(d) => (
           <>
@@ -432,7 +373,7 @@ export function ProjectBoard(props: BoardProps) {
           </>
         )}
       </ReadBlock>
-      <h4>{l.selectedStage ? "所选环节" : "项目"}测试与失败变化</h4>
+      </Panel><Panel title={`${l.selectedStage ? "所选环节" : "项目"}测试与失败变化`}>
       <ReadBlock label="测试趋势" state={trend}>
         {(d) => (
           <Trend
@@ -442,7 +383,7 @@ export function ProjectBoard(props: BoardProps) {
           />
         )}
       </ReadBlock>
-      <ReadBlock label="昨天相同已过时段" state={yesterday}>
+      </Panel><Panel title="历史时段对照"><ReadBlock label="昨天相同已过时段" state={yesterday}>
         {(d) => (
           <>
             <h4>昨天相同已过时段</h4>
@@ -458,7 +399,7 @@ export function ProjectBoard(props: BoardProps) {
           </>
         )}
       </ReadBlock>
-      <button type="button" onClick={() => go({ ...l, view: "anomalies" })}>
+      </Panel><button className="pt-button-primary" type="button" onClick={() => go({ ...l, view: "anomalies" })}>
         查看该范围异常
       </button>
       <button type="button" onClick={() => go({ ...l, view: "records" })}>
@@ -512,7 +453,7 @@ export function AnomaliesBoard(props: BoardProps) {
         不相加。未确认判定规则的动态字段不参与排行。
       </p>
       <div className="pt-master-detail">
-        <ReadBlock label="异常列表" state={errors}>
+        <Panel title="异常排行" description="条形长度比较失败涉及 SN；不同错误的 SN 不能相加" className="pt-error-rankings"><ReadBlock label="异常列表" state={errors}>
           {(d) => (
             <>
               <Coverage data={d} />
@@ -524,7 +465,8 @@ export function AnomaliesBoard(props: BoardProps) {
                   BigInt(a.failed_sn) > BigInt(b.failed_sn) ? -1 : 1,
                 )
                 .map((a, i) => (
-                  <article key={a.key || i}>
+                  <article className="pt-error-card" key={a.key || i} data-selected={!!l.selectedError && (a.error_code ?? null) === (l.scope.error_code ?? null) && (a.stage_id ?? null) === (l.scope.stage_id ?? null) && (a.software_id ?? null) === (l.scope.software_id ?? null)}>
+                    <RankingBar value={a.failed_sn} max={maximum(d.items, "failed_sn")} label="失败涉及 SN" />
                     <button
                       type="button"
                       onClick={() =>
@@ -576,9 +518,9 @@ export function AnomaliesBoard(props: BoardProps) {
             </>
           )}
         </ReadBlock>
-        {l.selectedError && (
+        </Panel>{l.selectedError && (
           <div>
-            <ReadBlock label="所选症状影响" state={summary}>
+            <Panel title="所选症状影响" eyebrow={`错误码 ${l.scope.error_code ?? "源未提供"}`}><ReadBlock label="所选症状影响" state={summary}>
               {(d) => (
                 <>
                   <Counts item={d.items[0] || null} />
@@ -590,7 +532,7 @@ export function AnomaliesBoard(props: BoardProps) {
                 </>
               )}
             </ReadBlock>
-            <label>
+            </Panel><Panel title="影响分布"><label>
               影响分布
               <select
                 value={distribution}
@@ -654,7 +596,7 @@ export function AnomaliesBoard(props: BoardProps) {
                 </>
               )}
             </ReadBlock>
-            <button
+            </Panel><button
               type="button"
               onClick={() =>
                 go({ ...l, view: "records", scope: baseline(l.scope) })
@@ -666,7 +608,7 @@ export function AnomaliesBoard(props: BoardProps) {
         )}
       </div>
       {l.selectedError && (
-        <ReadBlock label="所选异常趋势" state={trend}>
+        <Panel title="所选异常趋势"><ReadBlock label="所选异常趋势" state={trend}>
           {(d) => (
             <Trend
               data={d}
@@ -674,7 +616,7 @@ export function AnomaliesBoard(props: BoardProps) {
               onRange={(scope) => go({ ...l, scope })}
             />
           )}
-        </ReadBlock>
+        </ReadBlock></Panel>
       )}
       {l.selectedError && <Records {...props} />}
     </>
@@ -729,11 +671,11 @@ export function ActivityBoard(props: BoardProps) {
         深浅表示测试记录量，●
         标记失败；灰色仅表示该时段未观测到事件。读取失败和未完整格为未知，不表示在线或离线。
       </p>
-      <ReadBlock label="上位机规模" state={devices}>
+      <Panel title="上位机规模" description="设备来自当前源项目和筛选范围"><ReadBlock label="上位机规模" state={devices}>
         {(d) => (
           <>
             <Coverage data={d} />
-            {d.items.map((a, i) => (
+            <div className="pt-device-summaries">{d.items.map((a, i) => (
               <article key={a.key || i}>
                 <button
                   type="button"
@@ -750,11 +692,11 @@ export function ActivityBoard(props: BoardProps) {
                 <Counts item={a} />
                 <p>范围内最后测试 {localTime(a.last_time)}</p>
               </article>
-            ))}
+            ))}</div>
           </>
         )}
       </ReadBlock>
-      <ReadBlock label="问题时段活动" state={activity}>
+      </Panel><Panel title="问题时段活动" description="每格仍按原始时间区间进入设备详情"><ReadBlock label="问题时段活动" state={activity}>
         {(d) => (
           <>
             <Coverage data={d} />
@@ -765,7 +707,7 @@ export function ActivityBoard(props: BoardProps) {
           </>
         )}
       </ReadBlock>
-      {l.view === "device" && (
+      </Panel>{l.view === "device" && (
         <>
           <ReadBlock label="问题时段异常" state={errors}>
             {(d) => (
@@ -832,100 +774,36 @@ export function ActivityBoard(props: BoardProps) {
   );
 }
 
-function ActivityGrid({
-  data,
-  location: l,
-  go,
-}: {
-  data: Analysis;
-  location: Location;
-  go: BoardProps["go"];
-}) {
-  const width = (data.bucket_minutes || 5) * 60000,
-    start = +new Date(l.scope.start),
-    end = +new Date(l.scope.end),
-    first = Math.floor(start / width) * width;
-  const times = Array.from(
-    { length: Math.min(96, Math.ceil((end - first) / width)) },
-    (_, i) => first + i * width,
-  );
+function ActivityGrid({ data, location: l, go }: { data: Analysis; location: Location; go: BoardProps["go"] }) {
+  const width = (data.bucket_minutes || 5) * 60000, start = +new Date(l.scope.start), end = +new Date(l.scope.end), first = Math.floor(start / width) * width;
+  const requestedBuckets = Math.max(0, Math.ceil((end - first) / width));
+  const times = Array.from({ length: Math.min(96, requestedBuckets) }, (_, i) => first + i * width);
   const devices = [...new Set(data.items.map((a) => a.device ?? null))];
-  return (
-    <div
-      className="pt-table"
-      role="region"
-      tabIndex={0}
-      aria-label="上位机活动时间格"
-    >
-      <table>
-        <thead>
-          <tr>
-            <th>上位机</th>
-            {times.map((t) => (
-              <th key={t}>
-                {localTime(new Date(Math.max(start, t)).toISOString())}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {devices.map((device) => (
-            <tr key={device || "missing"}>
-              <th>{text(device)}</th>
-              {times.map((time) => {
-                const item = data.items.find(
-                  (a) =>
-                    (a.device ?? null) === device &&
-                    +new Date(a.timestamp!) === time,
-                );
-                return (
-                  <td
-                    key={time}
-                    className={
-                      item
-                        ? item.fail_records !== "0"
-                          ? "has-failure"
-                          : "observed"
-                        : data.complete
-                          ? "empty"
-                          : "unknown"
-                    }
-                  >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        go({
-                          ...l,
-                          view: "device",
-                          scope: {
-                            ...drill(l.scope, { device } as Aggregate, [
-                              "device",
-                            ]),
-                            start: new Date(
-                              Math.max(start, time),
-                            ).toISOString(),
-                            end: new Date(
-                              Math.min(end, time + width),
-                            ).toISOString(),
-                          },
-                        })
-                      }
-                    >
-                      {item
-                        ? `测试 ${item.records}${item.fail_records !== "0" ? ` ● 失败 ${item.fail_records}` : ""}`
-                        : data.complete
-                          ? "该格未观测到测试事件"
-                          : "该时间格未知"}
-                    </button>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  // Preserve first source row, indexing once instead of scanning for every cell.
+  const index = new Map<string | null, Map<number, Aggregate>>();
+  for (const item of data.items) {
+    const device = item.device ?? null;
+    if (!index.has(device)) index.set(device, new Map());
+    const byTime = index.get(device)!, time = +new Date(item.timestamp!);
+    if (!byTime.has(time)) byTime.set(time, item);
+  }
+  const max = maximum(data.items, "records");
+  return <>
+    <div className="pt-chart-legend pt-activity-legend" aria-label="活动图例"><span><i data-activity="observed" />观测活动</span><span><i data-activity="failure" />● 观测失败</span><span><i data-activity="empty" />完整范围无事件</span><span><i data-activity="unknown" />? 部分范围未知</span></div>
+    {requestedBuckets > 96 && <p className="pt-chart-partial">仅展示前 96 个时间格：{localTime(new Date(start).toISOString())} — {localTime(new Date(Math.min(end, first + 96 * width)).toISOString())}；其余请求时段未在此图展示，请缩小时间范围查看。</p>}
+    {!devices.length && <EmptyState title={data.complete ? "该时段未观测到测试事件" : "时间格未知"} description="源未返回可排列的上位机；没有事件不能推断设备离线。" />}
+    <div className="pt-table pt-activity-map" role="region" tabIndex={0} aria-label="上位机活动时间格"><table>
+      <thead><tr><th scope="col">上位机</th>{times.map((t) => <th scope="col" key={t} aria-label={localTime(new Date(Math.max(start, t)).toISOString())} title={localTime(new Date(Math.max(start, t)).toISOString())}><time dateTime={new Date(Math.max(start, t)).toISOString()}>{new Date(Math.max(start, t)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}</time></th>)}</tr></thead>
+      <tbody>{devices.map((device) => <tr key={JSON.stringify(device)}><th scope="row">{text(device)}</th>{times.map((time) => {
+        const item = index.get(device)?.get(time), state = item ? item.fail_records !== "0" ? "failure" : "observed" : data.complete ? "empty" : "unknown";
+        const label = item ? `测试 ${item.records}${item.fail_records !== "0" ? ` ● 失败 ${item.fail_records}` : ""}` : data.complete ? "该格未观测到测试事件" : "该时间格未知";
+        const accessible = `${text(device)} · ${localTime(new Date(Math.max(start, time)).toISOString())} — ${localTime(new Date(Math.min(end, time + width)).toISOString())} · ${label}`;
+        return <td key={time} data-activity={state} style={{ "--pt-activity-level": item ? boundedPercent(item.records, max) : 0 } as CSSProperties}>
+          <button type="button" aria-label={accessible} title={accessible} onClick={() => go({ ...l, view: "device", scope: { ...drill(l.scope, { device } as Aggregate, ["device"]), start: new Date(Math.max(start, time)).toISOString(), end: new Date(Math.min(end, time + width)).toISOString() } })}><span className="pt-cell-text">{label}</span></button>
+        </td>;
+      })}</tr>)}</tbody>
+    </table></div>
+  </>;
 }
 
 function ReadingDifference({
