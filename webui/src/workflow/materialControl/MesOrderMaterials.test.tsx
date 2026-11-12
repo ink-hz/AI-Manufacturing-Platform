@@ -52,7 +52,7 @@ it("binds, displays exact saved quantities, refreshes, and retains the snapshot 
     total: 1,
     components: [
       {
-        quantities: { required_quantity: { value: "1.00000000001", unit: "EA", meaning: "required", origins: ["mock"], environments: ["test"], fact_role: "observation", observed_at: null, collected_at: "2026-01-02", coverage: "partial", source_refs: [], input_refs: [] }, withdrawn_quantity: { value: null, unit: "EA", meaning: "withdrawn", origins: ["unknown"], environments: ["unknown"], fact_role: "unknown", observed_at: null, collected_at: null, coverage: "unknown", source_refs: [], input_refs: [] } },
+        quantities: { required_quantity: { value: "1.00000000001", unit: "EA", meaning: "required", origins: ["mock"], environments: ["mock"], fact_role: "observation", observed_at: null, collected_at: "2026-01-02T00:00:00Z", coverage: "partial", source_refs: [{reference:"p/s1/1/required", project_id:project.id, object_kind:"mes_component", object_id:"1:2", system:"MES", source_type:"component", external_id:"1:2", version:1, namespace:"mock", origin:"mock", environment:"mock", occurred_at:null, collected_at:"2026-01-02T00:00:00Z", coverage:"partial", value:"1.00000000001", unit:"EA", meaning:"required"}], input_refs: ["p/s1/1/required"] }, withdrawn_quantity: { value: null, unit: "EA", meaning: "withdrawn", origins: ["unknown"], environments: ["unknown"], fact_role: "unknown", observed_at: null, collected_at: null, coverage: "unknown", source_refs: [], input_refs: [] } },
         component_key: "1:2",
         material_id: "MAT",
         required_quantity: "1.00000000001",

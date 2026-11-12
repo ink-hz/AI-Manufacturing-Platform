@@ -306,8 +306,9 @@ export function MaterialControlWorkspace(
               <details>
                 <summary>来源信息</summary>
                 <p>
-                  本页返回数量的来源类型：{shownPage.source_modes?.map(mode => ({api:"原生", manual:"手工", file:"文件", mock:"模拟", unknown:"来源待核对"} as Record<string, string>)[mode] || mode).join("、") || "未提供"}
-                  。记录范围以本页物料为准；未接入的系统数据需要另行核对。
+                  {shownPage.source_modes_scope === "returned_quantities" ? <>
+                    本页返回数量的来源类型：{shownPage.source_modes?.map(mode => ({api:"原生", manual:"手工", file:"文件", mock:"模拟", unknown:"来源待核对"} as Record<string, string>)[mode] || mode).join("、") || "未提供"}。记录范围以本页物料为准；
+                  </> : <>来源范围待核对（旧版来源类型：{shownPage.source_modes?.map(mode => ({api:"API", manual:"手工", file:"文件", mock:"模拟", unknown:"来源待核对"} as Record<string, string>)[mode] || mode).join("、") || "未提供"}）；</>}未接入的系统数据需要另行核对。
                 </p>
               </details>
             </section>

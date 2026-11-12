@@ -1647,12 +1647,28 @@ it("reloads the assignee choices when reopening the same task kind", async () =>
 
 it("shows projection identities and nulls through the actual material workspace", async () => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  const fact = (value: string | null) => ({value, unit:"件", meaning:"quantity", origins:["mock", "unknown"], environments:["test", "unknown"], fact_role:"confirmed", observed_at:null, collected_at:"2026-01-02T00:00:00Z", coverage:"partial", source_refs:[], input_refs:[]});
-  const api = {materialProject: vi.fn().mockResolvedValue({requirements:[{id:"r",material_id:"测试齿轮",work_order_id:"w",unit:"件",required:"99",reserved:"2",qualified:"3",shortage:"4",received:"5",rejected:"0",in_transit:"1",confirmed_satisfied:"6", quantities:{required:fact(null), received:fact("5")},need_at:null,expedite_ids:[],receipt_ids:["rec"],handoff_ids:[],issues:[{code:"x",title:"卡点",object_kind:"receipt",object_id:"rec",quantity:"9",unit:"件",quantity_fact:fact(null),next_action:"view_object"}]}],work_orders:[],expedites:[],receipts:[{id:"rec",quantity:"5",unit:"件",qualified:"3",rejected:"0",uninspected:"2",quantities:{quantity:fact("5")}}],handoffs:[],source_modes:["mock","unknown"],coverage_issues:[],total:1}),objects:vi.fn().mockResolvedValue({items:[],total:0}),members:vi.fn().mockResolvedValue({items:[],total:0})};
+  const fact = (value: string | null) => {
+    const source = {reference:"p/r/1/quantity", project_id:project.id, object_kind:"requirement", object_id:"r", system:"MES", source_type:"requirement", external_id:"ext-r", version:1, namespace:"test", origin:"mock", environment:"mock", occurred_at:null, collected_at:"2026-01-02T00:00:00Z", coverage:"partial", value, unit:"件", meaning:"quantity"};
+    return {value, unit:"件", meaning:"quantity", origins:["mock"], environments:["mock"], fact_role:"confirmed", observed_at:null, collected_at:source.collected_at, coverage:"partial", source_refs:[source], input_refs:[source.reference]};
+  };
+  const api = {materialProject: vi.fn().mockResolvedValue({requirements:[{id:"r",material_id:"测试齿轮",work_order_id:"w",unit:"件",required:"99",reserved:"2",qualified:"3",shortage:"4",received:"5",rejected:"0",in_transit:"1",confirmed_satisfied:"6", quantities:{required:fact(null), received:fact("5")},need_at:null,expedite_ids:[],receipt_ids:["rec"],handoff_ids:[],issues:[{code:"x",title:"卡点",object_kind:"receipt",object_id:"rec",quantity:"9",unit:"件",quantity_fact:fact(null),next_action:"view_object"}]}],work_orders:[],expedites:[],receipts:[{id:"rec",quantity:"5",unit:"件",qualified:"3",rejected:"0",uninspected:"2",quantities:{quantity:fact("5")}}],handoffs:[],source_modes:["mock","unknown"],source_modes_scope:"returned_quantities",coverage_issues:[],total:1}),objects:vi.fn().mockResolvedValue({items:[],total:0}),members:vi.fn().mockResolvedValue({items:[],total:0})};
   await act(async()=>root.render(<SupplyWorkspace api={api as never} project={{...project,mode:"oem"}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()} />)); await flush();
   const row = [...host.querySelectorAll("tr")].find(r=>r.textContent?.includes("测试齿轮"))!;
   expect(row.cells[2].textContent).toContain("未提供"); expect(row.cells[2].textContent).not.toContain("99"); expect(row.cells[2].textContent).toContain("模拟"); expect(row.cells[3].textContent).toContain("来源待核对"); expect(row.cells[7].textContent).not.toContain("9 件");
   await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent==="测试齿轮")!.click());
   expect(host.textContent).toContain("已到货 5 件 · 模拟"); expect(host.textContent).toContain("本页返回数量的来源类型");
   const summaries = [...host.querySelectorAll("summary")]; expect(summaries.some(x=>x.textContent?.includes("到货数量依据"))).toBe(true);
+});
+
+it.each([undefined, 'legacy'])('does not claim a verified quantity scope for old or unrecognized scope %s', async (scope) => {
+  host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+  const requirement = {id:'r',material_id:'旧齿轮',work_order_id:'w',unit:'件',required:'99',reserved:'2',qualified:'3',shortage:'4',received:'5',rejected:'0',in_transit:'1',confirmed_satisfied:'6',need_at:null,expedite_ids:[],receipt_ids:[],handoff_ids:[]};
+  const api = {materialProject:vi.fn().mockResolvedValue({requirements:[requirement],work_orders:[],expedites:[],receipts:[],handoffs:[],source_modes:['api','mock'],...(scope === undefined ? {} : {source_modes_scope:scope}),coverage_issues:[],total:1}),objects:vi.fn().mockResolvedValue({items:[],total:0}),members:vi.fn().mockResolvedValue({items:[],total:0})};
+  await act(async()=>root.render(<SupplyWorkspace api={api as never} project={{...project,mode:'oem'}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()} />)); await flush();
+  await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='旧齿轮')!.click());
+  const source = [...host.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent==='来源信息')!;
+  expect(source.textContent).toContain('来源范围待核对');
+  expect(source.textContent).not.toContain('本页返回数量的来源类型');
+  expect(source.textContent).not.toContain('原生');
+  expect(source.textContent).toContain('模拟');
 });
