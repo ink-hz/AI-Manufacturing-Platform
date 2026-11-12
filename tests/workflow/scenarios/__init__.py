@@ -2,7 +2,7 @@
 
 from importlib import import_module
 
-CASE_IDS = tuple([f"F{i:02}" for i in range(1, 5)] + [f"E{i:02}" for i in range(1, 33)])
+CASE_IDS = tuple([f"F{i:02}" for i in range(1, 5)] + [f"E{i:02}" for i in range(1, 34)])
 
 
 class ScenarioRegistry:
@@ -58,5 +58,6 @@ EXPECTATIONS = {
     "E29": "Real trusted identity/CSRF/project/customer/action ACL and revocation; legacy endpoints protected",
     "E30": "Two edits CAS; draft retained; handbook full/context stable; abandon executes exactly one departure",
     "E31": "Fresh process/session resumes all key states; API/DB/dashboard same; no duplicate operation",
+    "E33": "Real PF HTTPS and React: empty-requirement arrival verification, warehouse ownership/history; persisted component and admitted mock receipt references; no accounting mutations",
     "E32": "Alternate seeds/reset/mock state; owned test data only, legacy seven unchanged, simulation labels",
 }

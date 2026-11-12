@@ -143,6 +143,7 @@ def build_app(root: Path):
         if body.get("scenario") not in {"empty", "supply", "execution"}:
             raise HTTPException(422, "Unsupported owned fixture scenario")
         rig = MockRig.__new__(MockRig)
+        rig.now = clock
         rig.core = rig.network = True
         rig.root, rig.mode = root, "test"
         rig.project_id = UUID(body["project_id"])

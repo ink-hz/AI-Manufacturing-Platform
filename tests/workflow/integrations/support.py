@@ -137,18 +137,25 @@ def test_authorize(tx, actor, pid, value):
 
 
 class MockRig:
-    def __init__(self, root, mode="test", *, core=False, network=False):
+    def __init__(
+        self, root, mode="test", *, core=False, network=False,
+        workflow_store=None, admin=None, actor=None, now=NOW,
+    ):
+        # Private owned-host scenarios can reuse these commands/admission with their
+        # existing store, synthetic actors and clock; ordinary fixtures keep defaults.
+        self.now = now
+        self.workflow_store = workflow_store
         self.core = core or network
         self.network = network
         self.root = Path(root)
         self.mode = mode
-        self.admin = Actor(
+        self.admin = admin or Actor(
             user_id=uuid4(),
             display_name="fixture admin",
             configuration_admin=True,
             read_only=False,
         )
-        self.actor = Actor(
+        self.actor = actor or Actor(
             user_id=uuid4(),
             display_name="fixture planner",
             configuration_admin=False,
@@ -165,11 +172,11 @@ class MockRig:
 
     def reopen(self):
         self.workflow = WorkflowService(
-            WorkflowStore(
+            self.workflow_store or WorkflowStore(
                 str(self.root / "workflow.sqlite3"),
                 str(self.root / "erp.sqlite3"),
                 dict(id="integration-test", mode=self.mode, label="test"),
-                business_clock=lambda: NOW,
+                business_clock=lambda: self.now,
             ),
             lambda uid: True,
             configure_systems=None if self.network else lambda registry: None,
@@ -398,8 +405,8 @@ class MockRig:
             external_id=str(uuid4()),
             version=1,
             mode="manual",
-            occurred_at=NOW.isoformat(),
-            collected_at=NOW.isoformat(),
+            occurred_at=self.now.isoformat(),
+            collected_at=self.now.isoformat(),
             evidence="Documented fixture prerequisite",
         )
 
@@ -447,7 +454,7 @@ class MockRig:
             ["inspection", "disposition", "quality_release", "readiness_verification"],
         )
         wo_quantity = quantity if work_order_quantity is None else work_order_quantity
-        due = (NOW + timedelta(days=7)).date().isoformat()
+        due = (self.now + timedelta(days=7)).date().isoformat()
         if self.network:
             demand_fact = self.result_fact(
                 self.execute(
@@ -529,7 +536,7 @@ class MockRig:
                             dict(name="voltage", unit="V", lower="4", upper="6")
                         ],
                     ),
-                    released_at=NOW.isoformat(),
+                    released_at=self.now.isoformat(),
                 ),
             )
         )
@@ -545,8 +552,8 @@ class MockRig:
                     amount=dict(quantity=str(wo_quantity), unit="piece", scale=0),
                     trial_amount=dict(quantity="1", unit="piece", scale=0),
                     purpose="production",
-                    planned_start=NOW.isoformat(),
-                    planned_end=(NOW + timedelta(days=1)).isoformat(),
+                    planned_start=self.now.isoformat(),
+                    planned_end=(self.now + timedelta(days=1)).isoformat(),
                 ),
             )
         )
@@ -558,7 +565,7 @@ class MockRig:
             quantity=str(wo_quantity),
             unit="piece",
         )
-        expiry = (NOW + timedelta(days=30)).date().isoformat()
+        expiry = (self.now + timedelta(days=30)).date().isoformat()
         lid = self.command(
             "material.define",
             material_id="M",
@@ -591,7 +598,7 @@ class MockRig:
                             ),
                         )
                     ],
-                    cutoff=NOW.isoformat(),
+                    cutoff=self.now.isoformat(),
                 ),
             )
         )
@@ -632,7 +639,7 @@ class MockRig:
                     supplier_batch="B1",
                     supplier_id="Supplier",
                     amount=dict(quantity=str(wo_quantity), unit="piece", scale=0),
-                    expected_at=NOW.isoformat(),
+                    expected_at=self.now.isoformat(),
                     coa_reference="COA1",
                     coa_evidence="Expected certificate",
                 ),
@@ -909,7 +916,7 @@ class MockRig:
                 reference=kind,
                 evidence="Verified readiness",
                 decision="verified",
-                valid_until=(NOW + timedelta(days=30)).isoformat(),
+                valid_until=(self.now + timedelta(days=30)).isoformat(),
             )
         self.command("unit.register", work_order_id=str(refs.work_order), sns=[sn])
         with self.workflow.store.transaction() as tx:
@@ -962,8 +969,8 @@ class MockRig:
                     employee=employee.source_key.model_dump(),
                     qualification="assembly",
                     training_reference="TRAIN1",
-                    valid_from=(NOW - timedelta(days=1)).isoformat(),
-                    valid_until=(NOW + timedelta(days=1)).isoformat(),
+                    valid_from=(self.now - timedelta(days=1)).isoformat(),
+                    valid_until=(self.now + timedelta(days=1)).isoformat(),
                     evidence="Actual fixture training",
                 ),
             )
@@ -976,8 +983,8 @@ class MockRig:
                     employee=employee.source_key.model_dump(),
                     work_order_id=str(refs.work_order),
                     shift_id="SHIFT1",
-                    starts_at=(NOW - timedelta(hours=1)).isoformat(),
-                    ends_at=(NOW + timedelta(hours=8)).isoformat(),
+                    starts_at=(self.now - timedelta(hours=1)).isoformat(),
+                    ends_at=(self.now + timedelta(hours=8)).isoformat(),
                     attendance="present",
                 ),
             )
@@ -996,7 +1003,7 @@ class MockRig:
                     state="available",
                     program_version="P1",
                     process_request=request.source_key.model_dump(),
-                    observed_at=NOW.isoformat(),
+                    observed_at=self.now.isoformat(),
                     evidence="Physical equipment ready",
                 ),
             )
@@ -1011,7 +1018,7 @@ class MockRig:
             operator=employee.source_key.model_dump(),
             shift=shift.source_key.model_dump(),
             equipment=equipment.source_key.model_dump(),
-            occurred_at=NOW.isoformat(),
+            occurred_at=self.now.isoformat(),
         )
         return refs
 
@@ -1043,7 +1050,7 @@ class MockRig:
                     route_version="S1",
                     program_version="P1",
                     firmware_version="F1",
-                    occurred_at=NOW.isoformat(),
+                    occurred_at=self.now.isoformat(),
                     material_uses=[allocation],
                     result="pass",
                 ),
@@ -1127,7 +1134,7 @@ class MockRig:
                         dict(name="voltage", unit="V", value="5", lower="4", upper="6")
                     ],
                     raw=raw,
-                    occurred_at=NOW.isoformat(),
+                    occurred_at=self.now.isoformat(),
                     artifact_ref=dict(
                         system="product_test",
                         project_id=str(self.project_id),
@@ -1228,7 +1235,7 @@ class MockRig:
                     request=request.source_key.model_dump(),
                     decision="approved",
                     external_signer="External engineering approver",
-                    signed_at=NOW.isoformat(),
+                    signed_at=self.now.isoformat(),
                     evidence="Signed change approval",
                 ),
             )

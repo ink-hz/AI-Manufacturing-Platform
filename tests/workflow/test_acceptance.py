@@ -85,10 +85,10 @@ def test_f01(tmp_path):
     assert list(context.directory.glob("*-external-erp-cost-receipt.json"))
 
 
-def test_exact36_registry_has_real_callable_scenarios():
+def test_exact37_registry_has_real_callable_scenarios():
     from .scenarios import CASE_IDS, ScenarioRegistry
 
-    assert len(CASE_IDS) == 36
+    assert len(CASE_IDS) == 37
     for case in CASE_IDS:
         assert callable(ScenarioRegistry.get(case))
 
@@ -368,3 +368,9 @@ def test_registry_imports_without_pytest_dependency():
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+@selected_case("E33")
+def test_e33(tmp_path):
+    result = run_case(ScenarioContext.isolated(tmp_path, case_id="E33", seed=41))
+    assert result.status == "passed", result.error
