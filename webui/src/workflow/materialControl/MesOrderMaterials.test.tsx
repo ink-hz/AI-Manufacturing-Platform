@@ -52,6 +52,7 @@ it("binds, displays exact saved quantities, refreshes, and retains the snapshot 
     total: 1,
     components: [
       {
+        quantities: { required_quantity: { value: "1.00000000001", unit: "EA", meaning: "required", origins: ["mock"], environments: ["test"], fact_role: "observation", observed_at: null, collected_at: "2026-01-02", coverage: "partial", source_refs: [], input_refs: [] }, withdrawn_quantity: { value: null, unit: "EA", meaning: "withdrawn", origins: ["unknown"], environments: ["unknown"], fact_role: "unknown", observed_at: null, collected_at: null, coverage: "unknown", source_refs: [], input_refs: [] } },
         component_key: "1:2",
         material_id: "MAT",
         required_quantity: "1.00000000001",
@@ -143,7 +144,8 @@ it("binds, displays exact saved quantities, refreshes, and retains the snapshot 
     }),
   );
   expect(changed).toHaveBeenCalled();
-  expect(host.textContent).toContain("1.00000000001");
+  expect(host.textContent).toContain("1.00000000001 EA · 模拟");
+  expect(host.textContent).toContain("来源待核对");
   expect(host.textContent).toContain("未提供");
   expect(host.textContent).toContain("EA");
   expect(button("更换关联").disabled).toBe(true);

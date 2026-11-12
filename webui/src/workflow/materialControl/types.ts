@@ -1,10 +1,17 @@
+export type QuantityOrigin = "native" | "manual" | "file" | "mock" | "unknown";
+export type QuantityEnvironment = "production" | "test" | "development" | "mock" | "unknown";
+export type QuantityCoverage = "complete" | "partial" | "failed" | "unknown";
+export interface QuantitySource { reference: string; project_id: string; object_kind: string; object_id: string; system: string | null; source_type: string | null; external_id: string | null; version: string | number | null; namespace: string | null; origin: QuantityOrigin; environment: QuantityEnvironment; occurred_at: string | null; collected_at: string | null; coverage: QuantityCoverage; value: string | null; unit: string | null; meaning: string; }
+export interface ProvenancedQuantity { value: string | null; unit: string; meaning: string; origins: QuantityOrigin[]; environments: QuantityEnvironment[]; fact_role: "confirmed" | "observation" | "unknown"; observed_at: string | null; collected_at: string | null; coverage: QuantityCoverage; source_refs: QuantitySource[]; input_refs: string[]; }
+type QuantityMap = Record<string, ProvenancedQuantity>;
 export type MaterialProblem = "all" | "attention" | "shortage" | "urgent" | "pending_iqc" | "unreceived" | "verification";
 export interface MaterialFilters { search?: string; problem?: MaterialProblem; work_order_id?: string }
-export interface MaterialIssue { code: string; title: string; object_kind: "requirement" | "receipt" | "material_handoff" | "material_lot" | "material_expedite"; object_id: string; quantity: string | null; unit: string | null; task_id: string | null; assignee_id: string | null; proposed_assignee_id: string | null; assignee_name: string | null; proposed_assignee_name: string | null; next_action: "view_task" | "arrange_iqc" | "trace" | "expedite" | "view_object" | "confirm_time" | "check_allocation"; }
+export interface MaterialIssue { code: string; title: string; object_kind: "requirement" | "receipt" | "material_handoff" | "material_lot" | "material_expedite"; object_id: string; quantity: string | null; quantity_fact?: ProvenancedQuantity; unit: string | null; task_id: string | null; assignee_id: string | null; proposed_assignee_id: string | null; assignee_name: string | null; proposed_assignee_name: string | null; next_action: "view_task" | "arrange_iqc" | "trace" | "expedite" | "view_object" | "confirm_time" | "check_allocation"; }
 export function executionScopeLabel(scope: MaterialRequirement["execution_scope"]): string {
   return scope === "trial" ? "试产" : scope === "bulk" ? "量产" : scope === "common" ? "共用" : "范围待核对";
 }
 export interface MaterialRequirement {
+  quantities?: QuantityMap;
   id: string;
   state?: "required" | "superseded";
   execution_scope?: "trial" | "bulk" | "common";
@@ -36,6 +43,7 @@ export interface MaterialProject {
   read_at: string;
   coverage_issues: string[];
   source_modes: string[];
+  source_modes_scope?: "returned_quantities";
   work_orders: {
     id: string;
     title: string;
@@ -55,6 +63,7 @@ export interface MaterialProject {
     progress_truncated?: boolean;
   }[];
   receipts: {
+    quantities?: QuantityMap;
     id: string;
     quantity: string;
     unit: string;
@@ -63,6 +72,7 @@ export interface MaterialProject {
     uninspected: string;
   }[];
   handoffs: {
+    quantities?: QuantityMap;
     id: string;
     handoff_number: string;
     material_lot_id: string;
@@ -123,5 +133,5 @@ export interface MesOrderMaterialsData {
   work_order_id: string;
   can_manage: boolean;
   binding: { id: string; shop_order: string; environment: string; site_code: string; verified_at: string } | null;
-  snapshot: { id: string; collected_at: string; total: number; components: { component_key: string; material_id: string; required_quantity: string; withdrawn_quantity: string | null; unit: string; storage_location: string | null }[] } | null;
+  snapshot: { id: string; collected_at: string; total: number; components: { quantities?: QuantityMap; component_key: string; material_id: string; required_quantity: string; withdrawn_quantity: string | null; unit: string; storage_location: string | null }[] } | null;
 }

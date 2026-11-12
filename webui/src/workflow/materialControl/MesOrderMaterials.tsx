@@ -1,3 +1,4 @@
+import { QuantityValue } from "./QuantityValue";
 import { useEffect, useRef, useState } from "react";
 import { WorkflowError } from "../api";
 import type { OEMWorkspaceProps } from "../OEMWorkspace";
@@ -332,8 +333,8 @@ export function MesOrderMaterials({
                       <tr key={c.component_key}>
                         <td>{c.component_key}</td>
                         <td>{c.material_id}</td>
-                        <td>{c.required_quantity}</td>
-                        <td>{c.withdrawn_quantity ?? "未提供"}</td>
+                        <td><QuantityValue quantity={c.quantities?.required_quantity} value={c.required_quantity} unit={c.unit} title="需求" /></td>
+                        <td><QuantityValue quantity={c.quantities?.withdrawn_quantity} value={c.withdrawn_quantity} unit={c.unit} title="已提料" /></td>
                         <td>{c.unit}</td>
                         <td>{c.storage_location ?? "未提供"}</td>
                       </tr>

@@ -1,3 +1,4 @@
+import { QuantityValue } from "./QuantityValue";
 import { NeedTimeEditor } from "./NeedTimeEditor";
 import { MesOrderMaterials } from "./MesOrderMaterials";
 import { MaterialFlowPanel } from "./MaterialFlowPanel";
@@ -153,8 +154,7 @@ export function MaterialControlWorkspace(
   const issueTitle = (title: string) => ({"Material lot is frozen":"批次已冻结", "Material lot has expired":"批次已过期", "Material lot containment pending or frozen":"批次隔离待核对", "Actual return/raw loss conflicts with held authority reservations; supply owner must obtain real source release and replan":"退料或损耗与预留冲突，需核对释放和计划"} as Record<string,string>)[title] || title;
   const issueLabel = (issue: MaterialIssue) => ({view_task:"查看任务",arrange_iqc:"安排检验",trace:"安排查料",expedite:"查看急料",view_object:"查看记录",confirm_time:"核对需要时间",check_allocation:"核对分配"})[issue.next_action];
   const requirement = shownPage?.requirements.find((r) => r.id === selected);
-  const quantity = (v: string | undefined, unit: string) =>
-    v == null ? "未提供" : `${v} ${unit}`;
+
   return (
     <section aria-label="料况">
       <h3>料况</h3>
@@ -217,12 +217,12 @@ export function MaterialControlWorkspace(
                             (w) => w.id === r.work_order_id,
                           )?.title || "工单"}
                         </td>
-                        <td>{quantity(r.required, r.unit)}</td>
-                        <td>{quantity(r.reserved, r.unit)}</td>
-                        <td>{quantity(r.qualified, r.unit)}</td>
-                        <td>{quantity(r.shortage, r.unit)}</td>
-                        <td>{r.confirmed_satisfied == null ? "待核对" : quantity(r.confirmed_satisfied, r.unit)}</td>
-                        <td>{r.issues?.map((issue, i) => <div key={`${issue.code}-${issue.object_id}-${i}`}>{issueTitle(issue.title)}{issue.quantity != null && ` · ${issue.quantity} ${issue.unit || r.unit}`} · 当前负责人：{issue.assignee_name || "待分派"}{issue.proposed_assignee_name && ` · 拟负责人：${issue.proposed_assignee_name}`} <button disabled={(loading || !!error || (shownPage.project_version != null && shownPage.project_version < p.project.version)) && !["view_task", "view_object", "check_allocation"].includes(issue.next_action)} onClick={() => issueAction(r, issue)}>{issueLabel(issue)}：{issueTitle(issue.title)}</button></div>)}</td>
+                        <td><QuantityValue quantity={r.quantities?.required} value={r.required} unit={r.unit} title="需求" /></td>
+                        <td><QuantityValue quantity={r.quantities?.reserved} value={r.reserved} unit={r.unit} title="本单预留" /></td>
+                        <td><QuantityValue quantity={r.quantities?.qualified} value={r.qualified} unit={r.unit} title="检验合格" /></td>
+                        <td><QuantityValue quantity={r.quantities?.shortage} value={r.shortage} unit={r.unit} title="待补齐" /></td>
+                        <td><QuantityValue quantity={r.quantities?.confirmed_satisfied} value={r.confirmed_satisfied} unit={r.unit} title="有效预留覆盖" /></td>
+                        <td>{r.issues?.map((issue, i) => <div key={`${issue.code}-${issue.object_id}-${i}`}>{issueTitle(issue.title)}{(issue.quantity != null || issue.quantity_fact) && <> · <QuantityValue quantity={issue.quantity_fact} value={issue.quantity} unit={issue.unit || r.unit} title="卡点" /></>} · 当前负责人：{issue.assignee_name || "待分派"}{issue.proposed_assignee_name && ` · 拟负责人：${issue.proposed_assignee_name}`} <button disabled={(loading || !!error || (shownPage.project_version != null && shownPage.project_version < p.project.version)) && !["view_task", "view_object", "check_allocation"].includes(issue.next_action)} onClick={() => issueAction(r, issue)}>{issueLabel(issue)}：{issueTitle(issue.title)}</button></div>)}</td>
                         <td>
                           {r.need_at
                             ? `${r.need_at}（${r.need_at_basis === "manual_requirement" ? "需求手动设置" : "按工单计划开始时间"}）`
@@ -252,11 +252,9 @@ export function MaterialControlWorkspace(
           {requirement && (
             <section aria-label="物料需求详情">
               <h4>{requirement.material_id} · {executionScopeLabel(requirement.execution_scope)}</h4>
-              <p>
-                已到货 {quantity(requirement.received, requirement.unit)} · 在途{" "}
-                {quantity(requirement.in_transit, requirement.unit)} · 拒收{" "}
-                {quantity(requirement.rejected, requirement.unit)}
-              </p>
+              <div>
+                已到货 <QuantityValue quantity={requirement.quantities?.received} value={requirement.received} unit={requirement.unit} title="已到货" /> · 在途 <QuantityValue quantity={requirement.quantities?.in_transit} value={requirement.in_transit} unit={requirement.unit} title="在途" /> · 拒收 <QuantityValue quantity={requirement.quantities?.rejected} value={requirement.rejected} unit={requirement.unit} title="拒收" />
+              </div>
               <MaterialFlowPanel p={p} page={shownPage} requirement={requirement} />
               <NeedTimeEditor key={"time-" + requirement.id} p={{...childProps, readOnly:p.readOnly || loading || !!error || (shownPage.project_version != null && shownPage.project_version < p.project.version)}} requirement={requirement} active={active === "need-time"} resetRef={resetNeedTime} intent={timeIntent} begin={f => leave(() => {setActive("need-time");f();})} />
               <MaterialTaskOpen
@@ -308,7 +306,7 @@ export function MaterialControlWorkspace(
               <details>
                 <summary>来源信息</summary>
                 <p>
-                  来源类型：{shownPage.source_modes?.join("、") || "未提供"}
+                  本页返回数量的来源类型：{shownPage.source_modes?.map(mode => ({api:"原生", manual:"手工", file:"文件", mock:"模拟", unknown:"来源待核对"} as Record<string, string>)[mode] || mode).join("、") || "未提供"}
                   。记录范围以本页物料为准；未接入的系统数据需要另行核对。
                 </p>
               </details>
