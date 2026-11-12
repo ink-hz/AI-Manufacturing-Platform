@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from .quantity_provenance import QuantitySource, source_from_ref
 from .supply import amount
+from .orders import source_key
 
 
 def scope(row, work_order=None):
@@ -19,7 +20,11 @@ def scope(row, work_order=None):
 
 
 def key(source):
-    return tuple(source.get(k) for k in ('system', 'object_type', 'external_id', 'version'))
+    try:
+        identity = source_key(source)
+    except (KeyError, AttributeError, TypeError, ValueError):
+        identity = tuple(source.get(k) for k in ('system', 'object_type', 'external_id'))
+    return (*identity, source.get('version'))
 
 
 class MaterialSources:
@@ -115,8 +120,9 @@ class MaterialSources:
                 matches = self.confirmations(kind, row['receipt_id'], fact_id)
                 if (str(record.get('project_id')) == self.pid and record.get('object_type') == kind
                     and candidate.get('mode') == exchange['mode']
-                    and candidate.get('system') == exchange['system']
-                    and candidate.get('external_id') == request.get('external_id')
+                    and key(candidate)[:3] == key({'system': exchange['system'],
+                        'object_type': request.get('object_type'),
+                        'external_id': request.get('external_id')})[:3]
                     and request.get('object_type') == kind
                     and any(key(json.loads(c['source_json'])) == key(candidate)
                             and c['mode'] == candidate.get('mode')

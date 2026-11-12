@@ -1,5 +1,7 @@
 import json
+import re
 import sqlite3
+import unicodedata
 from uuid import uuid4
 
 from .authorization import require_project
@@ -62,6 +64,30 @@ def apply(tx, context, command, observation):
     return MutationResult(object_type='work_order', object_id=command.work_order_id)
 
 
+def plain_quantity(value):
+    """Project accepted MES numbers exactly, without unbounded exponent expansion."""
+    if value is None:
+        return None, True
+    match = re.fullmatch(r'(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?', value)
+    if not match:
+        return None, False
+    mantissa, exponent = match.groups()
+    mantissa = ''.join(str(unicodedata.decimal(c)) if c.isdecimal() else c for c in mantissa)
+    if exponent is None:
+        return mantissa, True
+    whole, _, fraction = mantissa.partition('.')
+    digits = whole + fraction
+    point = len(whole) + int(exponent)
+    length = max(point, len(digits)) + (2 - point if point <= 0 else (1 if point < len(digits) else 0))
+    if length > 4096:
+        return None, False
+    if point <= 0:
+        return '0.' + '0' * (-point) + digits, True
+    if point >= len(digits):
+        return digits + '0' * (point - len(digits)), True
+    return digits[:point] + '.' + digits[point:], True
+
+
 def read(tx, actor, project_id, work_order_id, resolve_subject):
     require_project(tx, actor, project_id)
     if not tx.execute('SELECT 1 FROM work_orders WHERE id=? AND project_id=?', (str(work_order_id), str(project_id))).fetchone():
@@ -81,14 +107,16 @@ def read(tx, actor, project_id, work_order_id, resolve_subject):
                     reference = json.dumps([str(project_id), str(work_order_id), binding['id'],
                         binding['namespace'], binding['environment'], binding['shop_order'],
                         snapshot['id'], component['component_key'], name], separators=(',', ':'))
+                    projected, representable = plain_quantity(component[name])
+                    meaning = name if representable else f'{name}; quantity verification required: plain expansion exceeds safe limit or is invalid'
                     source = QuantitySource(reference=reference, project_id=str(project_id),
                         object_kind='mes_component', object_id=component['component_key'],
                         system='mes', source_type='order_component', external_id=binding['shop_order'],
                         version=snapshot['id'], namespace=binding['namespace'], origin='native',
                         environment=binding['environment'] if binding['environment'] in ('production', 'test', 'development', 'mock') else 'unknown',
-                        occurred_at=None, collected_at=snapshot['collected_at'], coverage='complete',
-                        value=component[name], unit=component['unit'], meaning=name)
-                    component['quantities'][name] = quantity(component[name], component['unit'], name,
+                        occurred_at=None, collected_at=snapshot['collected_at'], coverage='complete' if representable else 'unknown',
+                        value=projected, unit=component['unit'], meaning=meaning)
+                    component['quantities'][name] = quantity(projected, component['unit'], name,
                         [source], fact_role='observation').model_dump(mode='json')
     return result
 

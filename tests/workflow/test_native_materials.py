@@ -291,3 +291,58 @@ def test_native_quantity_provenance_is_stored_observation_and_keeps_platform_bal
     after = workflow.client().get(f"{BASE}/projects/{p['id']}/material-control").json()['requirements'][0]
     assert before == after
     assert source.calls == 1
+
+
+def test_scientific_quantities_preserve_raw_storage_across_refresh_and_restart(workflow):
+    from manufacturing_platform.mes_access.order_materials import _amount
+    p, _, related = workflow.material_requirement()
+    source = FakeMes()
+    original = source.collect_order_materials
+    values = [('1e3', '1.2300e-3'), ('1e999999999999999999', '1e-999999999999999999')]
+    def collect(*args):
+        result = original(*args)
+        required, withdrawn = values[source.calls - 1]
+        result['components'][0].update(required_quantity=_amount(required), withdrawn_quantity=_amount(withdrawn))
+        return result
+    source.collect_order_materials = collect
+    actor = Actor(user_id=USERS['owner'], display_name='owner', read_only=False, configuration_admin=True)
+    service = make_service(workflow, source)
+    pid, wid = UUID(p['id']), UUID(related['work_order_id'])
+    service.execute(actor, pid, bind_command(service, actor, str(pid), str(wid)))
+    first = service.mes_materials(actor, pid, wid)
+    component = first['snapshot']['components'][0]
+    assert component['required_quantity'] == '1e3' and component['withdrawn_quantity'] == '1.2300e-3'
+    assert component['quantities']['required_quantity']['value'] == '1000'
+    assert component['quantities']['withdrawn_quantity']['value'] == '0.0012300'
+    refresh = {'action':'mes_order.refresh', 'operation_id':str(uuid4()), 'expected_version':service.detail(actor, pid).version, 'work_order_id':str(wid), 'binding_id':first['binding']['id']}
+    service.execute(actor, pid, refresh)
+    restarted = make_service(workflow, source).mes_materials(actor, pid, wid)
+    component = restarted['snapshot']['components'][0]
+    for name, raw in zip(('required_quantity', 'withdrawn_quantity'), values[1]):
+        assert component[name] == raw
+        q = component['quantities'][name]
+        assert q['value'] is None and q['coverage'] == 'unknown'
+        assert q['source_refs'][0]['value'] is None and 'verification' in q['source_refs'][0]['meaning']
+        assert q['source_refs'][0]['collected_at'] and q['source_refs'][0]['namespace'] == 'namespace'
+    with workflow.db() as db:
+        assert [tuple(row) for row in db.execute('SELECT required_quantity,withdrawn_quantity FROM mes_material_components ORDER BY rowid')] == values
+    assert source.calls == 2
+
+
+def test_plain_quantity_expansion_bounds_and_null():
+    from manufacturing_platform.workflow.native_material_service import plain_quantity
+    assert plain_quantity(None) == (None, True)
+    assert plain_quantity('1.00000000000000001') == ('1.00000000000000001', True)
+    assert plain_quantity('1e4095') == ('1' + '0' * 4095, True)
+    assert plain_quantity('1e4096') == (None, False)
+    assert plain_quantity('1e-4094') == ('0.' + '0' * 4093 + '1', True)
+    assert plain_quantity('1e-4095') == (None, False)
+    assert plain_quantity('1e' + '9' * 125) == (None, False)
+
+
+def test_mes_unicode_decimal_digits_project_as_plain_ascii():
+    from manufacturing_platform.mes_access.order_materials import _amount
+    from manufacturing_platform.workflow.native_material_service import plain_quantity
+    assert _amount('١.٢e٢') == '١.٢e٢'
+    assert plain_quantity('١.٢e٢') == ('120', True)
+    assert plain_quantity('١.٢') == ('1.2', True)

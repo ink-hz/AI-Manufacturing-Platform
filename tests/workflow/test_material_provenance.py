@@ -476,3 +476,68 @@ def test_shared_work_order_rejects_foreign_missing_and_altered_quantities(workfl
         result = work_order_quantities(reader, item)
         assert result['quantity'].value == item['quantity']
         assert result['trial_quantity'].value == item['trial_quantity']
+
+
+def test_imported_iqc_canonical_source_identity_keeps_confirmation(workflow):
+    from .test_exchanges import reserve
+    from .test_imports import review_receipt, review_import, review_iqc
+    p, _, related, _ = reserve(workflow)
+    review_import(workflow, p, review_receipt(workflow, p, related), 'supply')
+    row = review_iqc(workflow, p, 'canonical-iqc', '20').model_dump(mode='json')
+    row['source'].update(system=' ERP ', object_type=' IQC ', external_id=' canonical-iqc ', mode='file')
+    workflow.command(p['id'], 'source.import', actor_name='quality', object_type='iqc', rows=[row])
+    q = page(workflow, p['id'])['receipts'][0]['quantities']['qualified']
+    event = next(s for s in q['source_refs'] if s['object_kind'] == 'iqc' and s['value'] == '20')
+    confirmation = next(s for s in q['source_refs'] if s['object_kind'] == 'source_confirmation' and s['external_id'] == ' canonical-iqc ')
+    assert event['origin'] == 'unknown'
+    assert confirmation['origin'] == 'file' and confirmation['system'] == ' ERP ' and confirmation['source_type'] == ' IQC '
+
+
+def test_correction_keeps_canonical_equivalent_mock_source_labels(workflow, monkeypatch):
+    from manufacturing_platform.workflow.adapters.mock import MockAuthorityAdapter
+    from .test_exchanges import reserve
+    from .test_imports import review_receipt, review_import, review_pull, review_correct
+    p, _, related, _ = reserve(workflow)
+    review_import(workflow, p, review_receipt(workflow, p, related), 'supply', quantity='80')
+    original = MockAuthorityAdapter.snapshot
+    def variant(self, system, object_type):
+        snapshot = original(self, system, object_type)
+        for record in snapshot.records:
+            record.source.system = ' ERP '
+            record.source.object_type = ' RECEIPT '
+            record.source.external_id = ' review-delivery '
+        return snapshot
+    monkeypatch.setattr(MockAuthorityAdapter, 'snapshot', variant)
+    pull = review_pull(workflow, p, 'receipt', 'review-delivery', 'supply')
+    review_correct(workflow, p, pull, 'receipt', 'review-delivery', actor='supply')
+    q = page(workflow, p['id'])['requirements'][0]['quantities']['received']
+    correction = next(s for s in q['source_refs'] if s['object_kind'] == 'source_correction')
+    assert correction['origin'] == 'mock' and correction['value'] == '20'
+    assert (correction['system'], correction['source_type'], correction['external_id']) == (' ERP ', ' RECEIPT ', ' review-delivery ')
+
+
+def test_confirmed_iqc_canonical_mock_identity_keeps_original_unknown(workflow, monkeypatch):
+    from manufacturing_platform.workflow.adapters.mock import MockAuthorityAdapter
+    from .test_exchanges import reserve
+    from .test_imports import review_receipt, review_import, review_iqc, review_pull
+    p, _, related, _ = reserve(workflow)
+    rec = review_import(workflow, p, review_receipt(workflow, p, related), 'supply')['object_id']
+    workflow.inspect(p['id'], rec, accepted='10', rejected='0')
+    with workflow.db() as db:
+        manual = db.execute('SELECT id FROM iqc_results WHERE receipt_id=?', (rec,)).fetchone()[0]
+    review_iqc(workflow, p, 'confirmed-case', '10', manual_iqc_id=manual)
+    original = MockAuthorityAdapter.snapshot
+    def variant(self, system, object_type):
+        snapshot = original(self, system, object_type)
+        for record in snapshot.records:
+            record.source.system = ' ERP '
+            record.source.object_type = ' IQC '
+            record.source.external_id = ' confirmed-case '
+        return snapshot
+    monkeypatch.setattr(MockAuthorityAdapter, 'snapshot', variant)
+    review_pull(workflow, p, 'iqc', 'confirmed-case', 'quality')
+    q = page(workflow, p['id'])['receipts'][0]['quantities']['qualified']
+    event = next(s for s in q['source_refs'] if s['object_kind'] == 'iqc' and s['object_id'] == manual)
+    confirmation = next(s for s in q['source_refs'] if s['object_kind'] == 'source_confirmation')
+    assert event['origin'] == 'unknown'
+    assert (confirmation['origin'], confirmation['system'], confirmation['source_type'], confirmation['external_id']) == ('mock', ' ERP ', ' IQC ', ' confirmed-case ')
