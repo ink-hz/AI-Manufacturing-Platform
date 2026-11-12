@@ -4,7 +4,7 @@ import type { ProvenancedQuantity, QuantityOrigin, QuantityEnvironment, Quantity
 const origins: Record<QuantityOrigin, string> = { native: "原生", manual: "手工", file: "文件", mock: "模拟", unknown: "来源待核对" };
 const environments: Record<QuantityEnvironment, string> = { production: "生产", test: "测试", development: "开发", mock: "模拟", unknown: "环境待核对" };
 const coverage: Record<QuantityCoverage, string> = { complete: "平台记录完整", partial: "部分", failed: "读取失败", unknown: "待核对" };
-const roles = { confirmed: "平台确认记录", observation: "原生观察", unknown: "待核对" } as const;
+const roles = { confirmed: "平台确认记录", observation: "观察记录", unknown: "待核对" } as const;
 const time = (v: string | null) => v || "时间待核对";
 
 export function QuantityValue({ quantity, value, unit, title }: { quantity?: ProvenancedQuantity; value: string | null | undefined; unit: string; title: string }) {

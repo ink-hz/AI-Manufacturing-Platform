@@ -28,12 +28,25 @@ it('does not replace a present null projection with an old scalar; old responses
  await act(async()=>root.unmount());
 });
 
-it.each([['observation', '原生观察'], ['unknown', '待核对']] as const)('shows %s quantity nature in expanded evidence', async (role, label) => {
+it.each([['observation', '观察记录'], ['unknown', '待核对']] as const)('shows %s quantity nature in expanded evidence', async (role, label) => {
  const host=document.createElement('div'); const root=createRoot(host);
  const source={reference:'ref',project_id:'p',object_kind:'component',object_id:'c',system:'MES',source_type:'component',external_id:'c',version:1,namespace:'test',origin:'native',environment:'test',occurred_at:null,collected_at:null,coverage:'unknown',value:'2',unit:'EA',meaning:'input'} as const;
  const quantity={value:'2',unit:'EA',meaning:'result',origins:['native'],environments:['test'],fact_role:role,observed_at:null,collected_at:null,coverage:'unknown',source_refs:[source],input_refs:['ref']} as const;
  await act(async()=>root.render(<QuantityValue quantity={quantity as any} value="2" unit="EA" title="需求"/>));
  await act(async()=>{const details=host.querySelector('details')!;details.open=true;details.dispatchEvent(new Event('toggle'));});
  expect(host.textContent).toContain(`数量性质：${label}`);
+ await act(async()=>root.unmount());
+});
+
+it('keeps mock observation role separate from its simulated source identity', async () => {
+ const host=document.createElement('div'); const root=createRoot(host);
+ const source={reference:'mock-ref',project_id:'p',object_kind:'component',object_id:'c',system:'MES',source_type:'component',external_id:'c',version:1,namespace:'test',origin:'mock',environment:'mock',occurred_at:null,collected_at:null,coverage:'unknown',value:'2',unit:'EA',meaning:'input'} as const;
+ const quantity={value:'2',unit:'EA',meaning:'result',origins:['mock'],environments:['mock'],fact_role:'observation',observed_at:null,collected_at:null,coverage:'unknown',source_refs:[source],input_refs:['mock-ref']} as const;
+ await act(async()=>root.render(<QuantityValue quantity={quantity as any} value="2" unit="EA" title="需求"/>));
+ expect(host.textContent).toContain('模拟');
+ await act(async()=>{const details=host.querySelector('details')!;details.open=true;details.dispatchEvent(new Event('toggle'));});
+ expect(host.textContent).toContain('数量性质：观察记录');
+ expect(host.textContent).toContain('模拟');
+ expect(host.textContent).not.toContain('原生');
  await act(async()=>root.unmount());
 });
