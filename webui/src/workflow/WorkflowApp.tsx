@@ -122,6 +122,8 @@ export function WorkflowApp({
     [options.apiBase, options.csrfToken, deny],
   );
   apiRef.current = api;
+  const materialIdentity = useRef({api, actor: b.user.id, projectId: project?.id});
+  materialIdentity.current = {api, actor: b.user.id, projectId: project?.id};
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -643,7 +645,7 @@ export function WorkflowApp({
                 ) : workspace === "supply" ? (
                   <SupplyWorkspace
                     {...props}
-                    onMaterialChanged={result => changed(result, false, true)}
+                    onMaterialChanged={result => { const live = materialIdentity.current; if (alive.current && live.api === api && live.actor === b.user.id && live.projectId === props.project.id && result.project_id === props.project.id) changed(result, false, true); }}
                     currentUserId={b.user.id}
                     handoffFilter={handoffFilters[props.project.id] ?? 'pending'}
                     onHandoffFilter={filter => setHandoffFilters(old => ({...old, [props.project.id]: filter}))}

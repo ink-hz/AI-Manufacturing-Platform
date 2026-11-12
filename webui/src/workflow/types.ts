@@ -202,6 +202,7 @@ export interface ContractAgreement {id:string;supersedes_agreement_id:string|nul
 export type CommandFields =
   | {action:"mes_order.bind";work_order_id:string;shop_order:string;replace_binding_id:string|null;reason:string|null}
   | {action:"mes_order.refresh";work_order_id:string;binding_id:string}
+  | {action:"material.need_time";requirement_id:string;need_at:string|null;evidence:string}
   | {action:"material_task.open";requirement_id:string;task_kind:"iqc"|"trace";receipt_id:string|null;handoff_id:string|null;assignee_id:string;note:string}
   | {action:"material_task.accept";task_id:string}
   | {action:"material_task.reassign";task_id:string;assignee_id:string;reason:string}
@@ -503,7 +504,7 @@ export type DomainValue =
       held_start_scopes?:{id:string;mode:"trial"|"bulk";sns:string[];exchange_id:string;receipt_id:string}[];
     }
   | {kind:"plan";state:"confirmed"|"rejected";reason:string;source:SourceRef;input_revision_ids:string[];input_order_versions:{order_line_id:string;version:number}[];requirement_ids:string[];cutoff:string|null}
-  | {kind:"requirement";plan_id:string;lineage_id:string;supersedes_requirement_id:string|null;work_order_id:string;execution_scope:"trial"|"bulk"|"common";material_id:string;owner_id:string;quantity:string;unit:string;balance:MaterialBalance;unqualified_quantity:string}
+  | {kind:"requirement";plan_id:string;lineage_id:string;supersedes_requirement_id:string|null;work_order_id:string;execution_scope:"trial"|"bulk"|"common";material_id:string;owner_id:string;quantity:string;unit:string;balance:MaterialBalance;unqualified_quantity:string;need_time_events?:{id:string;requirement_id:string;plan_id:string;need_at:string|null;evidence:string;actor_id:string;recorded_at:string}[]}
   | {kind:"commitment";requirement_id:string;type:"purchase"|"customer";owner_id:string;original_quantity:string;current_quantity:string;unit:string;original_due:string;current_due:string;source:SourceRef;promise_revisions:{source:SourceRef;quantity:string;current_due:string}[];material_lot_ids:string[];received:string;qualified:string;rejected:string}
   | {kind:"material_lot";freeze_requested?:"frozen"|"unfrozen"|null;freeze_confirmed?:"frozen"|"unfrozen"|null;freeze_pending?:boolean;ownership_balance?:OwnershipBalance;material_movements?:{id:string;movement:"return"|"raw_loss";quantity:string;supersedes_id:string|null;current:boolean;source:SourceRef|null;external_signatory:string;evidence:string}[];ownership_reconciliations?:{id:string;current:boolean;source:SourceRef|null;balance:OwnershipBalance}[];material_id:string;lot_id:string;owner_id:string;unit:string;scale:number;expiry:string;state:"active"|"frozen";source:SourceRef;received:string;qualified:string;rejected:string}
   | {kind:"receipt";quantity_state?:"pending_inspection"|"partially_inspected"|"accepted"|"rejected"|"mixed";next_step?:"inspect_remaining"|"review_rejected"|"await_authority_reservation";original_quantity?:string;corrections?:{sequence:number;received_delta:string;accepted_delta:string;rejected_delta:string;evidence:string}[];confirmations?:SourceConfirmation[];commitment_id:string;material_lot_id:string;quantity:string;unit:string;source:SourceRef;accepted:string;rejected:string;uninspected:string};

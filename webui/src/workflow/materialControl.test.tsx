@@ -415,7 +415,7 @@ it("ignores a late material page after project changes", async () => {
     }),
   );
   expect(host.textContent).not.toContain("旧项目秘密");
-  expect(host.textContent).toContain("暂无物料需求");
+  expect(host.textContent).toContain("暂无符合当前筛选的物料需求");
 });
 it("lists project tasks with links to their product task panels", async () => {
   host = document.createElement("div");
@@ -735,8 +735,9 @@ it("filters requirements by work order and material without inventing totals", a
     handoff_ids: [],
   });
   const api = {
-    materialProject: vi.fn().mockResolvedValue({
-      requirements: [req("r1", "齿轮", "w1"), req("r2", "轴承", "w2")],
+    objects: vi.fn().mockResolvedValue({items:[{id:"w1",title:"工单甲"},{id:"w2",title:"工单乙"}],total:2}),
+    materialProject: vi.fn().mockImplementation(async (_id, _limit, _offset, _signal, filters) => ({
+      requirements: [req("r1", "齿轮", "w1"), req("r2", "轴承", "w2")].filter(r => !filters?.work_order_id || r.work_order_id === filters.work_order_id),
       work_orders: [
         { id: "w1", title: "工单甲" },
         { id: "w2", title: "工单乙" },
@@ -747,7 +748,7 @@ it("filters requirements by work order and material without inventing totals", a
       coverage_issues: ["fixed disclaimer"],
       source_modes: [],
       total: 2,
-    }),
+    })),
   };
   await act(async () =>
     root.render(
@@ -765,7 +766,7 @@ it("filters requirements by work order and material without inventing totals", a
   await flush();
   expect(host.textContent).not.toContain("部分料况尚未取得");
   const e = host.querySelector(
-    '[aria-label="筛选本页工单"]',
+    '[aria-label="全项目工单"]',
   ) as HTMLSelectElement;
   expect(e).toBeTruthy();
   await act(async () => {
@@ -775,6 +776,8 @@ it("filters requirements by work order and material without inventing totals", a
     )!.set!.call(e, "w1");
     e.dispatchEvent(new Event("change", { bubbles: true }));
   });
+  await flush();
+  expect(api.materialProject).toHaveBeenLastCalledWith(project.id,50,0,expect.any(AbortSignal),expect.objectContaining({work_order_id:"w1"}));
   expect(host.textContent).toContain("齿轮");
   expect(host.textContent).not.toContain("轴承");
 });

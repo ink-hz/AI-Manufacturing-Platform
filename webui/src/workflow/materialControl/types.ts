@@ -1,5 +1,9 @@
+export type MaterialProblem = "all" | "attention" | "shortage" | "urgent" | "pending_iqc" | "unreceived" | "verification";
+export interface MaterialFilters { search?: string; problem?: MaterialProblem; work_order_id?: string }
+export interface MaterialIssue { code: string; title: string; object_kind: "requirement" | "receipt" | "material_handoff" | "material_lot" | "material_expedite"; object_id: string; quantity: string | null; unit: string | null; task_id: string | null; assignee_id: string | null; proposed_assignee_id: string | null; assignee_name: string | null; proposed_assignee_name: string | null; next_action: "view_task" | "arrange_iqc" | "trace" | "expedite" | "view_object" | "confirm_time" | "check_allocation"; }
 export interface MaterialRequirement {
   id: string;
+  state?: "required" | "superseded";
   work_order_id: string;
   material_id: string;
   owner_id: string;
@@ -14,6 +18,10 @@ export interface MaterialRequirement {
   need_at: string | null;
   need_at_basis: string;
   coverage_issues: string[];
+  confirmed_satisfied?: string | null;
+  issues?: MaterialIssue[];
+  need_time_history_count?: number;
+  timing_risk?: "unknown" | "need_time_passed";
   expedite_ids: string[];
   receipt_ids: string[];
   handoff_ids: string[];
@@ -68,6 +76,8 @@ export interface MaterialProject {
   }[];
   material_task_counts: Record<string, number>;
   total: number;
+  scope_total?: number;
+  problem_counts?: Partial<Record<MaterialProblem, number>>;
   limit: number;
   offset: number;
 }
@@ -94,6 +104,7 @@ export interface MaterialViewContext {
   filter: string;
   workOrder: string;
   taskOffset: number;
+  problem?: MaterialProblem;
 }
 export const initialMaterialViewContext = (): MaterialViewContext => ({
   offset: 0,
@@ -101,6 +112,7 @@ export const initialMaterialViewContext = (): MaterialViewContext => ({
   filter: "",
   workOrder: "",
   taskOffset: 0,
+  problem: "attention",
 });
 
 export interface MesOrderMaterialsData {

@@ -61,7 +61,7 @@ export function SupplyWorkspace(p: OEMWorkspaceProps & {
       <button aria-pressed={mode === 'handoff'} onClick={() => selectMode('handoff')}>物料交接</button>
       <button aria-pressed={mode === 'legacy'} onClick={() => selectMode('legacy')}>供应与到货</button>
     </div>}
-    {mode === 'material' && p.project.mode === 'oem' ? <MaterialControlWorkspace key={p.project.id} {...p}/> : mode === 'handoff' && p.project.mode === 'oem'
+    {mode === 'material' && p.project.mode === 'oem' ? <MaterialControlWorkspace key={p.project.id + ":" + (p.currentUserId || "")} {...p}/> : mode === 'handoff' && p.project.mode === 'oem'
       ? <MaterialHandoffWorkspace key={p.project.id} {...p}/>
       : <LegacySupplyWorkspace {...p}/>}
   </section>;

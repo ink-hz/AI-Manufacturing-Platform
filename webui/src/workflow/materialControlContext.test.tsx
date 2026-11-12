@@ -11,7 +11,7 @@ it("returns to the filtered second requirement and task pages after opening a pr
   const requirement = (n: number): MaterialRequirement => ({
     id: "r" + n,
     work_order_id: "w",
-    material_id: n === 50 ? "齿轮目标" : "物料" + n,
+    material_id: n === 50 ? "物料目标" : "物料" + n,
     owner_id: "客户",
     unit: "件",
     required: "1",
@@ -53,6 +53,7 @@ it("returns to the filtered second requirement and task pages after opening a pr
       truncated: false,
     }),
     readProjects: async () => [p],
+    readObjects: async (_id, kind, offset) => ({items:kind === "work_order" ? [{...order,id:"w",kind:"work_order",title:"工单甲"}] : [],total:kind === "work_order" ? 1 : 0,limit:50,offset}),
     readProject: async () => p,
     readMaterialProject: async (offset) =>
       ({
@@ -110,10 +111,11 @@ it("returns to the filtered second requirement and task pages after opening a pr
     await view.click("制造项目");
     await view.click(p.name);
     await view.click("供应与物料");
+    await view.field("全项目工单", "w");
+    await view.field("全项目搜索", "物料");
+    await view.click("搜索");
     await view.click("下一页");
-    await view.field("筛选本页工单", "w");
-    await view.field("筛选本页物料", "齿轮");
-    await view.click("齿轮目标");
+    await view.click("物料目标");
     await view.click("下一页任务");
     await view.click("目标任务");
     expect(view.host.querySelector('[aria-label="物料任务"]')).toBeTruthy();
@@ -121,20 +123,20 @@ it("returns to the filtered second requirement and task pages after opening a pr
     expect(
       (
         view.host.querySelector(
-          '[aria-label="筛选本页工单"]',
+          '[aria-label="全项目工单"]',
         ) as HTMLSelectElement
       ).value,
     ).toBe("w");
     expect(
       (
         view.host.querySelector(
-          '[aria-label="筛选本页物料"]',
+          '[aria-label="全项目搜索"]',
         ) as HTMLInputElement
       ).value,
-    ).toBe("齿轮");
+    ).toBe("物料");
     expect(
       view.host.querySelector('[aria-label="物料需求详情"]')?.textContent,
-    ).toContain("齿轮目标");
+    ).toContain("物料目标");
     expect(view.host.textContent).toContain("目标任务");
     expect(view.host.textContent).toContain("本页 1 条，共 51 条");
     expect(view.host.textContent).toContain("上一页任务");
@@ -184,14 +186,15 @@ it("keeps material view state isolated by project", async () => {
     await view.click("制造项目");
     await view.click(first.name);
     await view.click("供应与物料");
-    await view.field("筛选本页物料", "仅甲项目");
+    await view.field("全项目搜索", "仅甲项目");
+    await view.click("搜索");
     await view.click("返回项目列表");
     await view.click(other.name);
     await view.click("供应与物料");
     expect(
       (
         view.host.querySelector(
-          '[aria-label="筛选本页物料"]',
+          '[aria-label="全项目搜索"]',
         ) as HTMLInputElement
       ).value,
     ).toBe("");

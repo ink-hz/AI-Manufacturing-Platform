@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { OEMWorkspaceProps } from "../OEMWorkspace";
 import type { MaterialProject, MaterialRequirement } from "./types";
 import { useMaterialCommand } from "./useMaterialCommand";
@@ -10,6 +10,7 @@ export function MaterialTaskOpen({
   active,
   begin,
   resetRef,
+  intent,
 }: {
   p: OEMWorkspaceProps;
   page: MaterialProject;
@@ -17,8 +18,10 @@ export function MaterialTaskOpen({
   active: boolean;
   begin(f: () => void): void;
   resetRef: RefObject<() => void>;
+  intent?: { requirementId: string; kind: "iqc" | "trace"; reference: string; token: number } | null;
 }) {
   const command = useMaterialCommand(p.api, p.project.id);
+  const owner = useRef(0);
   const [version, setVersion] = useState(p.project.version);
   const [generation, setGeneration] = useState(0);
   const [kind, setKind] = useState<"iqc" | "trace" | null>(null);
@@ -33,7 +36,9 @@ export function MaterialTaskOpen({
     [saving, setSaving] = useState(false);
   useEffect(() => {
     resetRef.current = () => {
+      owner.current++;
       command.clear();
+      setSaving(false);
       setKind(null);
       setMembers([]);
       setMember("");
@@ -72,6 +77,10 @@ export function MaterialTaskOpen({
       });
     return () => c.abort();
   }, [p.api, p.project.id, kind, active, generation]);
+  useEffect(() => {
+    if (!intent || intent.requirementId !== requirement.id) return;
+    command.clear(); setVersion(p.project.version); setMembers([]); setKind(intent.kind); setGeneration(n => n + 1); setMember(""); setReference(intent.reference); setNote(""); setError("");
+  }, [intent?.token, requirement.id]);
   function start(next: "iqc" | "trace") {
     begin(() => {
       command.clear();
@@ -104,6 +113,7 @@ export function MaterialTaskOpen({
       return;
     setSaving(true);
     setError("");
+    const generation = owner.current;
     try {
       const result = await command.execute(
         {
@@ -116,15 +126,15 @@ export function MaterialTaskOpen({
           note,
         },
         version,
+        p.onMaterialChanged || p.onChanged,
       );
-      if (!result) return;
+      if (!result || !command.isCurrent() || owner.current !== generation) return;
       p.onDirty("material-task-open", false);
       setKind(null);
-      p.onChanged(result);
     } catch (e) {
-      if (command.isCurrent()) setError(String(e));
+      if (command.isCurrent() && owner.current === generation) setError(String(e));
     } finally {
-      if (command.isCurrent()) setSaving(false);
+      if (command.isCurrent() && owner.current === generation) setSaving(false);
     }
   }
   return (
