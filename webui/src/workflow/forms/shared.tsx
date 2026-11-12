@@ -156,9 +156,15 @@ export function CommandForm<T extends CommandFields>({
   save,
   children,
   canSubmit = () => true,
+  onAcknowledged,
+  onSaved,
+  identity,
   ...props
 }: WorkspaceProps & {
   initial: () => T;
+  onAcknowledged?: WorkspaceProps["onChanged"];
+  onSaved?: () => void;
+  identity?: string;
   canSubmit?: (value: T) => boolean;
   title: string;
   save: string;
@@ -173,6 +179,8 @@ export function CommandForm<T extends CommandFields>({
   const currentValue = useRef(value),
     pending = useRef<WorkflowCommand | null>(null),
     alive = useRef(true);
+  const scope = useRef({api: props.api, projectId: props.project.id, identity});
+  if (scope.current.api !== props.api || scope.current.projectId !== props.project.id || scope.current.identity !== identity) scope.current = {api: props.api, projectId: props.project.id, identity};
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -199,6 +207,8 @@ export function CommandForm<T extends CommandFields>({
         if (busy || props.readOnly || !canSubmit(value)) return;
         setBusy(true);
         setError("");
+        const submittedScope = scope.current;
+        const current = () => alive.current && (!onAcknowledged || scope.current === submittedScope);
         try {
           if (!pending.current) {
             const fields = structuredClone(value);
@@ -233,13 +243,14 @@ export function CommandForm<T extends CommandFields>({
             props.project.id,
             pending.current,
           );
-          if (alive.current) {
+          onAcknowledged?.(result);
+          if (current()) {
             setDirty(false);
             props.onDirty(title, false);
-            props.onChanged(result);
+            if (onAcknowledged) onSaved?.(); else props.onChanged(result);
           }
         } catch (e) {
-          if (alive.current) {
+          if (current()) {
             setConflict(
               e instanceof WorkflowError && e.status === 409 ? e : null,
             );
@@ -251,7 +262,7 @@ export function CommandForm<T extends CommandFields>({
             );
           }
         } finally {
-          if (alive.current) setBusy(false);
+          if (current()) setBusy(false);
         }
       }}
     >

@@ -49,12 +49,36 @@ export function MaterialTaskOpen({
     };
     return () => { resetRef.current = () => {}; };
   });
+  const [lookup, setLookup] = useState<{ key: string; receipt?: MaterialProject["receipts"][number]; handoff?: MaterialProject["handoffs"][number]; error?: string } | null>(null);
   const receipts = page.receipts.filter((r) =>
     requirement.receipt_ids.includes(r.id),
   );
   const handoffs = page.handoffs.filter((h) =>
     requirement.handoff_ids.includes(h.id),
   );
+  const lookupKey = intent && intent.requirementId === requirement.id && kind === intent.kind && reference === intent.reference
+    ? JSON.stringify([p.project.id, p.project.version, requirement.id, kind, reference, intent.token]) : "";
+  const previewHasReference = kind === "iqc" ? receipts.some(r => r.id === reference) : handoffs.some(h => h.id === reference);
+  useEffect(() => {
+    if (!active || !lookupKey || previewHasReference || !intent) return;
+    const c = new AbortController();
+    setLookup(null);
+    const objectKind = intent.kind === "iqc" ? "receipt" : "material_handoff";
+    p.api.object(p.project.id, objectKind, intent.reference, c.signal).then(detail => {
+      if (c.signal.aborted) return;
+      if (detail.summary.id !== intent.reference || detail.summary.project_id !== p.project.id || detail.summary.kind !== objectKind || detail.value.kind !== objectKind) throw Error("记录身份不匹配");
+      if (detail.value.kind === "receipt") {
+        setLookup({key: lookupKey, receipt: {id: intent.reference, quantity: detail.value.quantity, unit: detail.value.unit, qualified: detail.value.accepted, rejected: detail.value.rejected, uninspected: detail.value.uninspected}});
+      } else if (detail.value.kind === "material_handoff" && detail.value.id === intent.reference) {
+        setLookup({key: lookupKey, handoff: detail.value});
+      } else throw Error("记录身份不匹配");
+    }).catch(e => { if (!c.signal.aborted) setLookup({key: lookupKey, error: String(e)}); });
+    return () => c.abort();
+  }, [p.api, p.project.id, lookupKey, active, previewHasReference]);
+  const currentLookup = lookup?.key === lookupKey ? lookup : null;
+  const availableReceipts = currentLookup?.receipt ? [...receipts, currentLookup.receipt] : receipts;
+  const availableHandoffs = currentLookup?.handoff ? [...handoffs, currentLookup.handoff] : handoffs;
+  const referenceValid = kind === "iqc" ? availableReceipts.some(r => r.id === reference) : availableHandoffs.some(h => h.id === reference);
   useEffect(() => {
     if (!kind || !active) return;
     const c = new AbortController();
@@ -105,7 +129,7 @@ export function MaterialTaskOpen({
       version !== p.project.version ||
       !allowed ||
       !kind ||
-      !reference ||
+      !referenceValid ||
       !member ||
       !note.trim() ||
       saving
@@ -159,13 +183,13 @@ export function MaterialTaskOpen({
             >
               <option value="">请选择</option>
               {kind === "iqc"
-                ? receipts.map((r, i) => (
+                ? availableReceipts.map((r, i) => (
                     <option key={r.id} value={r.id}>
                       到货 {i + 1} · {r.quantity} {r.unit} · 待检{" "}
                       {r.uninspected} {r.unit}
                     </option>
                   ))
-                : handoffs.map((h) => (
+                : availableHandoffs.map((h) => (
                     <option key={h.id} value={h.id}>
                       {h.handoff_number} · {h.quantity} {h.unit} ·{" "}
                       {h.from_location} → {h.to_location}
@@ -173,13 +197,15 @@ export function MaterialTaskOpen({
                   ))}
             </select>
           </label>
-          {!(kind === "iqc" ? receipts : handoffs).length && (
+          {!(kind === "iqc" ? availableReceipts : availableHandoffs).length && !lookupKey && (
             <p>
               {kind === "iqc"
                 ? "没有关联到货记录，请先登记到货。"
                 : "没有关联交料记录，请先登记交料。"}
             </p>
           )}
+          {lookupKey && !previewHasReference && !currentLookup && <p role="status">正在读取关联记录…</p>}
+          {currentLookup?.error && <p role="alert">关联记录读取失败：{currentLookup.error}</p>}
           {loading && <p role="status">正在读取可选成员…</p>}
           <label>
             {kind === "iqc" ? "检验人" : "查料人"}
@@ -212,7 +238,7 @@ export function MaterialTaskOpen({
               loading ||
               version !== p.project.version ||
               !allowed ||
-              !reference ||
+              !referenceValid ||
               !member ||
               !note.trim()
             }

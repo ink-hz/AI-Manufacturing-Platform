@@ -129,13 +129,13 @@ export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {
     (row.detail?.summary.state || row.summary.state) === filter);
 
   function choose(next: HandoffAction, detail: ObjectDetail | null = null) {
-    p.requestLeave(() => {
+    (p.requestLocalLeave || p.requestLeave)(() => {
       p.onHandoffAction?.();
       p.onSelectAction?.(next); setChosen(detail); setAction(next); setEpoch(old => old + 1);
     });
   }
   function discard() {
-    p.requestLeave(() => {
+    (p.requestLocalLeave || p.requestLeave)(() => {
       setAction(null); setChosen(null); p.onSelectAction?.(null); setRetry(old => old + 1);
     });
   }
@@ -151,6 +151,7 @@ export function MaterialHandoffWorkspace(p: OEMWorkspaceProps & {
         action={action!} selected={selected?.value.kind === 'material_handoff' ? selected.value : null}
         lots={items.material_lot || []} workOrders={items.work_order || []}
         members={members.filter(m => eligible(m) && m.user_id !== p.currentUserId)}
+        onMaterialSaved={() => { setAction(null); p.onSelectAction?.(null); }}
         onChanged={result => { setAction(null); p.onChanged(result); }}/>
       {(['material_lot', 'work_order'] as const).map(kind =>
         (items[kind] || []).length < (totals[kind] || 0) && <button key={kind} disabled={busy} onClick={() => void more(kind)}>

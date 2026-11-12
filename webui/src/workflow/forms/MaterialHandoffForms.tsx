@@ -10,6 +10,9 @@ type Props = WorkspaceProps & {
   workOrders: ObjectSummary[];
   members: Grant[];
   selected?: MaterialHandoffValue | null;
+  onMaterialChanged?: WorkspaceProps["onChanged"];
+  currentUserId?: string;
+  onMaterialSaved?: () => void;
 };
 const decimal = (value: string) => value.replace(/^0+(?=\d)/, '')
   .replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
@@ -84,7 +87,7 @@ export function MaterialHandoffForms(p: Props) {
   if (!handoff) return <p>请选择有权办理的交接记录。</p>;
   if (p.action === 'material_handoff.receive') {
     return <CommandForm<Extract<MaterialHandoffCommand, {action: 'material_handoff.receive'}>>
-      {...p} title="确认接收" save="确认接收"
+      {...p} onAcknowledged={p.onMaterialChanged} onSaved={p.onMaterialSaved} identity={p.currentUserId} title="确认接收" save="确认接收"
       initial={() => ({
         action: 'material_handoff.receive', handoff_id: handoff.id,
         received_quantity: handoff.quantity, received_location: handoff.to_location, occurred_at: null, note: null,
@@ -123,7 +126,7 @@ export function MaterialHandoffForms(p: Props) {
 
   if (p.action === 'material_handoff.confirm_use') {
     return <CommandForm<Extract<MaterialHandoffCommand, {action: 'material_handoff.confirm_use'}>>
-      {...p} title="核对实收用途" save="保存实收用途"
+      {...p} onAcknowledged={p.onMaterialChanged} onSaved={p.onMaterialSaved} identity={p.currentUserId} title="核对实收用途" save="保存实收用途"
       initial={() => ({action:'material_handoff.confirm_use',handoff_id:handoff.id,
         receipt_use:'transfer',requirement_id:null,evidence:''})}
       canSubmit={value => !staleReceipt && !!value.evidence.trim() && (value.receipt_use !== 'line_side' || (!!value.requirement_id && receiptUseReady))}>

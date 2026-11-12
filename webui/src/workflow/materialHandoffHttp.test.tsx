@@ -81,8 +81,8 @@ it('persists actual React handoff/receipt/resolution forms with designated real 
  await settled(()=>!![...host.querySelectorAll('button')].find(b=>b.textContent==='前往处理：确认接收'));
  await button('前往处理：确认接收');await settled(()=>!!host.querySelector('form[aria-label="确认接收"]'));
  await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
- await settled(()=>!!host.querySelector('[aria-label="物料交接事实"]')&&!!host.querySelector('.wf-status-info'));
- expect(host.textContent).toContain('实收 1 kg');await button('返回台账');
+ await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.querySelector('form[aria-label="确认接收"]')&&!host.textContent?.includes('正在读取'));
+ expect((await production.api.object(p.id,'material_handoff',finalRecord.object_id)).value).toMatchObject({state:'received',receipt:{received_quantity:'1'}});await button('返回台账');
  await settled(()=>!!host.querySelector('.wf-global-ledger table')&&!host.textContent?.includes('正在读取'));
  expect((host.querySelector('[aria-label="所属项目筛选"]') as HTMLSelectElement).value).toBe(p.id);
  expect(host.querySelector('.wf-global-ledger .mf-tabs button[aria-pressed="true"]')?.textContent).toBe('物料交接');
@@ -148,9 +148,12 @@ it.each(['receive', 'resolve', 'cancel', 'lot'] as const)(
       if(transition==='resolve') await field('处理说明','已按原始记录核对差异');
       if(transition==='cancel') await field('取消原因','实物交出前发现重复登记');
       await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
-      await settled(()=>!!host.querySelector('[aria-label="物料交接事实"]'));
+      if(transition==='receive') {
+        await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.querySelector('form[aria-label="确认接收"]')&&!host.textContent?.includes('正在读取'));
+        expect((await actor.api.object(p.id,'material_handoff',handoff.object_id)).summary.state).toBe('received');
+      } else await settled(()=>!!host.querySelector('[aria-label="物料交接事实"]'));
     }
-    await button('返回业务列表');
+    if(transition!=='receive') await button('返回业务列表');
     await settled(()=>!!host.querySelector('[aria-label="物料交接工作区"]')&&!host.textContent?.includes('正在读取'));
     expect(host.querySelector('.wf-global-ledger')).toBeNull();
     expect(host.querySelector('[aria-label="物料办理类型"] button[aria-pressed="true"]')?.textContent).toBe('物料交接');
