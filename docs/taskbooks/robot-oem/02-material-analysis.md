@@ -14,6 +14,15 @@
 
 **本次交付**：服务端先按物料/工单/问题筛选再分页，并列显示急料、待检、未实收、待核实等卡点及实际/拟接手人；点击进入对应批次、交接或已有任务。需要时间支持带依据修改、重置为工单开始代理和历史查看；过期/冻结/当前质量不足不作为可满足量，归属不明显示待核对。见[验证记录](../../verification/material-analysis-2026-11-12.md)。MES组件和SAP MRP观察继续保留各自口径，本次未把两边观察合成为净需求或现场齐套结论。
 
+## 评审修订待办：M4、M3及M1需求入口
+
+- **M4先行**：给每项数量和派生判断附来源方式、环境、事实角色、原对象/版本、发生/读取时间、覆盖和输入引用，字段要求见[SAP契约mock spec第4节](../../superpowers/specs/2026-11-12-sap-mrp-contract-mock-design.md)。复用现有SourceRef；历史缺失保留未知；平台确认的mock仍显示模拟。现有MES组件独立表保持独立，不并入正式余额。
+- **M3**：“计划与物料”默认进授权项目料况选择，已有明确项目时直达；台账保留为次级核查入口。项目选择要完整分页，不能从首页预览范围推断全部项目。
+- **M1**：选中需求内接续T5交出/实收/差异办理，使用已有MaterialViewContext保留项目、工单、筛选、页码和选中需求；草稿、CAS、撤权和异步回执隔离继续有效。
+- **验收增加**：同一行的需求、预留、合格、缺口各自能追到来源及输入；mock和未知输入不能消失于汇总。来源展开不成为普通用户必经步骤；从侧栏可直接查料况，S06/S07办完回到原范围。
+
+以上为新增待实现项，不改变上段既有交付的验证边界。共同处置见[评审核对](../../reviews/2026-11-12-robot-oem-product-review-response.md)。
+
 **验收**：第51条物料从全项目搜索可命中；共享储备不重复满足；净扣需求不二次扣；不同单位不合计；部分、过期、无权限和真实空结果有各自行为；无需要时间不能判不急；同一需求同时待检/短收时保留两个问题且指向准确对象。
 
 **文件**：`src/manufacturing_platform/workflow/{material_control.py,material_control_models.py,material_control_api.py,supply.py,supply_models.py}`；`webui/src/workflow/materialControl/{api.ts,types.ts,MaterialControlWorkspace.tsx,MaterialFlowPanel.tsx}`；`webui/src/workflow/navigationContext.ts`；`tests/workflow/test_material_control.py`和现有料况前端测试。
