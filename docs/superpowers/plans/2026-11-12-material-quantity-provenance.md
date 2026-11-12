@@ -171,6 +171,8 @@ def test_page_modes_are_derived_from_returned_quantity_identities(workflow):
     values = [q for row in page['requirements'] for q in row['quantities'].values()]
     values += [q for row in page['receipts'] for q in row['quantities'].values()]
     values += [q for row in page['handoffs'] for q in row['quantities'].values()]
+    values += [q for row in page['work_orders'] for q in row['quantities'].values()]
+    values += [issue['quantity_fact'] for row in page['requirements'] for issue in row['issues'] if issue.get('quantity_fact')]
     expected = sorted({'api' if origin == 'native' else origin for q in values for origin in q['origins']})
     assert page['source_modes'] == expected
     assert page['source_modes_scope'] == 'returned_quantities'
