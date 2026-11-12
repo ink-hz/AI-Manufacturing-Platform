@@ -2,7 +2,7 @@
 
 基线：机器人 OEM **代工代料**，沿用已获方向与分批开发授权的[料况工作台设计](../specs/2026-11-11-robot-oem-material-workbench-design.md)，具体授权依据已补记在设计开头。已有急料、IQC接单、指定签收及寻料流程继续复用。
 
-2026-11-12产品评审已核对并进入各任务书，见[处置与验收顺序](../../reviews/2026-11-12-robot-oem-product-review-response.md)。M1—M6均为待实现修订：M4逐项来源→M2免重复登账的任务引用→M1/M3料况内办理和直达；M6完整岗位物料事项可独立推进；M5按[SAP契约mock spec](../specs/2026-11-12-sap-mrp-contract-mock-design.md)在M4后进入业务页。全量导航改版后置。
+2026-11-12产品评审已核对并进入各任务书，见[处置与验收顺序](../../reviews/2026-11-12-robot-oem-product-review-response.md)。M4本轮料况数量来源契约及页面呈现已完成本地开发/隔离验证，见[本次验证](../../verification/material-quantity-provenance-2026-11-12.md)；后续依次为M2免重复登账的任务引用→M1/M3料况内办理和直达，M6完整岗位物料事项可独立推进。M5按[SAP契约mock spec](../specs/2026-11-12-sap-mrp-contract-mock-design.md)接续，尚未实现。全量导航改版后置。
 
 独立任务书：[T1工单需求](../../taskbooks/robot-oem/01-mes-order-and-demand.md)、[T2料况分析](../../taskbooks/robot-oem/02-material-analysis.md)、[T3批次IQC](../../taskbooks/robot-oem/03-iqc-receipt-and-results.md)、[T4急料协调](../../taskbooks/robot-oem/04-expedite-coordination.md)、[T5发料实收](../../taskbooks/robot-oem/05-issue-and-line-receipt.md)、[T6项目行动](../../taskbooks/robot-oem/06-project-actions.md)。每份包含用户动作、交付、依赖、验收场景和开发文件范围。
 
