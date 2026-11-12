@@ -117,7 +117,7 @@ def test_mock_identity_survives_platform_confirmation():
 ```
 
 - [ ] **Step 2: RED**：`... -m pytest tests/workflow/test_quantity_provenance.py -q --tb=short`；记录导入/行为失败，确认是缺少功能。
-- [ ] **Step 3: 实现模型及纯合并。** 使用集合并集排序、完整来源引用去重；同引用不同内容拒绝，不能静默覆盖。覆盖保守排序failed→partial→unknown→complete；显式coverage只能降级。时间取全部输入中最早值，任一必要输入缺时间则对应汇总时间为null，空输入coverage/role为unknown。`source_modes`从origins派生，native映射旧值api，其他值原样，空数量集合返回空列表。
+- [ ] **Step 3: 实现模型及纯合并。** 使用集合并集排序、完整来源引用去重；同引用不同内容拒绝，不能静默覆盖。覆盖保守排序failed→partial→unknown→complete；显式coverage只能降级。时间取全部输入中最早值，任一必要输入缺时间则对应汇总时间为null。空输入origins/environments各为`['unknown']`、role为unknown、时间为null、coverage至多unknown，source_refs/input_refs保持空；不要伪造来源引用。`source_modes`从origins派生，native映射旧值api，其他值原样，空数量集合返回空列表。数量与输入value仅接受有限的普通十进制字符串/null，保留符号、前导零和精度，不接收科学计数或NaN。
 - [ ] **Step 4: GREEN**：同一命令通过；序列化再读回保持字段/小数/引用和不变量。模型验证不得允许手工构造投影删除mock输入身份。
 - [ ] **Step 5: Commit**：仅提交上述两个文件；报告RED/GREEN命令、输出和自审。
 
