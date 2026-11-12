@@ -10,6 +10,10 @@ from .contracts import DomainError
 from .material_control_models import MaterialControlPage
 from .supply import amount, current_plan_id, receipt_presentation
 from .material_analysis import analyze
+from .material_source_reader import MaterialSources
+from .material_provenance import (requirement_quantities, receipt_quantities, handoff_quantities,
+    work_order_quantities, issue_quantity, project_source_modes)
+from .quantity_provenance import source_modes
 
 ISSUE = "Evidence is bounded and may not represent complete external supply or inventory."
 
@@ -40,20 +44,6 @@ def _unreceived_handoffs(tx, pid):
     return count
 
 
-def _modes(tx, pid):
-    modes = set()
-    for table in ("work_orders", "plans", "supply_commitments", "material_lots", "effective_supply_receipts"):
-        for row in tx.execute(f"SELECT source_json FROM {table} WHERE project_id=? ORDER BY id LIMIT 501", (pid,)):
-            mode = json.loads(row[0]).get("mode")
-            if mode:
-                modes.add(mode)
-    for table in ("material_handoffs", "material_expedites", "issue_marks"):
-        for row in tx.execute(f"SELECT payload_json FROM {table} WHERE project_id=? ORDER BY seq LIMIT 501", (pid,)):
-            mode = json.loads(row[0]).get("source", {}).get("mode")
-            if mode:
-                modes.add(mode)
-    return sorted(modes)
-
 
 def overview(service, actor, limit, offset):
     service._pagination(limit, offset)
@@ -74,7 +64,7 @@ def overview(service, actor, limit, offset):
                 open_expedite_count=_count(tx, 'material_expedites', pid, "AND state='open'"),
                 unreceived_handoff_count=_unreceived_handoffs(tx, pid),
                 open_material_task_count=_count(tx, 'material_tasks', pid, "AND state NOT IN ('closed','cancelled')"),
-                coverage_issues=[ISSUE], source_modes=_modes(tx, pid)))
+                coverage_issues=[ISSUE], source_modes=project_source_modes(tx, pid), source_modes_scope='project_source_records'))
         return dict(items=items, total=total, limit=limit, offset=offset, read_at=now)
 
 
@@ -160,6 +150,9 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
         matching = [r for r in scoped if problem == 'all' or (problem == 'attention' and analysis[r['id']]) or any(item['code'] == problem for item in analysis[r['id']])]
         total = len(matching)
         rows = matching[offset:offset + limit]
+        reader = MaterialSources(tx, pid)
+        projected = requirement_quantities(tx, pid, rows, balances, unknown_quality, reader=reader)
+        all_quantities = []
         now = business_time(tx)
         need_times = {}
         if rows:
@@ -179,6 +172,17 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
                     else _value(tx, pid, kind, ident, p))
             if kind == 'material_expedite' and item['progress_truncated']:
                 issues.append(f'Expedite {ident} progress preview is truncated; use object detail for full progress.')
+            if kind == 'work_order':
+                facts = work_order_quantities(reader, item)
+            elif kind == 'receipt':
+                facts = receipt_quantities(tx, pid, ident, reader=reader)
+            elif kind == 'material_handoff':
+                facts = handoff_quantities(tx, pid, item, reader=reader)
+            else:
+                facts = None
+            if facts is not None:
+                item['quantities'] = {k: q.model_dump(mode='json') for k, q in facts.items()}
+                all_quantities.extend(facts.values())
             if extra: item.update(extra)
             locals_map[target].append(item)
         locals_map = dict(work_orders=work_orders, expedites=expedites, handoffs=handoffs, receipts=receipts, issue_marks=issue_marks)
@@ -208,7 +212,13 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
                 parsed_need = datetime.fromisoformat(need_at.replace('Z', '+00:00'))
                 if parsed_need.utcoffset() is not None and parsed_need <= now:
                     timing_risk = 'need_time_passed'
-            requirements.append(dict(id=rid, work_order_id=wid, state='required' if row['plan_id'] == current_plan_id(tx, pid, wid) else 'superseded', material_id=row['material_id'], owner_id=row['owner_id'], unit=row['unit'], execution_scope=row['execution_scope'],
+            all_quantities.extend(projected[rid].values())
+            for item in analysis[rid]:
+                fact = issue_quantity(reader, item, row, projected[rid])
+                if fact is not None:
+                    item['quantity_fact'] = fact.model_dump(mode='json')
+                    all_quantities.append(fact)
+            requirements.append(dict(quantities={k: q.model_dump(mode='json') for k, q in projected[rid].items()}, id=rid, work_order_id=wid, state='required' if row['plan_id'] == current_plan_id(tx, pid, wid) else 'superseded', material_id=row['material_id'], owner_id=row['owner_id'], unit=row['unit'], execution_scope=row['execution_scope'],
                 **{k: bal[k] for k in ('required', 'received', 'qualified', 'rejected', 'reserved', 'shortage', 'in_transit')},
                 confirmed_satisfied=None if rid in unknown_quality else amount(row['q_atoms'] - int(Decimal(bal['shortage']) * 10 ** row['scale']), row['scale']), issues=analysis[rid],
                 need_at=need_at, need_at_basis='manual_requirement' if need_event and need_event['need_at'] else 'work_order_planned_start_proxy', need_time_history_count=need_count, timing_risk=timing_risk, coverage_issues=[ISSUE],
@@ -218,7 +228,7 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
             active_ids.add(str(actor.user_id))
         roles = effective_permissions(tx, actor, pid).roles
         page = MaterialControlPage(project_id=pid, project_version=p['version'], read_at=now.isoformat(), coverage_issues=issues,
-            source_modes=_modes(tx, pid), work_orders=work_orders, requirements=requirements, expedites=expedites,
+            source_modes=source_modes(all_quantities), work_orders=work_orders, requirements=requirements, expedites=expedites,
             handoffs=handoffs, receipts=receipts, issue_marks=issue_marks, scope_total=len(scoped), problem_counts=problem_counts,
             material_task_counts={r[0]: r[1] for r in tx.execute("SELECT state,COUNT(*) FROM material_tasks WHERE project_id=? GROUP BY state", (pid,))}, total=total, limit=limit, offset=offset)
 

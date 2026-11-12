@@ -225,6 +225,11 @@ def test_current_plans_filter_demand_but_explicit_history_remains_accessible(wor
     historical = workflow.client().get(path, params={'requirement_id': old['id']}).json()
     assert historical['total'] == 1 and historical['requirements'][0]['state'] == 'superseded'
     assert historical['requirements'][0]['expedite_ids'] == [case]
+    historical_quantity = historical['requirements'][0]['quantities']['required']
+    current_quantity = filtered['requirements'][0]['quantities']['required']
+    assert historical_quantity['value'] == '100' and current_quantity['value'] == '50'
+    assert any(ref['object_kind'] == 'plan' and ref['object_id'] == revised['object_id'] for ref in current_quantity['source_refs'])
+    assert any(ref['object_kind'] == 'requirement' and ref['object_id'] == old['id'] for ref in filtered['requirements'][0]['quantities']['in_transit']['source_refs'])
     assert historical['expedites'][0]['id'] == case
     removed_view = workflow.client().get(path, params={'requirement_id': removed}).json()
     assert removed_view['requirements'][0]['state'] == 'superseded'

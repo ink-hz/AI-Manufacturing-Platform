@@ -264,3 +264,30 @@ def test_null_withdrawn_survives_bind_refresh_restart_and_http(workflow):
     assert response.status_code == 200
     assert response.json()['snapshot']['components'][0]['withdrawn_quantity'] is None
     assert source.calls == 2
+
+
+def test_native_quantity_provenance_is_stored_observation_and_keeps_platform_balance(workflow):
+    from .conftest import BASE
+    p, _, related = workflow.material_requirement()
+    before = workflow.client().get(f"{BASE}/projects/{p['id']}/material-control").json()['requirements'][0]
+    source = FakeMes()
+    service = make_service(workflow, source)
+    actor = Actor(user_id=USERS['owner'], display_name='owner', read_only=False, configuration_admin=True)
+    pid, wid = UUID(p['id']), UUID(related['work_order_id'])
+    service.execute(actor, pid, bind_command(service, actor, str(pid), str(wid)))
+    source.order_materials_configuration = lambda: (_ for _ in ()).throw(AssertionError('No source IO on read'))
+    with workflow.db() as db:
+        snapshot = list(db.iterdump())
+    result = make_service(workflow, source).mes_materials(actor, pid, wid)
+    for key, q in result['snapshot']['components'][0]['quantities'].items():
+        assert q['value'] == result['snapshot']['components'][0][key]
+        assert q['fact_role'] == 'observation'
+        assert q['origins'] == ['native'] and q['environments'] == ['test']
+        assert q['observed_at'] is None and q['collected_at'] == result['snapshot']['collected_at'].replace('+00:00', 'Z')
+        assert q['source_refs'][0]['namespace'] == 'namespace'
+        assert result['snapshot']['id'] in q['input_refs'][0]
+    with workflow.db() as db:
+        assert list(db.iterdump()) == snapshot
+    after = workflow.client().get(f"{BASE}/projects/{p['id']}/material-control").json()['requirements'][0]
+    assert before == after
+    assert source.calls == 1

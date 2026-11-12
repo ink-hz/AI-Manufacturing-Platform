@@ -74,6 +74,22 @@ def read(tx, actor, project_id, work_order_id, resolve_subject):
         if snapshot:
             result['snapshot'] = {key: snapshot[key] for key in ('id', 'collected_at', 'total')}
             result['snapshot']['components'] = [dict(r) for r in tx.execute('SELECT component_key,material_id,required_quantity,withdrawn_quantity,unit,storage_location FROM mes_material_components WHERE snapshot_id=? ORDER BY position', (snapshot['id'],))]
+            from .quantity_provenance import QuantitySource, quantity
+            for component in result['snapshot']['components']:
+                component['quantities'] = {}
+                for name in ('required_quantity', 'withdrawn_quantity'):
+                    reference = json.dumps([str(project_id), str(work_order_id), binding['id'],
+                        binding['namespace'], binding['environment'], binding['shop_order'],
+                        snapshot['id'], component['component_key'], name], separators=(',', ':'))
+                    source = QuantitySource(reference=reference, project_id=str(project_id),
+                        object_kind='mes_component', object_id=component['component_key'],
+                        system='mes', source_type='order_component', external_id=binding['shop_order'],
+                        version=snapshot['id'], namespace=binding['namespace'], origin='native',
+                        environment=binding['environment'] if binding['environment'] in ('production', 'test', 'development', 'mock') else 'unknown',
+                        occurred_at=None, collected_at=snapshot['collected_at'], coverage='complete',
+                        value=component[name], unit=component['unit'], meaning=name)
+                    component['quantities'][name] = quantity(component[name], component['unit'], name,
+                        [source], fact_role='observation').model_dump(mode='json')
     return result
 
 

@@ -1,5 +1,5 @@
 """Stable material-control read contract."""
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel
 
 
@@ -9,6 +9,7 @@ class MaterialControlPage(BaseModel):
     read_at: str
     coverage_issues: list[str]
     source_modes: list[str]
+    source_modes_scope: Literal['returned_quantities'] = 'returned_quantities'
     work_orders: list[dict[str, Any]]
     requirements: list[dict[str, Any]]
     expedites: list[dict[str, Any]]
