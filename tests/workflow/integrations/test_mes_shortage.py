@@ -177,9 +177,39 @@ def test_shortage_source_delivery_projection_and_closed_replay_are_exactly_once(
     )
     assert accounting(rig, refs) == before
     rig.command("expedite.progress", expedite_id=str(ident), note="已联系供应商")
+    open_case = cases(rig)
+    source_facts = rig.rows("mes", "facts")
+    version = rig.version()
+    check = rig.workflow.object_detail(
+        rig.actor, rig.project_id, "material_expedite", ident
+    ).value.fulfillment_check
+    assert check.can_fulfill is False and check.blocking_reasons
+    assert check.required == 12 and check.qualified == 8
+    assert check.usable_reserved == 0 and check.line_received is None
+    with pytest.raises(DomainError) as denied:
+        rig.command(
+            "expedite.close", expedite_id=str(ident), outcome="fulfilled", reason="补料完成"
+        )
+    assert denied.value.code == "EXPEDITE_NOT_FULFILLED" and denied.value.status == 409
+    assert denied.value.blocking_reasons == check.blocking_reasons
+    assert cases(rig) == open_case and open_case[0]["state"] == "open"
+    assert rig.version() == version and accounting(rig, refs) == before
+    assert rig.rows("mes", "facts") == source_facts
+    assert rig.projection_count(fact.source_key) == 1
+    assert rig.workflow.integration_fact(
+        rig.actor, rig.project_id, fact.source_key
+    ).projection == evidence.projection
+    # Closing this collaboration reminder cannot claim replenishment or quantities.
     rig.command(
-        "expedite.close", expedite_id=str(ident), outcome="fulfilled", reason="补料完成"
+        "expedite.close", expedite_id=str(ident), outcome="superseded",
+        reason="本次提醒改由后续跟进，物料仍未补齐",
     )
+    closed = rig.workflow.object_detail(
+        rig.actor, rig.project_id, "material_expedite", ident
+    ).value
+    assert closed.state == "closed" and closed.closure.outcome == "superseded"
+    assert closed.closure.fulfillment_proof is None
+    assert rig.rows("mes", "facts") == source_facts
     rig.pull(fact.source_key)
     rig.retry(result.integration.intent_id)
     rig.replay_delivery(fact.source_key, "wms")
