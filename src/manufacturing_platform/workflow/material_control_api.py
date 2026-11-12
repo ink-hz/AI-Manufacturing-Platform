@@ -19,11 +19,12 @@ def register_material_control_routes(router, service, actor):
     @router.get('/projects/{project_id}/material-task-references')
     def material_task_references(project_id: UUID, request: Request, task_kind: Literal['verify','iqc'] = 'verify',
                                  kind: Literal['all','arrival','mes_component','receipt','source_receipt'] = 'all',
+                                 receipt_id: UUID | None = None,
                                  work_order_id: UUID | None = None, requirement_id: UUID | None = None,
                                  search: str = Query(default='', max_length=200), limit: int = 50, offset: int = 0):
         from .material_task_references import reference_page
         return reference_page(service, actor(request), project_id, task_kind=task_kind, kind=kind,
-                              work_order_id=work_order_id, requirement_id=requirement_id, search=search,
+                              work_order_id=work_order_id, requirement_id=requirement_id, receipt_id=receipt_id, search=search,
                               limit=limit, offset=offset)
 
     @router.get('/projects/{project_id}/material-tasks')

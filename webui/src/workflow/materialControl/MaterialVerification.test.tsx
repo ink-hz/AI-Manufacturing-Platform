@@ -1,7 +1,309 @@
 // @vitest-environment jsdom
-import {act} from 'react';import {createRoot} from 'react-dom/client';import {expect,it,vi} from 'vitest';
-import {MaterialTaskPanel} from './MaterialTaskPanel';import {project,flush} from '../testHelpers';
-it('requires explicit adoption before closing stale identity verification',async()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const api={object:vi.fn().mockResolvedValue({summary:{title:'核实',next_actions:['material_task.close']},value:{task_kind:'verify',state:'processing',note:'核对',assignee_id:'u',proposed_assignee_id:null,requirement_id:null,receipt_id:null,handoff_id:null,history:[],reference:{reference:{kind:'arrival',id:'a',version:1},title:'旧包裹',origin:'manual',environment:'unknown'},reference_current:false,current_reference:{kind:'arrival',id:'a',version:2},reference_issue:'已更新'}}),materialAssignees:vi.fn().mockResolvedValue({items:[]}),command:vi.fn()};await act(async()=>root.render(<MaterialTaskPanel api={api as never} project={{...project,allowed_actions:['material_task.close']}} taskId="t" readOnly={false} onChanged={()=>{}} onDirty={()=>{}}/>));await flush();expect(host.textContent).toContain('旧包裹');expect(host.textContent).toContain('已更新');expect(host.textContent).not.toContain('正在读取关联记录');await act(async()=>[...host.querySelectorAll('button')].find(x=>x.textContent==='完成任务')!.click());expect(host.querySelector('[aria-label="采用当前引用"]')).toBeTruthy();await act(async()=>root.unmount());host.remove();});
-it('retains a newer task draft when an earlier save finishes',async()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);let resolve!:(x:any)=>void;const api={object:vi.fn().mockResolvedValue({summary:{title:'核实',next_actions:['material_task.progress','material_task.close']},value:{task_kind:'verify',state:'processing',note:'核对',assignee_id:'u',proposed_assignee_id:null,requirement_id:null,receipt_id:null,handoff_id:null,history:[],reference:null,reference_current:null,current_reference:null,reference_issue:null}}),materialAssignees:vi.fn().mockResolvedValue({items:[]}),command:vi.fn().mockReturnValue(new Promise(r=>{resolve=r}))};const changed=vi.fn();await act(async()=>root.render(<MaterialTaskPanel api={api as never} project={{...project,allowed_actions:['material_task.progress','material_task.close']}} taskId="t" readOnly={false} onChanged={changed} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();const click=async(s:string)=>act(async()=>[...host.querySelectorAll('button')].find(x=>x.textContent===s)!.click());const field=async(label:string,value:string)=>act(async()=>{const el=host.querySelector(`[aria-label="${label}"]`) as HTMLInputElement;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}))});await click('更新进展');await field('进展','第一份');await click('提交');await click('完成任务');await field('完成说明','第二份');await act(async()=>resolve({project_id:project.id,project_version:4,object_id:'t'}));expect((host.querySelector('[aria-label="完成说明"]') as HTMLInputElement)?.value).toBe('第二份');await act(async()=>root.unmount());host.remove()});
-it('offers IQC from a current arrival with an exact receipt to a coordinator',async()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const ref={kind:'arrival',id:'a',version:2};const api={object:vi.fn().mockImplementation(async(_p,k)=>k==='arrival'?{summary:{id:'a',project_id:project.id},value:{kind:'arrival',arrival_number:'A',location:'仓',package_count:1,description:'箱',state:'matched'}}:{summary:{title:'核实',next_actions:[]},value:{task_kind:'verify',state:'processing',note:'核对',assignee_id:'u',proposed_assignee_id:null,requirement_id:null,receipt_id:null,handoff_id:null,history:[],reference:{reference:ref,title:'包裹',origin:'manual',environment:'unknown',receipt_id:'r'},reference_current:true,current_reference:ref,reference_issue:null}}),materialAssignees:vi.fn().mockResolvedValue({items:[]}),materialReferences:vi.fn().mockResolvedValue({items:[{reference:{kind:'receipt',id:'r'},evidence:{reference:{kind:'receipt',id:'r'},title:'收货单',origin:'manual',environment:'unknown',receipt_id:'r'},can_open:true,existing_task_id:null}],total:1,project_id:project.id,task_kind:'iqc',project_version:3})};await act(async()=>root.render(<MaterialTaskPanel api={api as never} project={{...project,allowed_actions:['material_task.open']}} taskId="t" readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();expect([...host.querySelectorAll('button')].some(x=>x.textContent==='为关联收货安排检验')).toBe(true);await act(async()=>root.unmount());host.remove()});
-it('submits a stale identity conclusion only with the explicitly adopted current reference',async()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const old={kind:'arrival',id:'a',version:1},next={kind:'arrival',id:'a',version:2};const api={object:vi.fn().mockImplementation(async(_p,k)=>k==='arrival'?{summary:{id:'a',project_id:project.id},value:{kind:'arrival',arrival_number:'A',location:'仓',package_count:1,description:'箱',state:'unlinked'}}:{summary:{title:'核实',next_actions:['material_task.close']},value:{task_kind:'verify',state:'processing',note:'核对',assignee_id:'u',proposed_assignee_id:null,requirement_id:null,receipt_id:null,handoff_id:null,history:[],reference:{reference:old,title:'包裹',origin:'manual',environment:'unknown'},reference_current:false,current_reference:next,reference_issue:'观察已变化'}}),materialAssignees:vi.fn().mockResolvedValue({items:[]}),command:vi.fn().mockResolvedValue({project_id:project.id,project_version:4,object_id:'t'})};await act(async()=>root.render(<MaterialTaskPanel api={api as never} project={{...project,allowed_actions:['material_task.close']}} taskId="t" readOnly={false} onChanged={()=>{}} onDirty={()=>{}}/>));await flush();await act(async()=>[...host.querySelectorAll('button')].find(x=>x.textContent==='完成任务')!.click());const input=host.querySelector('[aria-label="完成说明"]') as HTMLInputElement;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'核对标签');input.dispatchEvent(new Event('input',{bubbles:true}))});const submit=[...host.querySelectorAll('button')].find(x=>x.textContent==='提交')!;expect(submit.disabled).toBe(true);await act(async()=>(host.querySelector('[aria-label="采用当前引用"]') as HTMLInputElement).click());expect(submit.disabled).toBe(false);await act(async()=>submit.click());expect(api.command).toHaveBeenCalledWith(project.id,expect.objectContaining({action:'material_task.close',outcome:'identity_verified',evidence:'核对标签',resolved_reference:next,expected_version:3}));expect(api.command.mock.calls[0][1]).not.toHaveProperty('handoff_ids');await act(async()=>root.unmount());host.remove()});
+import { act } from "react";
+import { testRoot } from "./materialReferenceTestHelpers";
+import { expect, it, vi } from "vitest";
+import { MaterialTaskPanel } from "./MaterialTaskPanel";
+import { project, flush } from "../testHelpers";
+it("requires explicit adoption before closing stale identity verification", async () => {
+  const { host, root } = testRoot();
+  const api = {
+    object: vi.fn().mockResolvedValue({
+      summary: {
+        title: "核实",
+        next_actions: ["material_task.close"]
+      },
+      value: {
+        task_kind: "verify",
+        state: "processing",
+        note: "核对",
+        assignee_id: "u",
+        proposed_assignee_id: null,
+        requirement_id: null,
+        receipt_id: null,
+        handoff_id: null,
+        history: [],
+        reference: {
+          reference: {
+            kind: "arrival",
+            id: "a",
+            version: 1
+          },
+          title: "旧包裹",
+          origin: "manual",
+          environment: "unknown"
+        },
+        reference_current: false,
+        current_reference: {
+          kind: "arrival",
+          id: "a",
+          version: 2
+        },
+        reference_issue: "已更新"
+      }
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: []
+    }),
+    command: vi.fn()
+  };
+  await act(async () => root.render(<MaterialTaskPanel api={api as never} project={{
+    ...project,
+    allowed_actions: ["material_task.close"]
+  }} taskId="t" readOnly={false} onChanged={() => {
+  }} onDirty={() => {
+  }}/>));
+  await flush();
+  expect(host.textContent).toContain("旧包裹");
+  expect(host.textContent).toContain("已更新");
+  expect(host.textContent).not.toContain("正在读取关联记录");
+  await act(async () => [...host.querySelectorAll("button")].find(x => x.textContent === "完成任务")!.click());
+  expect(host.querySelector("[aria-label=\"采用当前引用\"]")).toBeTruthy();
+  await act(async () => root.unmount());
+  host.remove();
+});
+it("retains a newer task draft when an earlier save finishes", async () => {
+  const { host, root } = testRoot();
+  let resolve!: (x: any) => void;
+  const api = {
+    object: vi.fn().mockResolvedValue({
+      summary: {
+        title: "核实",
+        next_actions: ["material_task.progress", "material_task.close"]
+      },
+      value: {
+        task_kind: "verify",
+        state: "processing",
+        note: "核对",
+        assignee_id: "u",
+        proposed_assignee_id: null,
+        requirement_id: null,
+        receipt_id: null,
+        handoff_id: null,
+        history: [],
+        reference: null,
+        reference_current: null,
+        current_reference: null,
+        reference_issue: null
+      }
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: []
+    }),
+    command: vi.fn().mockReturnValue(new Promise(r => {
+      resolve = r;
+    }))
+  };
+  const changed = vi.fn();
+  await act(async () => root.render(<MaterialTaskPanel api={api as never} project={{
+    ...project,
+    allowed_actions: ["material_task.progress", "material_task.close"]
+  }} taskId="t" readOnly={false} onChanged={changed} onDirty={() => {
+  }} requestLeave={f => f()}/>));
+  await flush();
+  const click = async (s: string) => act(async () => [...host.querySelectorAll("button")].find(x => x.textContent === s)!.click());
+  const field = async (label: string, value: string) => act(async () => {
+    const el = host.querySelector(`[aria-label="${label}"]`) as HTMLInputElement;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
+    el.dispatchEvent(new Event("input", {
+      bubbles: true
+    }));
+  });
+  await click("更新进展");
+  await field("进展", "第一份");
+  await click("提交");
+  await click("完成任务");
+  await field("完成说明", "第二份");
+  await act(async () => resolve({
+    project_id: project.id,
+    project_version: 4,
+    object_id: "t"
+  }));
+  expect((host.querySelector("[aria-label=\"完成说明\"]") as HTMLInputElement)?.value).toBe("第二份");
+  await act(async () => root.unmount());
+  host.remove();
+});
+it("offers IQC from a current arrival with an exact receipt to a coordinator", async () => {
+  const { host, root } = testRoot();
+  const ref = {
+    kind: "arrival",
+    id: "a",
+    version: 2
+  };
+  const api = {
+    object: vi.fn().mockImplementation(async (_p, k) => k === "arrival" ? {
+      summary: {
+        id: "a",
+        project_id: project.id
+      },
+      value: {
+        kind: "arrival",
+        id: "a",
+        arrival_number: "A",
+        location: "仓",
+        package_count: 1,
+        description: "箱",
+        state: "matched",
+        receipt_id: "r",
+        matches: [{
+            receipt_id: "r"
+          }]
+      }
+    } : {
+      summary: {
+        title: "核实",
+        next_actions: []
+      },
+      value: {
+        task_kind: "verify",
+        state: "processing",
+        note: "核对",
+        assignee_id: "u",
+        proposed_assignee_id: null,
+        requirement_id: null,
+        receipt_id: null,
+        handoff_id: null,
+        history: [],
+        reference: {
+          reference: ref,
+          title: "包裹",
+          origin: "manual",
+          environment: "unknown",
+          receipt_id: "r"
+        },
+        reference_current: true,
+        current_reference: ref,
+        reference_issue: null
+      }
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: []
+    }),
+    materialReferences: vi.fn().mockResolvedValue({
+      items: [{
+          reference: {
+            kind: "receipt",
+            id: "r"
+          },
+          evidence: {
+            reference: {
+              kind: "receipt",
+              id: "r"
+            },
+            title: "收货单",
+            origin: "manual",
+            environment: "unknown",
+            receipt_id: "r"
+          },
+          can_open: true,
+          existing_task_id: null
+        }],
+      total: 1,
+      project_id: project.id,
+      task_kind: "iqc",
+      project_version: 3
+    })
+  };
+  await act(async () => root.render(<MaterialTaskPanel api={api as never} project={{
+    ...project,
+    allowed_actions: ["material_task.open"]
+  }} taskId="t" readOnly={false} onChanged={() => {
+  }} onOpen={() => {
+  }} onDirty={() => {
+  }} requestLeave={f => f()}/>));
+  await flush();
+  expect([...host.querySelectorAll("button")].some(x => x.textContent === "为关联收货安排检验")).toBe(true);
+  await act(async () => root.unmount());
+  host.remove();
+});
+it("submits a stale identity conclusion only with the explicitly adopted current reference", async () => {
+  const { host, root } = testRoot();
+  const old = {
+    kind: "arrival",
+    id: "a",
+    version: 1
+  }, next = {
+    kind: "arrival",
+    id: "a",
+    version: 2
+  };
+  const api = {
+    object: vi.fn().mockImplementation(async (_p, k) => k === "arrival" ? {
+      summary: {
+        id: "a",
+        project_id: project.id
+      },
+      value: {
+        kind: "arrival",
+        id: "a",
+        arrival_number: "A",
+        location: "仓",
+        package_count: 1,
+        description: "箱",
+        state: "unlinked"
+      }
+    } : {
+      summary: {
+        title: "核实",
+        next_actions: ["material_task.close"]
+      },
+      value: {
+        task_kind: "verify",
+        state: "processing",
+        note: "核对",
+        assignee_id: "u",
+        proposed_assignee_id: null,
+        requirement_id: null,
+        receipt_id: null,
+        handoff_id: null,
+        history: [],
+        reference: {
+          reference: old,
+          title: "包裹",
+          origin: "manual",
+          environment: "unknown"
+        },
+        reference_current: false,
+        current_reference: next,
+        reference_issue: "观察已变化"
+      }
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: []
+    }),
+    command: vi.fn().mockResolvedValue({
+      project_id: project.id,
+      project_version: 4,
+      object_id: "t"
+    })
+  };
+  await act(async () => root.render(<MaterialTaskPanel api={api as never} project={{
+    ...project,
+    allowed_actions: ["material_task.close"]
+  }} taskId="t" readOnly={false} onChanged={() => {
+  }} onDirty={() => {
+  }}/>));
+  await flush();
+  await act(async () => [...host.querySelectorAll("button")].find(x => x.textContent === "完成任务")!.click());
+  const input = host.querySelector("[aria-label=\"完成说明\"]") as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "核对标签");
+    input.dispatchEvent(new Event("input", {
+      bubbles: true
+    }));
+  });
+  const submit = [...host.querySelectorAll("button")].find(x => x.textContent === "提交")!;
+  expect(submit.disabled).toBe(true);
+  await act(async () => (host.querySelector("[aria-label=\"采用当前引用\"]") as HTMLInputElement).click());
+  expect(submit.disabled).toBe(false);
+  await act(async () => submit.click());
+  expect(api.command).toHaveBeenCalledWith(project.id, expect.objectContaining({
+    action: "material_task.close",
+    outcome: "identity_verified",
+    evidence: "核对标签",
+    resolved_reference: next,
+    expected_version: 3
+  }));
+  expect(api.command.mock.calls[0][1]).not.toHaveProperty("handoff_ids");
+  await act(async () => root.unmount());
+  host.remove();
+});

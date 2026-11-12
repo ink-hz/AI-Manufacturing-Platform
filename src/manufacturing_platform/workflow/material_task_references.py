@@ -109,7 +109,7 @@ def reference_status(tx, project_id, evidence):
 
 
 def reference_page(service, actor, project_id, *, task_kind='verify', kind='all',
-                   work_order_id=None, requirement_id=None, search='', limit=50, offset=0):
+                   work_order_id=None, requirement_id=None, receipt_id=None, search='', limit=50, offset=0):
     service._pagination(limit, offset)
     if task_kind not in ('verify','iqc') or kind not in ('all','arrival','mes_component','receipt','source_receipt'):
         raise DomainError('INVALID_COMMAND', 422, 'Unknown reference kind')
@@ -123,21 +123,36 @@ def reference_page(service, actor, project_id, *, task_kind='verify', kind='all'
             if work_order_id is not None and req['work_order_id'] != str(work_order_id):
                 raise DomainError('NOT_FOUND', 404, 'Requirement not found in work order')
         candidates = []
-        if kind in ('all', 'arrival') and task_kind == 'verify':
-            for row in tx.execute('SELECT id FROM arrivals WHERE project_id=? ORDER BY seq', (str(pid),)):
-                candidates.append(ArrivalTaskReference(kind='arrival', id=row['id'], version=1 + match_count(tx, pid, row['id'])))
-        if kind in ('all', 'mes_component') and task_kind == 'verify':
-            for row in tx.execute('''SELECT b.id binding_id,s.id snapshot_id,c.component_key FROM mes_order_bindings b
-                JOIN mes_material_snapshots s ON s.binding_id=b.id AND s.id=(SELECT id FROM mes_material_snapshots WHERE binding_id=b.id ORDER BY rowid DESC LIMIT 1)
-                JOIN mes_material_components c ON c.snapshot_id=s.id WHERE b.project_id=? AND b.active=1 ORDER BY b.rowid,c.position''', (str(pid),)):
-                candidates.append(MesComponentTaskReference(kind='mes_component', **dict(row)))
-        if kind in ('all', 'source_receipt'):
-            from .integrations.core_models import SourceKey
-            for row in tx.execute("SELECT system,object_type,external_id,version FROM integration_projections WHERE project_id=? AND system='wms' AND object_type='receipt' ORDER BY rowid", (str(pid),)):
-                candidates.append(SourceReceiptTaskReference(kind='source_receipt', source_key=SourceKey(**dict(row))))
-        if kind in ('all', 'receipt'):
-            for row in tx.execute('SELECT id FROM supply_receipts WHERE project_id=? ORDER BY rowid', (str(pid),)):
-                candidates.append(ReceiptTaskReference(kind='receipt', id=row['id']))
+        if receipt_id is not None:
+            # Resolve the authorized exact identity before any project-wide enumeration.
+            receipt = own(tx, 'supply_receipts', pid, receipt_id)
+            if kind in ('all', 'source_receipt'):
+                from .integrations.core_models import SourceKey
+                row = tx.execute("""SELECT system,object_type,external_id,version FROM integration_projections
+                    WHERE project_id=? AND system='wms' AND object_type='receipt'
+                    AND system=? AND object_type=? AND external_id=? AND version=?""",
+                    (str(pid), receipt['source_system'], receipt['source_type'],
+                     receipt['source_external_id'], receipt['source_version'])).fetchone()
+                if row:
+                    candidates.append(SourceReceiptTaskReference(kind='source_receipt', source_key=SourceKey(**dict(row))))
+            if kind in ('all', 'receipt'):
+                candidates.append(ReceiptTaskReference(kind='receipt', id=receipt['id']))
+        else:
+            if kind in ('all', 'arrival') and task_kind == 'verify':
+                for row in tx.execute('SELECT id FROM arrivals WHERE project_id=? ORDER BY seq', (str(pid),)):
+                    candidates.append(ArrivalTaskReference(kind='arrival', id=row['id'], version=1 + match_count(tx, pid, row['id'])))
+            if kind in ('all', 'mes_component') and task_kind == 'verify':
+                for row in tx.execute('''SELECT b.id binding_id,s.id snapshot_id,c.component_key FROM mes_order_bindings b
+                    JOIN mes_material_snapshots s ON s.binding_id=b.id AND s.id=(SELECT id FROM mes_material_snapshots WHERE binding_id=b.id ORDER BY rowid DESC LIMIT 1)
+                    JOIN mes_material_components c ON c.snapshot_id=s.id WHERE b.project_id=? AND b.active=1 ORDER BY b.rowid,c.position''', (str(pid),)):
+                    candidates.append(MesComponentTaskReference(kind='mes_component', **dict(row)))
+            if kind in ('all', 'source_receipt'):
+                from .integrations.core_models import SourceKey
+                for row in tx.execute("SELECT system,object_type,external_id,version FROM integration_projections WHERE project_id=? AND system='wms' AND object_type='receipt' ORDER BY rowid", (str(pid),)):
+                    candidates.append(SourceReceiptTaskReference(kind='source_receipt', source_key=SourceKey(**dict(row))))
+            if kind in ('all', 'receipt'):
+                for row in tx.execute('SELECT id FROM supply_receipts WHERE project_id=? ORDER BY rowid', (str(pid),)):
+                    candidates.append(ReceiptTaskReference(kind='receipt', id=row['id']))
         items, scopes = [], set()
         roles = effective_permissions(tx, actor, pid).roles
         from .material_handoffs import applicable

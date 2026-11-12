@@ -251,3 +251,40 @@ def test_source_receipt_iqc_alias_and_legacy_target_reuse(tmp_path):
         saved = json.loads(tx.execute('SELECT reference_json FROM material_tasks WHERE id=?',(str(pinned.object_id),)).fetchone()[0])
         assert saved['origin'] == 'mock' and saved['environment'] == 'mock'
         assert saved['reference']['kind'] == 'source_receipt'
+
+
+def test_unmatched_arrival_current_match_and_correction_offer_exact_iqc_without_rewriting_evidence(workflow):
+    w = workflow
+    from .test_expedites import setup
+    pid, _, c = setup(w, qualified='0')
+    w.grant(pid, 'warehouse', ['warehouse'])
+    w.grant(pid, 'supply', ['supply'])
+    w.grant(pid, 'quality', ['quality'], ['inspection'])
+    arrival = w.command(pid, 'arrival.record', **fields(w))['object_id']
+    ref = dict(kind='arrival', id=arrival, version=1)
+    task = open_verify(w, pid, ref)
+    w.command(pid, 'material_task.accept', actor_name='warehouse', task_id=task)
+    receipts = [w.receive(pid, c['id'], quantity='1', lot_id=c['lot_id'])['object_id'] for _ in range(2)]
+    for version, receipt in enumerate(receipts, start=2):
+        correction = {'correction_reason': '重新核对标签'} if version == 3 else {}
+        w.command(pid, 'arrival.match', arrival_id=arrival, receipt_id=receipt, evidence='当前标签匹配', **correction)
+        value = w.object(pid, 'material_task', task)
+        assert value['reference']['receipt_id'] is None
+        assert value['reference']['reference'] == ref
+        assert value['current_reference'] == {**ref, 'version': version}
+        current = w.object(pid, 'arrival', arrival)
+        assert current['receipt_id'] == receipt == current['matches'][-1]['receipt_id']
+        page = w.client('supply').get(f'{BASE}/projects/{pid}/material-task-references',
+            params={'task_kind': 'iqc', 'receipt_id': current['receipt_id'], 'limit': 1}).json()
+        assert page['total'] == 1
+        item = page['items'][0]
+        assert item['can_open']
+        iqc = w.command(pid, 'material_task.open', actor_name='supply', task_kind='iqc',
+            reference=item['reference'], assignee_id=str(USERS['quality']), note='按当前准确收货安排')['object_id']
+        assert w.object(pid, 'material_task', iqc)['receipt_id'] == receipt
+        reused = w.client('supply').get(f'{BASE}/projects/{pid}/material-task-references',
+            params={'task_kind': 'iqc', 'receipt_id': receipt}).json()['items'][0]
+        assert reused['existing_task_id'] == iqc and not reused['can_open']
+    w.read_only.add('supply')
+    w.command(pid, 'material_task.open', actor_name='supply', task_kind='iqc',
+        reference=item['reference'], assignee_id=str(USERS['quality']), note='撤权后不能创建', expected_status=403)

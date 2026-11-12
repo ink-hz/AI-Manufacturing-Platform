@@ -1,19 +1,341 @@
 // @vitest-environment jsdom
-import { act } from 'react';
-import { createRoot } from 'react-dom/client';
-import { expect, it, vi } from 'vitest';
-import { MaterialControlWorkspace } from './MaterialControlWorkspace';
-import { project, flush } from '../testHelpers';
-it('offers a reference-based verification with no requirements', async () => {
- const host=document.createElement('div'); document.body.append(host); const root=createRoot(host);
- const api={materialProject:vi.fn().mockResolvedValue({requirements:[],work_orders:[],expedites:[],receipts:[],handoffs:[],source_modes:[],total:0}),objects:vi.fn().mockResolvedValue({items:[],total:0}),materialTasks:vi.fn().mockResolvedValue({items:[],total:0}),materialReferences:vi.fn().mockResolvedValue({items:[{reference:{kind:'arrival',id:'a',version:1},evidence:{title:'箱子',origin:'manual',environment:'unknown'},existing_task_id:null,can_open:true}],total:1,project_id:project.id,task_kind:'verify',project_version:3}),materialAssignees:vi.fn().mockResolvedValue({items:[{id:'u',display_name:'李工'}],total:1})};
- await act(async()=>root.render(<MaterialControlWorkspace api={api as never} project={{...project,mode:'oem',allowed_actions:['material_task.open']}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>)); await flush();
- const button=[...host.querySelectorAll('button')].find(x=>x.textContent==='安排核实'); expect(button).toBeTruthy(); await act(async()=>button!.click()); await flush(); expect(host.textContent).toContain('箱子'); expect(api.materialReferences).toHaveBeenCalled();
- await act(async()=>root.unmount()); host.remove();
+import { act } from "react";
+import { testRoot } from "./materialReferenceTestHelpers";
+import { expect, it, vi } from "vitest";
+import { MaterialControlWorkspace } from "./MaterialControlWorkspace";
+import { project, flush } from "../testHelpers";
+it("offers a reference-based verification with no requirements", async () => {
+  const { host, root } = testRoot();
+  const api = {
+    materialProject: vi.fn().mockResolvedValue({
+      requirements: [],
+      work_orders: [],
+      expedites: [],
+      receipts: [],
+      handoffs: [],
+      source_modes: [],
+      total: 0
+    }),
+    objects: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialTasks: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialReferences: vi.fn().mockResolvedValue({
+      items: [{
+          reference: {
+            kind: "arrival",
+            id: "a",
+            version: 1
+          },
+          evidence: {
+            title: "箱子",
+            origin: "manual",
+            environment: "unknown"
+          },
+          existing_task_id: null,
+          can_open: true
+        }],
+      total: 1,
+      project_id: project.id,
+      task_kind: "verify",
+      project_version: 3
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: [{
+          id: "u",
+          display_name: "李工"
+        }],
+      total: 1
+    })
+  };
+  await act(async () => root.render(<MaterialControlWorkspace api={api as never} project={{
+    ...project,
+    mode: "oem",
+    allowed_actions: ["material_task.open"]
+  }} readOnly={false} onChanged={() => {
+  }} onOpen={() => {
+  }} onDirty={() => {
+  }} requestLeave={f => f()}/>));
+  await flush();
+  const button = [...host.querySelectorAll("button")].find(x => x.textContent === "安排核实");
+  expect(button).toBeTruthy();
+  await act(async () => button!.click());
+  await flush();
+  expect(host.textContent).toContain("箱子");
+  expect(api.materialReferences).toHaveBeenCalled();
+  await act(async () => root.unmount());
+  host.remove();
 });
-it('offers IQC from an existing accurate receipt without a requirement', async () => {
- const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const api={materialProject:vi.fn().mockResolvedValue({requirements:[],work_orders:[],expedites:[],receipts:[],handoffs:[],source_modes:[],total:0}),objects:vi.fn().mockResolvedValue({items:[],total:0}),materialTasks:vi.fn().mockResolvedValue({items:[],total:0}),materialReferences:vi.fn().mockResolvedValue({items:[{reference:{kind:'receipt',id:'r'},evidence:{title:'正式收货',origin:'manual',environment:'unknown'},existing_task_id:null,can_open:true}],total:1,project_id:project.id,task_kind:'iqc',project_version:3}),materialAssignees:vi.fn().mockResolvedValue({items:[],total:0})};await act(async()=>root.render(<MaterialControlWorkspace api={api as never} project={{...project,mode:'oem',allowed_actions:['material_task.open']}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();const button=[...host.querySelectorAll('button')].find(x=>x.textContent==='从已有收货安排检验');expect(button).toBeTruthy();await act(async()=>button!.click());await flush();expect(api.materialReferences).toHaveBeenCalledWith(project.id,'iqc','',50,0,expect.any(AbortSignal));expect(host.textContent).toContain('正式收货');await act(async()=>root.unmount());host.remove();
+it("offers IQC from an existing accurate receipt without a requirement", async () => {
+  const { host, root } = testRoot();
+  const api = {
+    materialProject: vi.fn().mockResolvedValue({
+      requirements: [],
+      work_orders: [],
+      expedites: [],
+      receipts: [],
+      handoffs: [],
+      source_modes: [],
+      total: 0
+    }),
+    objects: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialTasks: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialReferences: vi.fn().mockResolvedValue({
+      items: [{
+          reference: {
+            kind: "receipt",
+            id: "r"
+          },
+          evidence: {
+            title: "正式收货",
+            origin: "manual",
+            environment: "unknown"
+          },
+          existing_task_id: null,
+          can_open: true
+        }],
+      total: 1,
+      project_id: project.id,
+      task_kind: "iqc",
+      project_version: 3
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    })
+  };
+  await act(async () => root.render(<MaterialControlWorkspace api={api as never} project={{
+    ...project,
+    mode: "oem",
+    allowed_actions: ["material_task.open"]
+  }} readOnly={false} onChanged={() => {
+  }} onOpen={() => {
+  }} onDirty={() => {
+  }} requestLeave={f => f()}/>));
+  await flush();
+  const button = [...host.querySelectorAll("button")].find(x => x.textContent === "从已有收货安排检验");
+  expect(button).toBeTruthy();
+  await act(async () => button!.click());
+  await flush();
+  expect(api.materialReferences).toHaveBeenCalledWith(project.id, "iqc", "", 50, 0, expect.any(AbortSignal));
+  expect(host.textContent).toContain("正式收货");
+  await act(async () => root.unmount());
+  host.remove();
 });
-it('allows recording an actual package observation without technical source fields',async()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const api={materialProject:vi.fn().mockResolvedValue({requirements:[],work_orders:[],expedites:[],receipts:[],handoffs:[],source_modes:[],total:0}),objects:vi.fn().mockResolvedValue({items:[],total:0}),materialTasks:vi.fn().mockResolvedValue({items:[],total:0}),materialReferences:vi.fn().mockResolvedValue({items:[],total:0,project_id:project.id,task_kind:'verify',project_version:3}),materialAssignees:vi.fn().mockResolvedValue({items:[],total:0})};await act(async()=>root.render(<MaterialControlWorkspace api={api as never} project={{...project,mode:'oem',allowed_actions:['material_task.open','arrival.record']}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();await act(async()=>[...host.querySelectorAll('button')].find(x=>x.textContent==='安排核实')!.click());await flush();await act(async()=>[...host.querySelectorAll('button')].find(x=>x.textContent==='记录实际包裹')!.click());expect(host.querySelector('[aria-label="观察位置"]')).toBeTruthy();expect(host.querySelector('[aria-label="来源版本"]')).toBeNull();await act(async()=>root.unmount());host.remove()});
-it('offers verification from the missing receipt hint',async()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const req={id:'r',material_id:'轴承',work_order_id:'w',unit:'件',required:'1',expedite_ids:[],receipt_ids:[],handoff_ids:[]};const api={materialProject:vi.fn().mockResolvedValue({requirements:[req],work_orders:[],expedites:[],receipts:[],handoffs:[],source_modes:[],total:1}),objects:vi.fn().mockResolvedValue({items:[],total:0}),materialTasks:vi.fn().mockResolvedValue({items:[],total:0}),materialAssignees:vi.fn().mockResolvedValue({items:[],total:0}),materialReferences:vi.fn().mockResolvedValue({items:[],total:0,project_id:project.id,task_kind:'verify',project_version:3})};await act(async()=>root.render(<MaterialControlWorkspace api={api as never} project={{...project,mode:'oem',allowed_actions:['material_task.open']}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();const click=async(t:string)=>act(async()=>[...host.querySelectorAll('button')].find(x=>x.textContent===t)!.click());await click('轴承');await click('安排检验');expect(host.textContent).toContain('没有关联到货记录');expect(host.querySelector('[data-arrange-verification]')).toBeTruthy();await act(async()=>root.unmount());host.remove()});
-it('offers an exact MES component for verification',async()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const ref={kind:'mes_component',binding_id:'b',snapshot_id:'s',component_key:'10'};const item={reference:ref,evidence:{reference:ref,title:'组件轴承',origin:'api',environment:'test'},can_open:true,existing_task_id:null};const api={materialProject:vi.fn().mockResolvedValue({requirements:[],work_orders:[],expedites:[],receipts:[],handoffs:[],source_modes:[],total:0}),objects:vi.fn().mockResolvedValue({items:[{id:'w',title:'工单'}],total:1}),materialTasks:vi.fn().mockResolvedValue({items:[],total:0}),mesOrderMaterials:vi.fn().mockResolvedValue({can_manage:false,binding:{id:'b',shop_order:'MES',environment:'test',site_code:'S'},snapshot:{id:'s',collected_at:'now',total:1,components:[{component_key:'10',material_id:'轴承',required_quantity:'1',unit:'件',withdrawn_quantity:null,storage_location:null}]}}),materialReferences:vi.fn().mockResolvedValue({items:[item],total:1,project_id:project.id,task_kind:'verify',project_version:3}),materialAssignees:vi.fn().mockResolvedValue({items:[],total:0})};await act(async()=>root.render(<MaterialControlWorkspace api={api as never} project={{...project,mode:'oem',allowed_actions:['material_task.open']}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();const select=host.querySelector('[aria-label="平台工单"]') as HTMLSelectElement;await act(async()=>{select.value='w';select.dispatchEvent(new Event('change',{bubbles:true}))});await flush();const button=host.querySelector('[data-verify-component]') as HTMLButtonElement;expect(button).toBeTruthy();await act(async()=>button.click());await flush();expect(host.textContent).toContain('已选择：组件轴承');await act(async()=>root.unmount());host.remove()});
+it("allows recording an actual package observation without technical source fields", async () => {
+  const { host, root } = testRoot();
+  const api = {
+    materialProject: vi.fn().mockResolvedValue({
+      requirements: [],
+      work_orders: [],
+      expedites: [],
+      receipts: [],
+      handoffs: [],
+      source_modes: [],
+      total: 0
+    }),
+    objects: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialTasks: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialReferences: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0,
+      project_id: project.id,
+      task_kind: "verify",
+      project_version: 3
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    })
+  };
+  await act(async () => root.render(<MaterialControlWorkspace api={api as never} project={{
+    ...project,
+    mode: "oem",
+    allowed_actions: ["material_task.open", "arrival.record"]
+  }} readOnly={false} onChanged={() => {
+  }} onOpen={() => {
+  }} onDirty={() => {
+  }} requestLeave={f => f()}/>));
+  await flush();
+  await act(async () => [...host.querySelectorAll("button")].find(x => x.textContent === "安排核实")!.click());
+  await flush();
+  await act(async () => [...host.querySelectorAll("button")].find(x => x.textContent === "记录实际包裹")!.click());
+  expect(host.querySelector("[aria-label=\"观察位置\"]")).toBeTruthy();
+  expect(host.querySelector("[aria-label=\"来源版本\"]")).toBeNull();
+  await act(async () => root.unmount());
+  host.remove();
+});
+it("offers verification from the missing receipt hint", async () => {
+  const { host, root } = testRoot();
+  const req = {
+    id: "r",
+    material_id: "轴承",
+    work_order_id: "w",
+    unit: "件",
+    required: "1",
+    expedite_ids: [],
+    receipt_ids: [],
+    handoff_ids: []
+  };
+  const api = {
+    materialProject: vi.fn().mockResolvedValue({
+      requirements: [req],
+      work_orders: [],
+      expedites: [],
+      receipts: [],
+      handoffs: [],
+      source_modes: [],
+      total: 1
+    }),
+    objects: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialTasks: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialReferences: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0,
+      project_id: project.id,
+      task_kind: "verify",
+      project_version: 3
+    })
+  };
+  await act(async () => root.render(<MaterialControlWorkspace api={api as never} project={{
+    ...project,
+    mode: "oem",
+    allowed_actions: ["material_task.open"]
+  }} readOnly={false} onChanged={() => {
+  }} onOpen={() => {
+  }} onDirty={() => {
+  }} requestLeave={f => f()}/>));
+  await flush();
+  const click = async (t: string) => act(async () => [...host.querySelectorAll("button")].find(x => x.textContent === t)!.click());
+  await click("轴承");
+  await click("安排检验");
+  expect(host.textContent).toContain("没有关联到货记录");
+  expect(host.querySelector("[data-arrange-verification]")).toBeTruthy();
+  await act(async () => root.unmount());
+  host.remove();
+});
+it("offers an exact MES component for verification", async () => {
+  const { host, root } = testRoot();
+  const ref = {
+    kind: "mes_component",
+    binding_id: "b",
+    snapshot_id: "s",
+    component_key: "10"
+  };
+  const item = {
+    reference: ref,
+    evidence: {
+      reference: ref,
+      title: "组件轴承",
+      origin: "api",
+      environment: "test"
+    },
+    can_open: true,
+    existing_task_id: null
+  };
+  const api = {
+    materialProject: vi.fn().mockResolvedValue({
+      requirements: [],
+      work_orders: [],
+      expedites: [],
+      receipts: [],
+      handoffs: [],
+      source_modes: [],
+      total: 0
+    }),
+    objects: vi.fn().mockResolvedValue({
+      items: [{
+          id: "w",
+          title: "工单"
+        }],
+      total: 1
+    }),
+    materialTasks: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    mesOrderMaterials: vi.fn().mockResolvedValue({
+      can_manage: false,
+      binding: {
+        id: "b",
+        shop_order: "MES",
+        environment: "test",
+        site_code: "S"
+      },
+      snapshot: {
+        id: "s",
+        collected_at: "now",
+        total: 1,
+        components: [{
+            component_key: "10",
+            material_id: "轴承",
+            required_quantity: "1",
+            unit: "件",
+            withdrawn_quantity: null,
+            storage_location: null
+          }]
+      }
+    }),
+    materialReferences: vi.fn().mockResolvedValue({
+      items: [item],
+      total: 1,
+      project_id: project.id,
+      task_kind: "verify",
+      project_version: 3
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    })
+  };
+  await act(async () => root.render(<MaterialControlWorkspace api={api as never} project={{
+    ...project,
+    mode: "oem",
+    allowed_actions: ["material_task.open"]
+  }} readOnly={false} onChanged={() => {
+  }} onOpen={() => {
+  }} onDirty={() => {
+  }} requestLeave={f => f()}/>));
+  await flush();
+  const select = host.querySelector("[aria-label=\"平台工单\"]") as HTMLSelectElement;
+  await act(async () => {
+    select.value = "w";
+    select.dispatchEvent(new Event("change", {
+      bubbles: true
+    }));
+  });
+  await flush();
+  const button = host.querySelector("[data-verify-component]") as HTMLButtonElement;
+  expect(button).toBeTruthy();
+  await act(async () => button.click());
+  await flush();
+  expect(host.textContent).toContain("已选择：组件轴承");
+  await act(async () => root.unmount());
+  host.remove();
+});

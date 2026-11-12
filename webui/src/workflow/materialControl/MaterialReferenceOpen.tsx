@@ -100,21 +100,22 @@ export function MaterialReferenceOpen({ p, intent, resetRef, fixedReceiptId }: {
   }, [p.api, p.project.id, intent?.token]);
   useEffect(() => {
     if (!fixedReceiptId || !open || kind !== "iqc") return;
+    setItem(null);
+    setError("");
+    if (!allowed) return;
     if (typeof p.api.materialReferences !== "function") { setError("引用查询不可用"); return; }
     const c = new AbortController();
-    const token = generation.current;
-    (async () => {
-      for (let offset = 0; offset < 1000; offset += 50) {
-        const page = validateReferencePage(await p.api.materialReferences(p.project.id, "iqc", "", 50, offset, c.signal), p.project.id, "iqc");
-        if (c.signal.aborted || token !== generation.current) return;
-        const found = page.items.find(i => i.evidence.receipt_id === fixedReceiptId);
-        if (found) { setItem(found); setVersion(page.project_version); return; }
-        if (offset + page.items.length >= page.total || !page.items.length) break;
-      }
-      if (!c.signal.aborted && token === generation.current) setError("当前收货不在可检验引用中。");
-    })().catch(e => { if (!c.signal.aborted && token === generation.current) setError(String(e)); });
+    p.api.materialReferences(p.project.id, "iqc", "", 1, 0, c.signal, undefined, { receipt_id: fixedReceiptId })
+      .then(result => {
+        if (c.signal.aborted) return;
+        const page = validateReferencePage(result, p.project.id, "iqc");
+        if (page.items.some(i => i.evidence.receipt_id !== fixedReceiptId)) throw Error("收货引用身份不匹配");
+        const found = page.items[0];
+        if (!found) { setError("当前收货不在可检验引用中。"); return; }
+        setItem(found); setVersion(page.project_version);
+      }).catch(e => { if (!c.signal.aborted) setError(String(e)); });
     return () => c.abort();
-  }, [p.api, p.project.id, p.project.version, fixedReceiptId, open, kind]);
+  }, [p.api, p.project.id, p.project.version, fixedReceiptId, open, kind, allowed, refresh]);
   function select(value: TaskReferenceItem, pageVersion: number) {
     generation.current++;
     setItem(value); setVersion(pageVersion); setError(""); setConflict(false);
@@ -150,6 +151,7 @@ export function MaterialReferenceOpen({ p, intent, resetRef, fixedReceiptId }: {
   function start(next: "verify" | "iqc") {
     p.requestLeave(() => {
       generation.current++;
+      setRefresh(n => n + 1);
       setKind(next); setRequirementId(undefined); setObservation(false); setVersion(p.project.version);
       setOpen(true); setItem(null); setMember(""); setNote(""); setError(""); setConflict(false);
     });
@@ -166,7 +168,7 @@ export function MaterialReferenceOpen({ p, intent, resetRef, fixedReceiptId }: {
         version={p.project.version} kind={kind} requirementId={requirementId} onSelect={select} />}
       {item && <>
         <p>已选择：{item.evidence.title}</p>
-        <MaterialReferenceContext api={p.api} projectId={p.project.id} evidence={item.evidence} current={null} currentReference={null} issue={null} />
+        <MaterialReferenceContext api={p.api} projectId={p.project.id} projectVersion={p.project.version} evidence={item.evidence} current={null} currentReference={null} issue={null} />
         {item.existing_task_id
           ? <button onClick={() => p.requestLeave(() => p.onOpen({ projectId: p.project.id, kind: "material_task", id: item.existing_task_id! }))}>打开已有任务</button>
           : <>

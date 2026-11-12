@@ -92,6 +92,10 @@ def test_accepted_mock_source_receipt_resolves_exact_project_and_hash(tmp_path):
     page = reference_page(rig.workflow, rig.actor, rig.project_id, task_kind='iqc', kind='all')
     selected = [item for item in page['items'] if item['evidence']['receipt_id'] == str(receipt)]
     assert len(selected) == 1 and selected[0]['reference']['kind'] == 'source_receipt'
+    exact = reference_page(rig.workflow, rig.actor, rig.project_id, task_kind='iqc', receipt_id=receipt, limit=1)
+    assert exact['total'] == 1 and exact['items'][0] == selected[0]
+    direct_only = reference_page(rig.workflow, rig.actor, rig.project_id, task_kind='iqc', kind='receipt', receipt_id=receipt)
+    assert direct_only['items'][0]['reference']['kind'] == 'receipt'
     with rig.workflow.store.transaction(write=True) as tx:
         tx.execute('UPDATE integration_projections SET payload_hash=? WHERE project_id=? AND system=? AND object_type=? AND external_id=? AND version=?', ('0'*64, str(rig.project_id), fact.source_key.system, fact.source_key.object_type, fact.source_key.external_id, fact.source_key.version))
     with rig.workflow.store.transaction() as tx:
@@ -200,8 +204,39 @@ def test_iqc_discovery_rejects_receipt_with_mismatched_scale(workflow):
     p, req, related = workflow.material_requirement(qualified='0')
     receipt = workflow.receive(p['id'], related['id'], quantity='1', lot_id=related['lot_id'])['object_id']
     url = f"{BASE}/projects/{p['id']}/material-task-references"
-    params = {'task_kind': 'iqc', 'kind': 'receipt', 'requirement_id': req['id']}
+    params = {'task_kind': 'iqc', 'kind': 'receipt', 'requirement_id': req['id'], 'receipt_id': receipt}
     assert any(i['reference']['id'] == receipt for i in workflow.client().get(url, params=params).json()['items'])
     with sqlite3.connect(workflow.paths.domain) as tx:
         tx.execute('UPDATE material_lots SET scale=scale+1 WHERE id=?', (related['lot_id'],))
     assert all(i['reference']['id'] != receipt for i in workflow.client().get(url, params=params).json()['items'])
+
+
+def test_exact_receipt_filter_is_scoped_and_precedes_candidate_enumeration(workflow, monkeypatch):
+    from uuid import uuid4
+    import manufacturing_platform.workflow.material_task_references as references
+    p, req, related = workflow.material_requirement(qualified='0')
+    first = workflow.receive(p['id'], related['id'], quantity='1', lot_id=related['lot_id'])['object_id']
+    target = workflow.receive(p['id'], related['id'], quantity='1', lot_id=related['lot_id'])['object_id']
+    other, _, other_related = workflow.material_requirement(qualified='0')
+    foreign = workflow.receive(other['id'], other_related['id'], quantity='1', lot_id=other_related['lot_id'])['object_id']
+    url = f"{BASE}/projects/{p['id']}/material-task-references"
+    calls = []
+    original = references.resolve_reference
+
+    def resolve(tx, pid, ref, **kwargs):
+        calls.append(ref)
+        assert str(getattr(ref, 'id', '')) != first, 'Exact lookup enumerated unrelated receipts'
+        return original(tx, pid, ref, **kwargs)
+
+    monkeypatch.setattr(references, 'resolve_reference', resolve)
+    params = {'task_kind': 'iqc', 'receipt_id': target, 'limit': 1}
+    response = workflow.client().get(url, params=params)
+    assert response.status_code == 200, response.text
+    assert response.json()['total'] == 1
+    assert response.json()['items'][0]['evidence']['receipt_id'] == target
+    assert len(calls) == 1
+    assert workflow.client('outsider').get(url, params=params).status_code == 404
+    for ident in (foreign, str(uuid4())):
+        assert workflow.client().get(url, params={**params, 'receipt_id': ident}).status_code == 404
+    assert workflow.client().get(url, params={**params, 'receipt_id': 'invalid'}).status_code == 422
+    assert workflow.client().get(url, params={**params, 'search': 'no such material'}).json()['total'] == 0

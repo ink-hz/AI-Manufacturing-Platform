@@ -1,17 +1,167 @@
 // @vitest-environment jsdom
-import {act} from 'react';import {createRoot} from 'react-dom/client';import {expect,it,vi} from 'vitest';import {WorkflowError} from '../api';import {MaterialControlWorkspace} from './MaterialControlWorkspace';import {project,flush} from '../testHelpers';
-const ref={kind:'mes_component',binding_id:'b',snapshot_id:'s',component_key:'1'};
-const item={reference:ref,evidence:{reference:ref,title:'组件',origin:'mock',environment:'mock',receipt_id:null,work_order_id:'w'},existing_task_id:null,can_open:true};
-const page={requirements:[],work_orders:[],expedites:[],receipts:[],handoffs:[],source_modes:[],total:0};
-const setup=()=>{let resolve!:(v:any)=>void;const api={materialProject:vi.fn().mockResolvedValue(page),objects:vi.fn().mockResolvedValue({items:[],total:0}),materialTasks:vi.fn().mockResolvedValue({items:[],total:0}),materialReferences:vi.fn().mockResolvedValue({items:[item],total:1,project_id:project.id,task_kind:'verify',project_version:3}),materialAssignees:vi.fn().mockResolvedValue({items:[{id:'u',display_name:'李工'}],total:1}),command:vi.fn().mockReturnValue(new Promise(r=>{resolve=r}))};return {api,resolve:(x:any)=>resolve(x)}};
-async function click(host:HTMLElement,label:string){await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent===label)!.click())}
-async function field(host:HTMLElement,label:string,value:string){await act(async()=>{const e=host.querySelector(`[aria-label="${label}"]`)! as HTMLInputElement|HTMLSelectElement;if(e instanceof HTMLSelectElement){e.value=value;e.dispatchEvent(new Event('change',{bubbles:true}))}else{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(e,value);e.dispatchEvent(new Event('input',{bubbles:true}))}})}
-it('submits the server-selected reference and preserves a newer draft when its acknowledgement arrives',async()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const s=setup(),changed=vi.fn(),opened=vi.fn();const p={api:s.api as never,project:{...project,mode:'oem' as const,allowed_actions:['material_task.open'] as const},readOnly:false,onChanged:vi.fn(),onMaterialChanged:changed,onOpen:opened,onDirty:vi.fn(),requestLeave:(f:()=>void)=>f()};await act(async()=>root.render(<MaterialControlWorkspace {...p as any}/>));await flush();await click(host,'安排核实');await flush();expect(host.textContent).toContain('模拟');await click(host,'组件');await field(host,'核实人','u');await field(host,'核实任务说明','原说明');await click(host,'创建核实任务');expect(s.api.command).toHaveBeenCalledWith(project.id,expect.objectContaining({action:'material_task.open',task_kind:'verify',reference:ref,expected_version:3,note:'原说明'}));await field(host,'核实任务说明','新说明');await act(async()=>s.resolve({project_id:project.id,project_version:4,object_type:'material_task',object_id:'t'}));expect(changed).toHaveBeenCalled();expect(opened).not.toHaveBeenCalled();expect((host.querySelector('[aria-label="核实任务说明"]') as HTMLInputElement).value).toBe('新说明');await act(async()=>root.unmount());host.remove()});
-it('retains the draft and disables submission after permission is revoked',async()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const s=setup();const render=(readOnly:boolean)=>root.render(<MaterialControlWorkspace api={s.api as never} project={{...project,mode:'oem',allowed_actions:['material_task.open']}} readOnly={readOnly} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>);await act(async()=>render(false));await flush();await click(host,'安排核实');await flush();await click(host,'组件');await field(host,'核实人','u');await field(host,'核实任务说明','保留');await act(async()=>render(true));expect((host.querySelector('[aria-label="核实任务说明"]') as HTMLInputElement).value).toBe('保留');expect([...host.querySelectorAll('button')].find(b=>b.textContent==='创建核实任务')?.disabled).toBeTruthy();expect(s.api.command).not.toHaveBeenCalled();await act(async()=>root.unmount());host.remove()});
-it('retains a conflict draft and requires a fresh reference before retrying',async()=>{
- const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const s=setup();s.api.command.mockRejectedValue(new WorkflowError(409,'VERSION_CONFLICT'));
- await act(async()=>root.render(<MaterialControlWorkspace api={s.api as never} project={{...project,mode:'oem',allowed_actions:['material_task.open']}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();
- await click(host,'安排核实');await flush();await click(host,'组件');await field(host,'核实人','u');await field(host,'核实任务说明','需要核对');await click(host,'创建核实任务');await flush();
- expect((host.querySelector('[aria-label="核实任务说明"]') as HTMLInputElement).value).toBe('需要核对');expect([...host.querySelectorAll('button')].find(b=>b.textContent==='创建核实任务')?.disabled).toBe(true);expect(host.textContent).toContain('草稿已保留');
- await act(async()=>root.unmount());host.remove();
+import { act } from "react";
+import { click, field, testRoot } from "./materialReferenceTestHelpers";
+import { expect, it, vi } from "vitest";
+import { WorkflowError } from "../api";
+import { MaterialControlWorkspace } from "./MaterialControlWorkspace";
+import { project, flush } from "../testHelpers";
+const ref = {
+  kind: "mes_component",
+  binding_id: "b",
+  snapshot_id: "s",
+  component_key: "1"
+};
+const item = {
+  reference: ref,
+  evidence: {
+    reference: ref,
+    title: "组件",
+    origin: "mock",
+    environment: "mock",
+    receipt_id: null,
+    work_order_id: "w"
+  },
+  existing_task_id: null,
+  can_open: true
+};
+const page = {
+  requirements: [],
+  work_orders: [],
+  expedites: [],
+  receipts: [],
+  handoffs: [],
+  source_modes: [],
+  total: 0
+};
+const setup = () => {
+  let resolve!: (v: any) => void;
+  const api = {
+    materialProject: vi.fn().mockResolvedValue(page),
+    objects: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialTasks: vi.fn().mockResolvedValue({
+      items: [],
+      total: 0
+    }),
+    materialReferences: vi.fn().mockResolvedValue({
+      items: [item],
+      total: 1,
+      project_id: project.id,
+      task_kind: "verify",
+      project_version: 3
+    }),
+    materialAssignees: vi.fn().mockResolvedValue({
+      items: [{
+          id: "u",
+          display_name: "李工"
+        }],
+      total: 1
+    }),
+    command: vi.fn().mockReturnValue(new Promise(r => {
+      resolve = r;
+    }))
+  };
+  return {
+    api,
+    resolve: (x: any) => resolve(x)
+  };
+};
+it("submits the server-selected reference and preserves a newer draft when its acknowledgement arrives", async () => {
+  const { host, root } = testRoot();
+  const s = setup(), changed = vi.fn(), opened = vi.fn();
+  const p = {
+    api: s.api as never,
+    project: {
+      ...project,
+      mode: "oem" as const,
+      allowed_actions: ["material_task.open"] as const
+    },
+    readOnly: false,
+    onChanged: vi.fn(),
+    onMaterialChanged: changed,
+    onOpen: opened,
+    onDirty: vi.fn(),
+    requestLeave: (f: () => void) => f()
+  };
+  await act(async () => root.render(<MaterialControlWorkspace {...p as any}/>));
+  await flush();
+  await click(host, "安排核实");
+  await flush();
+  expect(host.textContent).toContain("模拟");
+  await click(host, "组件");
+  await field(host, "核实人", "u");
+  await field(host, "核实任务说明", "原说明");
+  await click(host, "创建核实任务");
+  expect(s.api.command).toHaveBeenCalledWith(project.id, expect.objectContaining({
+    action: "material_task.open",
+    task_kind: "verify",
+    reference: ref,
+    expected_version: 3,
+    note: "原说明"
+  }));
+  await field(host, "核实任务说明", "新说明");
+  await act(async () => s.resolve({
+    project_id: project.id,
+    project_version: 4,
+    object_type: "material_task",
+    object_id: "t"
+  }));
+  expect(changed).toHaveBeenCalled();
+  expect(opened).not.toHaveBeenCalled();
+  expect((host.querySelector("[aria-label=\"核实任务说明\"]") as HTMLInputElement).value).toBe("新说明");
+  await act(async () => root.unmount());
+  host.remove();
+});
+it("retains the draft and disables submission after permission is revoked", async () => {
+  const { host, root } = testRoot();
+  const s = setup();
+  const render = (readOnly: boolean) => root.render(<MaterialControlWorkspace api={s.api as never} project={{
+    ...project,
+    mode: "oem",
+    allowed_actions: ["material_task.open"]
+  }} readOnly={readOnly} onChanged={() => {
+  }} onOpen={() => {
+  }} onDirty={() => {
+  }} requestLeave={f => f()}/>);
+  await act(async () => render(false));
+  await flush();
+  await click(host, "安排核实");
+  await flush();
+  await click(host, "组件");
+  await field(host, "核实人", "u");
+  await field(host, "核实任务说明", "保留");
+  await act(async () => render(true));
+  expect((host.querySelector("[aria-label=\"核实任务说明\"]") as HTMLInputElement).value).toBe("保留");
+  expect([...host.querySelectorAll("button")].find(b => b.textContent === "创建核实任务")?.disabled).toBeTruthy();
+  expect(s.api.command).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  host.remove();
+});
+it("retains a conflict draft and requires a fresh reference before retrying", async () => {
+  const { host, root } = testRoot();
+  const s = setup();
+  s.api.command.mockRejectedValue(new WorkflowError(409, "VERSION_CONFLICT"));
+  await act(async () => root.render(<MaterialControlWorkspace api={s.api as never} project={{
+    ...project,
+    mode: "oem",
+    allowed_actions: ["material_task.open"]
+  }} readOnly={false} onChanged={() => {
+  }} onOpen={() => {
+  }} onDirty={() => {
+  }} requestLeave={f => f()}/>));
+  await flush();
+  await click(host, "安排核实");
+  await flush();
+  await click(host, "组件");
+  await field(host, "核实人", "u");
+  await field(host, "核实任务说明", "需要核对");
+  await click(host, "创建核实任务");
+  await flush();
+  expect((host.querySelector("[aria-label=\"核实任务说明\"]") as HTMLInputElement).value).toBe("需要核对");
+  expect([...host.querySelectorAll("button")].find(b => b.textContent === "创建核实任务")?.disabled).toBe(true);
+  expect(host.textContent).toContain("草稿已保留");
+  await act(async () => root.unmount());
+  host.remove();
 });

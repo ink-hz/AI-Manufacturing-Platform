@@ -367,9 +367,16 @@ export function MaterialTaskPanel(p: Props) {
             )[detail.value.state] || detail.value.state}
           </p>
           {detail.value.reference && <MaterialReferenceContext
-            api={p.api} projectId={p.project.id} evidence={detail.value.reference}
+            api={p.api} projectId={p.project.id} projectVersion={p.project.version} evidence={detail.value.reference}
             current={detail.value.reference_current} currentReference={detail.value.current_reference}
             issue={detail.value.reference_issue}
+            renderCurrentReceipt={detail.value.task_kind === "verify" && p.onOpen ? receiptId =>
+              <MaterialReferenceOpen key={receiptId}
+                p={{ api: p.api, project: p.project, readOnly: p.readOnly, onChanged: p.onChanged,
+                  onMaterialChanged: p.onMaterialChanged, onDirty: p.onDirty, onOpen: p.onOpen!,
+                  requestLeave: p.requestLeave || (f => f()) }}
+                fixedReceiptId={receiptId} resetRef={resetReference}
+              /> : undefined}
           />}
           {(detail.value.receipt_id || detail.value.handoff_id) && <MaterialTaskContext
             api={p.api}
@@ -391,7 +398,7 @@ export function MaterialTaskPanel(p: Props) {
               onChanged={p.onChanged}
             />
           )}
-          {detail.value.task_kind === "verify" && detail.value.reference_current === true && detail.value.reference?.receipt_id && p.onOpen &&
+          {detail.value.task_kind === "verify" && detail.value.reference?.reference.kind !== "arrival" && detail.value.reference_current === true && detail.value.reference?.receipt_id && p.onOpen &&
             <MaterialReferenceOpen
               p={{ api: p.api, project: p.project, readOnly: p.readOnly, onChanged: p.onChanged,
                 onMaterialChanged: p.onMaterialChanged, onDirty: p.onDirty, onOpen: p.onOpen,
