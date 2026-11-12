@@ -15,10 +15,20 @@
 - 后端关联回归：`PYTHONPATH=src /private/tmp/manufacturing-contract-py311/bin/python -m pytest tests/workflow/{test_material_analysis,test_material_control,test_material_handoffs,test_material_tasks,test_expedites,test_expedite_tasks,test_expedite_fulfillment,test_material_resolution_journey,test_supply,test_exchanges}.py -q --tb=short`，196项通过（59.59秒）。覆盖质量修正、有效期、冻结、共享储备、重排、旧需求、幂等/CAS及当前权限等边界。
 - 相邻开工/执行回归：同一解释器执行`tests/workflow/test_engineering_readiness.py tests/workflow/test_execution.py`，66项通过（23.94秒），确认批次可用性调整不破坏现有开工和执行路径。
 
-后台、接收用途/结束核对、页面及完整流程均已完成独立任务审查。页面审查发现的超出200条预览的办理选项缺失、签收回执导航问题已先复现再修正，并经复审通过。最终整分支审查通过；审查发现的试产/量产需求不可区分问题已修正，46项相关后台、31项定向页面及603项普通页面回归和构建通过。本地主线合入及原目录复核待完成。
+后台、接收用途/结束核对、页面及完整流程均已完成独立任务审查。页面审查发现的超出200条预览的办理选项缺失、签收回执导航问题已先复现再修正，并经复审通过。最终整分支审查通过；审查发现的试产/量产需求不可区分问题已修正，46项相关后台、31项定向页面及603项普通页面回归和构建通过。本地主线合入及原目录复核完成，记录如下。
 
 ## 真实源与交付边界
 
 完整流程使用隔离测试项目、受权业务API与明确的MockAuthorityAdapter，未用SQL伪造成功事实。它证明平台功能间的可执行闭环；不等于SAP、MES、IQC、WMS的现场同单闭环。当前已知SAP/MES测试样本的组件和身份不匹配，未强行绑定。真实验收仍需能互相核对的机器人OEM项目、MES工单、SAP工单/工厂、收货批次、检验和发料对象。
 
 本次未变更源系统适配代码，未重复执行源读取或写入源系统；此前真实源联调证据保持各自边界。IQC任务分派在平台内生效，不代表已向外部系统或人员发送通知；原生IQC结果准入、WMS分笔/回执/过账、任意多段物流关系、采购跟进与协调负责人转交仍按任务书接续。浏览器/现场验收待用户执行。仅本地代码合入，不推送、不部署。
+
+## 本地主线复核
+
+功能代码`91012c6`经最终复审通过后，连同验证文档以`d1d2750`快进合入原制造目录的本地main。本段为验证后文档补记，未改变已验功能代码。宿主继续使用既有接口，本次没有宿主代码变更。
+
+在原项目目录重新执行上述10份后台关联测试，196项通过（67.37秒）；普通前端58文件、603项通过（31.90秒），TypeScript、Vite与IIFE/CSS构建检查通过。专用E30通过当前宿主的真实回环HTTP重跑，1项通过（3.21秒）。
+
+原目录与开发工作树产物逐字节一致：`manufacturing.js`727282字节，SHA256`5f68c428a95dfcd07dce3248b6a87351b36e929ad0f7d969411ce8d8e29789d0`；`manufacturing.css`75752字节，SHA256`015fd2b459481a4b175b1d26895ffc8fbf275f4a8e75b290f9e0049bc948dcb5`。
+
+合入前743项原文件预映像全部匹配，新增文件无未跟踪路径冲突；排除本次计划修改的50项文件后，693项未涉及的原文件在合入和验证后逐字节一致。用户原有`.gitignore`、`README.md`、`knowledge/README.md`未提交改动及其他历史资料保留；开发工作树保留。未推送或发布线上环境。
