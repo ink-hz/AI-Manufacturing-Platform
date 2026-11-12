@@ -11,6 +11,7 @@ export function MaterialTaskOpen({
   begin,
   resetRef,
   intent,
+  onVerify,
 }: {
   p: OEMWorkspaceProps;
   page: MaterialProject;
@@ -18,6 +19,7 @@ export function MaterialTaskOpen({
   active: boolean;
   begin(f: () => void): void;
   resetRef: RefObject<() => void>;
+  onVerify?(): void;
   intent?: { requirementId: string; kind: "iqc" | "trace"; reference: string; token: number } | null;
 }) {
   const command = useMaterialCommand(p.api, p.project.id);
@@ -199,9 +201,7 @@ export function MaterialTaskOpen({
           </label>
           {!(kind === "iqc" ? availableReceipts : availableHandoffs).length && !lookupKey && (
             <p>
-              {kind === "iqc"
-                ? "没有关联到货记录，请先登记到货。"
-                : "没有关联交料记录，请先登记交料。"}
+              {kind === "iqc" ? <>没有关联到货记录，请先登记到货。 {onVerify && <button data-arrange-verification onClick={onVerify}>安排核实</button>}</> : "没有关联交料记录，请先登记交料。"}
             </p>
           )}
           {lookupKey && !previewHasReference && !currentLookup && <p role="status">正在读取关联记录…</p>}

@@ -1,8 +1,14 @@
+import { WorkflowError } from "../api";
+import { MaterialReferenceOpen } from "./MaterialReferenceOpen";
+import type { WorkflowTarget } from "../types";
+import { MaterialReferenceContext } from "./MaterialReferenceContext";
+import { VerificationFields, type VerificationOutcome } from "./VerificationFields";
+import type { MaterialTaskValue } from "./types";
 import { MesIqcResults } from "./MesIqcResults";
 import { MaterialTaskContext } from "./MaterialTaskContext";
 import { MaterialTaskHistory } from "./MaterialTaskHistory";
 import { useMaterialCommand } from "./useMaterialCommand";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { WorkflowApi } from "../api";
 import type {
   CommandFields,
@@ -11,28 +17,8 @@ import type {
 } from "../types";
 import type { MaterialProject } from "./types";
 type Detail = {
-  summary: {
-    title: string;
-    next_actions: string[];
-  };
-  value: {
-    task_kind: "iqc" | "trace";
-    state: string;
-    note: string;
-    assignee_id: string;
-    proposed_assignee_id: string | null;
-    requirement_id: string;
-    receipt_id: string | null;
-    handoff_id: string | null;
-    history: {
-      action: string;
-      actor_name: string;
-      note: string | null;
-      expected_completion: string | null;
-      found_quantity: string | null;
-      found_location: string | null;
-    }[];
-  };
+  summary: { title: string; next_actions: string[] };
+  value: MaterialTaskValue;
 };
 type Props = {
   api: WorkflowApi;
@@ -40,11 +26,26 @@ type Props = {
   taskId: string;
   readOnly: boolean;
   onChanged(v: MutationAcknowledgement): void;
+  onMaterialChanged?(v: MutationAcknowledgement): void;
+  onOpen?(target: WorkflowTarget): void;
   onDirty(key: string, dirty: boolean): void;
   requestLeave?(action: () => void): void;
 };
 export function MaterialTaskPanel(p: Props) {
   const command = useMaterialCommand(p.api, p.project.id);
+  const revision = useRef(0);
+  const resetReference = useRef<() => void>(() => {});
+  const handoffRequest = useRef(0);
+  const [conflict, setConflict] = useState(false);
+  const authority = useRef({ version: p.project.version, readOnly: p.readOnly, actions: p.project.allowed_actions.join("|") });
+  const nextAuthority = { version: p.project.version, readOnly: p.readOnly, actions: p.project.allowed_actions.join("|") };
+  if (JSON.stringify(authority.current) !== JSON.stringify(nextAuthority)) {
+    authority.current = nextAuthority;
+    revision.current++;
+  }
+  useEffect(() => { revision.current++; return () => { revision.current++; }; }, [p.api, p.project.id, p.taskId]);
+  const [verifyOutcome, setVerifyOutcome] = useState<VerificationOutcome>("identity_verified");
+  const [adopted, setAdopted] = useState(false);
   const [version, setVersion] = useState(p.project.version);
   const [detail, setDetail] = useState<Detail | null>(null),
     [error, setError] = useState(""),
@@ -189,8 +190,10 @@ export function MaterialTaskPanel(p: Props) {
     p.project.allowed_actions.some((x) => x === action);
   function start(f: typeof form) {
     (p.requestLeave || ((fn: () => void) => fn()))(() => {
+      revision.current++;
       command.clear();
       setVersion(p.project.version);
+      setConflict(false);
       setForm(f);
       setText("");
       setDeadline("");
@@ -201,41 +204,35 @@ export function MaterialTaskPanel(p: Props) {
       setRejected("");
       setAssignee("");
       setOutcome("fulfilled");
+      setVerifyOutcome("identity_verified"); setAdopted(false);
       setSelected([]);
       setError("");
-      if (f === "close" && detail?.value.task_kind === "trace")
-        p.api
-          .materialRequirement(p.project.id, detail.value.requirement_id)
-          .then((v) =>
-            setHandoffs((old) => [
-              ...new Map(
-                [...old, ...v.handoffs].map((h) => [h.id, h]),
-              ).values(),
-            ]),
-          )
-          .catch((e) => setError(String(e)));
-      if (f === "reassign" && detail)
-        p.api
-          .materialAssignees(p.project.id, detail.value.task_kind)
-          .then((x) => setMembers(x.items))
-          .catch((e) => setError(String(e)));
+
     });
   }
   async function send(fields: CommandFields) {
     if (saving) return;
     setSaving(true);
     setError("");
+    const token = revision.current;
     try {
       const result = await command.execute(
         fields,
         form ? version : p.project.version,
+        result => {
+          if (p.onMaterialChanged) p.onMaterialChanged(result);
+          else if (command.isCurrent() && revision.current === token) p.onChanged(result);
+        },
       );
-      if (!result) return;
+      if (!result || revision.current !== token) return;
       p.onDirty("material-task", false);
       setForm(null);
-      p.onChanged(result);
     } catch (e) {
-      if (command.isCurrent()) setError(String(e));
+      if (command.isCurrent() && revision.current === token) {
+        setError(String(e));
+        if (e instanceof WorkflowError && (e.code === "VERSION_CONFLICT" || e.code === "REFERENCE_STALE"))
+          setConflict(true);
+      }
     } finally {
       if (command.isCurrent()) setSaving(false);
     }
@@ -243,6 +240,8 @@ export function MaterialTaskPanel(p: Props) {
   async function moreHandoffs() {
     if (handoffBusy || typeof p.api.objects !== "function") return;
     setHandoffBusy(true);
+    const token = revision.current;
+    const request = ++handoffRequest.current;
     try {
       const page = await p.api.objects(
         p.project.id,
@@ -255,6 +254,7 @@ export function MaterialTaskPanel(p: Props) {
           p.api.object(p.project.id, "material_handoff", item.id),
         ),
       );
+      if (!command.isCurrent() || token !== revision.current) return;
       setHandoffs((old) => {
         const map = new Map(old.map((v) => [v.id, v]));
         for (const row of rows)
@@ -265,9 +265,9 @@ export function MaterialTaskPanel(p: Props) {
       setHandoffOffset(handoffOffset + page.items.length);
       setHandoffTotal(page.total);
     } catch (e) {
-      setError(String(e));
+      if (command.isCurrent() && token === revision.current) setError(String(e));
     } finally {
-      setHandoffBusy(false);
+      if (command.isCurrent() && request === handoffRequest.current) setHandoffBusy(false);
     }
   }
   const origin = handoffs.find((h) => h.id === detail?.value.handoff_id);
@@ -284,12 +284,13 @@ export function MaterialTaskPanel(p: Props) {
       )
     : [];
   const edit = (f: (v: string) => void, v: string) => {
+    revision.current++;
     f(v);
     p.onDirty("material-task", true);
   };
   const formAllowed =
     !!form &&
-    version === p.project.version &&
+    version === p.project.version && !conflict &&
     (form === "inspect"
       ? !p.readOnly &&
         inspectAllowed &&
@@ -320,9 +321,11 @@ export function MaterialTaskPanel(p: Props) {
       void send({
         action: "material_task.close",
         task_id,
-        outcome,
+        outcome: detail?.value.task_kind === "verify" ? verifyOutcome : outcome,
         evidence: text,
-        handoff_ids: selected,
+        ...(detail?.value.task_kind === "verify"
+          ? { resolved_reference: verifyOutcome === "identity_verified" && adopted ? detail.value.current_reference : null }
+          : { handoff_ids: selected }),
       });
     else if (form === "cancel")
       void send({ action: "material_task.cancel", task_id, reason: text });
@@ -336,7 +339,7 @@ export function MaterialTaskPanel(p: Props) {
   }
   return (
     <section aria-label="物料任务">
-      <h3>{detail?.value.task_kind === "iqc" ? "来料检验任务" : "查料任务"}</h3>
+      <h3>{detail?.value.task_kind === "iqc" ? "来料检验任务" : detail?.value.task_kind === "verify" ? "物料核实任务" : "查料任务"}</h3>
       {error && <p role="alert">{error}</p>}
       {!detail && !error && <p role="status">正在读取任务…</p>}
       {detail && (
@@ -363,7 +366,12 @@ export function MaterialTaskPanel(p: Props) {
               } as Record<string, string>
             )[detail.value.state] || detail.value.state}
           </p>
-          <MaterialTaskContext
+          {detail.value.reference && <MaterialReferenceContext
+            api={p.api} projectId={p.project.id} evidence={detail.value.reference}
+            current={detail.value.reference_current} currentReference={detail.value.current_reference}
+            issue={detail.value.reference_issue}
+          />}
+          {(detail.value.receipt_id || detail.value.handoff_id) && <MaterialTaskContext
             api={p.api}
             projectId={p.project.id}
             receiptId={detail.value.receipt_id}
@@ -372,7 +380,7 @@ export function MaterialTaskPanel(p: Props) {
             onReceipt={(d) => {
               if (d.value?.kind === "receipt") setReceiptUnit(d.value.unit);
             }}
-          />
+          />}
           {detail.value.receipt_id && receiptUnit && (
             <MesIqcResults
               api={p.api}
@@ -383,6 +391,13 @@ export function MaterialTaskPanel(p: Props) {
               onChanged={p.onChanged}
             />
           )}
+          {detail.value.task_kind === "verify" && detail.value.reference_current === true && detail.value.reference?.receipt_id && p.onOpen &&
+            <MaterialReferenceOpen
+              p={{ api: p.api, project: p.project, readOnly: p.readOnly, onChanged: p.onChanged,
+                onMaterialChanged: p.onMaterialChanged, onDirty: p.onDirty, onOpen: p.onOpen,
+                requestLeave: p.requestLeave || (f => f()) }}
+              fixedReceiptId={detail.value.reference.receipt_id} resetRef={resetReference}
+            />}
           <MaterialTaskHistory
             history={detail.value.history}
             unit={unit}
@@ -524,6 +539,7 @@ export function MaterialTaskPanel(p: Props) {
                         type="checkbox"
                         checked={selected.includes(h.id)}
                         onChange={(e) => {
+                          revision.current++;
                           setSelected((old) =>
                             e.target.checked
                               ? [...old, h.id]
@@ -555,7 +571,14 @@ export function MaterialTaskPanel(p: Props) {
                     )}
                 </fieldset>
               )}
-              {form === "close" && (
+              {form === "close" && detail.value.task_kind === "verify" && <VerificationFields
+                outcome={verifyOutcome}
+                onOutcome={v => { revision.current++; setVerifyOutcome(v); p.onDirty("material-task", true); }}
+                current={detail.value.reference_current} currentReference={detail.value.current_reference}
+                adopted={adopted}
+                onAdopt={v => { revision.current++; setAdopted(v); p.onDirty("material-task", true); }}
+              />}
+              {form === "close" && detail.value.task_kind !== "verify" && (
                 <label>
                   结果
                   <select
@@ -597,6 +620,7 @@ export function MaterialTaskPanel(p: Props) {
                   saving ||
                   !formAllowed ||
                   !text.trim() ||
+                  (form === "close" && detail.value.task_kind === "verify" && verifyOutcome === "identity_verified" && detail.value.reference_current !== true && (!detail.value.current_reference || !adopted)) ||
                   (form === "reassign" && !assignee) ||
                   (form === "inspect" && (!accepted || !rejected))
                 }

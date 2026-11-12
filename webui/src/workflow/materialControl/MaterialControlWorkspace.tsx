@@ -1,3 +1,4 @@
+import { MaterialReferenceOpen } from "./MaterialReferenceOpen";
 import { QuantityValue } from "./QuantityValue";
 import { NeedTimeEditor } from "./NeedTimeEditor";
 import { MesOrderMaterials } from "./MesOrderMaterials";
@@ -50,20 +51,23 @@ export function MaterialControlWorkspace(
     [error, setError] = useState(""),
     [active, setActive] = useState<"task" | "expedite" | "need-time" | null>(null),
     [loading, setLoading] = useState(false);
+  const [referenceIntent, setReferenceIntent] = useState<{token:number;reference?: import("./types").TaskReference;search?:string;requirementId?:string}|null>(null);
   const [discardEpoch, setDiscardEpoch] = useState(0);
   const [intent, setIntent] = useState<{ requirementId:string; kind:"iqc"|"trace"; reference:string; token:number } | null>(null);
   const draft = useRef<Record<string, boolean>>({});
   const resetTask = useRef<() => void>(() => {});
+  const resetReference = useRef<() => void>(() => {});
   const resetNeedTime = useRef<() => void>(() => {});
   const [timeIntent, setTimeIntent] = useState(0);
   const [expediteIntent, setExpediteIntent] = useState<{requirementId:string;token:number;expediteId?:string} | null>(null);
   const intentSerial = useRef(0);
   const resetExpedite = useRef<() => void>(() => {});
   useEffect(() => {
-    setActive(null); setIntent(null); setExpediteIntent(null); setDiscardEpoch(n => n + 1);
+    setActive(null); setIntent(null); setReferenceIntent(null); setExpediteIntent(null); setDiscardEpoch(n => n + 1);
     return () => {
       draft.current = {};
       resetTask.current();
+      resetReference.current();
       resetExpedite.current();
       resetNeedTime.current();
     };
@@ -81,6 +85,7 @@ export function MaterialControlWorkspace(
     (p.requestLocalLeave || p.requestLeave)(() => {
       draft.current = {};
       resetTask.current();
+      resetReference.current();
       resetExpedite.current();
       resetNeedTime.current();
       setActive(null);
@@ -158,7 +163,7 @@ export function MaterialControlWorkspace(
   return (
     <section aria-label="料况">
       <h3>料况</h3>
-      <MesOrderMaterials p={childProps} leave={leave} discardEpoch={discardEpoch} />
+      <MesOrderMaterials p={childProps} leave={leave} discardEpoch={discardEpoch} onVerify={(reference,search)=>leave(()=>setReferenceIntent({token:++intentSerial.current,reference,search}))} />
       {error && <p role="alert">料况读取失败：{error}</p>}
       {error && <button onClick={() => setRetry(n => n + 1)}>重试</button>}
       {!shownPage ? (
@@ -272,6 +277,7 @@ export function MaterialControlWorkspace(
                 requirement={requirement}
                 resetRef={resetTask}
                 intent={intent}
+                onVerify={() => leave(() => setReferenceIntent({token:++intentSerial.current,requirementId:requirement.id}))}
                 active={active === "task"}
                 begin={(f) =>
                   leave(() => {
@@ -315,6 +321,7 @@ export function MaterialControlWorkspace(
           )}
         </>
       )}
+      <MaterialReferenceOpen p={{...childProps, requestLeave:leave}} intent={referenceIntent} resetRef={resetReference} />
       <MaterialTaskList
         p={p}
         offset={context.taskOffset}

@@ -111,6 +111,7 @@ function targets(projectId: string, draft?: CommandFields): WorkflowTarget[] {
 }
 function facts(v: DomainValue): [string, string][] {
   switch (v.kind) {
+    case "material_task":return [["任务说明",v.note],["状态",label(v.state)],["引用",v.reference?.title || "未提供"]];
     case "material_handoff":return [["交接编号",v.handoff_number],["交接数量",v.quantity+" "+v.unit],["送达位置",v.to_location],["实际接收位置",v.receipt?.received_location||"未确认"],["接收人",v.receiver_name]];
     case "npi":return [["历史状态",label(v.state)],["当前批量资格",v.bulk_eligible?"有效":"受阻"],["当前阻断",v.blocking_reasons.join("；")]];
     case "npi_issue":return [["问题",v.phenomenon],["当前验证",v.verified?"有效":"无效"],["历史验证次数",String(v.resolutions.length)]];

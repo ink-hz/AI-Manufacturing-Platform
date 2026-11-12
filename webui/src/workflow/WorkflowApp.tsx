@@ -595,7 +595,7 @@ export function WorkflowApp({
                     >
                       返回业务列表
                     </button>
-                    {target.kind === "material_task" ? <MaterialTaskPanel key={target.projectId+target.id} api={api} project={project} taskId={target.id} readOnly={readOnly} onChanged={result=>changed(result,true)} onDirty={onDirty} requestLeave={requestLocalLeave}/> : <><WorkflowDetail
+                    {target.kind === "material_task" ? <MaterialTaskPanel key={target.projectId+target.id} api={api} project={project} taskId={target.id} readOnly={readOnly} onChanged={result=>changed(result,true)} onMaterialChanged={result=>{const live=materialIdentity.current;if(alive.current && live.api===api && live.actor===b.user.id && live.projectId===project.id && result.project_id===project.id) changed(result,false,true)}} onDirty={onDirty} onOpen={open} requestLeave={requestLocalLeave}/> : <><WorkflowDetail
                       key={target.projectId+target.kind+target.id}
                       api={api}
                       target={target}

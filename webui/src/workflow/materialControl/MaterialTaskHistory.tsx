@@ -26,6 +26,9 @@ const outcomes: Record<string, string> = {
   discrepancy: "存在差异",
   false_alarm: "误报",
   superseded: "已替代",
+  identity_verified: "身份已核实",
+  unable_to_verify: "无法核实",
+  incorrect_observation: "观察有误",
 };
 export function MaterialTaskHistory({
   history,

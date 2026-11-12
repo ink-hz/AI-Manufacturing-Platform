@@ -33,10 +33,12 @@ export function MesOrderMaterials({
   p,
   leave,
   discardEpoch = 0,
+  onVerify,
 }: {
   p: OEMWorkspaceProps;
   leave(action: () => void): void;
   discardEpoch?: number;
+  onVerify?(ref: {kind:"mes_component";binding_id:string;snapshot_id:string;component_key:string}, search:string):void;
 }) {
   const [items, setItems] = useState<ObjectSummary[]>([]),
     [total, setTotal] = useState(0),
@@ -325,7 +327,7 @@ export function MesOrderMaterials({
                       <th>需求</th>
                       <th>MES已提料</th>
                       <th>单位</th>
-                      <th>仓储位置</th>
+                      <th>仓储位置</th><th>核实</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -336,7 +338,7 @@ export function MesOrderMaterials({
                         <td><QuantityValue quantity={c.quantities?.required_quantity} value={c.required_quantity} unit={c.unit} title="需求" /></td>
                         <td><QuantityValue quantity={c.quantities?.withdrawn_quantity} value={c.withdrawn_quantity} unit={c.unit} title="已提料" /></td>
                         <td>{c.unit}</td>
-                        <td>{c.storage_location ?? "未提供"}</td>
+                        <td>{c.storage_location ?? "未提供"}</td><td>{onVerify && !p.readOnly && p.project.allowed_actions.includes("material_task.open") && <button data-verify-component onClick={()=>onVerify({kind:"mes_component",binding_id:data.binding!.id,snapshot_id:data.snapshot!.id,component_key:c.component_key},c.material_id)}>安排核实</button>}</td>
                       </tr>
                     ))}
                   </tbody>

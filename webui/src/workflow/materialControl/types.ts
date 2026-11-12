@@ -135,3 +135,30 @@ export interface MesOrderMaterialsData {
   binding: { id: string; shop_order: string; environment: string; site_code: string; verified_at: string } | null;
   snapshot: { id: string; collected_at: string; total: number; components: { quantities?: QuantityMap; component_key: string; material_id: string; required_quantity: string; withdrawn_quantity: string | null; unit: string; storage_location: string | null }[] } | null;
 }
+
+export type TaskReference =
+ | {kind:'arrival';id:string;version:number}
+ | {kind:'mes_component';binding_id:string;snapshot_id:string;component_key:string}
+ | {kind:'receipt';id:string}
+ | {kind:'source_receipt';source_key:{system:string;object_type:string;external_id:string;version:number}};
+export interface TaskReferenceEvidence {
+ reference:TaskReference; scope_key:string; title:string; origin:'native'|'manual'|'file'|'mock'|'unknown'; environment:'production'|'test'|'development'|'mock'|'unknown';
+ system:string|null; source_type:string|null; external_id:string|null; version:number|string|null;
+ namespace:string|null; occurred_at:string|null; collected_at:string|null; work_order_id:string|null;
+ material_id:string|null; material_lot_id:string|null; receipt_id:string|null; unit:string|null;
+}
+export interface TaskReferenceItem {reference:TaskReference;evidence:TaskReferenceEvidence;existing_task_id:string|null;can_open:boolean}
+export interface TaskReferencePage {project_id:string;project_version:number;read_at:string;task_kind:'verify'|'iqc';items:TaskReferenceItem[];total:number;limit:number;offset:number}
+export interface MaterialTaskHistoryValue {
+ action:string;actor_id:string;actor_name:string;recorded_at:string;note:string|null;reason:string|null;
+ evidence:string|null;outcome:string|null;assignee_id:string|null;expected_completion:string|null;
+ blocked_reason:string|null;found_quantity:string|null;found_location:string|null;handoff_ids:string[]|null;
+ resolved_reference:TaskReference|null;requirement_id:string|null;
+}
+export interface MaterialTaskValue {
+ kind:'material_task';id:string;requirement_id:string|null;task_kind:'iqc'|'trace'|'verify';receipt_id:string|null;
+ handoff_id:string|null;assignee_id:string;proposed_assignee_id:string|null;state:'pending'|'processing'|'verification'|'closed'|'cancelled';
+ note:string;opened_by:string;recorded_at:string;source:import('../types').SourceRef;history:MaterialTaskHistoryValue[];
+ evidence_handoff_ids:string[];reference:TaskReferenceEvidence|null;closure:Record<string,unknown>|null;
+ context_requirement_ids:string[];reference_pinned:boolean;reference_current:boolean|null;current_reference:TaskReference|null;reference_issue:string|null;
+}

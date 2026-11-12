@@ -32,7 +32,7 @@ export function MaterialTaskList({
             (item) => item.assignee_id || item.proposed_assignee_id,
           ) && typeof p.api.materialAssignees === "function"
             ? await Promise.all(
-                (["iqc", "trace"] as const).map((kind) =>
+                (["iqc", "trace", "verify"] as const).map((kind) =>
                   p.api
                     .materialAssignees(p.project.id, kind, c.signal)
                     .catch(() => ({ items: [], total: 0 })),

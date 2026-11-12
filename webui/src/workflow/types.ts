@@ -1,3 +1,4 @@
+import type { TaskReference, MaterialTaskValue } from "./materialControl/types";
 import type { MaterialHandoffCommand, MaterialHandoffValue } from "./materialHandoffTypes";
 export type * from "./materialHandoffTypes";
 import type { OEMCommands, OEMValue, UnitAlias, ComponentHistory } from "./oemTypes";
@@ -203,11 +204,11 @@ export type CommandFields =
   | {action:"mes_order.bind";work_order_id:string;shop_order:string;replace_binding_id:string|null;reason:string|null}
   | {action:"mes_order.refresh";work_order_id:string;binding_id:string}
   | {action:"material.need_time";requirement_id:string;need_at:string|null;evidence:string}
-  | {action:"material_task.open";requirement_id:string;task_kind:"iqc"|"trace";receipt_id:string|null;handoff_id:string|null;assignee_id:string;note:string}
+  | {action:"material_task.open";requirement_id?:string|null;task_kind:"iqc"|"trace"|"verify";receipt_id?:string|null;handoff_id?:string|null;reference?:TaskReference|null;assignee_id:string;note:string}
   | {action:"material_task.accept";task_id:string}
   | {action:"material_task.reassign";task_id:string;assignee_id:string;reason:string}
   | {action:"material_task.progress";task_id:string;note:string;expected_completion:string|null;blocked_reason:string|null;found_quantity:string|null;found_location:string|null}
-  | {action:"material_task.close";task_id:string;outcome:"fulfilled"|"discrepancy"|"false_alarm"|"superseded";evidence:string;handoff_ids:string[]}
+  | {action:"material_task.close";task_id:string;outcome:"fulfilled"|"discrepancy"|"false_alarm"|"superseded"|"identity_verified"|"unable_to_verify"|"incorrect_observation";evidence:string;handoff_ids?:string[];resolved_reference?:TaskReference|null}
   | {action:"material_task.cancel";task_id:string;reason:string}
   | {action:"expedite.open";requirement_id:string;reason:string;impact:string}
   | {action:"expedite.progress";expedite_id:string;note:string}
@@ -399,6 +400,7 @@ export interface WorkOrderImpactPreview {
   }[];
 }
 export type DomainValue =
+  | MaterialTaskValue
   | MaterialHandoffValue
   | OEMValue
   | RmaValue | CapaValue
