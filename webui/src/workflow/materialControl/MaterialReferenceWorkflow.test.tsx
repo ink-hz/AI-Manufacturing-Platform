@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { expect, it, vi } from "vitest";
-import { bootstrap, project, workflowView } from "../testHelpers";
+import { bootstrap, project, workflowView, flush } from "../testHelpers";
 it("isolates a delayed reference read after the API connection changes in WorkflowApp", async () => {
   const oem = {
     ...project,
@@ -612,3 +612,122 @@ it("opens IQC from a newly matched verification arrival using the exact receipt 
     await view.dispose();
   }
 });
+
+
+it.each(["same-receipt", "changed-receipt", "revoked", "existing-task"])(
+  "preserves a newer nested IQC draft across the owner ACK and %s refresh in WorkflowApp",
+  async mode => {
+    let version = 3;
+    let receiptId = "r1";
+    let allowed = true;
+    let resolveSave!: (response: Response) => void;
+    let resolveDetail!: () => void;
+    const detailGate = new Promise<void>(resolve => { resolveDetail = resolve; });
+    const oem = () => ({
+      ...project, version, mode: "oem" as const,
+      allowed_actions: allowed ? ["material_task.open"] as never : [],
+    });
+    const summary = {
+      id: "verify-task", project_id: project.id, kind: "material_task",
+      title: "嵌套检验草稿核实", state: "processing", next_actions: [], blocking_reasons: [],
+    };
+    const pinned = { kind: "arrival", id: "a", version: 1 };
+    const view = await workflowView({
+      initial: "制造项目",
+      readProject: async () => oem(),
+      readProjects: async () => [oem()],
+      readMaterialTasks: async () => ({ items: [summary], total: 1, limit: 50, offset: 0 }) as never,
+      readObject: async (_pid, kind) => {
+        if (version > 3 && kind === "material_task") await detailGate;
+        if (kind === "arrival") return {
+          summary: { id: "a", project_id: project.id },
+          value: {
+            kind: "arrival", id: "a", arrival_number: "A", location: "当前库房",
+            package_count: 1, description: "标签", state: "matched", receipt_id: receiptId,
+            matches: Array.from({ length: receiptId === "r1" ? 1 : 2 }, () => ({ receipt_id: receiptId })),
+          },
+        } as never;
+        return {
+          summary,
+          value: {
+            kind: "material_task", task_kind: "verify", state: "processing", history: [],
+            requirement_id: null, receipt_id: null, handoff_id: null,
+            reference: { reference: pinned, title: "固定包裹依据", origin: "manual", environment: "unknown" },
+            reference_current: false,
+            current_reference: { ...pinned, version: receiptId === "r1" ? 2 : 3 },
+            reference_issue: "Arrival match changed",
+          },
+        } as never;
+      },
+    });
+    const original = globalThis.fetch;
+    const commands: any[] = [];
+    const lookups: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, init) => {
+      const url = new URL(String(input), "http://local.test");
+      if (url.pathname.endsWith("/material-task-references")) {
+        const id = url.searchParams.get("receipt_id")!;
+        lookups.push(id);
+        const reference = { kind: "receipt", id };
+        return new Response(JSON.stringify({
+          project_id: project.id, project_version: version, task_kind: "iqc", total: 1,
+          items: [{ reference, evidence: { reference, receipt_id: id, title: `收货 ${id}`, origin: "manual", environment: "unknown" }, can_open: mode !== "existing-task" || version === 3, existing_task_id: mode === "existing-task" && version > 3 ? "saved-iqc" : null }],
+        }));
+      }
+      if (url.pathname.endsWith("/material-control/assignees"))
+        return new Response(JSON.stringify({ items: [{ id: "u", display_name: "李工" }] }));
+      if (url.pathname.endsWith("/commands")) {
+        commands.push(JSON.parse(String(init?.body)));
+        return new Promise<Response>(resolve => { resolveSave = resolve; });
+      }
+      return original(input, init);
+    }));
+    const note = () => view.host.querySelector('[aria-label="核实任务说明"]') as HTMLInputElement | null;
+    const submit = () => [...view.host.querySelectorAll("button")].find(b => b.textContent === "创建检验任务")!;
+    try {
+      await view.click("供应与物料");
+      await view.click("嵌套检验草稿核实");
+      await view.click("为关联收货安排检验");
+      await view.field("检验人", "u");
+      await view.field("核实任务说明", "说明 A");
+      await view.click("创建检验任务");
+      await view.field("核实任务说明", "说明 B");
+      version = 4;
+      if (mode === "changed-receipt") receiptId = "r2";
+      if (mode === "revoked") allowed = false;
+      await act(async () => resolveSave(new Response(JSON.stringify({
+        project_id: project.id, project_version: version, object_type: "material_task", object_id: "saved-iqc",
+      }))));
+      await flush();
+      expect(note()?.value).toBe("说明 B");
+      expect(submit().disabled).toBe(true);
+      expect(view.host.textContent).not.toContain("观察位置 当前库房");
+      expect(view.requests.some(request => request.url.endsWith("/objects/material_task/saved-iqc"))).toBe(false);
+      await act(async () => resolveDetail());
+      await flush();
+      expect(note()?.value).toBe("说明 B");
+      expect((view.host.querySelector('[aria-label="检验人"]') as HTMLSelectElement).value).toBe("u");
+      expect(submit().disabled).toBe(true);
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toMatchObject({ note: "说明 A", reference: { kind: "receipt", id: "r1" }, expected_version: 3 });
+      if (mode === "same-receipt" || mode === "existing-task") {
+        await view.click("重新核对所选收货");
+        expect(note()?.value).toBe("说明 B");
+        expect(submit().disabled).toBe(mode === "existing-task");
+        if (mode === "existing-task") expect(view.host.textContent).toContain("打开已有任务");
+      } else if (mode === "changed-receipt") {
+        expect(lookups).not.toContain("r2");
+        expect(view.host.textContent).toContain("收货关联已变化");
+        expect(view.host.textContent).toContain("收货 r1");
+        await view.click("为关联收货安排检验");
+        expect(note()?.value).toBe("说明 B");
+        await view.click("放弃并离开");
+        expect(lookups.at(-1)).toBe("r2");
+        expect(note()?.value).toBe("");
+      } else {
+        expect(view.host.textContent).not.toContain("重新核对所选收货");
+        expect(view.host.textContent).not.toContain("为关联收货安排检验");
+      }
+    } finally { await view.dispose(); }
+  },
+);

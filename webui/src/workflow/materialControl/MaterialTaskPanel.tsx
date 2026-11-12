@@ -47,8 +47,13 @@ export function MaterialTaskPanel(p: Props) {
   const [verifyOutcome, setVerifyOutcome] = useState<VerificationOutcome>("identity_verified");
   const [adopted, setAdopted] = useState(false);
   const [version, setVersion] = useState(p.project.version);
-  const [detail, setDetail] = useState<Detail | null>(null),
-    [error, setError] = useState(""),
+  // Same-owner detail survives refresh so its forms keep their local draft state.
+  const [read, setRead] = useState<{
+    api: WorkflowApi; projectId: string; taskId: string; version: number; detail: Detail;
+  } | null>(null);
+  const detail = read?.api === p.api && read.projectId === p.project.id && read.taskId === p.taskId ? read.detail : null;
+  const detailCurrent = !!detail && read?.version === p.project.version;
+  const [error, setError] = useState(""),
     [form, setForm] = useState<
       "progress" | "close" | "cancel" | "reassign" | "inspect" | null
     >(null),
@@ -81,12 +86,12 @@ export function MaterialTaskPanel(p: Props) {
   useEffect(() => {
     let active = true;
     const c = new AbortController();
-    setDetail(null);
     setError("");
     p.api
       .object(p.project.id, "material_task", p.taskId, c.signal)
       .then((d) => {
-        if (active) setDetail(d as unknown as Detail);
+        if (active) setRead({ api: p.api, projectId: p.project.id, taskId: p.taskId,
+          version: p.project.version, detail: d as unknown as Detail });
       })
       .catch((e) => {
         if (active) setError(String(e));
@@ -97,7 +102,7 @@ export function MaterialTaskPanel(p: Props) {
     };
   }, [p.api, p.project.id, p.project.version, p.taskId]);
   useEffect(() => {
-    if (!detail?.value.receipt_id || detail.value.task_kind !== "iqc") return;
+    if (!detailCurrent || !detail?.value.receipt_id || detail.value.task_kind !== "iqc") return;
     let active = true;
     const c = new AbortController();
     setInspectAllowed(false);
@@ -114,9 +119,9 @@ export function MaterialTaskPanel(p: Props) {
       active = false;
       c.abort();
     };
-  }, [p.api, p.project.id, detail?.value.receipt_id, detail?.value.task_kind]);
+  }, [p.api, p.project.id, detailCurrent, detail?.value.receipt_id, detail?.value.task_kind]);
   useEffect(() => {
-    if (!detail) return;
+    if (!detailCurrent || !detail) return;
     let active = true;
     const c = new AbortController();
     if (p.api.materialAssignees)
@@ -154,11 +159,12 @@ export function MaterialTaskPanel(p: Props) {
   }, [
     p.api,
     p.project.id,
+    detailCurrent,
     detail?.value.requirement_id,
     detail?.value.task_kind,
   ]);
   useEffect(() => {
-    if (!detail?.value.handoff_id) return;
+    if (!detailCurrent || !detail?.value.handoff_id) return;
     let active = true;
     const c = new AbortController();
     p.api
@@ -183,9 +189,9 @@ export function MaterialTaskPanel(p: Props) {
       active = false;
       c.abort();
     };
-  }, [p.api, p.project.id, detail?.value.handoff_id]);
+  }, [p.api, p.project.id, detailCurrent, detail?.value.handoff_id]);
   const can = (action: string) =>
-    !p.readOnly &&
+    detailCurrent && !p.readOnly &&
     !!detail?.summary.next_actions.includes(action) &&
     p.project.allowed_actions.some((x) => x === action);
   function start(f: typeof form) {
@@ -211,7 +217,7 @@ export function MaterialTaskPanel(p: Props) {
     });
   }
   async function send(fields: CommandFields) {
-    if (saving) return;
+    if (saving || !detailCurrent) return;
     setSaving(true);
     setError("");
     const token = revision.current;
@@ -289,7 +295,7 @@ export function MaterialTaskPanel(p: Props) {
     p.onDirty("material-task", true);
   };
   const formAllowed =
-    !!form &&
+    !!form && detailCurrent &&
     version === p.project.version && !conflict &&
     (form === "inspect"
       ? !p.readOnly &&
@@ -341,7 +347,7 @@ export function MaterialTaskPanel(p: Props) {
     <section aria-label="物料任务">
       <h3>{detail?.value.task_kind === "iqc" ? "来料检验任务" : detail?.value.task_kind === "verify" ? "物料核实任务" : "查料任务"}</h3>
       {error && <p role="alert">{error}</p>}
-      {!detail && !error && <p role="status">正在读取任务…</p>}
+      {!detailCurrent && !error && <p role="status">正在读取任务…</p>}
       {detail && (
         <>
           <p>{detail.value.note}</p>
@@ -354,7 +360,7 @@ export function MaterialTaskPanel(p: Props) {
                 ` · 待接收：${members.find((m) => m.id === detail.value.proposed_assignee_id)?.display_name || "成员资料不可用"}`}
             </p>
           )}
-          <p>
+          {detailCurrent && <p>
             状态：
             {(
               {
@@ -365,20 +371,20 @@ export function MaterialTaskPanel(p: Props) {
                 cancelled: "已取消",
               } as Record<string, string>
             )[detail.value.state] || detail.value.state}
-          </p>
+          </p>}
           {detail.value.reference && <MaterialReferenceContext
             api={p.api} projectId={p.project.id} projectVersion={p.project.version} evidence={detail.value.reference}
             current={detail.value.reference_current} currentReference={detail.value.current_reference}
-            issue={detail.value.reference_issue}
+            issue={detail.value.reference_issue} resolved={detailCurrent}
             renderCurrentReceipt={detail.value.task_kind === "verify" && p.onOpen ? receiptId =>
-              <MaterialReferenceOpen key={receiptId}
+              <MaterialReferenceOpen
                 p={{ api: p.api, project: p.project, readOnly: p.readOnly, onChanged: p.onChanged,
                   onMaterialChanged: p.onMaterialChanged, onDirty: p.onDirty, onOpen: p.onOpen!,
                   requestLeave: p.requestLeave || (f => f()) }}
                 fixedReceiptId={receiptId} resetRef={resetReference}
               /> : undefined}
           />}
-          {(detail.value.receipt_id || detail.value.handoff_id) && <MaterialTaskContext
+          {detailCurrent && (detail.value.receipt_id || detail.value.handoff_id) && <MaterialTaskContext
             api={p.api}
             projectId={p.project.id}
             receiptId={detail.value.receipt_id}
@@ -394,24 +400,17 @@ export function MaterialTaskPanel(p: Props) {
               project={p.project}
               receiptId={detail.value.receipt_id}
               unit={receiptUnit}
-              readOnly={p.readOnly}
+              readOnly={p.readOnly || !detailCurrent}
               onChanged={p.onChanged}
             />
           )}
-          {detail.value.task_kind === "verify" && detail.value.reference?.reference.kind !== "arrival" && detail.value.reference_current === true && detail.value.reference?.receipt_id && p.onOpen &&
-            <MaterialReferenceOpen
-              p={{ api: p.api, project: p.project, readOnly: p.readOnly, onChanged: p.onChanged,
-                onMaterialChanged: p.onMaterialChanged, onDirty: p.onDirty, onOpen: p.onOpen,
-                requestLeave: p.requestLeave || (f => f()) }}
-              fixedReceiptId={detail.value.reference.receipt_id} resetRef={resetReference}
-            />}
           <MaterialTaskHistory
             history={detail.value.history}
             unit={unit}
             members={members}
           />
           <div className="mf-actions">
-            {!p.readOnly &&
+            {detailCurrent && !p.readOnly &&
               detail.value.task_kind === "iqc" &&
               inspectAllowed &&
               p.project.allowed_actions.includes("supply.inspect") && (
@@ -581,7 +580,7 @@ export function MaterialTaskPanel(p: Props) {
               {form === "close" && detail.value.task_kind === "verify" && <VerificationFields
                 outcome={verifyOutcome}
                 onOutcome={v => { revision.current++; setVerifyOutcome(v); p.onDirty("material-task", true); }}
-                current={detail.value.reference_current} currentReference={detail.value.current_reference}
+                current={detailCurrent ? detail.value.reference_current : null} currentReference={detailCurrent ? detail.value.current_reference : null}
                 adopted={adopted}
                 onAdopt={v => { revision.current++; setAdopted(v); p.onDirty("material-task", true); }}
               />}

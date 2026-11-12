@@ -6,7 +6,7 @@ import { MaterialReferenceContext } from "./MaterialReferenceContext";
 import { materialControlApi } from "./api";
 import { MaterialReferenceOpen } from "./MaterialReferenceOpen";
 import { project, flush } from "../testHelpers";
-import { click, testRoot } from "./materialReferenceTestHelpers";
+import { click, field, testRoot } from "./materialReferenceTestHelpers";
 const pinned = {
   kind: "arrival",
   id: "a",
@@ -390,8 +390,64 @@ it('discards a late exact receipt lookup after the target changes', async () => 
     await render('r1');
     await click(v.host, '为关联收货安排检验');
     await render('r2');
+    expect(v.host.textContent).toContain('收货关联已变化');
+    expect(api.materialReferences).toHaveBeenCalledTimes(1);
+    await click(v.host, '为关联收货安排检验');
     expect(v.host.textContent).toContain('已选择：收货 r2');
     await act(async () => resolve(page([receiptItem('r1')])));
     expect(v.host.textContent).not.toContain('收货 r1');
   } finally { await v.dispose(); }
 });
+
+
+it.each(["same-receipt", "foreign-response", "revoked"])(
+  "retains the nested draft while a %s arrival refresh is unresolved",
+  async mode => {
+    const view = testRoot();
+    let resolveArrival!: (value: ReturnType<typeof arrival>) => void;
+    const api = {
+      object: vi.fn(async (_project, kind) => kind === "material_task" ? task(2) : arrival("r1", 2)),
+      materialAssignees: vi.fn().mockResolvedValue({ items: [{ id: "u", display_name: "李工" }] }),
+      materialReferences: vi.fn(async () => page([receiptItem("r1")])),
+      command: vi.fn(),
+    };
+    const p = props(api);
+    const render = async (version: number, allowed = true) => {
+      await act(async () => view.root.render(<MaterialTaskPanel {...p} taskId="t" project={{
+        ...p.project, version, allowed_actions: allowed ? ["material_task.open"] : [],
+      }} />));
+      await flush();
+    };
+    const note = () => view.host.querySelector('[aria-label="核实任务说明"]') as HTMLInputElement | null;
+    const submit = () => [...view.host.querySelectorAll("button")].find(b => b.textContent === "创建检验任务")!;
+    try {
+      await render(3);
+      await click(view.host, "为关联收货安排检验");
+      await field(view.host, "检验人", "u");
+      await field(view.host, "核实任务说明", "保留草稿");
+      api.object.mockImplementation(async (_project, kind) => kind === "material_task" ? task(2)
+        : new Promise<ReturnType<typeof arrival>>(resolve => { resolveArrival = resolve; }));
+      await render(4);
+      expect(note()?.value).toBe("保留草稿");
+      expect(submit().disabled).toBe(true);
+      expect(view.host.textContent).not.toContain("观察位置 仓库");
+      if (mode === "revoked") await render(4, false);
+      const response = arrival("r1", 2);
+      if (mode === "foreign-response") response.summary.project_id = "foreign";
+      await act(async () => resolveArrival(response));
+      expect(note()?.value).toBe("保留草稿");
+      expect(submit().disabled).toBe(true);
+      await click(view.host, "创建检验任务");
+      expect(api.command).not.toHaveBeenCalled();
+      if (mode === "same-receipt") {
+        api.materialReferences.mockResolvedValue({ ...page([receiptItem("r1")]), project_version: 4 });
+        await click(view.host, "重新核对所选收货");
+        expect(note()?.value).toBe("保留草稿");
+        expect(submit().disabled).toBe(false);
+      } else {
+        expect(view.host.textContent).not.toContain("重新核对所选收货");
+        expect(view.host.textContent).not.toContain("为关联收货安排检验");
+      }
+    } finally { await view.dispose(); }
+  },
+);
