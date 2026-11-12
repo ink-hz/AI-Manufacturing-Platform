@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { MaterialHandoffForms } from "./forms/MaterialHandoffForms";
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root | undefined;
 let host: HTMLDivElement;
 afterEach(async () => { if (root) await act(async () => root!.unmount()); host?.remove(); root = undefined; });
@@ -20,7 +20,7 @@ const page = (requirements: any[], total = requirements.length) => ({ requiremen
 function api() {
   return {
     object: vi.fn(async () => ({ value: { kind: "material_lot", material_id: "steel-1", owner_id: "Customer", unit: "kg" } })),
-    materialProject: vi.fn(async () => page([requirement("req1")])),
+    materialProject: vi.fn(async (_id: string, _limit: number, _offset: number) => page([requirement("req1")])),
     command: vi.fn(async (_id: string, body: any) => ({ project_id: "p1", project_version: 8,
       operation_id: body.operation_id, object_type: "material_handoff", object_id: "h1", replayed: false })),
   };

@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ExpeditePanel } from "./ExpeditePanel";
 import { WorkflowError } from "../api";
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root | undefined, host: HTMLDivElement;
 afterEach(async () => { if (root) await act(async () => root!.unmount()); host?.remove(); root = undefined; });
 const req: any = { id: "r1", material_id: "steel", unit: "kg", expedite_ids: ["e1"] };
