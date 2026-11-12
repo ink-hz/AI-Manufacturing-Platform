@@ -2,7 +2,7 @@
 
 日期：2026-11-12。依据[设计](../superpowers/specs/2026-11-12-material-task-references-design.md)、[实施计划](../superpowers/plans/2026-11-12-material-task-references.md)与[M2任务书](../taskbooks/robot-oem/03-iqc-receipt-and-results.md)。
 
-状态：四项开发任务及逐项spec/quality审查完成；整分支审查与原目录主线交付复验进行中。
+状态：四项任务审查及双仓库整分支审查通过；本地主线快进、原目录回归与构建复验完成。
 
 ## 实际交付行为
 
@@ -39,3 +39,30 @@ v27→v28迁移覆盖FK开启的事务、原JSON与历史/补收证据、序号�
 - E33保留原始成功manifest、请求/响应、实际React记录、业务行快照和已加载PF文件哈希。临时测试身份为合成身份；FakeMes绑定和mock源投影用真实领域命令/准入构造，后续通过实际PF HTTP读取及派单。
 
 稳定开发证据位于`/private/tmp/m2-task4-evidence/`；早期部分pytest临时详细目录已被测试工具回收，对应首错console日志仍保留，不声称这些首错有完整详细trace。
+
+## 最终主线复验
+
+制造仓库原目录main从618abf4快进到经审查的46a8546；宿主master工作树从70bf974d快进到c09c70b3。以下结果在两个主线目录重新执行，随后只有本记录和计划的收尾更新。未推送或部署。
+
+| 验证 | 最终结果 | 耗时 |
+| --- | --- | --- |
+| 制造后端相关业务、迁移、来源及集成组合 | 693通过／36跳过 | 249.37秒 |
+| 普通UI | 662通过／1跳过 | 35.30秒 |
+| 宿主路由、成员资料及生产工具相关测试 | 75通过 | 7.84秒 |
+| 原E30＋新E33完整HTTP场景 | 2通过 | 7.53秒 |
+| TypeScript、构建及IIFE/CSS检查 | 通过，142模块 | 构建619毫秒 |
+
+后端普通回归的完整场景需要显式选择；本轮另外执行E30／E33。普通UI跳过依赖私有会话的E33，随后专用实际PF HTTPS场景已通过，未把跳过算作完成证据。E33再次确认业务事实不变、空需求闭环、持久测试MES组件、已准入mock收货、精确去重及错误引用拒绝。
+
+最终完整HTTP证据：/private/tmp/m2-original-http-evidence-20261112/。两份manifest记录MF 46a8546e7ab793dd363318ad2c0f1f3538472749与PF c09c70b34a370f561f924047d81a8bb3963b7655，数据集模式为test。摘要：/private/tmp/m2-final-root-results-20261112.json。
+
+原目录构建与审查工作树构建逐字节一致：
+
+| 产物 | 字节 | SHA256 |
+| --- | ---: | --- |
+| manufacturing.js | 749621 | 79604443af369e0bc9216e503373d4b4cd20b5018cdb82afac4d8259d692bb2f |
+| manufacturing.css | 75752 | 015fd2b459481a4b175b1d26895ffc8fbf275f4a8e75b290f9e0049bc948dcb5 |
+
+整分支审查无Critical／Important。保留两项非阻断技术待办：通用候选查询的本地规模成本；E33私有HTTPS工具非JSON响应的结构化失败诊断。后者不属于生产页面或业务接口，现有受控JSON流程验证通过，异常仍使测试失败。
+
+合入前777份原文件预映像一致，新增路径无冲突；原有.gitignore、README.md、knowledge/README.md修改保持原字节。PF用户原检出仍在2bbed243，工作树与材料保留。源生产访问、原生生产收货/IQC、浏览器及现场验收未执行。
