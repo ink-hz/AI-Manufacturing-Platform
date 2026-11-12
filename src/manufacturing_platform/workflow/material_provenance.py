@@ -19,7 +19,17 @@ def _reader(tx, project_id, reader):
     return MaterialSources(tx, project_id)
 
 
+def _persisted_requirement(reader, row):
+    persisted = reader.one('requirements', row['id'])
+    fields = ('project_id', 'plan_id', 'lineage_id', 'work_order_id', 'material_id',
+              'owner_id', 'unit', 'scale', 'q_atoms', 'execution_scope')
+    if persisted is None or any(row[k] != persisted[k] for k in fields):
+        raise ValueError('Requirement missing, outside authorized project, or altered')
+    return persisted
+
+
 def _required(reader, row):
+    row = _persisted_requirement(reader, row)
     if row['id'] not in reader.required_cache:
         plan = reader.one('plans', row['plan_id'])
         wo = reader.one('work_orders', row['work_order_id'])
@@ -155,6 +165,7 @@ def requirement_quantities(tx, project_id, rows, balances, unknown_quality, *, r
     _scope_indexes(reader)
     result = {}
     for row in rows:
+        row = _persisted_requirement(reader, row)
         required = _required(reader, row)
         inputs = {k: [] for k in ('received', 'in_transit', 'qualified', 'rejected', 'reserved')}
         for commitment in reader.indexes['commitment_scopes'].get(scope(row), []):
@@ -192,7 +203,25 @@ def handoff_quantities(tx, project_id, handoff, *, reader=None):
     reader = _reader(tx, project_id, reader)
     if not isinstance(handoff, dict):
         handoff = handoff.model_dump(mode='json')
-    ident, unit = str(handoff['id']), handoff['unit']
+    ident = str(handoff['id'])
+    stored = reader.one('material_handoffs', ident)
+    if stored is None:
+        raise ValueError('Handoff outside authorized project')
+    persisted = json.loads(stored['payload_json'])
+    persisted['receipt'] = json.loads(stored['receipt_json']) if stored['receipt_json'] else None
+    # Normalize model defaults and decimal/UUID representations in either caller
+    # form, then compare the facts that identify and substantiate this graph.
+    from .material_handoff_models import MaterialHandoff
+    def normalized(value):
+        fields = {k: v for k, v in value.items() if k in MaterialHandoff.model_fields}
+        return MaterialHandoff.model_validate({**fields, 'state': stored['state']}).model_dump(mode='json')
+    supplied, saved = normalized(handoff), normalized(persisted)
+    fields = ('id', 'material_lot_id', 'work_order_id', 'quantity', 'unit',
+              'from_location', 'to_location', 'sender_id', 'receiver_id', 'source', 'receipt')
+    if any(supplied[k] != saved[k] for k in fields):
+        raise ValueError('Handoff snapshot differs from persisted facts')
+    handoff = saved
+    unit = handoff['unit']
     sent = [reader.leaf(handoff['source'], 'material_handoff', ident, 'sender declared quantity', str(handoff['quantity']), unit)]
     signed = handoff.get('receipt')
     value = str(signed['received_quantity']) if signed else None
@@ -247,9 +276,22 @@ def issue_quantity(reader, issue, requirement, values):
 
 def work_order_quantities(reader, item):
     row = reader.one('work_orders', item['id'])
-    return {name: quantity(item[name], item['unit'], name,
-            [reader.row_leaf(row, 'work_order', name, item[name], item['unit'])])
-            for name in ('quantity', 'trial_quantity')}
+    if row is None:
+        raise ValueError('Work order outside authorized project')
+    if 'project_quantity_basis' not in reader.indexes:
+        reader.indexes['project_quantity_basis'] = reader.tx.execute(
+            'SELECT unit_scale FROM projects WHERE id=?', (reader.pid,)).fetchone()
+    project = reader.indexes['project_quantity_basis']
+    if project is None:
+        raise ValueError('Project not found')
+    from .orders import amount as project_amount
+    values = {name: project_amount(row[field], project) for name, field in
+              (('quantity', 'q_atoms'), ('trial_quantity', 'trial_q_atoms'))}
+    if item['unit'] != row['unit'] or any(Decimal(str(item[k])) != Decimal(v) for k, v in values.items()):
+        raise ValueError('Work order snapshot differs from persisted facts')
+    return {name: quantity(value, row['unit'], name,
+            [reader.row_leaf(row, 'work_order', name, value, row['unit'])])
+            for name, value in values.items()}
 
 
 def project_source_modes(tx, project_id):

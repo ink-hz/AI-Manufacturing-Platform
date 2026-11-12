@@ -389,3 +389,90 @@ def test_imported_and_later_confirmed_iqc_preserve_ambiguous_original_identity(w
     assert confirmations['confirmed-local'] == 'mock' and confirmations['import-only'] == 'file'
     overview = workflow.client().get(f'{BASE}/material-control/overview').json()['items'][0]
     assert 'unknown' in overview['source_modes']
+
+
+def test_shared_projectors_reject_foreign_and_missing_objects(workflow):
+    import pytest
+    from manufacturing_platform.workflow.material_provenance import requirement_quantities, handoff_quantities
+    fixture = large_material_history(workflow, count=1)
+    pid = fixture['project']['id']
+    with workflow.db() as db:
+        foreign = dict(db.execute('SELECT * FROM requirements WHERE id=?', (fixture['other_requirement']['id'],)).fetchone())
+        local = dict(db.execute('SELECT * FROM requirements WHERE id=?', (fixture['requirements'][0],)).fetchone())
+        hand = json.loads(db.execute('SELECT payload_json FROM material_handoffs WHERE id=?', (fixture['handoffs'][0],)).fetchone()[0])
+        hand['receipt'] = None
+        foreign_hand = dict(hand, id='missing-handoff')
+        for row in (foreign, dict(local, id='missing-requirement')):
+            with pytest.raises(ValueError):
+                requirement_quantities(db, pid, [row], {}, set())
+        with pytest.raises(ValueError):
+            handoff_quantities(db, fixture['other_project']['id'], hand)
+        with pytest.raises(ValueError):
+            handoff_quantities(db, pid, foreign_hand)
+
+
+def test_shared_requirement_rejects_changed_quantity_and_scope_before_balance(workflow):
+    import pytest
+    from manufacturing_platform.workflow.material_provenance import requirement_quantities
+    p, req, _ = workflow.material_requirement(mode='oem')
+    with workflow.db() as db:
+        row = dict(db.execute('SELECT * FROM requirements WHERE id=?', (req['id'],)).fetchone())
+        for field, value in [('q_atoms', row['q_atoms'] + 1), ('lineage_id', 'altered'),
+                             ('work_order_id', 'altered'), ('material_id', 'altered'),
+                             ('owner_id', 'altered'), ('unit', 'altered'), ('scale', row['scale'] + 1),
+                             ('plan_id', 'altered'), ('execution_scope', 'altered')]:
+            with pytest.raises(ValueError):
+                requirement_quantities(db, p['id'], [dict(row, **{field: value})], {}, set())
+
+
+def test_shared_handoff_rejects_changed_persisted_facts(workflow):
+    import copy
+    import pytest
+    from manufacturing_platform.workflow.material_provenance import handoff_quantities
+    p, req, related = workflow.material_requirement(mode='oem')
+    pid = p['id']
+    workflow.grant(pid, 'warehouse', ['warehouse'])
+    workflow.grant(pid, 'production', ['production'])
+    hid = workflow.command(pid, 'material_handoff.record', actor_name='warehouse', material_lot_id=related['lot_id'],
+        work_order_id=related['work_order_id'], quantity='20', unit='kg', from_location='Warehouse', to_location='Line',
+        receiver_id=str(USERS['production']))['object_id']
+    workflow.command(pid, 'material_handoff.receive', actor_name='production', handoff_id=hid, received_quantity='18',
+                     received_location='Line', note='Short', receipt_use='line_side', requirement_id=req['id'])
+    with workflow.db() as db:
+        saved = db.execute('SELECT payload_json,receipt_json FROM material_handoffs WHERE id=?', (hid,)).fetchone()
+        hand = json.loads(saved['payload_json'])
+        hand['receipt'] = json.loads(saved['receipt_json'])
+        for path, value in [(('quantity',), '999'), (('unit',), 'g'), (('source', 'external_id'), 'fake'),
+                            (('material_lot_id',), 'fake'), (('work_order_id',), 'fake'),
+                            (('receipt',), None), (('receipt', 'received_quantity'), '999'),
+                            (('receipt', 'received_location'), 'fake'), (('receipt', 'receipt_use'), 'unspecified'),
+                            (('receipt', 'requirement_id'), 'fake'), (('receipt', 'actor_id'), 'fake')]:
+            changed = copy.deepcopy(hand)
+            target = changed
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            with pytest.raises(ValueError):
+                handoff_quantities(db, pid, changed)
+        facts = handoff_quantities(db, pid, hand)
+        assert facts['quantity'].value == '20'
+        assert facts['received_quantity'].value == '18'
+
+
+def test_shared_work_order_rejects_foreign_missing_and_altered_quantities(workflow):
+    import pytest
+    from manufacturing_platform.workflow.material_provenance import work_order_quantities
+    from manufacturing_platform.workflow.material_source_reader import MaterialSources
+    p, _, _ = workflow.material_requirement(mode='oem')
+    other, _, _ = workflow.material_requirement(mode='oem')
+    item = page(workflow, p['id'])['work_orders'][0]
+    with workflow.db() as db:
+        reader = MaterialSources(db, p['id'])
+        with pytest.raises(ValueError):
+            work_order_quantities(MaterialSources(db, other['id']), item)
+        for field, value in [('id', 'missing'), ('quantity', '999'), ('trial_quantity', '999'), ('unit', 'fake')]:
+            with pytest.raises(ValueError):
+                work_order_quantities(reader, dict(item, **{field: value}))
+        result = work_order_quantities(reader, item)
+        assert result['quantity'].value == item['quantity']
+        assert result['trial_quantity'].value == item['trial_quantity']
