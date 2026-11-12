@@ -1,4 +1,6 @@
 """Material coordination never creates inventory or inspection results."""
+
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
 from uuid import uuid4
 import pytest
 
@@ -132,7 +134,7 @@ def test_scoped_routes_and_schema24_migration(workflow):
     w.reopen()
     assert w.client('supply').get(f'{BASE}/projects/{pid}').status_code == 200
     with w.db() as tx:
-        assert tx.execute('SELECT version FROM schema_version').fetchone()[0]==27
+        assert tx.execute('SELECT version FROM schema_version').fetchone()[0]==SCHEMA_VERSION
     task=w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='iqc',receipt_id=receipt,
                    assignee_id=str(USERS['quality']),note='待检')['object_id']
     page=w.client('quality').get(f'{BASE}/projects/{pid}/material-tasks').json()

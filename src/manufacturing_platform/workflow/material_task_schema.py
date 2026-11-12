@@ -1,5 +1,5 @@
 """Additive coordination records; no inventory or quality mutations."""
-MATERIAL_TASK_SCHEMA = """
+LEGACY_MATERIAL_TASK_SCHEMA = """
 CREATE TABLE IF NOT EXISTS material_tasks(
  seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
  project_id TEXT NOT NULL REFERENCES projects(id), requirement_id TEXT NOT NULL REFERENCES requirements(id),
@@ -17,5 +17,19 @@ CREATE INDEX IF NOT EXISTS material_task_history_scope ON material_task_history(
 CREATE TABLE IF NOT EXISTS material_task_evidence(
  project_id TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES material_tasks(id), handoff_id TEXT NOT NULL REFERENCES material_handoffs(id),
  PRIMARY KEY(project_id,handoff_id)
+);
+"""
+
+MATERIAL_TASK_SCHEMA = LEGACY_MATERIAL_TASK_SCHEMA.replace(
+    "requirement_id TEXT NOT NULL REFERENCES requirements(id)",
+    "requirement_id TEXT REFERENCES requirements(id)",
+).replace("task_kind IN ('iqc','trace')", "task_kind IN ('iqc','trace','verify')").replace(
+    "payload_json TEXT NOT NULL, closure_json TEXT",
+    "payload_json TEXT NOT NULL, closure_json TEXT, reference_json TEXT, reference_key TEXT, CHECK(task_kind='verify' OR requirement_id IS NOT NULL)",
+) + """
+CREATE UNIQUE INDEX IF NOT EXISTS material_task_open_reference ON material_tasks(project_id,task_kind,reference_key) WHERE reference_key IS NOT NULL AND state NOT IN ('closed','cancelled');
+CREATE TABLE IF NOT EXISTS material_task_requirements(
+ project_id TEXT NOT NULL REFERENCES projects(id), task_id TEXT NOT NULL REFERENCES material_tasks(id),
+ requirement_id TEXT NOT NULL REFERENCES requirements(id), PRIMARY KEY(project_id,task_id,requirement_id)
 );
 """

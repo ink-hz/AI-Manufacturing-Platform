@@ -186,7 +186,7 @@ def test_schema20_additive_migration_preserves_existing_facts(workflow):
     assert w.client().get(f"{BASE}/projects/{p['id']}").status_code==200
     assert stock(w)==before
     with w.db() as tx:
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0]==SCHEMA_VERSION==27
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0]==SCHEMA_VERSION
         assert facts=={t:[tuple(r) for r in tx.execute(f"SELECT * FROM {t} ORDER BY rowid")] for t in facts}
     w.command(p["id"],"arrival.record",**fields(w))
 

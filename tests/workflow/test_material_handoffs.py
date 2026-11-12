@@ -1,4 +1,6 @@
 """Attributable manual handoffs exercise real HTTP and preserve accounting facts."""
+
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
 from datetime import UTC, datetime
 from pathlib import Path
 import sqlite3
@@ -233,7 +235,7 @@ def test_handoff_schema21_upgrade_preserves_previous_rows(workflow):
     w.reopen()
     assert w.client().get(f"{BASE}/projects/{pid}").status_code==200
     with w.db() as tx:
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0]==27
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0]==SCHEMA_VERSION
     assert stock(w)==before
     ident=record(w,pid,fields)["object_id"]
     receive(w,pid,ident)

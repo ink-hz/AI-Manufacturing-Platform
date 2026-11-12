@@ -1,3 +1,5 @@
+
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
 from uuid import UUID, uuid4
 
 from manufacturing_platform.workflow.contracts import Actor
@@ -149,7 +151,7 @@ def test_migration_from_25_keeps_data_and_installs_tables(workflow):
     service.execute(actor, UUID(p['id']), bind_command(service, actor, p['id'], related['work_order_id']))
     assert make_service(workflow, source).mes_materials(actor, UUID(p['id']), UUID(related['work_order_id']))['snapshot']['components'][0]['withdrawn_quantity'] is None
     with workflow.db() as db:
-        assert db.execute('SELECT version FROM schema_version').fetchone()[0] == 27
+        assert db.execute('SELECT version FROM schema_version').fetchone()[0] == SCHEMA_VERSION
         columns = {row[1]: row for row in db.execute('PRAGMA table_info(mes_material_components)')}
         assert columns['withdrawn_quantity'][3] == 0
         assert columns['required_quantity'][3] == 1

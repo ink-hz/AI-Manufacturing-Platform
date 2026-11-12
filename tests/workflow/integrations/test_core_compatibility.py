@@ -1,5 +1,7 @@
 """Core composition and the separate immutable legacy ERP authority boundary."""
 
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
+
 from manufacturing_platform.workflow.service import WorkflowService
 from manufacturing_platform.workflow.store import WorkflowStore
 
@@ -47,7 +49,7 @@ def test_source22_original_wire_and_stock_proof_survive_schema23(tmp_path):
     service = WorkflowService(workflow_store, lambda _: True)
     with workflow_store.transaction() as tx:
         assert profile_for(tx, PID) == "legacy-erp-v1"
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 27
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
     adapter = service.system_registry.exchange_adapter("erp")
     request = ExternalRequest.model_validate_json(GOLDEN["request"])
     assert (
@@ -170,12 +172,12 @@ def test_existing_schema23_initializes_additive_release_ledger_and_net_view(tmp_
 
     workflow = store(tmp_path)
     with workflow.transaction() as tx:
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 27
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
         tx.execute("DROP VIEW effective_reservations")
         tx.execute("DROP TABLE integration_reservation_releases")
     reopened = store(tmp_path)
     with reopened.transaction() as tx:
-        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == 27
+        assert tx.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
         assert (
             tx.execute("SELECT COUNT(*) FROM effective_reservations").fetchone()[0] == 0
         )

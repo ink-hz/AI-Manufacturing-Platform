@@ -335,8 +335,8 @@ class WorkflowStore:
                 conn.execute("UPDATE schema_version SET version=24")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             if len(version) == 1 and version[0][0] == 24:
-                from .material_task_schema import MATERIAL_TASK_SCHEMA
-                for statement in MATERIAL_TASK_SCHEMA.split(";"):
+                from .material_task_schema import LEGACY_MATERIAL_TASK_SCHEMA
+                for statement in LEGACY_MATERIAL_TASK_SCHEMA.split(";"):
                     if statement.strip():
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=25")
@@ -354,6 +354,11 @@ class WorkflowStore:
                     if statement.strip():
                         conn.execute(statement)
                 conn.execute("UPDATE schema_version SET version=27")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 27:
+                from .material_task_reference_migration import migrate_material_task_references
+                migrate_material_task_references(conn)
+                conn.execute("UPDATE schema_version SET version=28")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1

@@ -1,3 +1,5 @@
+
+from manufacturing_platform.workflow.schema import SCHEMA_VERSION
 import sqlite3
 
 from .conftest import BASE
@@ -68,7 +70,7 @@ def test_need_time_migrates_v26_and_rejects_superseded_requirement(workflow):
     workflow.reopen()
     assert workflow.client().get(f"{BASE}/projects/{p['id']}").status_code == 200
     with workflow.db() as db:
-        assert db.execute('SELECT version FROM schema_version').fetchone()[0] == 27
+        assert db.execute('SELECT version FROM schema_version').fetchone()[0] == SCHEMA_VERSION
     # A newer confirmed plan for this work order supersedes the old requirement.
     with sqlite3.connect(workflow.paths.domain) as db:
         db.row_factory = sqlite3.Row
