@@ -144,16 +144,24 @@ def reference_page(service, actor, project_id, *, task_kind='verify', kind='all'
         can_open = bool(not actor.read_only and roles & {'supply','project_owner'} and applicable(tx, pid))
         for ref in candidates:
             resolved = resolve_reference(tx, pid, ref)
-            if task_kind not in resolved.task_kinds or (work_order_id and resolved.work_order_id != work_order_id):
+            if task_kind not in resolved.task_kinds:
                 continue
-            if requirement_id and resolved.requirement_id != requirement_id:
-                if task_kind != 'iqc' or resolved.receipt_id is None:
+            context_work_order = work_order_id or (UUID(req['work_order_id']) if requirement_id else None)
+            if isinstance(ref, ArrivalTaskReference):
+                # Arrival is a project observation, not evidence of order ownership.
+                pass
+            elif isinstance(ref, MesComponentTaskReference):
+                if context_work_order and resolved.work_order_id != context_work_order:
                     continue
-                receipt, prior, lot = _receipt(tx, pid, resolved.receipt_id)
-                if (any(prior[field] != req[field] for field in ('lineage_id', 'work_order_id', 'material_id', 'owner_id', 'unit'))
-                        or any(lot[field] != req[field] for field in ('material_id', 'owner_id', 'unit'))
-                        or receipt['unit'] != req['unit']):
+            else:
+                if work_order_id and resolved.work_order_id != work_order_id:
                     continue
+                if requirement_id:
+                    receipt, prior, lot = _receipt(tx, pid, resolved.receipt_id)
+                    if (any(prior[field] != req[field] for field in ('lineage_id', 'work_order_id', 'material_id', 'owner_id', 'unit', 'scale'))
+                            or any(lot[field] != req[field] for field in ('material_id', 'owner_id', 'unit', 'scale'))
+                            or receipt['unit'] != req['unit']):
+                        continue
             if search.strip() and search.strip().casefold() not in ' '.join(str(v or '') for v in (resolved.title, resolved.material_id, resolved.external_id)).casefold():
                 continue
             if resolved.scope_key in scopes:

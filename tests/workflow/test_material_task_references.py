@@ -141,7 +141,8 @@ def test_page_filters_are_project_scoped_and_authorized(workflow):
     assert workflow.client('outsider').get(url).status_code == 404
     assert workflow.client().get(url, params={'work_order_id': other_related['work_order_id']}).status_code == 404
     assert workflow.client().get(url, params={'requirement_id': other_req['id']}).status_code == 404
-    assert workflow.client().get(url, params={'work_order_id': related['work_order_id'], 'kind':'arrival'}).json()['total'] == 0
+    page = workflow.client().get(url, params={'work_order_id': related['work_order_id'], 'kind':'arrival'}).json()
+    assert page['total'] == 1 and page['items'][0]['evidence']['work_order_id'] is None
 
 
 def test_typed_reference_cannot_be_mixed_with_legacy_target():
@@ -163,3 +164,46 @@ def test_verification_outcomes_are_not_accepted_by_legacy_close_until_lifecycle_
     with pytest.raises(ValidationError):
         CloseMaterialTask(action='material_task.close', operation_id=uuid4(), expected_version=1,
             task_id=uuid4(), outcome='identity_verified', evidence='checked')
+
+
+def test_verify_requirement_context_keeps_arrival_and_scopes_native_components(workflow):
+    from uuid import UUID
+    from manufacturing_platform.workflow.contracts import Actor
+    from .conftest import USERS
+    from .test_native_materials import FakeMes, make_service, bind_command
+    p, req, related = workflow.material_requirement()
+    other, other_req, other_related = workflow.material_requirement()
+    arrival = workflow.command(p['id'], 'arrival.record', **fields(workflow))['object_id']
+    service = make_service(workflow, FakeMes())
+    actor = Actor(user_id=USERS['owner'], display_name='owner', read_only=False, configuration_admin=True)
+    service.execute(actor, UUID(p['id']), bind_command(service, actor, p['id'], related['work_order_id']))
+    service.mes_materials(actor, UUID(p['id']), UUID(related['work_order_id']))
+    from manufacturing_platform.workflow.material_task_references import reference_page
+    page = reference_page(service, actor, UUID(p['id']), requirement_id=UUID(req['id']))
+    assert {i['reference']['kind'] for i in page['items']} >= {'arrival', 'mes_component'}
+    observation = next(i for i in page['items'] if i['reference']['kind'] == 'arrival')
+    assert observation['reference']['id'] == arrival and observation['evidence']['work_order_id'] is None
+    assert all(i['evidence']['work_order_id'] == related['work_order_id'] for i in page['items'] if i['reference']['kind'] == 'mes_component')
+    # A component belonging to another order must not leak into this context.
+    import sqlite3
+    with sqlite3.connect(workflow.paths.domain) as tx:
+        tx.execute('UPDATE mes_order_bindings SET work_order_id=? WHERE project_id=?', (other_related['work_order_id'], p['id']))
+    filtered = reference_page(service, actor, UUID(p['id']), requirement_id=UUID(req['id']))
+    assert all(i['reference']['kind'] != 'mes_component' for i in filtered['items'])
+    assert any(i['reference']['kind'] == 'arrival' for i in filtered['items'])
+    import pytest
+    from manufacturing_platform.workflow.contracts import DomainError
+    with pytest.raises(DomainError):
+        reference_page(service, actor, UUID(p['id']), requirement_id=UUID(other_req['id']))
+
+
+def test_iqc_discovery_rejects_receipt_with_mismatched_scale(workflow):
+    import sqlite3
+    p, req, related = workflow.material_requirement(qualified='0')
+    receipt = workflow.receive(p['id'], related['id'], quantity='1', lot_id=related['lot_id'])['object_id']
+    url = f"{BASE}/projects/{p['id']}/material-task-references"
+    params = {'task_kind': 'iqc', 'kind': 'receipt', 'requirement_id': req['id']}
+    assert any(i['reference']['id'] == receipt for i in workflow.client().get(url, params=params).json()['items'])
+    with sqlite3.connect(workflow.paths.domain) as tx:
+        tx.execute('UPDATE material_lots SET scale=scale+1 WHERE id=?', (related['lot_id'],))
+    assert all(i['reference']['id'] != receipt for i in workflow.client().get(url, params=params).json()['items'])

@@ -2,7 +2,7 @@
 from datetime import date
 from typing import Literal
 from uuid import UUID
-from pydantic import AwareDatetime, Field, model_validator
+from pydantic import AwareDatetime, Field, model_serializer, model_validator
 from .commands import WorkflowCommand
 from .contracts import DomainValue, NonnegativeQuantity, SourceRef, StrictModel
 from .introduction_models import Name, Text
@@ -20,9 +20,18 @@ class OpenMaterialTask(WorkflowCommand):
 
     @model_validator(mode='after')
     def distinct_reference_fields(self):
+        if self.task_kind == 'verify' and self.reference is None:
+            raise ValueError('verify requires a typed reference')
         if self.reference is not None and (self.receipt_id is not None or self.handoff_id is not None):
             raise ValueError('reference and legacy target fields cannot be mixed')
         return self
+
+    @model_serializer(mode='wrap')
+    def serialize_legacy(self, handler):
+        data = handler(self)
+        if self.reference is None:
+            data.pop('reference', None)
+        return data
 
 class AcceptMaterialTask(WorkflowCommand):
     action: Literal['material_task.accept']
@@ -64,6 +73,13 @@ class CloseMaterialTask(WorkflowCommand):
         if self.outcome in {'identity_verified', 'unable_to_verify', 'incorrect_observation'} or self.resolved_reference is not None:
             raise ValueError('verification close is not yet available')
         return self
+
+    @model_serializer(mode='wrap')
+    def serialize_legacy(self, handler):
+        data = handler(self)
+        if self.resolved_reference is None:
+            data.pop('resolved_reference', None)
+        return data
 
 class CancelMaterialTask(WorkflowCommand):
     action: Literal['material_task.cancel']

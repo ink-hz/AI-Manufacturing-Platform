@@ -462,3 +462,68 @@ def test_trace_close_rejects_unsigned_or_wrong_destination(workflow, outcome, re
     before=w.client('warehouse').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']
     w.command(pid,'material_task.close',actor_name='warehouse',task_id=task,outcome=outcome,evidence='待处理',expected_status=409)
     assert w.client('warehouse').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']==before
+
+
+def test_historical_open_and_close_operation_hashes_replay(workflow):
+    from manufacturing_platform.workflow.material_task_models import OpenMaterialTask, CloseMaterialTask
+    from manufacturing_platform.workflow.service import digest
+    w = workflow
+    pid, rid, facts = setup(w, qualified='0')
+    receipt = w.receive(pid, facts['id'], quantity='2', lot_id=facts['lot_id'])['object_id']
+    w.inspect(pid, receipt, accepted='2', rejected='0')
+    url = f'{BASE}/projects/{pid}/commands'
+    version = w.client('supply').get(f'{BASE}/projects/{pid}').json()['version']
+    opened = dict(action='material_task.open', operation_id=str(uuid4()), expected_version=version,
+                  requirement_id=rid, task_kind='iqc', receipt_id=receipt,
+                  assignee_id=str(USERS['quality']), note='inspect')
+    result = w.client('supply').post(url, json=opened)
+    assert result.status_code == 200
+    task = result.json()['object_id']
+    w.command(pid, 'material_task.accept', actor_name='quality', task_id=task)
+    version = w.client('quality').get(f'{BASE}/projects/{pid}').json()['version']
+    closed = dict(action='material_task.close', operation_id=str(uuid4()), expected_version=version,
+                  task_id=task, outcome='fulfilled', evidence='inspected')
+    assert w.client('quality').post(url, json=closed).status_code == 200
+    for body, cls, field, actor in [(opened, OpenMaterialTask, 'reference', 'supply'),
+                                    (closed, CloseMaterialTask, 'resolved_reference', 'quality')]:
+        payload = cls.model_validate(body).model_dump(mode='json')
+        payload.pop(field, None)
+        historical_hash = digest({'project_id': pid, **payload})
+        import sqlite3
+        with sqlite3.connect(w.paths.domain) as tx:
+            tx.execute('UPDATE operations SET payload_hash=? WHERE operation_id=?', (historical_hash, body['operation_id']))
+        replay = w.client(actor).post(url, json={**body, field: None})
+        assert replay.status_code == 200 and replay.json()['replayed'], replay.text
+        assert w.client(actor).post(url, json={**body, 'evidence' if actor == 'quality' else 'note': 'changed'}).status_code == 409
+    # A reference-bearing replay remains a distinct idempotency payload.
+    changed_open = {**opened, 'receipt_id': None, 'reference': {'kind': 'receipt', 'id': receipt}}
+    assert w.client('supply').post(url, json=changed_open).status_code == 409
+    # Non-null references remain part of canonical serialized identity.
+    for cls, body, field in [(OpenMaterialTask, opened, 'reference'), (CloseMaterialTask, closed, 'resolved_reference')]:
+        model = cls.model_validate(body)
+        ref = {'kind': 'receipt', 'id': str(uuid4())}
+        from manufacturing_platform.workflow.material_task_reference_models import ReceiptTaskReference
+        changed = model.model_copy(update={field: ReceiptTaskReference.model_validate(ref)})
+        assert changed.model_dump(mode='json')[field] == ref
+        assert digest(changed.model_dump(mode='json')) != digest(model.model_dump(mode='json'))
+
+
+def test_legacy_shaped_verify_admin_self_assignment_is_rejected_without_writes(workflow):
+    w = workflow
+    pid, rid, facts = setup(w)
+    handoff = w.command(pid, 'material_handoff.record', actor_name='warehouse', material_lot_id=facts['lot_id'],
+        work_order_id=facts['work_order_id'], quantity='20', unit='kg', from_location='仓库',
+        to_location='产线', receiver_id=str(USERS['production']))['object_id']
+    with w.db() as tx:
+        before = list(tx.iterdump())
+    version = w.client().get(f'{BASE}/projects/{pid}').json()['version']
+    response = w.client().post(f'{BASE}/projects/{pid}/commands', json=dict(action='material_task.open',
+        operation_id=str(uuid4()), expected_version=version, requirement_id=rid, task_kind='verify',
+        handoff_id=handoff, assignee_id=str(USERS['owner']), note='verify'))
+    assert response.status_code == 422
+    reference_command = dict(action='material_task.open', operation_id=str(uuid4()), expected_version=version,
+        requirement_id=rid, task_kind='verify', reference={'kind': 'receipt', 'id': str(uuid4())},
+        assignee_id=str(USERS['owner']), note='verify')
+    assert w.client().post(f'{BASE}/projects/{pid}/commands', json=reference_command).status_code in (404, 422)
+    with w.db() as tx:
+        assert list(tx.iterdump()) == before
