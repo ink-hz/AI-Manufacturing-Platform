@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import type { OEMWorkspaceProps } from "../OEMWorkspace";
 import {
   initialMaterialViewContext,
+  executionScopeLabel,
   type MaterialProject,
   type MaterialViewContext,
   type MaterialProblem,
@@ -209,7 +210,7 @@ export function MaterialControlWorkspace(
                             }
                           >
                             {r.material_id}
-                          </button>
+                          </button> · {executionScopeLabel(r.execution_scope)}
                         </td>
                         <td>
                           {shownPage.work_orders.find(
@@ -250,7 +251,7 @@ export function MaterialControlWorkspace(
           </div>
           {requirement && (
             <section aria-label="物料需求详情">
-              <h4>{requirement.material_id}</h4>
+              <h4>{requirement.material_id} · {executionScopeLabel(requirement.execution_scope)}</h4>
               <p>
                 已到货 {quantity(requirement.received, requirement.unit)} · 在途{" "}
                 {quantity(requirement.in_transit, requirement.unit)} · 拒收{" "}

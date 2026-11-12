@@ -14,7 +14,7 @@ const selected: any = {
   state: "pending", receipt: null,
 };
 const requirement = (id: string, material_id = "steel-1") => ({
-  id, work_order_id: "wo1", material_id, owner_id: "Customer", unit: "kg", required: "20", state: "required",
+  id, execution_scope: "common", work_order_id: "wo1", material_id, owner_id: "Customer", unit: "kg", required: "20", state: "required",
 });
 const page = (requirements: any[], total = requirements.length) => ({ requirements, total, limit: 50, offset: 0, project_version: 7 });
 function api() {
@@ -51,6 +51,7 @@ async function save(text: string) {
 it("records exact line-side use with a business requirement choice", async () => {
   const a = api(); await mount(a);
   await choose("实收用途", "line_side");
+  expect(host.querySelector<HTMLOptionElement>('option[value="req1"]')!.textContent).toContain("共用");
   await choose("对应物料需求", "req1");
   await save("确认接收");
   expect(a.command).toHaveBeenCalledWith("p1", expect.objectContaining({
@@ -98,4 +99,34 @@ it("blocks a requirement list read from a newer project version", async () => {
   expect(host.textContent).toContain("项目资料已变化");
   expect([...host.querySelectorAll("button")].find(b => b.textContent === "确认接收")!.disabled).toBe(true);
   expect(a.command).not.toHaveBeenCalled();
+});
+
+for (const action of ["material_handoff.receive", "material_handoff.confirm_use"]) {
+  for (const [scope, label] of [["trial", "试产"], ["bulk", "量产"]]) {
+    it(`${action} identifies the ${label} demand and submits its ID`, async () => {
+      const a = api();
+      a.materialProject.mockResolvedValue(page([
+        { ...requirement("trial-id"), execution_scope: "trial" },
+        { ...requirement("bulk-id"), execution_scope: "bulk" },
+      ]));
+      const handoff = action.endsWith("confirm_use") ? { ...selected, state: "received",
+        receipt: { received_quantity: "18", received_location: "线边仓", receipt_use: "unspecified" } } : selected;
+      await mount(a, action, handoff); await choose("实收用途", "line_side");
+      const options = [...host.querySelector<HTMLSelectElement>('select[aria-label="对应物料需求"]')!.options];
+      expect(options.find(o => o.value === "trial-id")!.textContent).toContain("试产");
+      expect(options.find(o => o.value === "bulk-id")!.textContent).toContain("量产");
+      await choose("对应物料需求", options.find(o => o.textContent!.includes(label))!.value);
+      if (action.endsWith("confirm_use")) await input("用途核对说明", "核对需求范围");
+      await save(action.endsWith("confirm_use") ? "保存实收用途" : "确认接收");
+      expect(a.command).toHaveBeenCalledWith("p1", expect.objectContaining({ action, requirement_id: `${scope}-id` }));
+    });
+  }
+}
+
+it("does not allow an unscoped legacy projection to be selected", async () => {
+  const a = api(); a.materialProject.mockResolvedValue(page([{ ...requirement("legacy"), execution_scope: undefined }]));
+  await mount(a); await choose("实收用途", "line_side");
+  const option = host.querySelector<HTMLOptionElement>('option[value="legacy"]')!;
+  expect(option.textContent).toContain("范围待核对"); expect(option.disabled).toBe(true);
+  expect([...host.querySelectorAll("button")].find(b => b.textContent === "确认接收")!.disabled).toBe(true);
 });

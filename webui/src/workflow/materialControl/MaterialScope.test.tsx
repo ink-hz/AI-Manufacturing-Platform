@@ -127,3 +127,13 @@ it('blocks a failed or mismatched issue lookup and ignores a retired response', 
  const api={materialProject:vi.fn().mockResolvedValue({requirements:[req],work_orders:[],expedites:[],receipts:[],handoffs:[],source_modes:[],total:1}),objects:vi.fn().mockResolvedValue({items:[],total:0}),materialAssignees:vi.fn().mockResolvedValue({items:[{id:'person',display_name:'李工'}]}),object:vi.fn().mockReturnValueOnce(new Promise(r=>resolve=r)).mockRejectedValueOnce(new Error('读取失败'))};
  await act(async()=>root.render(<MaterialControlWorkspace api={api as never} project={{...project,mode:'oem',allowed_actions:['material_task.open']}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();const click=async(t:string)=>act(async()=>[...host.querySelectorAll('button')].find(x=>x.textContent===t)!.click());await click('安排检验：待检');await click('安排检验');await act(async()=>resolve({summary:{id:'outside',project_id:project.id,kind:'receipt'},value:{kind:'receipt',quantity:'1',unit:'件',uninspected:'1'}}));expect(host.querySelector('[aria-label="到货记录"]')?.textContent).not.toContain('到货 1');await click('安排检验：待检');await flush();expect(host.textContent).toContain('读取失败');expect([...host.querySelectorAll('button')].find(x=>x.textContent==='创建任务')!.disabled).toBe(true);await act(async()=>root.unmount());host.remove();
 });
+
+it('distinguishes otherwise identical scopes in rows and selected detail', async () => {
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+ const req=(id:string, execution_scope:string)=>({id,execution_scope,material_id:'轴承',work_order_id:'w',unit:'件',required:'20',expedite_ids:[],receipt_ids:[],handoff_ids:[]});
+ const api={materialProject:vi.fn().mockResolvedValue({requirements:[req('a','trial'),req('b','bulk')],work_orders:[],expedites:[],receipts:[],handoffs:[],source_modes:[],total:2}),objects:vi.fn().mockResolvedValue({items:[],total:0})};
+ await act(async()=>root.render(<MaterialControlWorkspace api={api as never} project={{...project,mode:'oem'}} readOnly={false} onChanged={()=>{}} onOpen={()=>{}} onDirty={()=>{}} requestLeave={f=>f()}/>));await flush();
+ const rows=[...host.querySelectorAll('tbody tr')];expect(rows[0].textContent).toContain('试产');expect(rows[1].textContent).toContain('量产');
+ await act(async()=>rows[1].querySelector('button')!.click());expect(host.querySelector('[aria-label="物料需求详情"] h4')!.textContent).toContain('量产');
+ await act(async()=>root.unmount());host.remove();
+});

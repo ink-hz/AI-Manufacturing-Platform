@@ -229,6 +229,8 @@ def test_shared_lot_final_receipt_is_not_donated_to_a_second_requirement(workflo
     plan_value = w.object(pid, "plan", plan["object_id"])
     assert plan_value["state"] == "confirmed", plan_value["reason"]
     requirements = [dict(w.object(pid, "requirement", rid), id=rid) for rid in plan_value["requirement_ids"]]
+    projection = w.client("supply").get(f"{BASE}/projects/{pid}/material-control").json()
+    assert {r["id"]: r["execution_scope"] for r in projection["requirements"]} == {r["id"]: r["execution_scope"] for r in requirements}
     first = next(r["id"] for r in requirements if r["execution_scope"] == "trial")
     second = next(r["id"] for r in requirements if r["execution_scope"] == "bulk")
     intent = w.command(pid, "reservation.request", actor_name="planner",

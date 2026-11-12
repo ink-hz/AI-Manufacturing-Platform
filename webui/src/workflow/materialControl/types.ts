@@ -1,9 +1,13 @@
 export type MaterialProblem = "all" | "attention" | "shortage" | "urgent" | "pending_iqc" | "unreceived" | "verification";
 export interface MaterialFilters { search?: string; problem?: MaterialProblem; work_order_id?: string }
 export interface MaterialIssue { code: string; title: string; object_kind: "requirement" | "receipt" | "material_handoff" | "material_lot" | "material_expedite"; object_id: string; quantity: string | null; unit: string | null; task_id: string | null; assignee_id: string | null; proposed_assignee_id: string | null; assignee_name: string | null; proposed_assignee_name: string | null; next_action: "view_task" | "arrange_iqc" | "trace" | "expedite" | "view_object" | "confirm_time" | "check_allocation"; }
+export function executionScopeLabel(scope: MaterialRequirement["execution_scope"]): string {
+  return scope === "trial" ? "试产" : scope === "bulk" ? "量产" : scope === "common" ? "共用" : "范围待核对";
+}
 export interface MaterialRequirement {
   id: string;
   state?: "required" | "superseded";
+  execution_scope?: "trial" | "bulk" | "common";
   work_order_id: string;
   material_id: string;
   owner_id: string;

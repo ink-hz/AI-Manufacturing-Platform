@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { WorkflowApi } from "../api";
 import type { MaterialHandoffValue } from "../materialHandoffTypes";
 import type { ReceiptUse } from "../materialHandoffTypes";
-import type { MaterialRequirement } from "../materialControl/types";
+import { executionScopeLabel, type MaterialRequirement } from "../materialControl/types";
 
 interface UseValue { receipt_use: ReceiptUse; requirement_id: string | null }
 export function ReceiptUseFields({ api, projectId, projectVersion, handoff, value, onChange, onReady,
@@ -16,7 +16,7 @@ export function ReceiptUseFields({ api, projectId, projectVersion, handoff, valu
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     if (value.receipt_use === "line_side")
-      onReady(!loading && !error && requirements.some(r => r.id === value.requirement_id));
+      onReady(!loading && !error && requirements.some(r => r.id === value.requirement_id && ["trial", "bulk", "common"].includes(r.execution_scope || "")));
   }, [value.receipt_use, value.requirement_id, requirements, loading, error, onReady]);
   useEffect(() => {
     const c = new AbortController();
@@ -76,7 +76,7 @@ export function ReceiptUseFields({ api, projectId, projectVersion, handoff, valu
       <label>对应物料需求 <select aria-label="对应物料需求" value={value.requirement_id || ""}
         disabled={disabled || loading || !!error} onChange={e => onChange({ ...value, requirement_id: e.target.value || null })}>
         <option value="">请选择本次实收对应的需求</option>
-        {requirements.map(r => <option key={r.id} value={r.id}>{r.material_id} · 需求 {r.required} {r.unit} · {r.owner_id}</option>)}
+        {requirements.map(r => <option key={r.id} value={r.id} disabled={!["trial", "bulk", "common"].includes(r.execution_scope || "")}>{r.material_id} · {executionScopeLabel(r.execution_scope)} · 需求 {r.required} {r.unit} · {r.owner_id}</option>)}
       </select></label>
     </>}
   </>;

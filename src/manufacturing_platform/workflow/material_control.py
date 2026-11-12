@@ -208,7 +208,7 @@ def project_view(service, actor, project_id, limit, offset, work_order_id=None, 
                 parsed_need = datetime.fromisoformat(need_at.replace('Z', '+00:00'))
                 if parsed_need.utcoffset() is not None and parsed_need <= now:
                     timing_risk = 'need_time_passed'
-            requirements.append(dict(id=rid, work_order_id=wid, state='required' if row['plan_id'] == current_plan_id(tx, pid, wid) else 'superseded', material_id=row['material_id'], owner_id=row['owner_id'], unit=row['unit'],
+            requirements.append(dict(id=rid, work_order_id=wid, state='required' if row['plan_id'] == current_plan_id(tx, pid, wid) else 'superseded', material_id=row['material_id'], owner_id=row['owner_id'], unit=row['unit'], execution_scope=row['execution_scope'],
                 **{k: bal[k] for k in ('required', 'received', 'qualified', 'rejected', 'reserved', 'shortage', 'in_transit')},
                 confirmed_satisfied=None if rid in unknown_quality else amount(row['q_atoms'] - int(Decimal(bal['shortage']) * 10 ** row['scale']), row['scale']), issues=analysis[rid],
                 need_at=need_at, need_at_basis='manual_requirement' if need_event and need_event['need_at'] else 'work_order_planned_start_proxy', need_time_history_count=need_count, timing_risk=timing_risk, coverage_issues=[ISSUE],
