@@ -2,7 +2,7 @@
 
 日期：2026-11-12。对应[实施计划](../superpowers/plans/2026-11-12-material-analysis-and-resolution.md)、[T2](../taskbooks/robot-oem/02-material-analysis.md)、[T4](../taskbooks/robot-oem/04-expedite-coordination.md)。
 
-计划员可跨项目当前需求搜索物料、按工单与问题筛选，结果先过滤再分页。每条需求并列显示缺料、急料、待检、未实收和待核实卡点，显示实际与拟接手人；点击进入对应批次、交接或已有任务。需要时间可带依据修改、重置为明确标记的工单开始代理并查看历史。时间风险独立于已发起急料。
+计划员可在当前项目全范围搜索物料、按工单与问题筛选，结果先过滤再分页。每条需求并列显示缺料、急料、待检、未实收和待核实卡点，显示实际与拟接手人；点击进入对应批次、交接或已有任务。需要时间可带依据修改、重置为明确标记的工单开始代理并查看历史。时间风险独立于已发起急料。
 
 接收人签收时选择中转或线边用途；线边实收必须选择相容的当前需求。老签收默认用途待核对，只允许原指定接收人补充一次用途，保留原签收人、时间、数量与位置。催办结束前显示当前需求、相关批次合格量、有效预留、线边实收及剩余待收，阶段数量分别展示；后台在事务中重新核对，成功后保存当时的证据。过期、冻结、当前质量不足、归属不明、多段或无关联的独立交接均不能凭文字强行结束。
 
@@ -13,6 +13,7 @@
 - 受控完整流程：`tests/workflow/test_material_resolution_journey.py`，1项通过。通过受权业务API建立确认需求20→发起急料→到货20→IQC接单/正式结果→有效分配→交出20/指定人实收18→寻料找到2仍不可结束→补签2但未关联仍不可结束→独占补收关联→核对结束。急料、待检、未实收分类随后均清零；交接与协调没有改变库存、IQC或预留事实。
 - 跨宿主HTTP E30：`WORKFLOW_ACCEPTANCE_CASES=E30 TEST_PLATFORM_SOURCE_ROOT=<现有PF隔离工作树> PYTHONPATH=src <PF虚拟环境python> -m pytest tests/workflow/test_acceptance.py::test_e30 -q`，1项通过。使用真实回环HTTP及现有宿主路由。
 - 后端关联回归：`PYTHONPATH=src /private/tmp/manufacturing-contract-py311/bin/python -m pytest tests/workflow/{test_material_analysis,test_material_control,test_material_handoffs,test_material_tasks,test_expedites,test_expedite_tasks,test_expedite_fulfillment,test_material_resolution_journey,test_supply,test_exchanges}.py -q --tb=short`，196项通过（59.59秒）。覆盖质量修正、有效期、冻结、共享储备、重排、旧需求、幂等/CAS及当前权限等边界。
+- 相邻开工/执行回归：同一解释器执行`tests/workflow/test_engineering_readiness.py tests/workflow/test_execution.py`，66项通过（23.94秒），确认批次可用性调整不破坏现有开工和执行路径。
 
 独立审查和本地主线合入记录将在对应检查完成后补充。
 
