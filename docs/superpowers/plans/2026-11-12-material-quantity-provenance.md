@@ -99,7 +99,7 @@ def source_modes(quantities) -> list[str]: ...
 
 `source_from_ref`只接受既有SourceRef/其字典/null；mode api只有`trusted=True`（调用方已核对持久准入/绑定）才映射origin native，否则unknown。其他已知mode保留原义，缺失/无效身份为unknown；可辨认的mock标志不能因其他元数据损坏而丢失。mock环境为mock；其余环境只有`trusted=True`且调用方有持久可信绑定时才能使用，否则unknown。未知或朴素时间不补当前时间。原始SourceRef不能从其自身的字符串证明trusted。
 
-- [ ] **Step 1: 先写独立失败测试。** 构造同项目manual输入和mock输入，各给不同时间、稳定引用和十进制字符串；验证混合数量origin/environment并集、mock持续标识、input_refs与去重source_refs一一对应、null不转0、Decimal字符串不经float、输入不被改写。增加无来源、缺时间、同引用不同内容、重复来源以及未知环境测试。
+- [x] **Step 1: 先写独立失败测试。** 构造同项目manual输入和mock输入，各给不同时间、稳定引用和十进制字符串；验证混合数量origin/environment并集、mock持续标识、input_refs与去重source_refs一一对应、null不转0、Decimal字符串不经float、输入不被改写。增加无来源、缺时间、同引用不同内容、重复来源以及未知环境测试。
 
 ```python
 def test_mock_identity_survives_platform_confirmation():
@@ -116,10 +116,10 @@ def test_mock_identity_survives_platform_confirmation():
     assert result.input_refs == [inputs[0].reference]
 ```
 
-- [ ] **Step 2: RED**：`... -m pytest tests/workflow/test_quantity_provenance.py -q --tb=short`；记录导入/行为失败，确认是缺少功能。
-- [ ] **Step 3: 实现模型及纯合并。** 使用集合并集排序、完整来源引用去重；同引用不同内容拒绝，不能静默覆盖。覆盖保守排序failed→partial→unknown→complete；显式coverage只能降级。时间取全部输入中最早值，任一必要输入缺时间则对应汇总时间为null。空输入origins/environments各为`['unknown']`、role为unknown、时间为null、coverage至多unknown，source_refs/input_refs保持空；不要伪造来源引用。`source_modes`从origins派生，native映射旧值api，其他值原样，空数量集合返回空列表。数量与输入value仅接受有限的普通十进制字符串/null，保留符号、前导零和精度，不接收科学计数或NaN。
-- [ ] **Step 4: GREEN**：同一命令通过；序列化再读回保持字段/小数/引用和不变量。模型验证不得允许手工构造投影删除mock输入身份。
-- [ ] **Step 5: Commit**：仅提交上述两个文件；报告RED/GREEN命令、输出和自审。
+- [x] **Step 2: RED**：`... -m pytest tests/workflow/test_quantity_provenance.py -q --tb=short`；记录导入/行为失败，确认是缺少功能。
+- [x] **Step 3: 实现模型及纯合并。** 使用集合并集排序、完整来源引用去重；同引用不同内容拒绝，不能静默覆盖。覆盖保守排序failed→partial→unknown→complete；显式coverage只能降级。时间取全部输入中最早值，任一必要输入缺时间则对应汇总时间为null。空输入origins/environments各为`['unknown']`、role为unknown、时间为null、coverage至多unknown，source_refs/input_refs保持空；不要伪造来源引用。`source_modes`从origins派生，native映射旧值api，其他值原样，空数量集合返回空列表。数量与输入value仅接受有限的普通十进制字符串/null，保留符号、前导零和精度，不接收科学计数或NaN。
+- [x] **Step 4: GREEN**：同一命令通过；序列化再读回保持字段/小数/引用和不变量。模型验证不得允许手工构造投影删除mock输入身份。
+- [x] **Step 5: Commit**：仅提交上述两个文件；报告RED/GREEN命令、输出和自审。
 
 ### Task 2: 按实际数量范围附加持久来源，提前准备大集合
 
@@ -156,6 +156,8 @@ def handoff_quantities(tx, project_id, handoff):
 | issue.quantity | shortage沿用需求shortage；待检沿准确收货uninspected；短收沿实际交出/签收和既有独占补收组，引用完整关联证据；找到数量不当作实收 |
 
 本地人工检验无SourceRef时用其实际操作者/记录引用和持久created_at声明manual；发生时间不假装已知。IQC源确认必须以project＋fact_id匹配本次IQC，不能按receipt.object_id把全部确认附给每次检验。预留从已保存exchange.mode/接受回执及integration来源取身份，释放只收集与integration_projections全键/哈希匹配、实际影响有效数量的事实。更正必须保留其delta、exchange和实际来源；解析不到保留本地引用及unknown，不能借用原收货来源。缺失来源标unknown。不要仅凭system=sap或api推定生产，不用fixture命名判断mock。
+
+实现核对补充：导入与人工`supply.inspect`都调用同一`inspect_supply`，旧IQC行仅靠actor/created_at不能区分首次产生方式。有准确确认关联但原始方式无法证明时，原IQC行以unknown保留本地引用/操作者/登记时间，确认事实另保留实际file/mock/api身份；不按时间、数量猜审计关联。无确认的实际本地检验仍可保留manual。此规则同步用于概览，既有数量不变；属于历史证据不足的保守表达，不新增迁移或准入放宽。
 
 可用性依赖涉及所有相同批次的有效占用、冻结/有效期、物料移动/库存核实输入。复杂历史路径不能重建来源时，保留明确本地eligibility引用和unknown/coverage=unknown，不宣称完整正式生产判断；不改变既有hold。数量输入图可说明“平台持久记录范围完整”，不声称外部库存/检验全量。
 
