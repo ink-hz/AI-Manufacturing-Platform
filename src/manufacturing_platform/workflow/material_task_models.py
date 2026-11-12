@@ -66,14 +66,6 @@ class CloseMaterialTask(WorkflowCommand):
     handoff_ids: list[UUID] = Field(default_factory=list, max_length=50)
     resolved_reference: TaskReference | None = None
 
-    @model_validator(mode='after')
-    def verification_lifecycle_pending(self):
-        # Kind-specific close dispatch is introduced in the next task. Until then,
-        # never let the legacy close handler treat verification as a legacy outcome.
-        if self.outcome in {'identity_verified', 'unable_to_verify', 'incorrect_observation'} or self.resolved_reference is not None:
-            raise ValueError('verification close is not yet available')
-        return self
-
     @model_serializer(mode='wrap')
     def serialize_legacy(self, handler):
         data = handler(self)
@@ -102,6 +94,7 @@ class TaskHistory(StrictModel):
     found_location: Name | None = None
     handoff_ids: list[UUID] | None = None
     resolved_reference: TaskReference | None = None
+    requirement_id: UUID | None = None
 
 class MaterialTask(DomainValue):
     kind: Literal['material_task'] = 'material_task'

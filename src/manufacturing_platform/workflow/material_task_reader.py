@@ -33,11 +33,11 @@ def summary(tx,pid,row):
         assignee_id=row['assignee_id'], proposed_assignee_id=row['proposed_assignee_id'],
         next_actions=(['material_task.accept', 'material_task.reassign', 'material_task.cancel']
                       if state == 'pending' else
-                      ['material_task.progress', 'material_task.verify', 'material_task.close',
+                      ['material_task.progress', *(['material_task.verify'] if row['task_kind'] != 'verify' else []), 'material_task.close',
                        'material_task.reassign', 'material_task.cancel']
                       if state not in ('closed', 'cancelled') else []),
     )
 
 def relations(item,pid):
-    return [ObjectRelation(relation='requirement',project_id=pid,kind='requirement',id=item.requirement_id)] if item.requirement_id else []
+    return [ObjectRelation(relation='requirement',project_id=pid,kind='requirement',id=ident) for ident in item.context_requirement_ids]
 register_reader('material_task','material_tasks',MaterialTask,value,summary,relations)

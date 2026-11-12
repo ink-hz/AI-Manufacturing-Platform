@@ -156,14 +156,12 @@ def test_typed_reference_cannot_be_mixed_with_legacy_target():
             reference={'kind':'receipt', 'id':str(uuid4())})
 
 
-def test_verification_outcomes_are_not_accepted_by_legacy_close_until_lifecycle_support():
+def test_verification_conclusion_is_structurally_valid_for_kind_dispatch():
     from uuid import uuid4
-    import pytest
-    from pydantic import ValidationError
     from manufacturing_platform.workflow.material_task_models import CloseMaterialTask
-    with pytest.raises(ValidationError):
-        CloseMaterialTask(action='material_task.close', operation_id=uuid4(), expected_version=1,
-            task_id=uuid4(), outcome='identity_verified', evidence='checked')
+    command = CloseMaterialTask(action='material_task.close', operation_id=uuid4(), expected_version=1,
+        task_id=uuid4(), outcome='identity_verified', evidence='checked')
+    assert command.outcome == 'identity_verified'
 
 
 def test_verify_requirement_context_keeps_arrival_and_scopes_native_components(workflow):

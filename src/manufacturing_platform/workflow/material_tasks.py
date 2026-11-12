@@ -17,13 +17,30 @@ TRACE_ROLES = {'supply', 'project_owner', 'warehouse', 'production'}
 ALL_ROLES = TRACE_ROLES | {'quality'}
 
 def eligible(tx, actor, pid, uid, kind):
-    if actor.configuration_admin and str(actor.user_id) == str(uid):
+    if kind != 'verify' and actor.configuration_admin and str(actor.user_id) == str(uid):
         return True
     row = tx.execute('SELECT roles_json,qualifications_json FROM project_grants WHERE project_id=? AND user_id=? AND active=1', (str(pid),str(uid))).fetchone()
     if not row:
         return False
     roles, qualifications = set(json.loads(row[0])), set(json.loads(row[1]))
-    return bool((kind == 'iqc' and 'quality' in roles and 'inspection' in qualifications) or (kind == 'trace' and roles & TRACE_ROLES))
+    return bool((kind == 'iqc' and 'quality' in roles and 'inspection' in qualifications) or (kind == 'trace' and roles & TRACE_ROLES) or (kind == 'verify' and roles & ALL_ROLES))
+
+def assignees(service, actor, pid, kind):
+    """Resolve eligible project members through the current host directory."""
+    from uuid import UUID
+    with service.store.transaction() as tx:
+        require_project(tx, actor, pid)
+        ids = [r[0] for r in tx.execute('SELECT user_id FROM project_grants WHERE project_id=? AND active=1 ORDER BY user_id', (str(pid),))
+               if eligible(tx, actor, pid, r[0], kind)]
+        if str(actor.user_id) not in ids and eligible(tx, actor, pid, actor.user_id, kind):
+            ids.append(str(actor.user_id))
+    items = []
+    for start in range(0, len(ids), 50):
+        chunk = ids[start:start+50]
+        profiles = service.member_profiles(actor, pid, [UUID(i) for i in chunk])
+        items.extend({'id': i, 'display_name': profiles[i]} for i in chunk if i in profiles and service.resolve_subject(UUID(i)))
+    return items
+
 
 def authorize(tx, actor, pid, command):
     if not command.action.startswith('material_task.'):
@@ -56,7 +73,8 @@ def read_actions(tx, actor, pid, row):
         if row['state'] == 'pending' or row['proposed_assignee_id']:
             result.append('material_task.accept')
     if str(actor.user_id) == row['assignee_id'] and row['state'] != 'pending' and eligible(tx, actor, pid, actor.user_id, row['task_kind']):
-        result += ['material_task.progress','material_task.verify','material_task.close']
+        result += ['material_task.progress','material_task.close']
+        if row['task_kind'] != 'verify': result.append('material_task.verify')
     return result
 
 def history(tx, context, ident, action, **fields):
@@ -65,37 +83,75 @@ def history(tx, context, ident, action, **fields):
 
 def result(ident): return MutationResult(object_type='material_task', object_id=ident)
 
+def receipt_context(tx, pid, receipt_id, req):
+    receipt = own(tx, 'supply_receipts', pid, receipt_id)
+    commitment = own(tx, 'supply_commitments', pid, receipt['commitment_id'])
+    prior = own(tx, 'requirements', pid, commitment['requirement_id'])
+    req = req if req is not None else prior
+    lot = own(tx, 'material_lots', pid, receipt['material_lot_id'])
+    if (any(prior[field] != req[field] for field in ('lineage_id','work_order_id','material_id','owner_id','unit','scale'))
+            or any(lot[field] != req[field] for field in ('material_id','owner_id','unit','scale'))
+            or receipt['unit'] != req['unit']):
+        fail('Receipt does not belong to requirement', 422)
+    return req
+
+
+def open_scope(tx, c, cmd):
+    from .material_task_references import resolve_reference
+    req = own(tx, 'requirements', c.project_id, cmd.requirement_id) if cmd.requirement_id else None
+    resolved = resolve_reference(tx, c.project_id, cmd.reference) if cmd.reference else None
+    receipt_id, handoff_id = cmd.receipt_id, cmd.handoff_id
+    if resolved:
+        if cmd.task_kind not in resolved.task_kinds:
+            fail('Reference does not support this task kind', 422)
+        if cmd.task_kind == 'iqc':
+            receipt_id = resolved.receipt_id
+        if req is not None and resolved.work_order_id is not None and str(resolved.work_order_id) != req['work_order_id']:
+            fail('Reference does not belong to contextual work order', 422)
+    if cmd.task_kind == 'verify':
+        if resolved is None: fail('Verification requires a reference', 422)
+    elif cmd.task_kind == 'iqc':
+        if not receipt_id or handoff_id: fail('IQC task requires one receipt', 422)
+        req = receipt_context(tx, c.project_id, receipt_id, req)
+    elif cmd.task_kind == 'trace':
+        if req is None or not handoff_id or receipt_id or resolved: fail('Trace task requires a requirement and one handoff', 422)
+        handoff = own(tx, 'material_handoffs', c.project_id, handoff_id)
+        lot = own(tx, 'material_lots', c.project_id, handoff['material_lot_id'])
+        if handoff['work_order_id'] != req['work_order_id'] or any(lot[f] != req[f] for f in ('material_id','owner_id','unit')):
+            fail('Handoff does not belong to requirement', 422)
+        if tx.execute('SELECT 1 FROM material_task_evidence WHERE project_id=? AND handoff_id=?', (str(c.project_id),str(handoff_id))).fetchone():
+            fail('Handoff already allocated as evidence', 422)
+    return req, resolved, str(receipt_id) if receipt_id else None, str(handoff_id) if handoff_id else None
+
+
+def link_requirement(tx, pid, task_id, requirement_id):
+    if requirement_id:
+        tx.execute('INSERT OR IGNORE INTO material_task_requirements(project_id,task_id,requirement_id) VALUES (?,?,?)',
+                   (str(pid), str(task_id), str(requirement_id)))
+
+
 def open_task(tx, c, cmd):
-    req = own(tx,'requirements',c.project_id,cmd.requirement_id)
     if not eligible(tx,c.actor,c.project_id,cmd.assignee_id,cmd.task_kind): fail('Assignee must be an eligible active project member',422)
-    if cmd.task_kind == 'iqc':
-        if not cmd.receipt_id or cmd.handoff_id: fail('IQC task requires one receipt',422)
-        receipt = own(tx,'supply_receipts',c.project_id,cmd.receipt_id)
-        commitment = own(tx,'supply_commitments',c.project_id,receipt['commitment_id'])
-        prior = own(tx,'requirements',c.project_id,commitment['requirement_id'])
-        lot = own(tx,'material_lots',c.project_id,receipt['material_lot_id'])
-        fields = ('lineage_id', 'work_order_id', 'material_id', 'owner_id', 'unit')
-        if (any(prior[field] != req[field] for field in fields)
-                or any(lot[field] != req[field] for field in ('material_id', 'owner_id', 'unit'))
-                or receipt['unit'] != req['unit']):
-            fail('Receipt does not belong to requirement',422)
-        scope, ident_field = 'receipt_id', str(cmd.receipt_id)
-    else:
-        if not cmd.handoff_id or cmd.receipt_id: fail('Trace task requires one handoff',422)
-        handoff = own(tx,'material_handoffs',c.project_id,cmd.handoff_id)
-        lot = own(tx,'material_lots',c.project_id,handoff['material_lot_id'])
-        if handoff['work_order_id'] != req['work_order_id'] or lot['material_id'] != req['material_id'] or lot['owner_id'] != req['owner_id'] or lot['unit'] != req['unit']:
-            fail('Handoff does not belong to requirement',422)
-        if tx.execute('SELECT 1 FROM material_task_evidence WHERE project_id=? AND handoff_id=?', (str(c.project_id),str(cmd.handoff_id))).fetchone(): fail('Handoff already allocated as evidence',422)
-        scope, ident_field = 'handoff_id', str(cmd.handoff_id)
-    if tx.execute(f"SELECT 1 FROM material_tasks WHERE project_id=? AND {scope}=? AND state NOT IN ('closed','cancelled')",(str(c.project_id),ident_field)).fetchone(): fail('Task already exists for this scope')
+    req, resolved, receipt_id, handoff_id = open_scope(tx, c, cmd)
+    reference_key = resolved.scope_key if resolved else None
+    requirement_id = req['id'] if req is not None else None
+    existing = tx.execute("""SELECT id FROM material_tasks WHERE project_id=? AND task_kind=?
+        AND state NOT IN ('closed','cancelled') AND
+        (reference_key=? OR (?='iqc' AND receipt_id=?) OR (?='trace' AND handoff_id=?)) ORDER BY seq LIMIT 1""",
+        (str(c.project_id),cmd.task_kind,reference_key,cmd.task_kind,receipt_id,cmd.task_kind,handoff_id)).fetchone()
+    if existing:
+        link_requirement(tx, c.project_id, existing['id'], requirement_id)
+        history(tx,c,existing['id'],'reuse',note=cmd.note,requirement_id=requirement_id)
+        return result(existing['id'])
     ident = str(uuid4()); now = c.now.isoformat()
-    payload = dict(id=ident, requirement_id=str(cmd.requirement_id), task_kind=cmd.task_kind,
-        receipt_id=str(cmd.receipt_id) if cmd.receipt_id else None, handoff_id=str(cmd.handoff_id) if cmd.handoff_id else None,
+    payload = dict(id=ident, requirement_id=requirement_id, task_kind=cmd.task_kind,
+        receipt_id=receipt_id, handoff_id=handoff_id,
         note=cmd.note, opened_by=str(c.actor.user_id), recorded_at=now,
         source=dict(system='manual',object_type='material_task',external_id=ident,version=1,mode='manual',occurred_at=now,collected_at=now,evidence='Manual coordination task'))
-    tx.execute('INSERT INTO material_tasks(id,project_id,requirement_id,task_kind,receipt_id,handoff_id,assignee_id,state,payload_json) VALUES (?,?,?,?,?,?,?,?,?)',
-        (ident,str(c.project_id),str(cmd.requirement_id),cmd.task_kind,payload['receipt_id'],payload['handoff_id'],str(cmd.assignee_id),'pending',canonical(payload)))
+    evidence = resolved.model_dump(mode='json', exclude={'requirement_id','task_kinds'}) if resolved else None
+    tx.execute('INSERT INTO material_tasks(id,project_id,requirement_id,task_kind,receipt_id,handoff_id,assignee_id,state,payload_json,reference_json,reference_key) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        (ident,str(c.project_id),requirement_id,cmd.task_kind,receipt_id,handoff_id,str(cmd.assignee_id),'pending',canonical(payload),canonical(evidence) if evidence else None,reference_key))
+    link_requirement(tx, c.project_id, ident, requirement_id)
     history(tx,c,ident,'open',note=cmd.note,assignee_id=str(cmd.assignee_id)); return result(ident)
 
 def active(tx,c,cmd):
@@ -120,6 +176,8 @@ def reassign(tx,c,cmd):
 def progress(tx,c,cmd):
     row=active(tx,c,cmd)
     if row['state']=='pending': fail('Task must be accepted')
+    if row['task_kind']=='verify' and (cmd.found_quantity is not None or cmd.found_location is not None):
+        fail('Verification does not record found quantity or location proof',422)
     data=business(cmd); data.pop('task_id',None)
     tx.execute("UPDATE material_tasks SET state='processing' WHERE id=?",(row['id'],))
     history(tx,c,row['id'],'progress',**data); return result(row['id'])
@@ -141,6 +199,7 @@ def proof(tx,pid,row):
 
 def verify(tx,c,cmd):
     row=active(tx,c,cmd)
+    if row['task_kind']=='verify': fail('Identity verification closes directly with a conclusion',422)
     if row['state']=='pending': fail('Task must be accepted')
     link_evidence(tx,c,row,cmd.handoff_ids)
     if not proof(tx,c.project_id,row): fail('Current source evidence does not complete the task')
@@ -162,10 +221,19 @@ def link_evidence(tx,c,row,handoff_ids):
 def close(tx,c,cmd):
     row=active(tx,c,cmd)
     if row['state']=='pending': fail('Task must be accepted')
-    link_evidence(tx,c,row,cmd.handoff_ids)
-    if not proof(tx,c.project_id,row): fail('Current source evidence does not complete the task')
-    tx.execute("UPDATE material_tasks SET state='closed',closure_json=? WHERE id=?",(canonical(dict(outcome=cmd.outcome,evidence=cmd.evidence,**actor_fact(c))),row['id']))
-    history(tx,c,row['id'],'close',outcome=cmd.outcome,evidence=cmd.evidence,handoff_ids=[str(i) for i in cmd.handoff_ids]); return result(row['id'])
+    resolved = {}
+    if row['task_kind']=='verify':
+        from .material_verification import close_evidence
+        resolved = close_evidence(tx,c.project_id,row,cmd)
+    else:
+        if cmd.outcome not in {'fulfilled','discrepancy','false_alarm','superseded'} or cmd.resolved_reference is not None:
+            fail('IQC and trace require quantity proof and legacy conclusions',422)
+        link_evidence(tx,c,row,cmd.handoff_ids)
+        if not proof(tx,c.project_id,row): fail('Current source evidence does not complete the task')
+    tx.execute("UPDATE material_tasks SET state='closed',closure_json=? WHERE id=?",(canonical(dict(outcome=cmd.outcome,evidence=cmd.evidence,**resolved,**actor_fact(c))),row['id']))
+    history(tx,c,row['id'],'close',outcome=cmd.outcome,evidence=cmd.evidence,handoff_ids=[str(i) for i in cmd.handoff_ids],
+            **({'resolved_reference':resolved['resolved_reference']} if resolved else {}))
+    return result(row['id'])
 
 def cancel(tx,c,cmd):
     row=active(tx,c,cmd); tx.execute("UPDATE material_tasks SET state='cancelled' WHERE id=?",(row['id'],))

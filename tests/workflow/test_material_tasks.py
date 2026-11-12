@@ -110,8 +110,8 @@ def test_live_eligibility_replay_cas_and_duplicate_scope(workflow):
     assert replay.status_code==200 and replay.json()['replayed']
     stale={**body,'operation_id':str(uuid4())}
     assert w.client('supply').post(url,json=stale).status_code==409
-    w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='iqc',receipt_id=receipt,
-              assignee_id=str(USERS['quality']),note='重复',expected_status=409)
+    assert w.command(pid,'material_task.open',actor_name='supply',requirement_id=rid,task_kind='iqc',receipt_id=receipt,
+              assignee_id=str(USERS['quality']),note='重复')['object_id'] == first.json()['object_id']
     w.inactive.add('quality')
     assert w.client('supply').post(url,json=body).status_code==422
     w.inactive.clear()
@@ -352,6 +352,8 @@ def test_iqc_task_accepts_replanned_requirement_and_prior_lineage_receipt(workfl
     w = workflow
     pid, old_id, facts = setup(w, qualified='0')
     receipt = w.receive(pid, facts['id'], quantity='20', lot_id=facts['lot_id'])['object_id']
+    prior_task = w.command(pid, 'material_task.open', actor_name='supply', requirement_id=old_id,
+        task_kind='iqc', receipt_id=receipt, assignee_id=str(USERS['quality']), note='Original requirement inspection')['object_id']
     old = w.object(pid, 'requirement', old_id)
     plan = w.object(pid, 'plan', old['plan_id'])
     now = datetime.now(UTC)
@@ -368,7 +370,9 @@ def test_iqc_task_accepts_replanned_requirement_and_prior_lineage_receipt(workfl
     task = w.command(pid, 'material_task.open', actor_name='supply', requirement_id=new_id,
         task_kind='iqc', receipt_id=receipt, assignee_id=str(USERS['quality']), note='Inspect prior receipt')['object_id']
     value = w.client('quality').get(f'{BASE}/projects/{pid}/objects/material_task/{task}').json()['value']
-    assert value['requirement_id'] == new_id and value['receipt_id'] == receipt
+    assert task == prior_task and value['requirement_id'] == old_id and value['receipt_id'] == receipt
+    assert set(value['context_requirement_ids']) == {old_id,new_id}
+    assert value['history'][-1]['action'] == 'reuse' and value['history'][-1]['requirement_id'] == new_id
     assert accounting(w) == before
     w.command(pid, 'material_task.accept', actor_name='quality', task_id=task)
     w.inspect(pid, receipt, accepted='20', rejected='0')
@@ -385,7 +389,7 @@ def test_iqc_receipt_requires_matching_lineage_and_scope(workflow):
         db.row_factory = sqlite3.Row
         original = dict(db.execute('SELECT * FROM requirements WHERE id=?', (rid,)).fetchone())
         variants = []
-        for field, value in [('lineage_id', str(uuid4())), ('work_order_id', str(uuid4())), ('material_id', 'other'), ('owner_id', 'other'), ('unit', 'other')]:
+        for field, value in [('lineage_id', str(uuid4())), ('work_order_id', str(uuid4())), ('material_id', 'other'), ('owner_id', 'other'), ('unit', 'other'), ('scale', original['scale'] + 1)]:
             row = {**original, 'id': str(uuid4()), field: value}
             columns = list(row)
             db.execute(f"INSERT INTO requirements ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})", [row[c] for c in columns])

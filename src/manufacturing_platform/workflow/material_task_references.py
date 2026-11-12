@@ -141,7 +141,7 @@ def reference_page(service, actor, project_id, *, task_kind='verify', kind='all'
         items, scopes = [], set()
         roles = effective_permissions(tx, actor, pid).roles
         from .material_handoffs import applicable
-        can_open = bool(not actor.read_only and roles & {'supply','project_owner'} and applicable(tx, pid))
+        can_open = bool(not actor.read_only and roles & {'supply','project_owner'} and applicable(tx, pid) and service.resolve_subject(actor.user_id))
         for ref in candidates:
             resolved = resolve_reference(tx, pid, ref)
             if task_kind not in resolved.task_kinds:
@@ -172,5 +172,11 @@ def reference_page(service, actor, project_id, *, task_kind='verify', kind='all'
             evidence = resolved.model_dump(mode='json', exclude={'requirement_id','task_kinds'})
             items.append(dict(reference=ref.model_dump(mode='json'), evidence=evidence,
                               existing_task_id=existing[0] if existing else None, can_open=can_open and not existing))
-        return dict(project_id=pid, project_version=project['version'], read_at=business_time(tx), task_kind=task_kind,
+        page = dict(project_id=pid, project_version=project['version'], read_at=business_time(tx), task_kind=task_kind,
                     items=items[offset:offset+limit], total=len(items), limit=limit, offset=offset)
+    if can_open:
+        from .material_tasks import assignees
+        if not assignees(service, actor, pid, task_kind):
+            for item in page['items']:
+                item['can_open'] = False
+    return page

@@ -469,7 +469,7 @@ class WorkflowService:
             candidates = material_handoffs.read_actions(tx, actor, item.project_id, handoff)
         if item.kind == ObjectKind.material_task:
             task = tx.execute("SELECT * FROM material_tasks WHERE project_id=? AND id=?", (str(item.project_id), str(item.id))).fetchone()
-            candidates = material_tasks.read_actions(tx, actor, item.project_id, task)
+            candidates = material_tasks.read_actions(tx, actor, item.project_id, task) if self.resolve_subject(actor.user_id) else []
         item.next_actions = list(dict.fromkeys(a for a in candidates if a in allowed))
         item.action_capabilities = [
             ActionCapability(action=a) for a in item.next_actions
