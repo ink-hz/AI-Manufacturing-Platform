@@ -30,19 +30,23 @@ def react_journey(context, api, project):
         opener, csrf, identity = api.sessions[actor]
         sessions[actor] = {"cookie": dict(opener.addheaders)["Cookie"], "csrf": csrf, "identity": identity}
     private = context.directory / "e33-session.json"
-    private.write_text(json.dumps({"base": api.base, "prefix": PREFIX,
-        "ca": str(context.directory / "loopback-cert.pem"), "sessions": sessions, "clock": context.clock.isoformat(),
-        "project_id": project, "evidence": str(context.directory / "e33-react-evidence.json")}))
-    private.chmod(0o600)
-    command = [shutil.which("node") or "node", str(ROOT / "webui/node_modules/vitest/vitest.mjs"),
-               "run", "src/workflow/acceptanceMaterialReferencesHttp.test.tsx", "--configLoader", "runner",
-               "--reporter=json", "--outputFile=" + str(context.directory / "e33-vitest.json")]
-    context.evidence.record("ui-runtime", {"command": command,
-        "node_binary_sha256": hashlib.sha256(Path(command[0]).resolve().read_bytes()).hexdigest(),
-        "node_version": subprocess.check_output([command[0], "--version"], text=True).strip(),
-        "package_lock_sha256": hashlib.sha256((ROOT / "webui/package-lock.json").read_bytes()).hexdigest(),
-        "boundary": "actual WorkflowApp/jsdom -> scoped-CA HTTPS -> actual PF create_app/preview/auth/loader; synthetic identity"})
     try:
+        private.write_text(json.dumps({"base": api.base, "prefix": PREFIX,
+            "ca": str(context.directory / "loopback-cert.pem"), "sessions": sessions, "clock": context.clock.isoformat(),
+            "project_id": project, "evidence": str(context.directory / "e33-react-evidence.json")}))
+        private.chmod(0o600)
+        command = (json.loads(os.environ["WORKFLOW_E30_COMMAND"]) if os.environ.get("WORKFLOW_E30_COMMAND")
+                   else [shutil.which("node") or "node", str(ROOT / "webui/node_modules/vitest/vitest.mjs")])
+        node = Path(shutil.which(command[0]) or command[0]).resolve()
+        if not node.is_file():
+            raise RuntimeError("E33 private pinned Node runtime unavailable; actual React evidence required")
+        command = [*command, "run", "src/workflow/acceptanceMaterialReferencesHttp.test.tsx", "--configLoader", "runner",
+                   "--reporter=json", "--outputFile=" + str(context.directory / "e33-vitest.json")]
+        context.evidence.record("ui-runtime", {"command": command,
+            "node_binary_sha256": hashlib.sha256(node.read_bytes()).hexdigest(),
+            "node_version": subprocess.check_output([str(node), "--version"], text=True).strip(),
+            "package_lock_sha256": hashlib.sha256((ROOT / "webui/package-lock.json").read_bytes()).hexdigest(),
+            "boundary": "actual WorkflowApp/jsdom -> scoped-CA HTTPS -> actual PF create_app/preview/auth/loader; synthetic identity"})
         result = subprocess.run(command, cwd=ROOT / "webui", env={**os.environ, "WORKFLOW_E33_SESSION": str(private)},
                                 capture_output=True, text=True, timeout=60)
         context.evidence.record("ui-process", {"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr})
