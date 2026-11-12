@@ -32,11 +32,11 @@ it("reads the OEM material workspace from the authenticated local FastAPI servic
         />,
       ),
     );
-    for (let i = 0; i < 100 && !host.textContent?.includes("暂无物料需求"); i++)
+    for (let i = 0; i < 100 && !host.textContent?.includes("暂无符合当前筛选的物料需求"); i++)
       await act(async () => {
         await new Promise((r) => setTimeout(r, 20));
       });
-    expect(host.textContent).toContain("暂无物料需求");
+    expect(host.textContent).toContain("暂无符合当前筛选的物料需求");
     expect(host.textContent).toContain("料况");
     const noCsrf = await session.transport(
       `/api/v1/manufacturing/workflow/projects/${project.id}/commands`,
@@ -382,12 +382,13 @@ it("opens an expedite through the component against FastAPI with project version
     expect(
       (host.querySelector('[aria-label="结果"]') as HTMLSelectElement).value,
     ).toBe("fulfilled");
-    await changeField("催料原因", "完成确认");
+    await setChoice("结果", "false_alarm");
+    await changeField("结束说明", "误报核实");
     await click("确认结束");
-    await wait(() => !host.querySelector('[aria-label="催料原因"]'));
+    await wait(() => !host.querySelector('[aria-label="结束说明"]'));
     const closed = (await s.api.materialProject(p.id))
       .expedites[0] as unknown as { closure: { outcome: string } };
-    expect(closed.closure.outcome).toBe("fulfilled");
+    expect(closed.closure.outcome).toBe("false_alarm");
     await click("steel");
     await click("发起催料");
     await changeField("催料原因", "待放弃草稿");
