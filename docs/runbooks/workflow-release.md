@@ -2,6 +2,10 @@
 
 This runbook describes release tooling, not a deployment receipt. Build only from the final reviewed, merged MF `main` and PF `master` commits. Refresh the actual running container, image, full Compose chain, mounts, security, other containers, Nginx hash, source hashes and legacy data immediately before building/preparing and again before cutover. Do not infer these from Git tips. No Nginx change, reload, `-t -c`, or `-T -c` belongs to this release.
 
+## Current M2 release (2026-11-12)
+
+Current M2 advances workflow schema24 to28; the earlier OEM17-to21 example below is historical. The exact candidate gate now requires F01-F04 plus E01-E33 (37 passed, zero skipped), including actual PF HTTPS/React E33. Both E30 and E33 must preserve the entire pinned WORKFLOW_E30_COMMAND argv, including the private config/cache arguments; do not rely on Node in PATH or install into production. See the [actual M2 release receipt](../release-material-task-references-2026-11-12.md).
+
 ## Optional request configuration
 
 The artifact baseline JSON may contain `baseline_workflow` and `target_workflow`, each with exactly these fields:
