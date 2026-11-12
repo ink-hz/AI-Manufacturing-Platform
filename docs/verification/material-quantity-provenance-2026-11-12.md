@@ -1,6 +1,6 @@
 # T2数量来源契约与页面验证
 
-日期：2026-11-12。依据：[确认记录](../reviews/2026-11-12-robot-oem-review-response-confirmation.md)、[TDD计划](../superpowers/plans/2026-11-12-material-quantity-provenance.md)、[T2任务书](../taskbooks/robot-oem/02-material-analysis.md)。功能代码截至`77e70c9`，本记录区分隔离验证与生产验收。
+日期：2026-11-12。依据：[确认记录](../reviews/2026-11-12-robot-oem-review-response-confirmation.md)、[TDD计划](../superpowers/plans/2026-11-12-material-quantity-provenance.md)、[T2任务书](../taskbooks/robot-oem/02-material-analysis.md)。功能代码截至`627754f`，本记录区分隔离验证与生产验收。
 
 ## 已实现的行为
 
@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | 开发基线 | `test_material_control.py`＋`test_material_analysis.py` | 31项通过，8.36秒，`25467dd` |
 | 纯来源模型 | `test_quantity_provenance.py` | 34项通过；十进制、来源/环境并集、mock保留、空输入、覆盖/时间及反序列化约束，`dec8866` |
-| 后端关联回归 | 下方11文件命令 | 243项通过，69.62秒，`f4a9498` |
+| 后端关联回归 | 下方11文件命令 | 最终249项通过，73.53秒，`627754f`；包含整分支审查后的兼容修复 |
 | 页面定向 | 来源组件、料况、上下文、MES、范围与实际WorkflowApp导航 | 72项通过，`c26f928`；最终中性观察文案和模拟观察展开39项通过，`77e70c9` |
 | 普通页面回归 | `npm test -- --exclude src/workflow/acceptanceNavigationHttp.test.tsx` | 59文件、610项通过，`c26f928`；最终原目录结果在交付复核中补记 |
 | 构建 | `npm run test:bundle` | `77e70c9`通过TypeScript、Vite、IIFE全局及CSS检查 |
@@ -31,6 +31,8 @@ PYTHONPATH=src /private/tmp/manufacturing-contract-py311/bin/python -m pytest te
 ```
 
 各开发任务记录了真实RED/GREEN和独立spec/quality审查。审查发现的数量模型不变量、共享函数持久化边界、旧接口范围及观察文案问题已分别复现修正并复审。页面集成断言在实现后补充的部分另做回归敏感性检查：将两项现有集成测试运行在隔离归档的`f4a9498`旧页面上，两项均按行为断言失败（旧数字99未变未知、缺少模拟标识），没有导入/环境失败；此记录不倒称为当时已执行TDD。
+
+整分支审查另以实际隔离命令路径复现两项兼容问题：已保存MES科学计数法会被新投影拒绝；规范化身份列与原始SourceRef大小写比较会漏掉准确IQC确认。修复后的38项定向及249项关联回归通过。科学计数法和采集器可接受的Unicode十进制数字仅在新投影中精确展开/规范化，原始标量与存储保留；先计算展开长度，超过4096字符则返回待核实的null投影、unknown覆盖及原因，不分配巨大字符串或把数量变0。确认与更正匹配使用既有规范身份规则，原始标签和不可变载荷哈希保持原义。
 
 独立验收包括：
 

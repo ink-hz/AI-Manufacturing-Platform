@@ -155,6 +155,8 @@ def handoff_quantities(tx, project_id, handoff):
 | MES required_quantity / withdrawn_quantity | 原生绑定环境/namespace＋工单/组件键＋快照；role=observation，发生时间无证据则null，collected_at用持久快照；已提料未知仍null |
 | issue.quantity | shortage沿用需求shortage；待检沿准确收货uninspected；短收沿实际交出/签收和既有独占补收组，引用完整关联证据；找到数量不当作实收 |
 
+整分支核对补充：既有MES采集器接受科学计数法及Unicode十进制数字，保存的原始标量不改。只在新增投影中精确转为普通十进制，展开长度先计算、上限4096字符；超限或无效历史表达保留原字段/身份/时间，投影值为null、覆盖unknown并说明需核实，不生成巨大字符串。确认/更正匹配遵循既有`orders.source_key`规范化；原始SourceRef和载荷哈希不因规范匹配改写。
+
 本地人工检验无SourceRef时用其实际操作者/记录引用和持久created_at声明manual；发生时间不假装已知。IQC源确认必须以project＋fact_id匹配本次IQC，不能按receipt.object_id把全部确认附给每次检验。预留从已保存exchange.mode/接受回执及integration来源取身份，释放只收集与integration_projections全键/哈希匹配、实际影响有效数量的事实。更正必须保留其delta、exchange和实际来源；解析不到保留本地引用及unknown，不能借用原收货来源。缺失来源标unknown。不要仅凭system=sap或api推定生产，不用fixture命名判断mock。
 
 实现核对补充：导入与人工`supply.inspect`都调用同一`inspect_supply`，旧IQC行仅靠actor/created_at不能区分首次产生方式。有准确确认关联但原始方式无法证明时，原IQC行以unknown保留本地引用/操作者/登记时间，确认事实另保留实际file/mock/api身份；不按时间、数量猜审计关联。无确认的实际本地检验仍可保留manual。此规则同步用于概览，既有数量不变；属于历史证据不足的保守表达，不新增迁移或准入放宽。
@@ -211,7 +213,7 @@ export function QuantityValue({quantity, value, unit, title}: {
 
 ## 最终审查与交付
 
-- [ ] 各Task独立完成spec＋quality审查，修复Important/Critical；整分支由独立审查者复核。
-- [ ] 单独记录source_modes同源派生验收及51+分页/跨项目样本；不将M6待办截断问题标成已修复。
-- [ ] 更新T2任务书与验证记录：本轮完成数量来源契约和页面呈现；M2/M1/M3/M6/M5剩余范围保留。
+- [x] 各Task独立完成spec＋quality审查，修复Important/Critical；整分支由独立审查者复核。
+- [x] 单独记录source_modes同源派生验收及51+分页/跨项目样本；不将M6待办截断问题标成已修复。
+- [x] 更新T2任务书与验证记录：本轮完成数量来源契约和页面呈现；M2/M1/M3/M6/M5剩余范围保留。
 - [ ] 原目录变动前核对预映像、新增路径冲突和用户文件；本地快进后验证来源/旅程相关测试及产物一致。保留隔离工作树，不推送/部署，不触碰生产源。
