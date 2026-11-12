@@ -142,11 +142,11 @@ workflow.command(pid, 'material_task.close', actor_name='warehouse', task_id=tas
 
 **Files PF:** `backend/app/manufacturing_paths.py`、`backend/tests/test_manufacturing_material_routes.py`，必要的旧模块桥接行为只改制造宿主相关文件。
 
-- [ ] **Step 1: PF隔离与RED。** 在既有host worktree从70bf974d开任务分支；检查根AGENTS，传递生产源只读。新GET路由缺精确允许项时，宿主受权/拒绝/旧版不可用矩阵先失败。只添加`GET /projects/{project_id}/material-task-references`，不开放宽前缀/源代理/写权限。
-- [ ] **Step 2: 实现精确接入并GREEN。** 当前用户、项目作用域、管理只读/旧模块与禁用情形验证；宿主与MF分别提交，PF用户原checkout保留。
-- [ ] **Step 3: 新E33完整闭环。** 在隔离数据库和真实宿主回环HTTP＋jsdom里建立空需求OEM项目的到场观察（使用实际命令）、MC派核实→仓库从事项接手→反馈→typed核实结论；同一对象/责任/历史可读且业务数量表不变。另验证已保存FakeMes组件引用不生成需求、已准入明确mock收货可直接派IQC，未准入/跨项目/错关联失败不造账。新case扩展原registry范围但不改旧case语义。
-- [ ] **Step 4: 最终相关回归。** 新E33使用实际PF宿主、受信测试身份和清空源配置的合成数据；原E30沿用既有直接MF HTTP宿主作导航回归，分别报告边界，不将E30称为PF接入证据。不能以SQL伪造成功。后端任务/迁移/引用/原料况与IQC/trace全部相关文件、普通UI和bundle已有清洁结果后，只有新变更/具体风险才重复。保留首次失败与修复后独立结果。
-- [ ] **Step 5: Commit与review。** 两仓库精确文件提交及独立审查，报告所有命令、版本、场景范围与未验生产/浏览器部分。
+- [x] **Step 1: PF隔离与RED。** 在既有host worktree从70bf974d开任务分支；检查根AGENTS，传递生产源只读。新GET路由缺精确允许项时，宿主受权/拒绝/旧版不可用矩阵先失败。只添加`GET /projects/{project_id}/material-task-references`，不开放宽前缀/源代理/写权限。
+- [x] **Step 2: 实现精确接入并GREEN。** 当前用户、项目作用域、管理只读/旧模块与禁用情形验证；宿主与MF分别提交，PF用户原checkout保留。
+- [x] **Step 3: 新E33完整闭环。** 在隔离数据库和真实宿主回环HTTP＋jsdom里建立空需求OEM项目的到场观察（使用实际命令）、MC派核实→仓库从事项接手→反馈→typed核实结论；同一对象/责任/历史可读且业务数量表不变。另验证已保存FakeMes组件引用不生成需求、已准入明确mock收货可直接派IQC，未准入/跨项目/错关联失败不造账。新case扩展原registry范围但不改旧case语义。
+- [x] **Step 4: 最终相关回归。** 新E33使用实际PF宿主、受信测试身份和清空源配置的合成数据；原E30沿用既有直接MF HTTP宿主作导航回归，分别报告边界，不将E30称为PF接入证据。不能以SQL伪造成功。后端任务/迁移/引用/原料况与IQC/trace全部相关文件、普通UI和bundle已有清洁结果后，只有新变更/具体风险才重复。保留首次失败与修复后独立结果。
+- [x] **Step 5: Commit与review。** 两仓库精确文件提交及独立审查，报告所有命令、版本、场景范围与未验生产/浏览器部分。
 
 ## 最终交付
 
