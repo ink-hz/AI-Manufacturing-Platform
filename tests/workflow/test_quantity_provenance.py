@@ -58,7 +58,8 @@ def test_trust_and_missing_identity_are_conservative():
 def test_missing_sources_and_time_do_not_fabricate_values():
     empty = quantity(None, 'kg', 'required', [])
     assert empty.value is None and empty.coverage == 'unknown' and empty.fact_role == 'unknown'
-    assert empty.origins == [] and empty.environments == [] and empty.input_refs == []
+    assert empty.origins == ['unknown'] and empty.environments == ['unknown'] and empty.input_refs == []
+    assert source_modes([empty]) == ['unknown']
     assert source_modes([]) == []
     missing = source(ref(occurred_at='2026-11-01T00:00:00'))
     result = quantity(None, 'kg', 'required', [source(ref()), missing.model_copy(update={'reference': 'other'})])
@@ -102,3 +103,69 @@ def test_invalid_version_is_preserved_without_granting_identity():
     result = source(ref('api', version='legacy-v1'), trusted=True)
     assert result.version == 'legacy-v1'
     assert result.origin == 'unknown' and result.coverage == 'unknown'
+
+
+@pytest.mark.parametrize('value', ['NaN', 'Infinity', '-Infinity', '1e999', 'garbage', '', ' 1'])
+def test_quantity_values_reject_non_plain_decimals(value):
+    valid = source(ref())
+    for model, data in [(type(valid), valid.model_dump()),
+                        (ProvenancedQuantity, quantity('1', 'kg', 'x', [valid]).model_dump())]:
+        data['value'] = value
+        with pytest.raises(ValidationError):
+            model.model_validate(data)
+
+
+@pytest.mark.parametrize('value', [None, '-001.23000000000000000001', '+0002', '0', '.1', '1.'])
+def test_quantity_values_preserve_plain_decimal_strings(value):
+    valid = source(ref())
+    data = valid.model_dump()
+    data['value'] = value
+    assert type(valid).model_validate(data).value == value
+    assert quantity(value, 'kg', 'x', [valid]).value == value
+
+
+def test_direct_and_json_projection_reject_forged_merge_fields():
+    import json
+
+    missing = source(ref(occurred_at='broken', collected_at='broken'))
+    result = quantity('1', 'kg', 'x', [missing])
+    for field, value in [('coverage', 'complete'), ('observed_at', '2026-11-01T00:00:00Z'),
+                         ('collected_at', '2026-11-01T00:00:00Z')]:
+        data = result.model_dump(mode='json')
+        data[field] = value
+        with pytest.raises(ValidationError):
+            ProvenancedQuantity.model_validate(data)
+        with pytest.raises(ValidationError):
+            ProvenancedQuantity.model_validate_json(json.dumps(data))
+    data = result.model_dump()
+    data['coverage'] = 'partial'
+    assert ProvenancedQuantity.model_validate(data).coverage == 'partial'
+
+
+def test_empty_projection_requires_unknown_identity_and_role():
+    import json
+
+    empty = quantity(None, 'kg', 'x', [])
+    for field, value in [('origins', []), ('environments', []), ('fact_role', 'confirmed'),
+                         ('coverage', 'complete'), ('observed_at', '2026-11-01T00:00:00Z'),
+                         ('collected_at', '2026-11-01T00:00:00Z'), ('input_refs', ['fake'])]:
+        data = empty.model_dump(mode='json')
+        data[field] = value
+        with pytest.raises(ValidationError):
+            ProvenancedQuantity.model_validate_json(json.dumps(data))
+    data = empty.model_dump()
+    data['coverage'] = 'failed'
+    assert ProvenancedQuantity.model_validate(data).coverage == 'failed'
+
+
+def test_direct_projection_requires_earliest_times_and_cannot_upgrade_failed():
+    first = source(ref()).model_copy(update={'coverage': 'failed'})
+    second = source(ref(occurred_at='2026-11-02T00:00:00Z',
+                        collected_at='2026-11-02T00:00:01Z'), 'p/r/2')
+    result = quantity('1', 'kg', 'x', [first, second])
+    for field, value in [('coverage', 'partial'), ('observed_at', second.occurred_at),
+                         ('collected_at', second.collected_at)]:
+        data = result.model_dump()
+        data[field] = value
+        with pytest.raises(ValidationError):
+            ProvenancedQuantity.model_validate(data)
