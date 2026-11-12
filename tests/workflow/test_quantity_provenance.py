@@ -55,6 +55,19 @@ def test_trust_and_missing_identity_are_conservative():
     assert source(ref('manual'), environment='unexpected', trusted=True).environment == 'unknown'
 
 
+@pytest.mark.parametrize('field', ['system', 'object_type', 'external_id'])
+@pytest.mark.parametrize('mode', ['manual', 'file', 'api'])
+def test_oversized_identity_fields_do_not_grant_provenance(field, mode):
+    result = source(ref(mode, **{field: 'x' * 201}), trusted=True, environment='production')
+    assert result.origin == 'unknown' and result.coverage == 'unknown'
+
+
+def test_oversized_mock_identity_remains_recognizable():
+    result = source(ref('mock', external_id='x' * 201), environment='production', trusted=True)
+    assert result.origin == 'mock' and result.environment == 'mock'
+    assert result.coverage == 'unknown'
+
+
 def test_missing_sources_and_time_do_not_fabricate_values():
     empty = quantity(None, 'kg', 'required', [])
     assert empty.value is None and empty.coverage == 'unknown' and empty.fact_role == 'unknown'

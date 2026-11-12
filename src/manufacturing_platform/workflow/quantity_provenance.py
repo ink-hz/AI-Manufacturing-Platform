@@ -115,7 +115,7 @@ def source_from_ref(source, *, reference: str, project_id: str, object_kind: str
     else:
         raise TypeError('source must be SourceRef, dict, or None')
 
-    identity = all(isinstance(data.get(key), str) and data[key].strip()
+    identity = all(isinstance(data.get(key), str) and 1 <= len(data[key]) <= 200 and data[key].strip()
                    for key in ('system', 'object_type', 'external_id'))
     version = data.get('version')
     identity = identity and type(version) is int and version >= 1
