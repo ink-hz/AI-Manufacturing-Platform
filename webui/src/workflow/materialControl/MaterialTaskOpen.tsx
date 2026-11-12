@@ -126,7 +126,7 @@ export function MaterialTaskOpen({
           note,
         },
         version,
-        p.onMaterialChanged || p.onChanged,
+        result => { if (p.onMaterialChanged) p.onMaterialChanged(result); else if (command.isCurrent() && owner.current === generation) p.onChanged(result); },
       );
       if (!result || !command.isCurrent() || owner.current !== generation) return;
       p.onDirty("material-task-open", false);
