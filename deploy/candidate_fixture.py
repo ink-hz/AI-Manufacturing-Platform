@@ -20,6 +20,7 @@ MIN_INODES = 65536
 MIN_FREE_INODES = 50000
 PF_OVERLAY = {'control_plane/auth.py','control_plane/authorization.py','control_plane/middleware.py','control_plane/routes_auth.py','main.py','manufacturing.py','manufacturing_paths.py','manufacturing_security.py'}
 HISTORY = {'a1':'b7397b4c0acd2bb9d32cafade8e885e4b9e7c732','legacy':'ec41b39bdf8c0b5cc6b0193ed646a44050106ca3'}
+ACCEPTANCE_CASE_IDS = tuple([f'F{i:02}' for i in range(1,5)]+[f'E{i:02}' for i in range(1,34)])
 path_stat = lambda p: p.lstat()
 mountpoint = os.path.ismount
 
@@ -108,10 +109,10 @@ def acceptance_command():
 
 
 def validate_result(value, ids):
-    require(len(ids)==36 and len(set(ids))==36,'private_registry_size')
-    require(value['selected']==list(ids) and value['statuses']=={k:'passed' for k in ids},'private_all36_required')
-    require(len(value['results'])==36 and {row['id']:row['status'] for row in value['results']}==value['statuses'],'private_all36_results')
-    return 36
+    require(tuple(ids)==ACCEPTANCE_CASE_IDS,'private_registry_exact37_required')
+    require(value['selected']==list(ids) and value['statuses']=={k:'passed' for k in ids},'private_all37_required')
+    require(len(value['results'])==37 and {row['id']:row['status'] for row in value['results']}==value['statuses'],'private_all37_results')
+    return 37
 
 
 def export_fixture(repo, sha, platform_sha, business, preflight, runtime, runtime_manifest, runtime_pin, output):
@@ -247,10 +248,10 @@ def run_acceptance():
         def fetchall(self):return [{'internal_user_id':uid,'display_name':'Synthetic candidate member'}]
     repository=object.__new__(WebSessionRepository);repository._connection=lambda:Connection()
     require(repository.active_internal_user_profiles([uid])==[{'user_id':str(uid),'display_name':'Synthetic candidate member'}] and len(calls)==1,'private_actual_profile_repository')
-    with (root/'all36.stdout.log').open('xb') as out,(root/'all36.stderr.log').open('xb') as err:
+    with (root/'all37.stdout.log').open('xb') as out,(root/'all37.stderr.log').open('xb') as err:
         completed=subprocess.run(acceptance_command(),stdout=out,stderr=err,timeout=3600)
     reports=list((root/'runs').glob('*/run.json'))
-    require(completed.returncode==0 and len(reports)==1,'private_exact36_failed_see_durable_evidence')
+    require(completed.returncode==0 and len(reports)==1,'private_exact37_failed_see_durable_evidence')
     count=validate_result(json.loads(reports[0].read_text()),CASE_IDS)
     oem=run_oem_acceptance(root)
     return {'passed':True,'cases':count,'oem_acceptance':oem,'scope':'Synthetic identity, stateful mock authority, actual candidate dependencies; not production business acceptance','runtime':versions}

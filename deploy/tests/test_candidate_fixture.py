@@ -64,14 +64,30 @@ def test_candidate_environment_commands_and_mounts_are_private_and_complete(tmp_
     assert command[-4:]==['--cases','all','--output','/candidate-evidence/runs']
 
 
-def test_registry_result_must_be_exact_all36_no_skipped_or_forged_pass(tmp_path):
-    m=module();ids=['F%02d'%i for i in range(1,5)]+['E%02d'%i for i in range(1,33)]
-    result={'selected':ids,'statuses':{k:'passed' for k in ids},'results':[{'id':k,'status':'passed'} for k in ids]}
-    assert m.validate_result(result,ids)==36
-    result['statuses']['E30']='blocked'
-    with pytest.raises(ValueError):m.validate_result(result,ids)
-    result['statuses']['E30']='passed';result['results'].pop()
-    with pytest.raises(ValueError):m.validate_result(result,ids)
+def registry_result(ids):
+    return {'selected':list(ids),'statuses':{k:'passed' for k in ids},'results':[{'id':k,'status':'passed'} for k in ids]}
+
+
+def test_registry_result_requires_all_current37_cases():
+    ids=['F%02d'%i for i in range(1,5)]+['E%02d'%i for i in range(1,34)]
+    assert module().validate_result(registry_result(ids),ids)==37
+
+
+@pytest.mark.parametrize('fault',['original36','wrong37','duplicate_registry','missing_selected_e33','duplicate_selected','skipped','blocked','missing_result_e33','duplicate_result','forged_result','extra_status'])
+def test_registry_result_rejects_stale_missing_skipped_duplicate_and_forged_evidence(fault):
+    ids=['F%02d'%i for i in range(1,5)]+['E%02d'%i for i in range(1,34)]
+    if fault=='original36':ids.pop()
+    elif fault=='wrong37':ids[-1]='E34'
+    elif fault=='duplicate_registry':ids[-1]='E32'
+    result=registry_result(ids)
+    if fault=='missing_selected_e33':result['selected'].pop()
+    elif fault=='duplicate_selected':result['selected'][-1]='E32'
+    elif fault in {'skipped','blocked'}:result['statuses']['E33']=fault
+    elif fault=='missing_result_e33':result['results'].pop()
+    elif fault=='duplicate_result':result['results'][-1]={'id':'E32','status':'passed'}
+    elif fault=='forged_result':result['results'][-1]['status']='failed'
+    elif fault=='extra_status':result['statuses']['E34']='passed'
+    with pytest.raises(ValueError):module().validate_result(result,ids)
 
 
 def test_archive_preserves_failure_and_cleanup_requires_unchanged_receipt(tmp_path,monkeypatch):
@@ -116,6 +132,34 @@ def test_workflow_candidate_requires_fixture_and_archives_failures(tmp_path,monk
     assert 'PLATFORM_MANUFACTURING_DATASET_MODE=demo' not in args
     assert '--network' in args and args[args.index('--network')+1]=='none'
     assert not any(f'source={tmp_path}/candidate_fixture.py,' in arg for arg in args)
+
+
+@pytest.mark.parametrize('count,passed,accepted',[(37,True,True),(36,True,False),(1,True,False),(38,True,False),(37,False,False)])
+def test_workflow_candidate_requires_exact37_passed_summary(tmp_path,monkeypatch,count,passed,accepted):
+    import release
+    from contextlib import nullcontext
+    from test_workflow_release import CONFIG
+    e={'target_workflow':CONFIG,'manufacturing_commit':'a'*40,'platform_commit':'b'*40,'manufacturing_host':'/private/business','target_image_id':'sha256:'+'c'*64}
+    pre={'old':{'Id':'running'},'expected_source':{},'expected_static':{}}
+    (tmp_path/'candidate_verify.py').write_text('pass')
+    monkeypatch.setattr(release.ops,'STAGE',tmp_path);monkeypatch.setattr(release.ops,'Locks',lambda:nullcontext())
+    monkeypatch.setattr(release.ops,'read',lambda _:pre);monkeypatch.setattr(release.ops,'inspect',lambda _:{'Id':'running'})
+    monkeypatch.setattr(release,'unchanged',lambda *a:None);monkeypatch.setattr(release,'check_images',lambda *a:None)
+    monkeypatch.setattr(release.native_release,'validate_sdk',lambda *a:None)
+    m=module();monkeypatch.setattr(m,'validate_fixture',lambda *a:{'source_manifest_sha256':'d'*64})
+    monkeypatch.setattr(m,'candidate_arguments',lambda *a:([],{}))
+    archived=[];monkeypatch.setattr(m,'archive_evidence',lambda *a:archived.append(True))
+    summary={'passed':True,'workflow_acceptance':{'passed':passed,'cases':count}}
+    monkeypatch.setattr(release.ops,'run',lambda args,**kw:b'' if args[:3]==['docker','rm','-f'] else json.dumps(summary).encode())
+    monkeypatch.setattr(release.ops,'digest',lambda *a:'e'*64)
+    writes=[];monkeypatch.setattr(release.ops,'write',lambda *a:writes.append(a))
+    if accepted:
+        release.candidate(e)
+        assert writes[0][0]=='candidate-validation.json'
+    else:
+        with pytest.raises(ValueError,match='candidate_exact37_required'):release.candidate(e)
+        assert not writes
+    assert archived==[True]
 
 
 def test_export_is_exact_committed_private_source_separate_from_production(tmp_path,monkeypatch):
@@ -303,8 +347,8 @@ def test_oem_candidate_callback_is_mandatory_and_records_separate_owned_evidence
     with pytest.raises(FileExistsError):module().run_oem_acceptance(tmp_path)
 
 
-@pytest.mark.parametrize('failure',[None,'all36','oem'])
-def test_acceptance_returns_separate_oem_result_only_after_original36(tmp_path,monkeypatch,failure):
+@pytest.mark.parametrize('failure',[None,'all37','oem'])
+def test_acceptance_returns_separate_oem_result_only_after_current37(tmp_path,monkeypatch,failure):
     import types
     monkeypatch.syspath_prepend(str(Path(__file__).parents[2]/'tests'))
     from workflow.scenarios import CASE_IDS,provenance
@@ -323,11 +367,11 @@ def test_acceptance_returns_separate_oem_result_only_after_original36(tmp_path,m
             return [{'user_id':str(row['internal_user_id']),'display_name':row['display_name']} for row in rows]
     auth.WebSessionRepository=Repository
     monkeypatch.setitem(sys.modules,'app.control_plane.auth',auth)
-    def all36(*args,**kwargs):
-        events.append('all36');run=root/'runs/complete';run.mkdir(parents=True)
+    def all37(*args,**kwargs):
+        events.append('all37');run=root/'runs/complete';run.mkdir(parents=True)
         (run/'run.json').write_text(json.dumps({'selected':list(CASE_IDS),'statuses':{k:'passed' for k in CASE_IDS},'results':[{'id':k,'status':'passed'} for k in CASE_IDS]}))
-        return SimpleNamespace(returncode=1 if failure=='all36' else 0)
-    monkeypatch.setattr(m.subprocess,'run',all36)
+        return SimpleNamespace(returncode=1 if failure=='all37' else 0)
+    monkeypatch.setattr(m.subprocess,'run',all37)
     def oem(evidence):
         events.append('oem')
         if failure=='oem':raise AssertionError('OEM assertion failed')
@@ -335,8 +379,9 @@ def test_acceptance_returns_separate_oem_result_only_after_original36(tmp_path,m
     monkeypatch.setattr(m,'run_oem_acceptance',oem)
     if failure:
         with pytest.raises((ValueError,AssertionError)):m.run_acceptance()
-        assert events==['provenance','all36']+(['oem'] if failure=='oem' else [])
+        assert events==['provenance','all37']+(['oem'] if failure=='oem' else [])
     else:
         result=m.run_acceptance()
-        assert events==['provenance','all36','oem']
-        assert result['cases']==36 and result['oem_acceptance']=={'passed':True,'test':'OEM'}
+        assert events==['provenance','all37','oem']
+        assert result['cases']==37 and result['oem_acceptance']=={'passed':True,'test':'OEM'}
+    assert (root/'all37.stdout.log').exists() and (root/'all37.stderr.log').exists()

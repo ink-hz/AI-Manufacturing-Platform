@@ -696,7 +696,7 @@ def candidate(e):
                 ops.run(['docker','rm','-f',candidate_name])
                 candidate_fixture.archive_evidence(ops.STAGE)
         if workflow:
-            require(checked.get('workflow_acceptance',{}).get('cases')==36 and checked['workflow_acceptance'].get('passed') is True,'candidate_exact36_required')
+            require(checked.get('workflow_acceptance',{}).get('cases')==37 and checked['workflow_acceptance'].get('passed') is True,'candidate_exact37_required')
         require(checked['passed'] is True,'candidate_not_passed')
         checked.update(preflight_sha256=ops.digest(ops.STAGE/'preflight.json'),request_sha256=ops.digest(ops.STAGE/'request.json'),image=e['target_image_id'])
         ops.write('candidate-validation.json',checked)
