@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Grant, MaterialHandoffCommand, MaterialHandoffValue, ObjectSummary, WorkspaceProps } from '../types';
 import { Choice, CommandForm, Field, ObjectChoice } from './shared';
 import { label } from '../labels';
+import { ReceiptUseFields } from './ReceiptUseFields';
 
 type Props = WorkspaceProps & {
   action: MaterialHandoffCommand['action'];
@@ -26,6 +27,9 @@ function BusinessTime({value, onChange}: {value: string | null; onChange(value: 
 export function MaterialHandoffForms(p: Props) {
   const selection = useRef(0);
   const [lookupError, setLookupError] = useState('');
+  const [receiptUseReady, setReceiptUseReady] = useState(false);
+  const [formVersion] = useState(p.project.version);
+  const staleReceipt = formVersion !== p.project.version;
   useEffect(() => () => { selection.current++; }, [p.project.id]);
 
   if (p.action === 'material_handoff.record') {
@@ -84,20 +88,27 @@ export function MaterialHandoffForms(p: Props) {
       initial={() => ({
         action: 'material_handoff.receive', handoff_id: handoff.id,
         received_quantity: handoff.quantity, received_location: handoff.to_location, occurred_at: null, note: null,
+        receipt_use: 'unspecified', requirement_id: null,
       })}
-      canSubmit={value => quantity(value.received_quantity) && !!value.received_location.trim() &&
+      canSubmit={value => !staleReceipt && quantity(value.received_quantity) && !!value.received_location.trim() &&
+        (value.receipt_use !== 'line_side' || (!!value.requirement_id && receiptUseReady)) &&
         ((decimal(value.received_quantity) === decimal(handoff.quantity) &&
           value.received_location.trim() === handoff.to_location) || !!value.note?.trim())}>
       {(value, set) => {
         const differs = decimal(value.received_quantity) !== decimal(handoff.quantity) ||
           value.received_location.trim() !== handoff.to_location;
         return <>
+          {staleReceipt && <p>项目已更新，草稿已保留；请重新打开收料操作。</p>}
           <p>{handoff.handoff_number} · 交出 {handoff.quantity} {handoff.unit} · {handoff.from_location} → {handoff.to_location}（送达位置待接收确认） · 接收人 {handoff.receiver_name}</p>
           <Field name="实收数量" value={value.received_quantity}
             onChange={received_quantity => set({...value, received_quantity})}/>
           <p>单位：{handoff.unit}</p>
           <Field name="实际接收位置" value={value.received_location}
             onChange={received_location => set({...value, received_location})}/>
+          <ReceiptUseFields api={p.api} projectId={p.project.id} projectVersion={p.project.version} handoff={handoff}
+            value={{receipt_use:value.receipt_use || 'unspecified',requirement_id:value.requirement_id || null}}
+            onReady={setReceiptUseReady} disabled={p.readOnly}
+            onChange={scope => set({...value,...scope})}/>
           {differs && <Field name="差异说明" value={value.note || ''} onChange={note => set({...value, note: note || null})}/>}
           <details>
             <summary>补充信息</summary>
@@ -107,6 +118,23 @@ export function MaterialHandoffForms(p: Props) {
           </details>
         </>;
       }}
+    </CommandForm>;
+  }
+
+  if (p.action === 'material_handoff.confirm_use') {
+    return <CommandForm<Extract<MaterialHandoffCommand, {action: 'material_handoff.confirm_use'}>>
+      {...p} title="核对实收用途" save="保存实收用途"
+      initial={() => ({action:'material_handoff.confirm_use',handoff_id:handoff.id,
+        receipt_use:'transfer',requirement_id:null,evidence:''})}
+      canSubmit={value => !staleReceipt && !!value.evidence.trim() && (value.receipt_use !== 'line_side' || (!!value.requirement_id && receiptUseReady))}>
+      {(value,set) => <>
+        {staleReceipt && <p>项目已更新，草稿已保留；请重新打开用途核对。</p>}
+        <p>{handoff.handoff_number} · 已签收 {handoff.receipt?.received_quantity} {handoff.unit} · {handoff.receipt?.received_location}</p>
+        <ReceiptUseFields api={p.api} projectId={p.project.id} projectVersion={p.project.version} handoff={handoff} value={value}
+          allowUnspecified={false} disabled={p.readOnly} onReady={setReceiptUseReady}
+          onChange={scope => set({...value,receipt_use:scope.receipt_use === 'line_side' ? 'line_side' : 'transfer',requirement_id:scope.requirement_id})}/>
+        <Field name="用途核对说明" value={value.evidence} onChange={evidence => set({...value,evidence})}/>
+      </>}
     </CommandForm>;
   }
 

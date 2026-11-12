@@ -28,7 +28,7 @@ export function MaterialHandoffTable({rows, projects, onOpen, onRetry, onAction,
         <td>{h ? <button onClick={() => onOpen({projectId: summary.project_id, kind: 'material_lot', id: h.material_lot_id})}>
           {row.batch || (row.batchError ? '批次信息未读取' : '正在读取批次…')}
         </button> : '未读取'}</td>
-        <td>{h ? <>{h.quantity} {h.unit}{h.receipt && <p>实收 {h.receipt.received_quantity} {h.unit}</p>}</> : '未读取'}</td>
+        <td>{h ? <>{h.quantity} {h.unit}{h.receipt && <><p>实收 {h.receipt.received_quantity} {h.unit}</p><p>{h.receipt.receipt_use === 'line_side' ? '线边实收' : h.receipt.receipt_use === 'transfer' ? '中转接收' : '实收用途未核对'}</p></>}</> : '未读取'}</td>
         <td>{h ? <>{h.from_location} → {h.to_location}{h.receipt
           ? <p>实际接收：{h.receipt.received_location}</p>
           : h.state === 'pending' ? '（送达位置待接收确认）' : '（未确认接收）'}</> : '未读取'}</td>

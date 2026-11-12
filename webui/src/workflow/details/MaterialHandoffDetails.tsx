@@ -27,6 +27,11 @@ export function MaterialHandoffDetails({data, onOpen}: {
       <h4>接收事实</h4>
       <p>实收 {handoff.receipt.received_quantity} {handoff.unit} · 实际接收位置 {handoff.receipt.received_location}</p>
       <p>{handoff.receipt.actor_name} · {handoff.receipt.occurred_at}</p>
+      <p>实收用途：{handoff.receipt.receipt_use === 'line_side' ? '线边实收' : handoff.receipt.receipt_use === 'transfer' ? '中转接收' : '尚未核对'}</p>
+      {handoff.receipt.receipt_use === 'line_side' && handoff.receipt.requirement_id &&
+        <button onClick={() => onOpen({projectId:data.summary.project_id,kind:'requirement',id:handoff.receipt!.requirement_id!})}>查看对应物料需求</button>}
+      {handoff.receipt.scope_recorded_at && <p>用途核对时间：{handoff.receipt.scope_recorded_at}</p>}
+      {handoff.receipt.scope_evidence && <p>用途核对说明：{handoff.receipt.scope_evidence}</p>}
       {handoff.receipt.note && <p>接收说明：{handoff.receipt.note}</p>}
     </section>}
     {handoff.resolution && <section>
