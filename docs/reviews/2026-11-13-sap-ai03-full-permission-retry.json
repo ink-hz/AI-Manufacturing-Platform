@@ -1,0 +1,1982 @@
+{
+  "schema_version": 1,
+  "completed_at": "2026-11-13T06:26:45.269920+00:00",
+  "target": {
+    "system_id": "S4D",
+    "client": "300",
+    "account": "AI03",
+    "environment": "test"
+  },
+  "baseline_manifest": "docs/integrations/2026-11-13-sap-ai03-permission-recheck-manifest.json",
+  "coverage": {
+    "catalog_rows": 85,
+    "requested_current_read_interfaces": 50,
+    "future_confirm_first_interfaces": 25,
+    "excluded_or_deferred": 10,
+    "matching_wsdl_this_round": 75,
+    "business_invocations_this_round": 26,
+    "normal_responses": 24,
+    "explicit_business_authorization_denials": 1,
+    "no_matching_business_record": 1,
+    "not_business_invoked_current_scope": 24,
+    "not_business_invoked_future_scope": 25
+  },
+  "result_counts": {
+    "invocation_accepted": 24,
+    "needs_bounded_source_path": 1,
+    "missing_existing_key": 21,
+    "excluded_under_current_scope": 10,
+    "needs_bounded_sample_scope": 2,
+    "application_authorization_denied": 1,
+    "business_rejected": 1,
+    "pending_read_path_review": 25
+  },
+  "source_business_writes": 0,
+  "mrp_run_requested": false,
+  "production_or_platform_configuration_changed": false,
+  "summary": "原15项全部正常；RFC及两个MRP拒绝解除，标准工单明细/列表可读。标准采购明细转为资金管理显示检查拒绝。全范围权限仍不能宣称已验收。",
+  "interpretation": [
+    "正常响应仅覆盖本次已知键、组织和分支；包含正式空结果、标量结果及警告，不代表完整数量或全组织授权。",
+    "所有未调用项逐项保留原因；不使用空键、虚构数据或未审分支来制造权限通过结论。",
+    "未调用写函数检查是否被拒绝；账号是否仅授只读FUNC及全部组织范围，仍需IT提供生效授权/跟踪证据。",
+    "75项WSDL均可读仅是契约访问证据；25项后续接口的入口和依赖审查尚未闭合。",
+    "本轮只核验测试账号；未启用线上SAP/MES读取，也未实现SAP MRP契约mock。"
+  ],
+  "private_evidence_directory": ".superpowers/sap-ai03-retry-20261113-061333",
+  "evidence_validation": {
+    "response_and_wsdl_hashes_verified": 52,
+    "source_reviews_future_functions": 25,
+    "local_existing_key_audit_files": 68,
+    "no_credentials_or_raw_business_objects_in_report": true
+  },
+  "items": [
+    {
+      "function": "RFC_PING",
+      "function_group": "SRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "诊断",
+      "decision": "retain",
+      "display_transaction_contexts": [],
+      "restrictions": "固定无业务参数诊断；当前缺精确函数调用授权，SRFC仅定位，不整组授权",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:38.956554+00:00",
+      "returned_table_row_counts": {},
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "BAPI_MATERIAL_STOCK_REQ_LIST",
+      "function_group": "MRP1001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "MRP结果",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "MD04"
+      ],
+      "restrictions": "精确已知物料+工厂；本轮MRP组织授权拒绝",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:40.487847+00:00",
+      "returned_table_row_counts": {
+        "EXTENSIONOUT": 0,
+        "MRP_IND_LINES": 0,
+        "MRP_ITEMS": 4,
+        "MRP_TOTAL_LINES": 0
+      },
+      "message_types": [
+        "S"
+      ],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "BAPI_MATERIAL_MRP_LIST",
+      "function_group": "MRP1001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "MRP结果",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "MD05"
+      ],
+      "restrictions": "精确已知物料+工厂，只读取已有清单；本轮MRP组织授权拒绝",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:41.210328+00:00",
+      "returned_table_row_counts": {
+        "EXTENSIONOUT": 0,
+        "MRP_IND_LINES": 0,
+        "MRP_ITEMS": 4,
+        "MRP_TOTAL_LINES": 0
+      },
+      "message_types": [
+        "S"
+      ],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZPPRFC06",
+      "function_group": "ZPPRFC02",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "工单",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "CO03",
+        "COOIS"
+      ],
+      "restrictions": "本轮已有精确工单/工厂/原日期，ZISMULT=Y、ZMERGE=N；空组件仍有无保护FAE，不改用虚构工单探测",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:41.557242+00:00",
+      "returned_table_row_counts": {
+        "GT_DATA": 1,
+        "GT_ITEM": 2,
+        "GT_WORK": 1
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZMMRFC78",
+      "function_group": "ZMMRFC05",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "库存",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "MMBE",
+        "MB52"
+      ],
+      "restrictions": "本轮单厂/已知小库位，仍有全局项目补读",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:41.905765+00:00",
+      "returned_table_row_counts": {
+        "T_OUTPUTHD": 2
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZSDRFC21",
+      "function_group": "ZSDRFC001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "库存",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "MMBE",
+        "MB52"
+      ],
+      "restrictions": "显式物料与移动候选为并集；全局项目补读，不承诺严格单料",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:45.671233+00:00",
+      "returned_table_row_counts": {
+        "T_OUTPUTHD": 1
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZMMRFC18",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "库存",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "MB5B"
+      ],
+      "restrictions": "本轮单厂/开始月前一月，仍有全局项目补读，完整空表不证明组织权限齐全",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:46.774382+00:00",
+      "returned_table_row_counts": {
+        "LT_ZMBEWH": 0
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZMMRFC35",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "采购",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "ME23N"
+      ],
+      "restrictions": "本轮精确采购单/厂/日，模式10的MES分支；其他模式另验",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:42.816980+00:00",
+      "returned_table_row_counts": {
+        "LT_RETURN": 0,
+        "ZITBE": 0,
+        "ZITEM": 1
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZMMRFC75",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "采购",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "ME23N"
+      ],
+      "restrictions": "公司/创建日/窄更改窗；历史不按厂过滤，无单PO参数",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:45.223474+00:00",
+      "returned_table_row_counts": {
+        "LT_PO_EKBE": 0,
+        "LT_PO_EKKO": 1,
+        "LT_PO_EKPO": 2
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZMMRFC74",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "采购",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "ME53N"
+      ],
+      "restrictions": "本轮单厂/创建日/窄更改窗，未虚构采购申请号",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:45.451694+00:00",
+      "returned_table_row_counts": {
+        "LT_DATA": 2
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZMMRFC12",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "主数据与组织",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "MM03"
+      ],
+      "restrictions": "本轮单物料模式98；可跨工厂扩展",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:43.067375+00:00",
+      "returned_table_row_counts": {
+        "LT_MATERIAL": 1,
+        "LT_RETURN": 0,
+        "T_MATERIAL": 1
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZMMRFC41",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "主数据与组织",
+      "decision": "retain",
+      "display_transaction_contexts": [],
+      "restrictions": "本轮模式2，精确工厂/库位；无已证一对一GUI事务",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:43.281308+00:00",
+      "returned_table_row_counts": {
+        "LT_T001L": 1,
+        "LT_T001W": 0
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZMMRFC05",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "主数据与组织",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "MM03"
+      ],
+      "restrictions": "本轮模式10+单物料+已确认公司代码；LS_WERKS不是工厂语义",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:45.952903+00:00",
+      "returned_table_row_counts": {
+        "LT_DATA": 1,
+        "LT_DATA0": 0,
+        "LT_DATA1": 0,
+        "LT_DATAK": 0,
+        "LT_DATAQ": 0,
+        "LT_DATAS": 0,
+        "LT_DATAW": 0
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZPPRFC12",
+      "function_group": "ZPPRFC02",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "物料凭证读取",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "MB51",
+        "MB03"
+      ],
+      "restrictions": "本轮模式10、真实凭证/年/厂/过账日，ZISMULT=Y；正常空表只证明本分支调用完成，不代表过账权限或所有模式可读",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:46.167502+00:00",
+      "returned_table_row_counts": {
+        "T_AFKO": 0,
+        "T_COST": 0,
+        "T_DAUD": 0,
+        "T_OTOD": 0,
+        "T_PRJO": 0
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZPPRFC13",
+      "function_group": "ZPPRFC02",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "物料凭证读取",
+      "decision": "retain",
+      "display_transaction_contexts": [
+        "MB51",
+        "MB03"
+      ],
+      "restrictions": "本轮模式20、真实凭证/年/厂/过账日；正常空表不证明退料业务数据或所有模式，未采用默认10空实现冒充读取",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:13:46.410901+00:00",
+      "returned_table_row_counts": {
+        "T_AFKO": 0,
+        "T_COST": 0,
+        "T_DAUD": 0,
+        "T_OTOD": 0,
+        "T_PRJO": 0
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZSDRFC01",
+      "function_group": "ZSDRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "销售组织与客户",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "单LV_BUKRS公司筛选，最终第二次SELECT覆盖第一次，非完整组织配置全集",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "needs_bounded_source_path",
+      "reason": "此前单公司请求超出响应上限；未自动重试或调高上限。需可限定结果集的源侧查询路径。"
+    },
+    {
+      "function": "ZSDRFC02",
+      "function_group": "ZSDRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "销售组织与客户",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "按单伙伴筛选，函数没有公司筛选参数；结果可能跨公司/销售范围",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺S4D/300已核实的LV_PERNR业务关联键；不使用空值读取宽范围。"
+    },
+    {
+      "function": "ZSDRFC07",
+      "function_group": "ZSD001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "销售物料",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "MM03"
+      ],
+      "restrictions": "SO_MATNR1非空时作为范围下界，SO_MATNR可作上界；仅传SO_MATNR不生效；业务对应非已证TCODE检查",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:20:48.745438+00:00",
+      "returned_table_row_counts": {
+        "LT_INPUTMD": 0,
+        "LT_OUTPUTPT": 0,
+        "LT_OUTPUTVD": 2
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZSDRFC14",
+      "function_group": "ZSD001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "销售订单",
+      "decision": "defer",
+      "display_transaction_contexts": [
+        "VA03",
+        "VA05"
+      ],
+      "restrictions": "精确单号仍全读KNA1和配置；优先复核标准销售读取路径",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "精确单号仍全读KNA1和配置；优先复核标准销售读取路径"
+    },
+    {
+      "function": "ZSDRFC15",
+      "function_group": "ZSD001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "客户",
+      "decision": "defer",
+      "display_transaction_contexts": [],
+      "restrictions": "无独立关闭银行/公司财务输出的模式，需非财务包装或替代接口",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "无独立关闭银行/公司财务输出的模式，需非财务包装或替代接口"
+    },
+    {
+      "function": "ZMMRFC06",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "分类字典",
+      "decision": "controlled_mode_only",
+      "display_transaction_contexts": [],
+      "restrictions": "仅基础ZFLAG=X；10/11含科目/付款等配置；S_RFC不能限制ZFLAG，需SAP侧模式约束或包装",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "仅基础ZFLAG=X；10/11含科目/付款等配置；S_RFC不能限制ZFLAG，需SAP侧模式约束或包装"
+    },
+    {
+      "function": "ZMMRFC66",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "物料分类",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "IMTART真正收窄；其它码只有匹配存在时才过滤，未知值可能保留更宽集合",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "needs_bounded_sample_scope",
+      "reason": "按物料类型读取，缺已确认规模的小范围样本或源侧更精确边界；其他未知筛选值可能无法收窄。"
+    },
+    {
+      "function": "ZMMRFC71",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "物料分类",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "仅匹配既有分类SN，不发新号或写号池；不自动调用68/69；LIKE通配符与非唯一候选需受控",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺已核实的既有SN/分类匹配条件；不使用通配或假SN验证。"
+    },
+    {
+      "function": "ZMMRFC76",
+      "function_group": "ZMMRFC02A",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "物料工厂",
+      "decision": "defer",
+      "display_transaction_contexts": [],
+      "restrictions": "活动实现忽略全部筛选，整表查询且WRITE列表，不纳入可调用清单",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "活动实现忽略全部筛选，整表查询且WRITE列表，不纳入可调用清单"
+    },
+    {
+      "function": "ZPPRFC15",
+      "function_group": "ZPPRFC02",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "BOM关联与存在性",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "CS03",
+        "CA03"
+      ],
+      "restrictions": "单物料+工厂的BOM/路线/生产版本独立存在性COUNT，不是完整BOM/路线/有效性证明；TCODE为业务对应",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:15:03.723790+00:00",
+      "returned_table_row_counts": {},
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "ZPPRFC16",
+      "function_group": "ZPPRFC02",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "BOM关联与存在性",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "CS03"
+      ],
+      "restrictions": "仅按创建日读取物料BOM关联，没有物料/工厂过滤，不是组件API；TCODE为业务对应",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "needs_bounded_sample_scope",
+      "reason": "只有创建日期窗，缺已确认规模的BOM关联样本日期；不冒充单物料/工厂组件读取。"
+    },
+    {
+      "function": "ZPPRFC11",
+      "function_group": "ZPPRFC02",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "工作中心与任务清单",
+      "decision": "controlled_mode_only",
+      "display_transaction_contexts": [
+        "CR03",
+        "CA03"
+      ],
+      "restrictions": "调用策略只采用10/11的厂/日期限制；S_RFC无法禁止模式12，账号层隔离须源侧约束/包装，不能声称已隔离",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "调用策略只采用10/11的厂/日期限制；S_RFC无法禁止模式12，账号层隔离须源侧约束/包装，不能声称已隔离"
+    },
+    {
+      "function": "ZSDRFC08",
+      "function_group": "ZSD001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "项目库存",
+      "decision": "defer",
+      "display_transaction_contexts": [
+        "MMBE"
+      ],
+      "restrictions": "全量项目补读、非严格批次语义；优先既有已测库存路径",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "全量项目补读、非严格批次语义；优先既有已测库存路径"
+    },
+    {
+      "function": "ZWMS_RFC_GET_DATA",
+      "function_group": "ZMM001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "SAP内物流映射",
+      "decision": "controlled_mode_only",
+      "display_transaction_contexts": [],
+      "restrictions": "A1/A3仅本SAP快照；A2含费用投影，需现场确认非财务范围及SAP侧模式限制，不证明外部WMS交接状态",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "A1/A3仅本SAP快照；A2含费用投影，需现场确认非财务范围及SAP侧模式限制，不证明外部WMS交接状态"
+    },
+    {
+      "function": "ZMMRFC50",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "纯文本辅助",
+      "decision": "optional_utility",
+      "display_transaction_contexts": [],
+      "restrictions": "纯文本正则判定，无业务数据覆盖，非必须授权",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "纯文本正则判定，无业务数据覆盖，非必须授权"
+    },
+    {
+      "function": "ZMMRFC70",
+      "function_group": "ZMMRFC",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "纯文本辅助",
+      "decision": "optional_utility",
+      "display_transaction_contexts": [],
+      "restrictions": "仅4至9字符的版本内存判定；超长动态绑定未检查，不接受任意长度输入；非必须业务授权",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "仅4至9字符的版本内存判定；超长动态绑定未检查，不接受任意长度输入；非必须业务授权"
+    },
+    {
+      "function": "BAPI_MATERIAL_EXISTENCECHECK",
+      "function_group": "BUS1001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "物料",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "精确物料存在检查，不能外推物料明细的MM03权限链；没有MAXROWS参数",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:14:57.969442+00:00",
+      "returned_table_row_counts": {},
+      "message_types": [
+        "S"
+      ],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "BAPI_MATERIAL_GETLIST",
+      "function_group": "BUS1001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "物料",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "精确单物料I/EQ且MAXROWS=1；描述/制造商补充范围为空；不是物料明细权限链",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:14:58.300428+00:00",
+      "returned_table_row_counts": {
+        "DISTRIBUTIONCHANNELSELECTION": 0,
+        "MANUFACTURERPARTNUMB": 0,
+        "MATERIALSHORTDESCSEL": 1,
+        "MATNRLIST": 1,
+        "MATNRSELECTION": 1,
+        "PLANTSELECTION": 0,
+        "RETURN": 0,
+        "SALESORGANISATIONSELECTION": 0,
+        "STORAGELOCATIONSELECT": 0
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "BAPI_MATERIAL_GET_DETAIL",
+      "function_group": "BUS1001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "物料",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "MM03"
+      ],
+      "restrictions": "按实际契约给精确物料及必要组织；不虚构MAXROWS或关闭输出开关",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:20:47.835644+00:00",
+      "returned_table_row_counts": {},
+      "message_types": [
+        "S"
+      ],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "BAPI_MATERIAL_GET_ALL",
+      "function_group": "BUS1001006",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "物料",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "MM03"
+      ],
+      "restrictions": "精确物料及必要组织，输出层级可控制性按真实SOAP核对，不虚构关闭财务层级的开关",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:20:48.325357+00:00",
+      "returned_table_row_counts": {
+        "EXTENSIONOUT": 1,
+        "INTERNATIONALARTNOS": 0,
+        "MATERIALDESCRIPTION": 1,
+        "MATERIALLONGTEXT": 0,
+        "RETURN": 1,
+        "TAXCLASSIFICATIONS": 0,
+        "UNITSOFMEASURE": 1
+      },
+      "message_types": [
+        "W"
+      ],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false,
+      "warning": "工厂1000中无计划数据；本次未传公司/评估范围/LIFO层级，不把空计划输出认定授权失败或数据完整。"
+    },
+    {
+      "function": "BAPI_PO_GETDETAIL1",
+      "function_group": "2012",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "采购",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "ME23N"
+      ],
+      "restrictions": "精确PO；不请求无关科目/发票计划等层级",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "application_authorization_denied",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:15:02.693125+00:00",
+      "returned_table_row_counts": {
+        "ALLVERSIONS": 0,
+        "EXTENSIONOUT": 0,
+        "INVPLANHEADER": 0,
+        "INVPLANITEM": 0,
+        "POACCOUNT": 0,
+        "POADDRDELIVERY": 0,
+        "POCOMPONENTS": 0,
+        "POCOND": 0,
+        "POCONDHEADER": 0,
+        "POCONFIRMATION": 0,
+        "POCONTRACTLIMITS": 0,
+        "POEXPIMPITEM": 0,
+        "POHISTORY": 0,
+        "POHISTORY_MA": 0,
+        "POHISTORY_TOTALS": 0,
+        "POITEM": 0,
+        "POLIMITS": 0,
+        "POPARTNER": 0,
+        "POSCHEDULE": 0,
+        "POSERVICES": 0,
+        "POSHIPPINGEXP": 0,
+        "POSRVACCESSVALUES": 0,
+        "POTEXTHEADER": 0,
+        "POTEXTITEM": 0,
+        "RETURN": 1,
+        "SERIALNUMBER": 0
+      },
+      "message_types": [
+        "E"
+      ],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false,
+      "authorization_failure": {
+        "message_id": "F6",
+        "number": "702",
+        "funds_management_area": "1000",
+        "message": "没有资金管理范围1000活动显示承诺/实际凭证的权限",
+        "required_action": "IT跟踪实际失败对象与采购读取触发点，确认非财务采购读取方案；不默认扩大财务权限。"
+      }
+    },
+    {
+      "function": "BAPI_GOODSMVT_GETDETAIL",
+      "function_group": "MB_BUS2017",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "物料凭证",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "MB03",
+        "MB51"
+      ],
+      "restrictions": "只读取已存在凭证与年，不创建/冲销",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:15:03.218400+00:00",
+      "returned_table_row_counts": {
+        "GOODSMVT_ITEMS": 2,
+        "GOODSMVT_ITEMS_CWM": 2,
+        "RETURN": 0
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "BAPI_PRODORD_GET_DETAIL",
+      "function_group": "2005_BAPI",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "工单",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "CO03"
+      ],
+      "restrictions": "精确NUMBER、最少ORDER_OBJECTS、COLLECTIVE_ORDER空；TCODE仅业务对应",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:14:59.553734+00:00",
+      "returned_table_row_counts": {
+        "COMPONENT": 2,
+        "FSH_BUNDLES": 0,
+        "HEADER": 1,
+        "OPERATION": 1,
+        "POSITION": 0,
+        "PROD_REL_TOOL": 0,
+        "SEQUENCE": 0,
+        "TRIGGER_POINT": 0
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "BAPI_PRODORD_GET_LIST",
+      "function_group": "2005_BAPI",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "工单",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "COOIS"
+      ],
+      "restrictions": "ORDER_NUMBER_RANGE显式I/EQ；没有明细ORDER_OBJECTS参数；TCODE仅业务对应",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "invocation_accepted",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:15:00.104325+00:00",
+      "returned_table_row_counts": {
+        "MATERIAL_RANGE": 0,
+        "MRP_CNTRL_RANGE": 0,
+        "ORDER_HEADER": 1,
+        "ORDER_NUMBER_RANGE": 1,
+        "ORDER_PRIO_RANGE": 0,
+        "ORDER_TYPE_RANGE": 0,
+        "PLANPLANT_RANGE": 0,
+        "PRODPLANT_RANGE": 0,
+        "PROD_SCHED_RANGE": 0,
+        "SALES_ORD_ITM_RANGE": 0,
+        "SALES_ORD_RANGE": 0,
+        "SEQ_NO_RANGE": 0,
+        "WBS_ELEMENT_RANGE": 0
+      },
+      "message_types": [],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false
+    },
+    {
+      "function": "BAPI_PRODORDCONF_GETDETAIL",
+      "function_group": "2116",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "生产确认",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "CO14"
+      ],
+      "restrictions": "精确CONFIRMATION+CONFIRMATIONCOUNTER；没有ORDER_RANGE；部分IS REQUESTED输出在SOAP无布尔开关，不能承诺可关闭；CO14为业务对应",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺既有CONFIRMATION及CONFIRMATIONCOUNTER；同单确认列表本轮无匹配记录。"
+    },
+    {
+      "function": "BAPI_PRODORDCONF_GETLIST",
+      "function_group": "2116",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "生产确认",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "CO14"
+      ],
+      "restrictions": "ORDER_RANGE显式I/EQ，避免订单/确认范围同时为空；CO14为业务对应",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": true,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "business_rejected",
+      "function_entry_authorized": true,
+      "finished_at": "2026-11-13T06:15:00.354261+00:00",
+      "returned_table_row_counts": {
+        "CONFIRMATIONS": 0,
+        "CONF_RANGE": 0,
+        "ORDER_RANGE": 1
+      },
+      "message_types": [
+        "E"
+      ],
+      "raw_evidence": "private_same_round",
+      "business_data_reconciled": false,
+      "business_rejection": {
+        "message_id": "RU",
+        "number": "268",
+        "message": "找不到可选择的记录",
+        "interpretation": "函数入口通过；无确认样本，不能判定全部生产确认业务权限已通过。"
+      }
+    },
+    {
+      "function": "BAPI_INSPLOT_GETDETAIL",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "质量",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "QA03",
+        "QA13"
+      ],
+      "restrictions": "on-premise查QA03，使用决策输出条件查QA13；IS REQUESTED在SOAP无同名布尔开关，不能保证可关闭该输出/检查",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺该测试环境真实检验批NUMBER。"
+    },
+    {
+      "function": "BAPI_INSPLOT_GETSTATUS",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "质量",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "检验批状态独立业务授权链，无已证TCODE检查，不能继承批明细的QA03/QA13",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺该测试环境真实检验批NUMBER。"
+    },
+    {
+      "function": "BAPI_INSPOPER_GETDETAIL",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "质量",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "QA03"
+      ],
+      "restrictions": "精确批/工序，只读取所需层级；实际on-premise显示事务上下文QA03",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实INSPLOT、INSPOPER及需读取的检验层级。"
+    },
+    {
+      "function": "BAPI_INSPPOINT_GETLIST",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "质量",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "QA03"
+      ],
+      "restrictions": "精确批/工序及有限点范围；显示事务上下文QA03",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实检验批、工序及有限检验点范围。"
+    },
+    {
+      "function": "BAPI_INSPOPER_GETCHAR",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "质量",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "QE03"
+      ],
+      "restrictions": "精确批/工序的特性读取；显示事务上下文QE03",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实检验批与工序；显示检查采用已审QE03路径。"
+    },
+    {
+      "function": "BAPI_INSPCHAR_GETREQUIREMENTS",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "质量",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "QE03"
+      ],
+      "restrictions": "精确批/工序/特性的要求读取；显示事务上下文QE03",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实INSPLOT、INSPOPER、INSPCHAR。"
+    },
+    {
+      "function": "BAPI_INSPCHAR_GETRESULT",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "质量",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "QE03"
+      ],
+      "restrictions": "精确批/工序/特性/样本的已有结果读取；显示事务上下文QE03",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实检验批、工序、特性及样本号。"
+    },
+    {
+      "function": "BAPI_INSPPOINT_GETREQUIREMENTS",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "质量",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "QE13"
+      ],
+      "restrictions": "精确检验点要求；显示事务上下文QE13",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实检验批、工序与检验点；显示上下文QE13。"
+    },
+    {
+      "function": "BAPI_BATCH_GET_DETAIL",
+      "function_group": "VBWB",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "批次",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "MSC3N"
+      ],
+      "restrictions": "完整真实键；不请求锁是已审内部调用事实，不添加虚构SOAP锁开关；MSC3N为业务对应",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺已核实批次；需真实物料、批次及适用工厂。"
+    },
+    {
+      "function": "BAPI_OBJCL_GETCLASSES",
+      "function_group": "CLBPA",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "分类",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "内部已审调用read_only=X，不是新增SOAP参数；真实对象表/键/分类类型；不需要赋值时按实际READ_VALUATIONS选择",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺确认的分类对象表、对象键与分类类型；不假定企业分类配置。"
+    },
+    {
+      "function": "BAPI_OBJCL_GETDETAIL",
+      "function_group": "CLBPA",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "分类",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "内部已审调用read_only=X，不是新增SOAP参数；真实对象表/键/分类类型/关键日",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺确认的对象、对象表、类号、分类类型与关键日。"
+    },
+    {
+      "function": "BAPI_EQUI_GETDETAIL",
+      "function_group": "ITOB_BAPI_EQ",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "设备",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "IE03"
+      ],
+      "restrictions": "精确设备；REQUEST_INSTALLATION_DATA空以避免IE02上下文；IQ03只属于SN业务显示对应，非本函数已证检查",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实设备号；不请求安装数据。"
+    },
+    {
+      "function": "BAPI_EQUI_GETSTATUS",
+      "function_group": "ITOB_BAPI_EQ",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "设备",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "设备状态独立授权链；不能继承明细IE03或暂缓列表的IQ03检查",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实设备号。"
+    },
+    {
+      "function": "BAPI_EQUI_GETLIST",
+      "function_group": "ITOB_BAPI_EQ",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "excluded_or_deferred_interfaces",
+      "business_group": "设备列表",
+      "decision": "defer",
+      "display_transaction_contexts": [
+        "IE06"
+      ],
+      "restrictions": "共享报表可能维护PMFLAGS，未证明该写入分支不可达，不按严格只读执行",
+      "metadata_result": "not_requested_out_of_scope",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "excluded_under_current_scope",
+      "reason": "共享报表可能维护PMFLAGS，未证明该写入分支不可达，不按严格只读执行"
+    },
+    {
+      "function": "BAPI_FUNCLOC_GETDETAIL",
+      "function_group": "ITOB_BAPI_FL",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "功能位置",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "IL03"
+      ],
+      "restrictions": "精确功能位置；REQUEST_INSTALLATION_DATA空以避免IL02上下文",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实功能位置；不请求安装数据。"
+    },
+    {
+      "function": "BAPI_FUNCLOC_GETLIST",
+      "function_group": "ITOB_BAPI_FL",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "功能位置",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "IH06",
+        "IL03"
+      ],
+      "restrictions": "精确选择范围；IH06列表上下文与逐对象IL03分别核对",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺可构成单值I/EQ选择的真实功能位置。"
+    },
+    {
+      "function": "BAPI_FUNCLOC_GETSTATUS",
+      "function_group": "ITOB_BAPI_FL",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "功能位置",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "功能位置状态独立授权链，不继承明细/列表事务检查",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实功能位置。"
+    },
+    {
+      "function": "BAPI_ALM_ORDER_GET_DETAIL",
+      "function_group": "IBAPI_ALM_ORDER",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "制造设施维护订单",
+      "decision": "candidate",
+      "display_transaction_contexts": [
+        "IW33"
+      ],
+      "restrictions": "仅已有制造设施维护单的查询，不启用维护操作",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺既有制造设施维护单号；不能以生产工单号代替。"
+    },
+    {
+      "function": "BAPI_PROJECT_GETINFO",
+      "function_group": "2054",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "requested_read_interfaces",
+      "business_group": "制造项目WBS关联",
+      "decision": "candidate",
+      "display_transaction_contexts": [],
+      "restrictions": "仅制造对象关联，不包括预算/资金/财务读取；TCODE精确映射待核实",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "missing_existing_key",
+      "reason": "缺真实制造项目定义/WBS关联；不以空键读取全项目。"
+    },
+    {
+      "function": "BAPI_SALESORDER_GETLIST",
+      "function_group": "2032",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "销售需求",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "VA03",
+        "VA05"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "Existing sales document linked to customer, sales org, document date and optional material/customer purchase reference."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_SALESORDER_GETSTATUS",
+      "function_group": "2032",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "销售需求",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "VA03",
+        "VA05"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "One existing manufacturing-related sales order number."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPISDORDER_GETDETAILEDLIST",
+      "function_group": "2032",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "销售需求",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "VA03",
+        "VA05"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "One existing manufacturing-related sales order number."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_REQUIREMENTS_GETDETAIL",
+      "function_group": "3027",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "独立需求",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "MD63"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "existing material/plant",
+        "existing PIR requirement type/version/requirements-plan tuple",
+        "confirmed MRP area if plant uses areas"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "CSAP_MAT_BOM_READ",
+      "function_group": "CSAP",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "完整BOM",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "CS03",
+        "CS12",
+        "CS15"
+      ],
+      "restrictions": "存在检查不等于组件读取；须先审查实际契约/依赖/副作用",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "existing material/plant/BOM usage/alternative",
+        "verified valid date and any actual change/revision context"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "CS_BOM_EXPL_MAT_V2_RFC",
+      "function_group": "CSS4",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "完整BOM",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "CS03",
+        "CS12",
+        "CS15"
+      ],
+      "restrictions": "存在检查不等于组件读取；须先审查实际契约/依赖/副作用",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "existing material/plant/BOM usage/alternative",
+        "valid date and approved application CAPID",
+        "known small BOM/depth after source semantics review"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_MAT_BOM_EXISTENCE_CHECK",
+      "function_group": "CPCC_BUS1080",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "完整BOM",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "CS03",
+        "CS12",
+        "CS15"
+      ],
+      "restrictions": "存在检查不等于组件读取；须先审查实际契约/依赖/副作用",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "existing material/plant/BOM usage",
+        "specific validity date/interval"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_PLANNEDORDER_GET_DETAIL",
+      "function_group": "2004",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "计划订单",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "MD13"
+      ],
+      "restrictions": "读取已存在计划单；不创建/改动/转换/运行MRP",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "one existing saved planned-order number from actual current MRP result"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_GOODSMVT_GETITEMS",
+      "function_group": "MB_BUS2017",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "凭证与预留",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "MB51",
+        "MB23"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "existing exact PO and material/plant/posting day (and batch/storage location if known)"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_RESERVATION_GETDETAIL1",
+      "function_group": "MB_BUS2093",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "凭证与预留",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "MB51",
+        "MB23"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "one existing reservation number linked to real order/component record"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_RESERVATION_GETITEMS1",
+      "function_group": "MB_BUS2093",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "凭证与预留",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "MB51",
+        "MB23"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "one existing reservation number",
+        "same actual plant/material as corroborating filters"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_INSPLOT_GETLIST",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "IQC发现与质量通知",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "QA33",
+        "QM03"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "One existing manufacturing order and its actual plant/material; alternatively a fully correlated existing PO/delivery and item after source verification."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_INSPOPER_GETLIST",
+      "function_group": "2045",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "IQC发现与质量通知",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "QA33",
+        "QM03"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "One existing inspection lot already linked to manufacturing/receiving."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_QUALNOT_GETDETAIL",
+      "function_group": "2078",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "IQC发现与质量通知",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "QA33",
+        "QM03"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "One existing quality notification linked to permitted manufacturing/IQC evidence."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_MATERIAL_GETBATCHES",
+      "function_group": "BUS1001",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "批次发现",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "MSC3N"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "one existing exact material and batch number",
+        "actual batch-management level; plant only when relevant"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_DELIVERY_GETLIST",
+      "function_group": "LE_SHP_DB_DELIVERY_BUFFER",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "交货单",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "VL03N",
+        "VL33N"
+      ],
+      "restrictions": "按实际入库/出库能力确认，不从函数名推断覆盖两者",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "One existing allowed inbound or outbound delivery number and known category; one sample does not establish both categories."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_PR_GETDETAIL",
+      "function_group": "2105",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "采购申请与采购行",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "ME53N",
+        "ME23N"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "one existing purchase requisition number from a real captured requisition/order/MRP reference"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_REQUISITION_GETDETAIL",
+      "function_group": "MEWQ",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "采购申请与采购行",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "ME53N",
+        "ME23N"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "one existing purchase requisition number"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_REQUISITION_GETITEMS",
+      "function_group": "MEWQ",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "采购申请与采购行",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "ME53N",
+        "ME23N"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "one existing purchase requisition number",
+        "matching actual plant/material if corroborated"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_PO_GETITEMS",
+      "function_group": "MEWP",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "采购申请与采购行",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "ME53N",
+        "ME23N"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "one already existing PO number",
+        "matching actual plant as corroboration"
+      ],
+      "source_review_artifact": "private/review-mm-pp/review.json"
+    },
+    {
+      "function": "BAPI_VENDOR_GETDETAIL",
+      "function_group": "LC01",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "供应商",
+      "decision": "review_required",
+      "display_transaction_contexts": [],
+      "restrictions": "先确认非银行/非会计的采购视图可独立读取；客户端丢弃金融字段不是源端未读取",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "An exact existing purchasing vendor number would still not remove the source-scope blocker."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_VENDOR_FIND",
+      "function_group": "LC01",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "供应商",
+      "decision": "review_required",
+      "display_transaction_contexts": [],
+      "restrictions": "先确认非银行/非会计的采购视图可独立读取；客户端丢弃金融字段不是源端未读取",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "Exact existing purchasing vendor key plus a source-proved non-financial exact table/field selector."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_INFORECORD_GETLIST",
+      "function_group": "MEWI",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "采购信息与协议",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "ME13",
+        "ME33K",
+        "ME33L"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "One existing purchasing info record and its actual org/plant/category, with linked material/vendor where relevant."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_CONTRACT_GETDETAIL",
+      "function_group": "2014",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "采购信息与协议",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "ME13",
+        "ME33K",
+        "ME33L"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "One existing manufacturing-related purchasing contract number with verified document category."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    },
+    {
+      "function": "BAPI_SAG_GETDETAIL",
+      "function_group": "2013",
+      "function_group_observed_at": "2026-11-11",
+      "scope": "future_interfaces_requiring_confirmation",
+      "business_group": "采购信息与协议",
+      "decision": "review_required",
+      "display_transaction_contexts": [
+        "ME13",
+        "ME33K",
+        "ME33L"
+      ],
+      "restrictions": "",
+      "metadata_result": "matching_wsdl",
+      "business_invoked_this_round": false,
+      "effective_s_rfc_assignment_verified": false,
+      "full_organization_scope_verified": false,
+      "result": "pending_read_path_review",
+      "reason": "缺当前入口、必要依赖及增强的完整只读证据；元数据可读不代表业务调用授权。",
+      "missing_business_keys": [
+        "One existing manufacturing-related scheduling agreement number with verified document category."
+      ],
+      "source_review_artifact": "private/review-sales-qm/review.json"
+    }
+  ]
+}
