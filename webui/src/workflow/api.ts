@@ -1,3 +1,4 @@
+import {sapApi} from './materialControl/sapApi';
 import {materialControlApi} from './materialControl/api';
 import {productionApi} from './productionTools/productionApi';
 import type { ProductionStatus, SourceProjectPage, ProductionPage, ProductionStatistics, ObservationFilters, CatalogKind, CatalogFilters, EvidenceFilters } from './productionTools/types';
@@ -93,13 +94,10 @@ export function createWorkflowApi(
         signal: c.signal,
         credentials: "same-origin",
         cache: "no-store",
-        headers:
-          body === undefined
-            ? {}
-            : {
-                "Content-Type": "application/json",
-                "X-CSRF-Token": options.csrfToken,
-              },
+        headers: {
+          ...(body === undefined ? {} : {"Content-Type": "application/json"}),
+          ...(['GET','HEAD','OPTIONS'].includes(method.toUpperCase()) ? {} : {"X-CSRF-Token": options.csrfToken}),
+        },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       assertCurrent();
@@ -146,6 +144,7 @@ export function createWorkflowApi(
   };
   return {
     ...materialControlApi(request),
+    ...sapApi(request),
     ...productionApi(request, productionPath, productionQuery),
     productionProjects: (filters: {before_id?: string} = {}, signal?: AbortSignal) =>
       request<SourceProjectPage>("/production-tools/projects" + (filters.before_id === undefined ? "" : "?" + productionQuery(filters)), "GET", undefined, signal),

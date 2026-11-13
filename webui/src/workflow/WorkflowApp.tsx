@@ -1,3 +1,4 @@
+import {SapMaterialBrowser} from './materialControl/SapMaterialBrowser';
 import {initialMaterialViewContext, type MaterialViewContext} from './materialControl/types';
 import {MaterialTaskPanel} from './materialControl/MaterialTaskPanel';
 import { clearProductionResume } from './productionTools/investigations';
@@ -474,6 +475,7 @@ export function WorkflowApp({
               onNavigate={(module, kind, projectId) => navigate(module, {kind, projectId})} onMaterialProject={id=>requestLeave(()=>{const p=projects.find(x=>x.id===id);if(p){setProject(p);setWorkspace("supply");setSupplyMode({projectId:id,mode:"material"});setTarget(null);}})} />
           )}{" "}
           {activeView === "tasks" && !project && <GlobalTasks api={api} context={taskContext} onContext={context=>{cancelOpening();setTaskContext(context);}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open}/> }
+          {activeView === "supply" && !project && b.configuration_admin && <SapMaterialBrowser api={api} readOnly={options.readOnly || !b.can_edit}/> }
           {isBusinessModule(activeView) && !project && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>{cancelOpening();setLedgers(old=>({...old,[activeView]:context}));}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");if(activeView === "supply" && ledgers.supply.kind === "material_handoff")setSupplyMode({projectId:p.id,mode:"handoff"});})}/>}
           {(activeView === "projects" || project) &&
             (creating ? (
