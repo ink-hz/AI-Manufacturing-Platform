@@ -1,5 +1,9 @@
 """Authenticated loopback gateway exposing only native SAP observation reads."""
 import argparse
+from contextlib import contextmanager
+import fcntl
+import stat
+from time import monotonic, sleep
 import hmac
 import json
 import os
@@ -11,7 +15,7 @@ from uuid import uuid4
 from .errors import SapAccessError
 from .service import SapAccessService
 from .relay_protocol import (MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, SAFE_CODES, RelayProtocolError,
-                             load_token, parse_request, validate_context)
+                             load_token, parse_request, validate_context, read_private_json)
 
 class Gateway(ThreadingHTTPServer):
     daemon_threads=True
@@ -90,31 +94,109 @@ def build_gateway(config_path,audit_path,token_path,*,port=0,service=None):
     server.handler_slots=threading.BoundedSemaphore(16)
     return server
 
+def _private_stat(info, *, directory=False):
+    kind = stat.S_ISDIR if directory else stat.S_ISREG
+    if not kind(info.st_mode) or info.st_uid not in (0, os.getuid()) or info.st_mode & 0o077:
+        raise RelayProtocolError()
+
+
+def validate_ready_paths(path, protected_paths=()):
+    """Reject aliases before any readiness mutation; callers hold the stable lock."""
+    if not os.path.isabs(path):
+        raise RelayProtocolError()
+    try:
+        _private_stat(os.stat(os.path.dirname(path), follow_symlinks=False), directory=True)
+        candidates = (path, path + '.lock')
+        for candidate in candidates:
+            if os.path.lexists(candidate):
+                _private_stat(os.stat(candidate, follow_symlinks=False))
+            other_ready_path = candidates[1] if candidate == path else path
+            for protected in (*protected_paths, other_ready_path):
+                if os.path.realpath(candidate) == os.path.realpath(protected):
+                    raise RelayProtocolError()
+                if os.path.exists(candidate) and os.path.exists(protected) and os.path.samefile(candidate, protected):
+                    raise RelayProtocolError()
+    except OSError:
+        raise RelayProtocolError() from None
+
+
+@contextmanager
+def ready_lock(path, *, timeout=5):
+    """A stable private inode serializes every publisher and cleanup; never rename it."""
+    validate_ready_paths(path)
+    descriptor = None
+    try:
+        descriptor = os.open(path + '.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        _private_stat(os.fstat(descriptor))
+        deadline = monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if monotonic() >= deadline:
+                    raise RelayProtocolError()
+                sleep(.01)
+        yield
+    except OSError:
+        raise RelayProtocolError() from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def publish_ready(path, value, protected_paths=()):
+    validate_ready_paths(path, protected_paths)
+    with ready_lock(path):
+        validate_ready_paths(path, protected_paths)
+        descriptor, temporary = tempfile.mkstemp(prefix='.relay-ready-', dir=os.path.dirname(path))
+        try:
+            with os.fdopen(descriptor, 'w') as stream:
+                json.dump(value, stream)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+
+def cleanup_ready(path, value, protected_paths=()):
+    try:
+        validate_ready_paths(path, protected_paths)
+        with ready_lock(path):
+            validate_ready_paths(path, protected_paths)
+            if read_private_json(path) == value:
+                os.unlink(path)
+    except (OSError, RelayProtocolError):
+        pass
+
+
 def main(argv=None):
-    parser=argparse.ArgumentParser();
-    for name in ('config','audit','token','ready'):parser.add_argument('--'+name,required=True)
-    parser.add_argument('--port',type=int,default=0);args=parser.parse_args(argv)
-    server=build_gateway(args.config,args.audit,args.token,port=args.port)
-    generation=str(uuid4());ready={'pid':os.getpid(),'port':server.server_port,'generation':generation}
-    temporary=None
+    parser = argparse.ArgumentParser()
+    for name in ('config', 'audit', 'token', 'ready'):
+        parser.add_argument('--' + name, required=True)
+    parser.add_argument('--port', type=int, default=0)
+    args = parser.parse_args(argv)
+    protected = (args.config, args.token, args.audit, args.audit + '.lock')
+    validate_ready_paths(args.ready, protected)
+    server = build_gateway(args.config, args.audit, args.token, port=args.port)
+    ready = {'pid': os.getpid(), 'port': server.server_port, 'generation': str(uuid4())}
     try:
         validate_context(server.service.read_context())
-        if not os.path.isabs(args.ready):raise RelayProtocolError()
-        fd,temporary=tempfile.mkstemp(prefix='.relay-ready-',dir=os.path.dirname(args.ready))
-        with os.fdopen(fd,'w') as stream:json.dump(ready,stream);stream.flush();os.fsync(stream.fileno())
-        os.replace(temporary,args.ready);temporary=None
-        def stop(*unused):threading.Thread(target=server.shutdown,daemon=True).start()
-        signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
+        publish_ready(args.ready, ready, protected)
+        def stop(*unused):
+            threading.Thread(target=server.shutdown, daemon=True).start()
+        signal.signal(signal.SIGTERM, stop)
+        signal.signal(signal.SIGINT, stop)
         server.serve_forever()
     finally:
         server.server_close()
-        if temporary:
-            try:os.unlink(temporary)
-            except OSError:pass
-        try:
-            from .relay_protocol import read_private_json
-            if read_private_json(args.ready)==ready:os.unlink(args.ready)
-        except (OSError,RelayProtocolError):pass
-if __name__=='__main__':
-    try:main()
-    except Exception:raise SystemExit('SAP_RELAY_UNAVAILABLE') from None
+        cleanup_ready(args.ready, ready, protected)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception:
+        raise SystemExit('SAP_RELAY_UNAVAILABLE') from None

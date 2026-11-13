@@ -154,3 +154,84 @@ def test_cli_private_ready_and_ownership(tmp_path,monkeypatch):
 def test_context_uses_native_system_id_contract():
     from manufacturing_platform.sap_access.relay_protocol import validate_context
     with pytest.raises(RelayProtocolError):validate_context({**CONTEXT,'source':{**CONTEXT['source'],'system_id':'123'}})
+
+NATIVE_READ_ERRORS = ('SAP_BUSINESS_FAILURE','SAP_RESULT_LIMIT_EXCEEDED',
+    'SAP_TLS_ERROR','SAP_CONNECTION_FAILED','SAP_REDIRECT_BLOCKED','SAP_HTTP_ERROR',
+    'SAP_INVALID_XML','SAP_UNSAFE_XML','SAP_SOAP_FAULT','SAP_INVALID_REQUEST')
+@pytest.mark.parametrize('code',NATIVE_READ_ERRORS)
+def test_native_safe_errors_round_trip(gateway,code):
+    from manufacturing_platform.sap_access.errors import SapAccessError
+    def failed(*args,**kwargs):raise SapAccessError(code)
+    gateway[1].production_order=failed
+    command=request('production_order');_,value=send(gateway,json.dumps(command))
+    assert value['error']=={'code':code}
+    assert validate_response(value,request_id=command['request_id'])==value
+
+def test_ready_cleanup_serializes_replacement(tmp_path,monkeypatch):
+    from manufacturing_platform.sap_access import relay_gateway as module
+    path=str(tmp_path/'ready');old={'pid':1,'port':2,'generation':'old'};new={**old,'generation':'new'}
+    module.publish_ready(path,old)
+    checked=threading.Event();resume=threading.Event();publishing=threading.Event();published=threading.Event()
+    original=module.read_private_json
+    def paused_read(*args,**kwargs):
+        value=original(*args,**kwargs);checked.set();assert resume.wait(2);return value
+    monkeypatch.setattr(module,'read_private_json',paused_read)
+    cleanup=threading.Thread(target=module.cleanup_ready,args=(path,old));cleanup.start()
+    assert checked.wait(2)
+    def replace():
+        publishing.set();module.publish_ready(path,new);published.set()
+    publisher=threading.Thread(target=replace);publisher.start();assert publishing.wait(2)
+    try:assert not published.wait(.05)
+    finally:resume.set();cleanup.join(2);publisher.join(2)
+    assert published.is_set() and original(path)==new
+
+def test_ready_lock_private_and_bounded(tmp_path):
+    from manufacturing_platform.sap_access import relay_gateway as module
+    path=str(tmp_path/'ready')
+    with module.ready_lock(path):
+        with pytest.raises(RelayProtocolError):
+            with module.ready_lock(path,timeout=.03):pass
+    lock=tmp_path/'ready.lock';assert lock.stat().st_mode&0o777==0o600
+    lock.chmod(0o644)
+    with pytest.raises(RelayProtocolError):
+        with module.ready_lock(path):pass
+    lock.unlink();target=tmp_path/'other';target.write_text('');target.chmod(0o600);lock.symlink_to(target)
+    with pytest.raises(RelayProtocolError):
+        with module.ready_lock(path):pass
+
+@pytest.mark.parametrize('alias_kind',['same','hardlink','symlink','lock'])
+def test_ready_rejects_sensitive_aliases(tmp_path,alias_kind):
+    from manufacturing_platform.sap_access import relay_gateway as module
+    secret=tmp_path/'token';secret.write_text(TOKEN);secret.chmod(0o600)
+    ready=tmp_path/'ready'
+    if alias_kind=='same':ready=secret
+    elif alias_kind=='hardlink':ready.hardlink_to(secret)
+    elif alias_kind=='symlink':ready.symlink_to(secret)
+    else:(tmp_path/'ready.lock').hardlink_to(secret)
+    with pytest.raises(RelayProtocolError):module.validate_ready_paths(str(ready),[str(secret)])
+    assert secret.read_text()==TOKEN
+
+def test_ready_requires_private_parent_and_regular_target(tmp_path):
+    from manufacturing_platform.sap_access import relay_gateway as module
+    parent=tmp_path/'public';parent.mkdir(mode=0o755)
+    with pytest.raises(RelayProtocolError):module.publish_ready(str(parent/'ready'),{})
+    ready=tmp_path/'ready';ready.mkdir()
+    with pytest.raises(RelayProtocolError):module.publish_ready(str(ready),{})
+
+def test_unknown_symbolic_error_remains_sanitized(gateway):
+    from manufacturing_platform.sap_access.errors import SapAccessError
+    def failed(*args,**kwargs):raise SapAccessError('PRIVATE_UPSTREAM_DETAIL')
+    gateway[1].production_order=failed
+    command=request('production_order');_,value=send(gateway,json.dumps(command))
+    assert value['error']=={'code':'SAP_RELAY_UNAVAILABLE'}
+    validate_response(value,request_id=command['request_id'])
+
+def test_cli_alias_rejected_before_service_construction(tmp_path,monkeypatch):
+    from manufacturing_platform.sap_access import relay_gateway as module
+    token=tmp_path/'token';token.write_text(TOKEN);token.chmod(0o600)
+    def forbidden(*args,**kwargs):pytest.fail('source constructed before alias rejection')
+    monkeypatch.setattr(module,'build_gateway',forbidden)
+    with pytest.raises(RelayProtocolError):
+        module.main(['--config',str(tmp_path/'config'),'--audit',str(tmp_path/'audit'),
+                     '--token',str(token),'--ready',str(token)])
+    assert token.read_text()==TOKEN
