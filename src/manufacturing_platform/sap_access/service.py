@@ -53,17 +53,31 @@ class SapAccessService:
                            'environment': config.environment, 'system_id': config.system_id,
                            'client': config.client, 'namespace': namespace}, 'fingerprint': binding}
 
+    @staticmethod
+    def _binding_matches(binding, expected):
+        try:
+            return type(binding) is str and type(expected) is str and hmac.compare_digest(binding, expected)
+        except TypeError:
+            return False
+
+    @classmethod
+    def _require_binding(cls, binding, expected):
+        if expected is not None and not cls._binding_matches(binding, expected):
+            raise SapAccessError('SAP_CONFIGURATION_ERROR')
+
     def configuration_matches(self, fingerprint):
         try:
-            return type(fingerprint) is str and hmac.compare_digest(self.read_context()['fingerprint'], fingerprint)
+            return self._binding_matches(self.read_context()['fingerprint'], fingerprint)
         except (SapAccessError, TypeError, ValueError):
             return False
 
-    def production_order(self, number, plant, actor_id):
+    def production_order(self, number, plant, actor_id, *, expected_fingerprint=None):
         from . import production_order as order
         request = order.envelope(number, plant)
         context = self.read_context()
-        config, _, _ = self._context()
+        self._require_binding(context['fingerprint'], expected_fingerprint)
+        config, binding, _ = self._context()
+        self._require_binding(binding, context['fingerprint'])
         if order.FUNCTION not in config.allowed_functions:
             raise SapAccessError('SAP_FUNCTION_NOT_ALLOWED', 403)
         def call(transport):
@@ -78,7 +92,8 @@ class SapAccessService:
             if not self.configuration_matches(context['fingerprint']):
                 raise SapAccessError('SAP_CONFIGURATION_ERROR')
             return {**result, 'function': order.FUNCTION, 'source': context['source']}, len(reply), contract
-        return self._operation('production_order', order.FUNCTION, actor_id, call)
+        return self._operation('production_order', order.FUNCTION, actor_id, call,
+                               expected_fingerprint=context['fingerprint'])
 
     def status(self):
         config, binding, store = self._context()
@@ -108,8 +123,9 @@ class SapAccessService:
         return {**cached['descriptor'], 'fetched_at': cached['fetched_at'],
                 'business_data_verified': False, 'source': 'native_sap'}
 
-    def _operation(self, operation, function, actor_id, callback):
+    def _operation(self, operation, function, actor_id, callback, *, expected_fingerprint=None):
         config, binding, store = self._context()
+        self._require_binding(binding, expected_fingerprint)
         self._live(config)
         event = {'request_id': str(uuid4()), 'operation': operation, 'function': function,
                  'timestamp': datetime.now(timezone.utc).isoformat(), 'status': 'started',
@@ -140,9 +156,10 @@ class SapAccessService:
                     'function': 'RFC_PING', 'source': 'native_sap'}, len(reply), contract
         return self._operation('ping', 'RFC_PING', actor_id, call)
 
-    def stock_requirements(self, material, plant, actor_id):
+    def stock_requirements(self, material, plant, actor_id, *, expected_fingerprint=None):
         request = envelope(material, plant)
-        config, _, _ = self._context()
+        config, binding, _ = self._context()
+        self._require_binding(binding, expected_fingerprint)
         self._live(config)
         if FUNCTION not in config.allowed_functions:
             raise SapAccessError('SAP_FUNCTION_NOT_ALLOWED', 403)
@@ -168,7 +185,8 @@ class SapAccessService:
                 raise SapAccessError('SAP_RESPONSE_TOO_LARGE', 502)
             result = parse_response(reply, contract)
             return {**result, 'function': FUNCTION, 'source': 'native_sap'}, len(reply), contract
-        return self._operation('stock_requirements', FUNCTION, actor_id, call)
+        return self._operation('stock_requirements', FUNCTION, actor_id, call,
+                               expected_fingerprint=binding)
 
     def refresh_contracts(self, actor_id):
         successful, failed = [], []

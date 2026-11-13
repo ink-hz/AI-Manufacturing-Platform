@@ -214,3 +214,32 @@ def test_malformed_component_still_returns_invalid_response():
     with pytest.raises(SapAccessError) as e:
         parse_response(response().replace(b'<COMPONENT>',b'<COMPONENT>invalid'),'123','P001',contract())
     assert e.value.code=='SAP_INVALID_RESPONSE'
+
+@pytest.mark.parametrize('operation', ['production_order', 'stock_requirements'])
+@pytest.mark.parametrize('change_at', ['initial', 'transport'])
+def test_native_read_pins_the_configuration_used_for_transport(tmp_path, monkeypatch, operation, change_at):
+    import json
+    from .test_core import config_file
+    from manufacturing_platform.sap_access.service import SapAccessService
+    path = config_file(tmp_path)
+    raw = json.loads(open(path).read())
+    raw['allowed_functions'] += ['BAPI_PRODORD_GET_DETAIL', 'BAPI_MATERIAL_STOCK_REQ_LIST']
+    open(path, 'w').write(json.dumps(raw))
+    transports = []
+    def transport(config):
+        transports.append(config)
+        raise RuntimeError('must not construct mismatched transport')
+    service = SapAccessService(path, str(tmp_path/'audit.json'), transport_factory=transport)
+    config, _, audit = service._context()
+    contexts = []
+    def changing_context():
+        contexts.append(True)
+        transport_index = 3 if operation == 'production_order' else 2
+        binding = 'B' if change_at == 'initial' or len(contexts) == transport_index else 'A'
+        return config, binding, audit
+    monkeypatch.setattr(service, '_context', changing_context)
+    kwargs = {'expected_fingerprint':'A'} if change_at == 'initial' else {}
+    with pytest.raises(SapAccessError) as caught:
+        getattr(service, operation)('123', 'P001', 'isolated-admin', **kwargs)
+    assert caught.value.code == 'SAP_CONFIGURATION_ERROR'
+    assert not transports

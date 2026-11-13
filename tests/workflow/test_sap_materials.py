@@ -20,12 +20,12 @@ class Sap:
         return dict(source=SOURCE, fingerprint=self.binding)
     def configuration_matches(self, value):
         return value == self.binding
-    def production_order(self, number, plant, actor_id):
+    def production_order(self, number, plant, actor_id, *, expected_fingerprint=None):
         self.calls.append((number, plant, actor_id))
         if self.hook: self.hook()
         if self.error: raise RuntimeError('secret source payload')
         return dict(number=number, plant=plant, material='MAT', description='Order', quantity='1.2300', unit='EA', components=[], total=0, request_id='isolated-request', source=SOURCE, function='BAPI_PRODORD_GET_DETAIL')
-    def stock_requirements(self, material, plant, actor_id):
+    def stock_requirements(self, material, plant, actor_id, *, expected_fingerprint=None):
         self.calls.append((material, plant, actor_id))
         return dict(mrp_list=dict(MATERIAL='000000000000000123', PLANT=plant), items=[dict(AVAIL_QTY1='1.2300-')], request_id='isolated-mrp')
 
@@ -180,7 +180,7 @@ def test_storage_failure_returns_503_not_unsaved_success(sap_h):
 @pytest.mark.parametrize('header', [{}, {'PLANT':'T001'}, {'MATERIAL':'123', 'PLANT':'WRNG'}])
 def test_mrp_missing_or_wrong_identity_rejected(sap_h, header):
     h, sap = sap_h
-    sap.stock_requirements = lambda *args: dict(mrp_list=header, items=[])
+    sap.stock_requirements = lambda *args, **kwargs: dict(mrp_list=header, items=[])
     result = h.client().post(URL+'/stock-requirements?material=123&plant=T001').json()
     assert result['snapshot'] is None
     assert result['refresh_error']['code'] == 'SAP_SCOPE_MISMATCH'
@@ -255,3 +255,38 @@ def test_post_body_rejects_first_chunk_without_reading_rest(sap_h):
         asyncio.run(router.routes[2].endpoint(request))
     assert caught.value.status_code == 422
     assert sap.context_calls == 0
+
+def test_config_change_while_waiting_for_final_write_keeps_previous_snapshot(sap_h, monkeypatch):
+    from contextlib import contextmanager
+    from manufacturing_platform.workflow.store import WorkflowStore
+    h, sap = sap_h
+    path = URL+'/production-order?number=123&plant=T001'
+    previous = h.client().post(path).json()['snapshot']
+    original_transaction = WorkflowStore.transaction
+    writes = []
+    @contextmanager
+    def changing_transaction(store, *, write=False):
+        with original_transaction(store, write=write) as tx:
+            if write:
+                writes.append(True)
+                if len(writes) == 2:
+                    sap.binding = 'changed-while-acquiring-lock'
+            yield tx
+    monkeypatch.setattr(WorkflowStore, 'transaction', changing_transaction)
+    result = h.client().post(path).json()
+    assert result['snapshot'] is None
+    assert result['refresh_error']['code'] == 'SAP_CONFIGURATION_CHANGED'
+    sap.binding = 'one'
+    assert h.client().get(path).json()['snapshot'] == previous
+
+@pytest.mark.parametrize('kind,query', [('production-order','number=123&plant=T001'), ('stock-requirements','material=123&plant=T001')])
+def test_workflow_pins_native_read_to_observed_configuration(sap_h, kind, query):
+    h, sap = sap_h
+    observed = []
+    original = getattr(sap, kind.replace('-', '_'))
+    def pinned(*args, expected_fingerprint=None):
+        observed.append(expected_fingerprint)
+        return original(*args)
+    setattr(sap, kind.replace('-', '_'), pinned)
+    assert h.client().post(URL+'/'+kind+'?'+query).json()['snapshot']
+    assert observed == ['one']

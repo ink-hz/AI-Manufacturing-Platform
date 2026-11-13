@@ -64,17 +64,17 @@ def observe(service, actor, kind, scope, refresh=False):
     with service.store.transaction(write=True) as tx:
         tx.execute('INSERT INTO sap_material_observations(fingerprint,kind,scope_json,refresh_seq) VALUES(?,?,?,1) ON CONFLICT(fingerprint,kind,scope_json) DO UPDATE SET refresh_seq=refresh_seq+1', key)
         seq = tx.execute('SELECT refresh_seq FROM sap_material_observations WHERE fingerprint=? AND kind=? AND scope_json=?', key).fetchone()[0]
-    # All network and configuration access happens outside workflow transactions.
+    # Source network I/O stays outside transactions; config is rechecked under the final write lock.
     failure = None
     data = None
     try:
         sap = service.sap_access_service
         if kind == 'production-order':
-            data = sap.production_order(scope['number'], scope['plant'], str(actor.user_id))
+            data = sap.production_order(scope['number'], scope['plant'], str(actor.user_id), expected_fingerprint=ctx['fingerprint'])
             if data.get('number') != scope['number'] or data.get('plant') != scope['plant']:
                 failure = error('SAP_SCOPE_MISMATCH')
         else:
-            data = sap.stock_requirements(scope['material'], scope['plant'], str(actor.user_id))
+            data = sap.stock_requirements(scope['material'], scope['plant'], str(actor.user_id), expected_fingerprint=ctx['fingerprint'])
             header = data.get('mrp_list') or {}
             if header.get('PLANT') != scope['plant'] or not same_material(header.get('MATERIAL_LONG') or header.get('MATERIAL'), scope['material']):
                 failure = error('SAP_SCOPE_MISMATCH')
@@ -92,6 +92,9 @@ def observe(service, actor, kind, scope, refresh=False):
                         data={k:v for k,v in data.items() if k not in {'source','function','request_id'}},
                         request_id=data.get('request_id'))
     with service.store.transaction(write=True) as tx:
+        # A writer can wait while the local source configuration changes.
+        if not service.sap_access_service.configuration_matches(ctx['fingerprint']):
+            return dict(snapshot=None, refresh_error=error('SAP_CONFIGURATION_CHANGED'))
         if failure:
             cursor = tx.execute('UPDATE sap_material_observations SET refresh_error_json=? WHERE fingerprint=? AND kind=? AND scope_json=? AND refresh_seq=?', (json.dumps(failure), *key, seq))
         else:
