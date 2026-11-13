@@ -98,7 +98,8 @@ def local_describe(settings, ready):
 
 
 def ssh_base_argv(settings):
-    return ['/usr/bin/ssh','-T','-a','-x','-i',settings['ssh_identity'],
+    # Ignore user/system config so it cannot add forwards, commands or masters.
+    return ['/usr/bin/ssh','-F','none','-T','-a','-x','-i',settings['ssh_identity'],
             '-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes',
             '-o','UserKnownHostsFile='+settings['ssh_known_hosts'],'-o','ConnectTimeout=8',
             '-o','ServerAliveInterval=15','-o','ServerAliveCountMax=2']

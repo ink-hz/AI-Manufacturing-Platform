@@ -15,6 +15,7 @@ def test_ssh_argv_has_only_fixed_reverse_socket():
     m = module()
     settings = dict(ssh_host='relay.example.com', ssh_user='root', ssh_identity='/private/key', ssh_known_hosts='/private/hosts')
     argv = m.tunnel_argv(settings, 'r-' + 'a'*16 + '.sock', 12345)
+    assert argv[:3] == ['/usr/bin/ssh','-F','none']
     assert argv[-1] == 'root@relay.example.com'
     assert argv[argv.index('-R')+1] == m.REMOTE_DIRECTORY + '/r-'+'a'*16+'.sock:127.0.0.1:12345'
     assert 'StrictHostKeyChecking=yes' in argv
@@ -106,6 +107,7 @@ def test_remote_action_fixed_code_and_no_secret_args(tmp_path):
         calls.append((argv,kwargs));return SimpleNamespace(returncode=0,stdout=json.dumps(dict(ready=True,context=CONTEXT,socketname=name)).encode())
     m.remote_action(settings,'activate',name,run)
     argv,kw=calls[0]
+    assert argv[:3] == ['/usr/bin/ssh','-F','none']
     assert 'c'*64 not in repr(calls)
     assert argv[-1].startswith('python3 -c ')
     assert json.loads(kw['input'])['action']=='activate'
