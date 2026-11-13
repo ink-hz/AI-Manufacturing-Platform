@@ -6,11 +6,12 @@ import re
 from fastapi import APIRouter, Request
 
 from .._admin_access import private_admin_routes
+from ..sap_connection import KNOWN_SOAP_FUNCTIONS
 from .errors import SapAccessError
 from .stock_requirements import envelope
 
 PREFIX = "/api/v1/manufacturing/sap"
-_FUNCTIONS = frozenset({"RFC_PING", "ZMMRFC35", "ZMMRFC78", "ZPPRFC06", "ZMMRFC80", "BAPI_MATERIAL_STOCK_REQ_LIST"})
+_FUNCTIONS = KNOWN_SOAP_FUNCTIONS
 _MAX_BODY_BYTES = 1024
 
 

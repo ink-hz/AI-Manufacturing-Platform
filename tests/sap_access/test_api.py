@@ -86,6 +86,7 @@ def test_router_construction_does_not_read_service():
         ("GET", "/interfaces", None, ("interfaces",)),
         ("GET", "/interfaces/RFC_PING/contract", None, ("contract", "RFC_PING")),
         ("GET", "/interfaces/ZMMRFC35/contract", None, ("contract", "ZMMRFC35")),
+        ("GET", "/interfaces/BAPI_PRODORD_GET_DETAIL/contract", None, ("contract", "BAPI_PRODORD_GET_DETAIL")),
         ("POST", "/diagnostics/ping", b"", ("ping", "admin-1")),
         ("POST", "/diagnostics/ping", b"{}", ("ping", "admin-1")),
         ("POST", "/interfaces/refresh", b" \n{}\t", ("refresh_contracts", "admin-1")),
