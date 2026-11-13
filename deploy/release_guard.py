@@ -17,6 +17,30 @@ WORKFLOW_FIELDS = {
     'dataset_mode': 'PLATFORM_MANUFACTURING_DATASET_MODE',
     'dataset_label': 'PLATFORM_MANUFACTURING_DATASET_LABEL',
 }
+SAP_RELAY_FIELDS = {
+    'config_path': 'PLATFORM_MANUFACTURING_SAP_CONFIG_PATH',
+    'audit_path': 'PLATFORM_MANUFACTURING_SAP_AUDIT_PATH',
+}
+SAP_RELAY_PATHS = {
+    'config_path': '/app/data/manufacturing/sap-relay/config.json',
+    'audit_path': '/app/data/manufacturing/sap-relay/audit.json',
+}
+
+
+def sap_relay_environment(config):
+    _require(type(config) is dict and config == SAP_RELAY_PATHS, 'sap_relay_exact_paths')
+    return {name: config[key] for key, name in SAP_RELAY_FIELDS.items()}
+
+
+def sap_relay_configuration(request, *, baseline=False):
+    old = request.get('baseline_sap_relay')
+    if 'baseline_sap_relay' in request:
+        sap_relay_environment(old)
+    target = request.get('target_sap_relay', old)
+    if 'target_sap_relay' in request:
+        sap_relay_environment(target)
+    _require(old is None or target == old, 'existing_sap_relay_configuration_changed')
+    return old if baseline else target
 
 
 def workflow_environment(config):
@@ -69,7 +93,8 @@ def validate_candidate(baseline, candidate, *, target_image, environment_delta, 
 
 
 def validate_upgrade_candidate(baseline, candidate, *, target_image, environment_delta,
-                               baseline_environment, new_code_mount, data_mount, native_enabled=False):
+                               baseline_environment, new_code_mount, data_mount, native_enabled=False,
+                               sap_relay_enabled=False):
     """Replace one immutable source; preserve the existing data and all other state."""
     before,after=copy.deepcopy(baseline),copy.deepcopy(candidate)
     old,new=before['services']['platform-api'],after['services']['platform-api']
@@ -80,21 +105,27 @@ def validate_upgrade_candidate(baseline, candidate, *, target_image, environment
     releases={'PLATFORM_RELEASE_SHA','PLATFORM_MANUFACTURING_RELEASE'}
     workflow_keys=set(WORKFLOW_FIELDS.values())
     native_keys=set(NATIVE_FIELDS.values()) if native_enabled else set()
+    relay_keys=set(SAP_RELAY_FIELDS.values()) if sap_relay_enabled else set()
     for row in [baseline_environment,environment_delta]:
-        _require(set(fixed)|releases <= set(row) <= set(fixed)|releases|workflow_keys|native_keys,'upgrade_environment_keys')
+        _require(set(fixed)|releases <= set(row) <= set(fixed)|releases|workflow_keys|native_keys|relay_keys,'upgrade_environment_keys')
         validate_workflow_environment(row)
         selected={key:row[value] for key,value in NATIVE_FIELDS.items() if value in row}
         if selected:native_environment(selected)
+        relay={key:row[value] for key,value in SAP_RELAY_FIELDS.items() if value in row}
+        if relay:sap_relay_environment(relay)
     old_workflow={k:v for k,v in baseline_environment.items() if k in workflow_keys}
     new_workflow={k:v for k,v in environment_delta.items() if k in workflow_keys}
     _require(not old_workflow or old_workflow==new_workflow,'existing_workflow_configuration_changed')
     old_native={k:v for k,v in baseline_environment.items() if k in native_keys}
     new_native={k:v for k,v in environment_delta.items() if k in native_keys}
     _require(not old_native or old_native==new_native,'existing_native_configuration_changed')
+    old_relay={k:v for k,v in baseline_environment.items() if k in relay_keys}
+    new_relay={k:v for k,v in environment_delta.items() if k in relay_keys}
+    _require(not old_relay or old_relay==new_relay,'existing_sap_relay_configuration_changed')
     for key in releases:
         _require(all(isinstance(row[key],str) and re.fullmatch('[0-9a-f]{40}',row[key]) for row in [baseline_environment,environment_delta]),'upgrade_release_pin')
     old_env,new_env=old.get('environment',{}),new.get('environment',{})
-    for key in (workflow_keys|native_keys)-set(baseline_environment):
+    for key in (workflow_keys|native_keys|relay_keys)-set(baseline_environment):
         _require(key not in old_env,'upgrade_baseline_workflow_expected_absent')
     for key,value in environment_delta.items():
         if key not in baseline_environment:

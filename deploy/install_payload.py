@@ -62,6 +62,7 @@ def install(stage,archive_sha256):
     release.validate_backend_baseline(e,release.ops.maps(release.ops.API)['source'])
     release.validate_workflow_storage(e)
     release.native_release.validate_native_storage(e)
+    release.validate_sap_relay_storage(e)
     sdk=release.native_release.validate_sdk(stage,e)
     if sdk is not None:release.native_release.check_container_sdk(release.ops.run,release.ops.API,sdk,baseline=True)
     require(len(release.ops.discover_files(old))==e['expected_chain_length'],'baseline_chain_length_drift')

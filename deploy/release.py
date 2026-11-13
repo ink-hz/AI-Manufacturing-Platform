@@ -13,7 +13,8 @@ import stat
 import sys
 import time
 import uuid
-from release_guard import validate_candidate,validate_upgrade_candidate,workflow_environment,WORKFLOW_FIELDS
+from release_guard import (validate_candidate,validate_upgrade_candidate,workflow_environment,WORKFLOW_FIELDS,
+                           SAP_RELAY_FIELDS,sap_relay_configuration,sap_relay_environment)
 import release_support as ops
 import native_release
 
@@ -227,10 +228,82 @@ def validate_workflow_storage(e):
     require(len(identities)==len(set(identities)),'workflow_storage_inode_alias')
 
 
+def validate_sap_relay_storage(e):
+    """Pin private connection identity; sockets may rotate without changing that identity."""
+    if sap_relay_configuration(e) is None:
+        return {}
+    directory=Path(e['data_host'])/'sap-relay'
+    require(not any(p.is_symlink() for p in [directory,*directory.parents]), 'sap_relay_storage_symlink')
+    info=trusted_stat(directory)
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid==info.st_gid==10001
+            and stat.S_IMODE(info.st_mode)==0o700, 'sap_relay_directory_metadata')
+    identities=[]
+    for name,required,cap in [('config.json',True,65536),('token',True,65),('audit.json',False,None),('audit.json.lock',False,None)]:
+        path=directory/name
+        require(not path.is_symlink(), 'sap_relay_storage_symlink')
+        if not path.exists():
+            require(not required, 'sap_relay_storage_missing')
+            continue
+        info=trusted_stat(path)
+        require(stat.S_ISREG(info.st_mode) and info.st_uid==info.st_gid==10001
+                and stat.S_IMODE(info.st_mode)==0o600 and info.st_nlink==1,
+                'sap_relay_file_metadata')
+        require(cap is None or info.st_size<=cap, 'sap_relay_file_limit')
+        identities.append((info.st_dev,info.st_ino))
+    require(len(set(identities))==len(identities), 'sap_relay_storage_inode_alias')
+    def pairs(items):
+        value={}
+        for key,item in items:
+            require(key not in value, 'sap_relay_duplicate_key')
+            value[key]=item
+        return value
+    config=json.loads((directory/'config.json').read_text(), object_pairs_hook=pairs,
+                      parse_constant=lambda _:require(False,'sap_relay_invalid_json'))
+    require(type(config) is dict and set(config)=={'version','transport','enabled','read_only','environment',
+        'socket_path','token_path','expected_context','timeout_seconds','max_response_bytes'}, 'sap_relay_config_fields')
+    require(type(config['version']) is int and config['version']==1 and config['transport']=='mac_read_relay'
+            and config['enabled'] is True and config['read_only'] is True
+            and config['environment'] in {'test','development'}, 'sap_relay_config_mode')
+    require(config['token_path']=='/app/data/manufacturing/sap-relay/token'
+            and config['socket_path']=='/app/data/manufacturing/sap-relay/bridge/active.sock', 'sap_relay_connection_paths')
+    require(type(config['timeout_seconds']) is int and 1<=config['timeout_seconds']<=70
+            and type(config['max_response_bytes']) is int and 1024<=config['max_response_bytes']<=2097152,
+            'sap_relay_connection_limits')
+    context=config['expected_context']
+    require(type(context) is dict and set(context)=={'source','fingerprint'}
+            and isinstance(context['fingerprint'],str) and re.fullmatch('[0-9a-f]{64}',context['fingerprint']),
+            'sap_relay_source_context')
+    source=context['source']
+    require(type(source) is dict and set(source)=={'system','origin','fact_role','environment','system_id','client','namespace'}
+            and source['system']=='sap' and source['origin']=='native' and source['fact_role']=='observation'
+            and source['environment']==config['environment'], 'sap_relay_source_identity')
+    require(type(source['system_id']) is str and re.fullmatch('[A-Z][A-Z0-9]{2}',source['system_id'])
+            and type(source['client']) is str and re.fullmatch('[0-9]{3}',source['client'])
+            and type(source['namespace']) is str and re.fullmatch('[0-9a-f]{64}',source['namespace']), 'sap_relay_source_identity')
+    token=(directory/'token').read_text().removesuffix('\n')
+    require(re.fullmatch('[0-9a-f]{64}',token) is not None, 'sap_relay_token_format')
+    bridge=directory/'bridge'
+    require(not bridge.is_symlink(), 'sap_relay_bridge_symlink')
+    info=trusted_stat(bridge)
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid==0 and info.st_gid==10001
+            and stat.S_IMODE(info.st_mode)==0o750, 'sap_relay_bridge_metadata')
+    active=bridge/'active.sock'
+    require(active.is_symlink(), 'sap_relay_active_socket_missing')
+    target=os.readlink(active)
+    require(re.fullmatch('r-[0-9a-f]{16}\\.sock',target) is not None, 'sap_relay_socket_target')
+    endpoint=bridge/target
+    require(not endpoint.is_symlink(), 'sap_relay_socket_symlink')
+    info=trusted_stat(endpoint)
+    require(stat.S_ISSOCK(info.st_mode) and info.st_uid==0 and info.st_gid==10001
+            and stat.S_IMODE(info.st_mode)==0o660, 'sap_relay_socket_metadata')
+    return {'sap_relay_config':ops.digest(directory/'config.json'), 'sap_relay_token':ops.digest(directory/'token')}
+
+
 def environment_delta(e):
     config=workflow_configuration(e)
     native=native_release.native_configuration(e)
-    return {**(native_release.native_environment(native) if native else {}),**(workflow_environment(config) if config else {}),'PLATFORM_RELEASE_SHA':e['platform_commit'],
+    relay=sap_relay_configuration(e)
+    return {**(sap_relay_environment(relay) if relay else {}),**(native_release.native_environment(native) if native else {}),**(workflow_environment(config) if config else {}),'PLATFORM_RELEASE_SHA':e['platform_commit'],
             'PLATFORM_MANUFACTURING_ROOT':'/opt/manufacturing',
             'PLATFORM_MANUFACTURING_DATABASE_PATH':'/app/data/manufacturing/workbench.sqlite3',
             'PLATFORM_MANUFACTURING_RELEASE':e['manufacturing_commit']}
@@ -246,11 +319,13 @@ def overlay_mounts(e):
 
 
 def baseline_environment(e):
-    old={k:v for k,v in e.items() if k not in {'target_workflow','baseline_workflow','target_native','baseline_native'}}
+    old={k:v for k,v in e.items() if k not in {'target_workflow','baseline_workflow','target_native','baseline_native','target_sap_relay','baseline_sap_relay'}}
     config=workflow_configuration(e,baseline=True)
     if config is not None:old['target_workflow']=config
     native=native_release.native_configuration(e,baseline=True)
     if native is not None:old['target_native']=native
+    relay=sap_relay_configuration(e,baseline=True)
+    if relay is not None:old['target_sap_relay']=relay
     return {**environment_delta(old),'PLATFORM_RELEASE_SHA':e['expected_old_platform_commit'],
             'PLATFORM_MANUFACTURING_RELEASE':e['expected_old_manufacturing_commit']}
 
@@ -262,7 +337,7 @@ def previous_source(e):
 def validate_baseline(e,old):
     if e.get('mode')!='upgrade':return
     env=ops.actual_environment(old)
-    for key in (set(WORKFLOW_FIELDS.values())|set(native_release.NATIVE_FIELDS.values()))-set(baseline_environment(e)):
+    for key in (set(WORKFLOW_FIELDS.values())|set(native_release.NATIVE_FIELDS.values())|set(SAP_RELAY_FIELDS.values()))-set(baseline_environment(e)):
         require(key not in env,'upgrade_baseline_workflow_expected_absent')
     require(all(env.get(key)==value for key,value in baseline_environment(e).items()),'upgrade_baseline_environment_drift')
     require(len({m['Destination'] for m in old['Mounts']})==len(old['Mounts']),'baseline_duplicate_mount')
@@ -277,7 +352,8 @@ def validate_baseline(e,old):
 def validate_configuration(e,baseline,candidate):
     if e.get('mode')=='upgrade':
         validate_upgrade_candidate(baseline,candidate,target_image=e['target_image'],environment_delta=environment_delta(e),
-            baseline_environment=baseline_environment(e),new_code_mount=added_mounts(e)[0],data_mount=added_mounts(e)[1],native_enabled=native_release.native_configuration(e) is not None)
+            baseline_environment=baseline_environment(e),new_code_mount=added_mounts(e)[0],data_mount=added_mounts(e)[1],native_enabled=native_release.native_configuration(e) is not None,
+            sap_relay_enabled=sap_relay_configuration(e) is not None)
     else:
         validate_candidate(baseline,candidate,target_image=e['target_image'],environment_delta=environment_delta(e),new_mounts=added_mounts(e))
 
@@ -303,6 +379,7 @@ def validate_backend_baseline(e,source):
 def validate_paths(e):
     native_release.sdk_request(e)
     native_release.native_configuration(e)
+    sap_relay_configuration(e)
     workflow_configuration(e)
     base='/data/orbbec-agent-platform/manufacturing'
     require(e['manufacturing_host']==base+'/releases/'+e['manufacturing_commit'] and e['data_host']==base+'/data','unapproved_manufacturing_path')
@@ -360,6 +437,7 @@ def snapshot_files(e):
         result['build/native-sdk-manifest.json']=ops.digest(ops.STAGE/'build/native-sdk-manifest.json')
         result.update({'build/native-sdk/'+name:value for name,value in sdk['files'].items()})
     result.update(native_release.validate_native_storage(e))
+    result.update(validate_sap_relay_storage(e))
     if workflow_configuration(e) is not None:
         require(re.fullmatch('[0-9a-f]{64}',e.get('candidate_fixture_sha256','')) is not None,'candidate_fixture_pin_required')
         result['candidate_fixture']=ops.digest(ops.STAGE/'candidate-fixture/fixture.json')
@@ -614,6 +692,7 @@ def prepare(e):
             native_release.validate_sdk_copy_metadata(ops.STAGE,e)
             native_release.check_container_sdk(ops.run,ops.API,sdk,baseline=True)
         native_release.validate_native_storage(e)
+        validate_sap_relay_storage(e)
         files=ops.discover_files(old)
         require(len(files)==e['expected_chain_length'],'compose_chain_length_drift')
         env=ops.environment(old)
