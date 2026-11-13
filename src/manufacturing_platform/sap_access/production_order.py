@@ -7,6 +7,11 @@ from .transport import _xml_document
 
 FUNCTION = 'BAPI_PRODORD_GET_DETAIL'
 MAX_ROWS = 500
+# Scalar metadata from the reviewed BAPIRET2 WSDL; no business values.
+RETURN_LENGTHS = dict(zip(('TYPE','ID','NUMBER','MESSAGE','LOG_NO','LOG_MSG_NO',
+                          'MESSAGE_V1','MESSAGE_V2','MESSAGE_V3','MESSAGE_V4',
+                          'PARAMETER','ROW','FIELD','SYSTEM'),
+                         (1,20,3,220,20,6,50,50,50,50,32,None,30,10)))
 HEADER_FIELDS = ('ORDER_NUMBER', 'PRODUCTION_PLANT', 'MRP_CONTROLLER', 'PRODUCTION_SCHEDULER', 'MATERIAL', 'EXPL_DATE', 'ROUTING_NO', 'RESERVATION_NUMBER', 'SCHED_RELEASE_DATE', 'ACTUAL_RELEASE_DATE', 'FINISH_DATE', 'START_DATE', 'PRODUCTION_FINISH_DATE', 'PRODUCTION_START_DATE', 'ACTUAL_START_DATE', 'ACTUAL_FINISH_DATE', 'SCRAP', 'TARGET_QUANTITY', 'UNIT', 'UNIT_ISO', 'PRIORITY', 'ORDER_TYPE', 'ENTERED_BY', 'ENTER_DATE', 'DELETION_FLAG', 'WBS_ELEMENT', 'CONF_NO', 'CONF_CNT', 'INT_OBJ_NO', 'SCHED_FIN_TIME', 'SCHED_START_TIME', 'COLLECTIVE_ORDER', 'ORDER_SEQ_NO', 'FINISH_TIME', 'START_TIME', 'ACTUAL_START_TIME', 'LEADING_ORDER', 'SALES_ORDER', 'SALES_ORDER_ITEM', 'PROD_SCHED_PROFILE', 'MATERIAL_TEXT', 'SYSTEM_STATUS', 'CONFIRMED_QUANTITY', 'PLAN_PLANT', 'BATCH', 'MATERIAL_EXTERNAL', 'MATERIAL_GUID', 'MATERIAL_VERSION', 'DATE_OF_EXPIRY', 'DATE_OF_MANUFACTURE', 'MATERIAL_LONG')
 COMPONENT_FIELDS = ('RESERVATION_NUMBER', 'RESERVATION_ITEM', 'RESERVATION_TYPE', 'DELETION_INDICATOR', 'MATERIAL', 'PROD_PLANT', 'STORAGE_LOCATION', 'SUPPLY_AREA', 'BATCH', 'SPECIAL_STOCK', 'REQ_DATE', 'REQ_QUAN', 'BASE_UOM', 'BASE_UOM_ISO', 'WITHDRAWN_QUANTITY', 'ENTRY_QUANTITY', 'ENTRY_UOM', 'ENTRY_UOM_ISO', 'ORDER_NUMBER', 'MOVEMENT_TYPE', 'ITEM_CATEGORY', 'ITEM_NUMBER', 'SEQUENCE', 'OPERATION', 'BACKFLUSH', 'VALUATION_SPEC_STOCK', 'SYSTEM_STATUS', 'MATERIAL_DESCRIPTION', 'COMMITED_QUANTITY', 'SHORTAGE', 'PURCHASE_REQ_NO', 'PURCHASE_REQ_ITEM', 'MATERIAL_EXTERNAL', 'MATERIAL_GUID', 'MATERIAL_VERSION', 'REQ_SEGMENT', 'STOCK_SEGMENT', 'MATERIAL_LONG', 'REQ_SEG_LONG', 'STK_SEG_LONG')
 RETURN_FIELDS = ('TYPE', 'ID', 'NUMBER', 'MESSAGE', 'LOG_NO', 'LOG_MSG_NO', 'MESSAGE_V1', 'MESSAGE_V2', 'MESSAGE_V3', 'MESSAGE_V4', 'PARAMETER', 'ROW', 'FIELD', 'SYSTEM')
@@ -51,7 +56,18 @@ def validate_contract(contract):
                 fields = named(table['fields'][0]['fields'])
                 expected = HEADER_FIELDS if name == 'HEADER' else COMPONENT_FIELDS if name == 'COMPONENT' else None
                 if expected is not None and (set(fields) != set(expected) or any('fields' in f or f.get('table') for f in fields.values())): raise ValueError()
-        if set(named(res['RETURN']['fields'])) != set(RETURN_FIELDS): raise ValueError()
+        return_fields = named(res['RETURN']['fields'])
+        if set(return_fields) != set(RETURN_FIELDS) or res['RETURN'].get('table'):
+            raise ValueError()
+        scalar_keys = {'type','base_type','max_length','pattern','total_digits','fraction_digits'}
+        for name, field in return_fields.items():
+            if 'fields' in field or field.get('table'):
+                raise ValueError()
+            expected = ({'type':'int'} if name == 'ROW' else
+                        {'type':'string','base_type':'string','max_length':RETURN_LENGTHS[name],
+                         **({'pattern':r'\d*'} if name in {'NUMBER','LOG_MSG_NO'} else {})})
+            if {key:field[key] for key in scalar_keys if key in field} != expected:
+                raise ValueError()
     except (KeyError, TypeError, ValueError, IndexError):
         raise SapAccessError('SAP_INVALID_CONTRACT') from None
 

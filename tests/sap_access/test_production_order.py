@@ -23,10 +23,15 @@ RETURN_FIELDS = ('TYPE', 'ID', 'NUMBER', 'MESSAGE', 'LOG_NO', 'LOG_MSG_NO', 'MES
 
 FLAGS=('HEADER','POSITIONS','SEQUENCES','OPERATIONS','COMPONENTS','PROD_REL_TOOLS','TRIGGER_POINTS','SUBOPERATIONS')
 TABLES=('COMPONENT','FSH_BUNDLES','HEADER','OPERATION','POSITION','PROD_REL_TOOL','SEQUENCE','TRIGGER_POINT')
+RETURN_LENGTHS = dict(zip(RETURN_FIELDS, (1,20,3,220,20,6,50,50,50,50,32,None,30,10)))
+def return_scalar(name):
+    if name == 'ROW': return {'name':name,'type':'int'}
+    return {'name':name,'type':'string','base_type':'string','max_length':RETURN_LENGTHS[name], **({'pattern':r'\d*'} if name in {'NUMBER','LOG_MSG_NO'} else {})}
+
 def contract():
     def scalar(n, length=1): return {'name':n,'max_length':length}
     def table(n, fields): return {'name':n,'table':True,'fields':[{'name':'item','fields':[scalar(f,100) for f in fields]}]}
-    return {'request_fields':[scalar('COLLECTIVE_ORDER'),*[table(n,HEADER_FIELDS if n=='HEADER' else COMPONENT_FIELDS if n=='COMPONENT' else ('DUMMY',)) for n in TABLES],scalar('NUMBER',12),{'name':'ORDER_OBJECTS','fields':[scalar(n) for n in FLAGS]}], 'response_fields':[{'name':'RETURN','fields':[scalar(n,100) for n in RETURN_FIELDS]},*[table(n,HEADER_FIELDS if n=='HEADER' else COMPONENT_FIELDS if n=='COMPONENT' else ('DUMMY',)) for n in TABLES]]}
+    return {'request_fields':[scalar('COLLECTIVE_ORDER'),*[table(n,HEADER_FIELDS if n=='HEADER' else COMPONENT_FIELDS if n=='COMPONENT' else ('DUMMY',)) for n in TABLES],scalar('NUMBER',12),{'name':'ORDER_OBJECTS','fields':[scalar(n) for n in FLAGS]}], 'response_fields':[{'name':'RETURN','fields':[return_scalar(n) for n in RETURN_FIELDS]},*[table(n,HEADER_FIELDS if n=='HEADER' else COMPONENT_FIELDS if n=='COMPONENT' else ('DUMMY',)) for n in TABLES]]}
 
 def response(status='',count=1,header_number='000000000123',header_plant='P001',component_number='000000000123',component_plant='P001',duplicate=False):
     root=ET.Element('{http://schemas.xmlsoap.org/soap/envelope/}Envelope'); op=ET.SubElement(ET.SubElement(root,'{http://schemas.xmlsoap.org/soap/envelope/}Body'),'{urn:sap-com:document:sap:rfc:functions}BAPI_PRODORD_GET_DETAIL.Response')
@@ -152,7 +157,9 @@ def test_real_contract_parser_service_transport_roundtrip(tmp_path):
     from manufacturing_platform.sap_access.production_order import FUNCTION
     def element(f):
         attrs=' name="'+f['name']+'"'+(' minOccurs="0" maxOccurs="unbounded"' if f['name']=='item' else '')
-        content=('<x:complexType><x:sequence>'+''.join(element(c) for c in f['fields'])+'</x:sequence></x:complexType>' if 'fields' in f else '<x:simpleType><x:restriction base="x:string"><x:maxLength value="'+str(f['max_length'])+'"/></x:restriction></x:simpleType>')
+        if f.get('type') == 'int': return '<x:element'+attrs+' type="x:int"/>'
+        facets='<x:maxLength value="'+str(f.get('max_length',100))+'"/>'+ ('<x:pattern value="'+f['pattern']+'"/>' if 'pattern' in f else '')
+        content=('<x:complexType><x:sequence>'+''.join(element(c) for c in f['fields'])+'</x:sequence></x:complexType>' if 'fields' in f else '<x:simpleType><x:restriction base="x:string">'+facets+'</x:restriction></x:simpleType>')
         return '<x:element'+attrs+'>'+content+'</x:element>'
     c=contract(); wsdl=WSDL.replace(b'RFC_PING',FUNCTION.encode())
     for direction in ('request_fields','response_fields'):
@@ -164,3 +171,35 @@ def test_real_contract_parser_service_transport_roundtrip(tmp_path):
     s=SapAccessService(path,str(tmp_path/'audit.json'),transport_factory=lambda c:SoapTransport(c,sender=sender))
     result=s.production_order('123','P001','admin')
     assert result['quantity']=='001.200' and result['source']['environment']=='test' and calls==['GET','POST']
+
+
+@pytest.mark.parametrize('name',RETURN_FIELDS)
+@pytest.mark.parametrize('drift',[{'fields':[]},{'table':True}])
+def test_every_return_member_rejects_nonscalar_shape(name,drift):
+    from manufacturing_platform.sap_access.production_order import validate_contract
+    c=contract(); next(f for f in c['response_fields'][0]['fields'] if f['name']==name).update(drift)
+    with pytest.raises(SapAccessError) as e: validate_contract(c)
+    assert e.value.code=='SAP_INVALID_CONTRACT'
+
+@pytest.mark.parametrize('name,drift',[('TYPE',{'max_length':2}),('TYPE',{'type':'int'}),('ROW',{'type':'string'}),('NUMBER',{'pattern':'unreviewed'}),('MESSAGE',{'fraction_digits':1})])
+def test_return_type_and_facets_drift_rejected(name,drift):
+    from manufacturing_platform.sap_access.production_order import validate_contract
+    c=contract(); next(f for f in c['response_fields'][0]['fields'] if f['name']==name).update(drift)
+    with pytest.raises(SapAccessError): validate_contract(c)
+
+
+def test_service_rejects_nested_return_before_invoke(tmp_path,monkeypatch):
+    import json
+    from .test_core import config_file
+    import manufacturing_platform.sap_access.service as mod
+    from manufacturing_platform.sap_access.production_order import FUNCTION
+    path=config_file(tmp_path); raw=json.loads(open(path).read()); raw['allowed_functions'].append(FUNCTION); open(path,'w').write(json.dumps(raw))
+    c=contract(); c['response_fields'][0]['fields'][0]['fields']=[{'name':'DRIFT'}]
+    monkeypatch.setattr(mod,'parse_wsdl',lambda *args:c)
+    class Transport:
+        def __init__(self,c): pass
+        def fetch_wsdl(self,fn): return b'synthetic'
+        def invoke(self,*args): pytest.fail('unreviewed RETURN must not invoke')
+    s=mod.SapAccessService(path,str(tmp_path/'audit.json'),transport_factory=Transport)
+    with pytest.raises(SapAccessError) as e: s.production_order('123','P001','admin')
+    assert e.value.code=='SAP_INVALID_CONTRACT'
