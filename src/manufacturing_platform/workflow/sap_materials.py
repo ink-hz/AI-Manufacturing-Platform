@@ -92,29 +92,16 @@ def observe(service, actor, kind, scope, refresh=False):
                         data={k:v for k,v in data.items() if k not in {'source','function','request_id'}},
                         request_id=data.get('request_id'))
     with service.store.transaction(write=True) as tx:
-        # A writer can wait while the local source configuration changes.
+        # Acceptance point: source-pinned observations remain valid after later config changes.
         if not service.sap_access_service.configuration_matches(ctx['fingerprint']):
             return dict(snapshot=None, refresh_error=error('SAP_CONFIGURATION_CHANGED'))
-        previous_snapshot = tx.execute(
-            'SELECT snapshot_json FROM sap_material_observations WHERE fingerprint=? AND kind=? AND scope_json=?', key
-        ).fetchone()[0]
         if failure:
             cursor = tx.execute('UPDATE sap_material_observations SET refresh_error_json=? WHERE fingerprint=? AND kind=? AND scope_json=? AND refresh_seq=?', (json.dumps(failure), *key, seq))
         else:
             cursor = tx.execute('UPDATE sap_material_observations SET snapshot_json=?,refresh_error_json=NULL WHERE fingerprint=? AND kind=? AND scope_json=? AND refresh_seq=?', (json.dumps(snapshot), *key, seq))
-        published = failure is None and cursor.rowcount == 1
         result = read_row(tx, key)
         if cursor.rowcount != 1:
             result['refresh_error'] = error('SAP_REFRESH_SUPERSEDED')
-    if not service.sap_access_service.configuration_matches(ctx['fingerprint']):
-        if published:
-            # Retract only this rejected snapshot; preserve later refreshes and errors.
-            with service.store.transaction(write=True) as tx:
-                tx.execute(
-                    "UPDATE sap_material_observations SET snapshot_json=? WHERE fingerprint=? AND kind=? AND scope_json=? AND json_extract(snapshot_json,'$.id')=?",
-                    (previous_snapshot, *key, snapshot['id']),
-                )
-        return dict(snapshot=None, refresh_error=error('SAP_CONFIGURATION_CHANGED'))
     return result
 
 def register_sap_material_routes(router, service, actor):

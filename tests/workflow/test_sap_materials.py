@@ -292,7 +292,7 @@ def test_workflow_pins_native_read_to_observed_configuration(sap_h, kind, query)
     assert observed == ['one']
 
 @pytest.mark.parametrize('has_previous', [False, True])
-def test_config_change_after_snapshot_update_retracts_only_rejected_snapshot(sap_h, monkeypatch, has_previous):
+def test_postaccept_config_change_keeps_valid_source_observation(sap_h, monkeypatch, has_previous):
     from contextlib import contextmanager
     from manufacturing_platform.workflow.store import WorkflowStore
     h, sap = sap_h
@@ -306,64 +306,67 @@ def test_config_change_after_snapshot_update_retracts_only_rejected_snapshot(sap
             if write: writes.append(True)
             yield tx
             if write and len(writes) == 2:
-                sap.binding = 'changed-after-update'
+                sap.binding = 'B-after-acceptance'
     monkeypatch.setattr(WorkflowStore, 'transaction', changing_transaction)
     result = h.client().post(path).json()
-    assert result['snapshot'] is None
-    assert result['refresh_error']['code'] == 'SAP_CONFIGURATION_CHANGED'
+    assert result['refresh_error'] is None
+    assert result['snapshot']['source'] == SOURCE
+    assert result['snapshot'] != previous
+    assert h.client().get(path).json()['snapshot'] is None
     sap.binding = 'one'
-    assert h.client().get(path).json()['snapshot'] == previous
+    assert h.client().get(path).json() == result
+    assert len(writes) == 2
 
 
-def test_config_cleanup_cannot_replace_a_later_successful_snapshot(sap_h, monkeypatch):
+def test_overlapping_accepted_refreshes_keep_latest_without_retraction_chain(sap_h, monkeypatch):
     from contextlib import contextmanager
     from manufacturing_platform.workflow.store import WorkflowStore
     h, sap = sap_h
     path = URL+'/production-order?number=123&plant=T001'
-    h.client().post(path)
+    previous = h.client().post(path).json()['snapshot']
     original = WorkflowStore.transaction
-    writes = []
+    writes, later = [], []
     @contextmanager
-    def changing_transaction(store, *, write=False):
+    def interleaved_transaction(store, *, write=False):
         with original(store, write=write) as tx:
             if write: writes.append(True)
+            index = len(writes)
             yield tx
-            if write and len(writes) == 2:
-                sap.binding = 'changed-after-update'
-    monkeypatch.setattr(WorkflowStore, 'transaction', changing_transaction)
-    matches = sap.configuration_matches
-    later = []
-    def refresh_before_cleanup(binding):
-        if sap.binding == 'changed-after-update' and not later:
-            sap.binding = 'one'
-            later.append(None)
-            later[0] = h.client().post(path).json()['snapshot']
-            sap.binding = 'changed-after-update'
-            return False
-        return matches(binding)
-    sap.configuration_matches = refresh_before_cleanup
-    result = h.client().post(path).json()
-    assert result['refresh_error']['code'] == 'SAP_CONFIGURATION_CHANGED'
+        # R1 has committed S1; R2 commits S2 before R1 can finish its response.
+        if write and index == 2:
+            later.append(h.client().post(path).json())
+        elif write and index == 4:
+            sap.binding = 'B-after-both-accepted'
+    monkeypatch.setattr(WorkflowStore, 'transaction', interleaved_transaction)
+    first = h.client().post(path).json()
+    assert first['refresh_error'] is None
+    assert later[0]['refresh_error'] is None
+    assert first['snapshot']['source'] == later[0]['snapshot']['source'] == SOURCE
+    assert first['snapshot']['id'] != later[0]['snapshot']['id']
+    assert previous['id'] not in {first['snapshot']['id'], later[0]['snapshot']['id']}
+    assert h.client().get(path).json()['snapshot'] is None
     sap.binding = 'one'
-    assert later[0] is not None
-    assert h.client().get(path).json() == dict(snapshot=later[0], refresh_error=None)
+    assert h.client().get(path).json() == later[0]
+    assert len(writes) == 4
 
 
-def test_snapshot_retraction_storage_failure_returns_503(sap_h, monkeypatch):
+def test_postaccept_configuration_switch_needs_no_compensating_write(sap_h, monkeypatch):
     from contextlib import contextmanager
     from manufacturing_platform.workflow.store import WorkflowStore
     h, sap = sap_h
     original = WorkflowStore.transaction
     writes = []
     @contextmanager
-    def failing_cleanup(store, *, write=False):
+    def reject_extra_writes(store, *, write=False):
+        if write:
+            writes.append(True)
+            assert len(writes) <= 2, 'accepted observations must not trigger compensation'
         with original(store, write=write) as tx:
-            if write: writes.append(True)
             yield tx
             if write and len(writes) == 2:
-                sap.binding = 'changed-after-update'
-                tx.execute("CREATE TRIGGER deny_retraction BEFORE UPDATE OF snapshot_json ON sap_material_observations BEGIN SELECT RAISE(ABORT,'isolated cleanup failure'); END")
-    monkeypatch.setattr(WorkflowStore, 'transaction', failing_cleanup)
+                sap.binding = 'B-after-acceptance'
+    monkeypatch.setattr(WorkflowStore, 'transaction', reject_extra_writes)
     response = h.client().post(URL+'/production-order?number=123&plant=T001')
-    assert response.status_code == 503
-    assert response.json() == {'detail':'Workflow storage unavailable'}
+    assert response.status_code == 200
+    assert response.json()['refresh_error'] is None
+    assert response.json()['snapshot']['source'] == SOURCE
