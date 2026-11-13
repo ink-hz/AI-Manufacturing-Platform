@@ -6,7 +6,7 @@
 
 Mac以固定环回HTTP服务提供 `/v1/read`，只接受带共享随机令牌的固定JSON命令 `describe`、`production_order`、`stock_requirements`。调用现有SapAccessService及固定请求/解析/500组件、50MRP条数上限，不产生源业务写入。账号、目标和SOAP字段均来自Mac私有配置。不存在上传SOAP、SQL、路径、函数名或目标地址的入口。
 
-Mac主动向现有云服务器建立SSH反向Unix socket转发，远端每次使用独立socket，认证探测通过后原子切换active.sock。API容器仅挂载socket目录和自身私有relay配置，按现有UID10001权限连接。所有监听均为Mac127.0.0.1或云Unix socket；不改共享Nginx/SSH服务配置，不开放公网端口。认证令牌是独立中转令牌，不是SAP密码。
+Mac主动向现有云服务器建立SSH反向Unix socket转发，远端每次使用独立socket，认证探测通过后原子切换active.sock。API通过现有私有数据挂载访问socket目录和自身relay配置，按现有UID10001权限连接，不新增挂载。所有监听均为Mac127.0.0.1或云Unix socket；不改共享Nginx/SSH服务配置，不开放公网端口。认证令牌是独立中转令牌，不是SAP密码。
 
 云端增加延迟选择的SAP服务工厂：原有soap_http保持兼容；mac_read_relay使用独立严格配置与Unix socket客户端。构造服务不读文件或联网。read_context/configuration_matches只访问本地受控配置，禁止在workflow数据库事务里触发远端网络。
 
