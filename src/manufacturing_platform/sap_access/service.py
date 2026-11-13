@@ -2,6 +2,7 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
+import hmac
 import json
 import os
 from time import monotonic
@@ -39,8 +40,45 @@ class SapAccessService:
     def _live(config):
         if not config.enabled:
             raise SapAccessError('SAP_DISABLED')
-        if config.version != 2 or config.transport != 'soap_http':
+        if (config.version != 2 or config.transport != 'soap_http'
+                or config.environment not in {'development', 'test'} or config.read_only is not True):
             raise SapAccessError('SAP_CONFIGURATION_ERROR')
+
+    def read_context(self):
+        config, binding, _ = self._context()
+        self._live(config)
+        namespace = hashlib.sha256(json.dumps([config.application_server.lower(), config.system_id,
+                                               config.client], separators=(',', ':')).encode()).hexdigest()
+        return {'source': {'system': 'sap', 'origin': 'native', 'fact_role': 'observation',
+                           'environment': config.environment, 'system_id': config.system_id,
+                           'client': config.client, 'namespace': namespace}, 'fingerprint': binding}
+
+    def configuration_matches(self, fingerprint):
+        try:
+            return type(fingerprint) is str and hmac.compare_digest(self.read_context()['fingerprint'], fingerprint)
+        except (SapAccessError, TypeError, ValueError):
+            return False
+
+    def production_order(self, number, plant, actor_id):
+        from . import production_order as order
+        request = order.envelope(number, plant)
+        context = self.read_context()
+        config, _, _ = self._context()
+        if order.FUNCTION not in config.allowed_functions:
+            raise SapAccessError('SAP_FUNCTION_NOT_ALLOWED', 403)
+        def call(transport):
+            if not self.configuration_matches(context['fingerprint']):
+                raise SapAccessError('SAP_CONFIGURATION_ERROR')
+            contract = parse_wsdl(order.FUNCTION, transport.fetch_wsdl(order.FUNCTION))
+            order.validate_contract(contract)
+            reply = transport.invoke(order.FUNCTION, request, contract['soap_action'])
+            if type(reply) is not bytes or len(reply) > config.max_response_bytes:
+                raise SapAccessError('SAP_RESPONSE_TOO_LARGE', 502)
+            result = order.parse_response(reply, number, plant, contract)
+            if not self.configuration_matches(context['fingerprint']):
+                raise SapAccessError('SAP_CONFIGURATION_ERROR')
+            return {**result, 'function': order.FUNCTION, 'source': context['source']}, len(reply), contract
+        return self._operation('production_order', order.FUNCTION, actor_id, call)
 
     def status(self):
         config, binding, store = self._context()
@@ -134,7 +172,11 @@ class SapAccessService:
 
     def refresh_contracts(self, actor_id):
         successful, failed = [], []
+        config, _, _ = self._context()
         for function in INTERFACES:
+            # Single-order metadata is opt-in, preserving legacy discovery scope.
+            if function == 'BAPI_PRODORD_GET_DETAIL' and function not in config.allowed_functions:
+                continue
             def call(transport, fn=function):
                 payload = transport.fetch_wsdl(fn)
                 descriptor = parse_wsdl(fn, payload)

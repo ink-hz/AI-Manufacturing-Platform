@@ -7,7 +7,7 @@ import re
 import stat
 
 
-KNOWN_SOAP_FUNCTIONS = frozenset({'RFC_PING', 'ZMMRFC35', 'ZMMRFC78', 'ZPPRFC06', 'ZMMRFC80', 'BAPI_MATERIAL_STOCK_REQ_LIST'})
+KNOWN_SOAP_FUNCTIONS = frozenset({'RFC_PING', 'ZMMRFC35', 'ZMMRFC78', 'ZPPRFC06', 'ZMMRFC80', 'BAPI_MATERIAL_STOCK_REQ_LIST', 'BAPI_PRODORD_GET_DETAIL'})
 _HTTP_FIELDS = frozenset({
     'http_scheme', 'http_port', 'allow_http_test', 'timeout_seconds',
     'max_response_bytes', 'ca_bundle_path',

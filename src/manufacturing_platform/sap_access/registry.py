@@ -2,6 +2,7 @@
 
 INTERFACES = {
     'RFC_PING': {'business': '连接与鉴权诊断', 'execution_enabled': True, 'blocking_reasons': []},
+    'BAPI_PRODORD_GET_DETAIL': {'business': 'Single production order and components', 'execution_enabled': True, 'blocking_reasons': []},
     'BAPI_MATERIAL_STOCK_REQ_LIST': {'business': 'Stock and requirements list', 'execution_enabled': True, 'blocking_reasons': []},
     'ZMMRFC35': {'business': '采购订单及历史', 'execution_enabled': False,
         'blocking_reasons': ['NO_SOURCE_PAGINATION', 'UNGUARDED_EMPTY_FAE', 'GLOBAL_ENRICHMENT_READS', 'AMOUNT_SEMANTICS_UNVERIFIED']},

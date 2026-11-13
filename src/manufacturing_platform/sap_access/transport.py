@@ -24,7 +24,7 @@ RFC_NAMESPACE = "urn:sap-com:document:sap:rfc:functions"
 SOAP_PATH = "/sap/bc/soap/rfc"
 WSDL_PATH = "/sap/bc/soap/wsdl11"
 # Only the diagnostic and the fixed scoped business read can be invoked.
-READ_CANDIDATE_FUNCTIONS = frozenset({"RFC_PING", "BAPI_MATERIAL_STOCK_REQ_LIST"})
+READ_CANDIDATE_FUNCTIONS = frozenset({"RFC_PING", "BAPI_MATERIAL_STOCK_REQ_LIST", "BAPI_PRODORD_GET_DETAIL"})
 _XML_MEDIA_TYPES = frozenset({"text/xml", "application/xml", "application/soap+xml"})
 
 
@@ -121,6 +121,14 @@ class SoapTransport:
             values = {n.tag: n.text or '' for n in body[0]}
             try:
                 expected = ET.fromstring(fixed_envelope(values['MATERIAL'], values['PLANT']))
+                if ET.tostring(root) != ET.tostring(expected):
+                    raise ValueError()
+            except Exception:
+                raise SapAccessError('SAP_INVALID_REQUEST', 400) from None
+        if function == 'BAPI_PRODORD_GET_DETAIL':
+            from .production_order import envelope as fixed_envelope
+            try:
+                expected = ET.fromstring(fixed_envelope(body[0].find('NUMBER').text, 'P001'))
                 if ET.tostring(root) != ET.tostring(expected):
                     raise ValueError()
             except Exception:
