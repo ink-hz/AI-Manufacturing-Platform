@@ -201,3 +201,13 @@ def test_full_contract_rejects_malformed_structural_nodes(old,new):
     contract=parse_wsdl(FUNCTION,synthetic_wsdl())
     payload=synthetic_response('<item><ELEMENT>1</ELEMENT><QUANTITY>1.200</QUANTITY><ENTRY_UOM>EA</ENTRY_UOM></item>')
     with pytest.raises(SapAccessError): parse_response(payload.replace(old,new),contract)
+
+def test_51_mrp_items_returns_explicit_limit_code():
+    with pytest.raises(SapAccessError) as e:
+        parse_response(response(rows='<item><ELEMENT>x</ELEMENT></item>'*51))
+    assert e.value.code=='SAP_RESULT_LIMIT_EXCEEDED' and e.value.status==502
+
+def test_malformed_mrp_item_still_returns_invalid_response():
+    with pytest.raises(SapAccessError) as e:
+        parse_response(response(rows='<unexpected/>'))
+    assert e.value.code=='SAP_INVALID_RESPONSE'

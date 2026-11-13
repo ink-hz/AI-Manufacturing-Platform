@@ -203,3 +203,14 @@ def test_service_rejects_nested_return_before_invoke(tmp_path,monkeypatch):
     s=mod.SapAccessService(path,str(tmp_path/'audit.json'),transport_factory=Transport)
     with pytest.raises(SapAccessError) as e: s.production_order('123','P001','admin')
     assert e.value.code=='SAP_INVALID_CONTRACT'
+
+def test_501_components_returns_explicit_limit_code():
+    from manufacturing_platform.sap_access.production_order import parse_response
+    with pytest.raises(SapAccessError) as e: parse_response(response(count=501),'123','P001',contract())
+    assert e.value.code=='SAP_RESULT_LIMIT_EXCEEDED' and e.value.status==502
+
+def test_malformed_component_still_returns_invalid_response():
+    from manufacturing_platform.sap_access.production_order import parse_response
+    with pytest.raises(SapAccessError) as e:
+        parse_response(response().replace(b'<COMPONENT>',b'<COMPONENT>invalid'),'123','P001',contract())
+    assert e.value.code=='SAP_INVALID_RESPONSE'

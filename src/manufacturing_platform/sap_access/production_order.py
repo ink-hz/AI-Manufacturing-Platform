@@ -97,7 +97,9 @@ def parse_response(payload, number, plant, contract):
             container(op.find(name))
             if name not in {'HEADER','COMPONENT'} and len(op.find(name)): raise ValueError()
         headers = op.find('HEADER'); rows = op.find('COMPONENT')
-        if len(headers) != 1 or headers[0].tag != 'item' or len(rows) > MAX_ROWS: raise ValueError()
+        if len(headers) != 1 or headers[0].tag != 'item': raise ValueError()
+        if len(rows) > MAX_ROWS:
+            raise SapAccessError('SAP_RESULT_LIMIT_EXCEEDED', 502)
         header = fields(headers[0], HEADER_FIELDS)
         if header['ORDER_NUMBER'] != number or header['PRODUCTION_PLANT'] != plant: raise ValueError()
         def decimal(value):

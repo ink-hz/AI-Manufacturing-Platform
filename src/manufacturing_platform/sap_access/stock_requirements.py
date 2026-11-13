@@ -53,7 +53,9 @@ def parse_response(payload, contract=None):
         if ret['TYPE'] in {'E','A','X'}: raise SapAccessError('SAP_BUSINESS_FAILURE', 502)
         rows = op.find('MRP_ITEMS')
         container(rows)
-        if len(rows) > MAX_ROWS or any(n.tag != 'item' for n in rows): raise ValueError()
+        if len(rows) > MAX_ROWS:
+            raise SapAccessError('SAP_RESULT_LIMIT_EXCEEDED', 502)
+        if any(n.tag != 'item' for n in rows): raise ValueError()
         items = [fields(n) for n in rows]
         if any(not row for row in items): raise ValueError()
         if contract is not None:
