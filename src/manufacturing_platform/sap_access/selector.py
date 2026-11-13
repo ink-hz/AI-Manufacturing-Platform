@@ -7,7 +7,7 @@ class SapAccessSelector:
     def __init__(self, config_path, audit_path):
         self.config_path, self.audit_path = config_path, audit_path
     def _service(self):
-        try: config=read_private_json(self.config_path)
+        try: config=read_private_json(self.config_path, max_bytes=128 * 1024)
         except RelayProtocolError: raise SapAccessError('SAP_CONFIGURATION_ERROR') from None
         if config.get('transport') == 'mac_read_relay':
             from .relay_client import RelaySapAccessService

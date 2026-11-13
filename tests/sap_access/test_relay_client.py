@@ -214,3 +214,26 @@ def test_worker_rejects_oversized_or_unsupported_headers(tmp_path,header):
         thread=server(path,lambda *_:raw)
         with pytest.raises(SapAccessError,match='SAP_RELAY_INVALID_RESPONSE'):exchange(path,'c'*64,describe_command(),1)
         thread.join(2)
+
+
+def test_factory_preserves_native_128k_config_allowance(tmp_path, monkeypatch):
+    from manufacturing_platform.sap_access import build_sap_access_service
+    from manufacturing_platform.sap_access.service import SapAccessService
+    from .test_config_v2 import settings
+
+    path = tmp_path/'native.json'
+    path.write_text(json.dumps(settings()).ljust(100 * 1024))
+    path.chmod(0o600)
+    audit = str(tmp_path/'audit')
+    direct = SapAccessService(str(path), audit)
+    facade = build_sap_access_service(str(path), audit)
+    monkeypatch.setattr('socket.socket', lambda *a, **kw: pytest.fail('local native metadata used network'))
+    assert facade.read_context() == direct.read_context()
+    assert facade.status() == direct.status()
+
+
+def test_factory_preserves_relay_64k_config_bound(tmp_path):
+    service, _, path = setup_config(tmp_path)
+    path.write_text(path.read_text().ljust(100 * 1024))
+    with pytest.raises(SapAccessError, match='SAP_CONFIGURATION_ERROR'):
+        service.read_context()
