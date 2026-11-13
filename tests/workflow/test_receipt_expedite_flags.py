@@ -41,8 +41,14 @@ def test_open_and_closed_expedite_flags_preserve_receipt_order_pages_and_account
             assert detail.status_code == 200
             assert detail.json()["summary"]["blocking_reasons"] == expected
     assert stock(w) == before
+    # The second plan superseded the original requirement. Its unqualified
+    # receipts cannot prove fulfillment; closing the annotation uses that real
+    # plan replacement rather than bypassing the fulfillment guard.
     w.command(pid, "expedite.close", actor_name="supply", expedite_id=ident,
-              outcome="fulfilled", reason="完成")
+              outcome="fulfilled", reason="核对满足条件", expected_status=409)
+    assert any(FLAG in row["blocking_reasons"] for row in page(w, pid)["items"])
+    w.command(pid, "expedite.close", actor_name="supply", expedite_id=ident,
+              outcome="superseded", reason="计划已替换，结束原需求急料跟进")
     assert page(w, pid) == before_page
     for receipt_id in urgent:
         assert FLAG not in w.client().get(f"{BASE}/projects/{pid}/objects/receipt/{receipt_id}").json()["summary"]["blocking_reasons"]
