@@ -290,3 +290,80 @@ def test_workflow_pins_native_read_to_observed_configuration(sap_h, kind, query)
     setattr(sap, kind.replace('-', '_'), pinned)
     assert h.client().post(URL+'/'+kind+'?'+query).json()['snapshot']
     assert observed == ['one']
+
+@pytest.mark.parametrize('has_previous', [False, True])
+def test_config_change_after_snapshot_update_retracts_only_rejected_snapshot(sap_h, monkeypatch, has_previous):
+    from contextlib import contextmanager
+    from manufacturing_platform.workflow.store import WorkflowStore
+    h, sap = sap_h
+    path = URL+'/production-order?number=123&plant=T001'
+    previous = h.client().post(path).json()['snapshot'] if has_previous else None
+    original = WorkflowStore.transaction
+    writes = []
+    @contextmanager
+    def changing_transaction(store, *, write=False):
+        with original(store, write=write) as tx:
+            if write: writes.append(True)
+            yield tx
+            if write and len(writes) == 2:
+                sap.binding = 'changed-after-update'
+    monkeypatch.setattr(WorkflowStore, 'transaction', changing_transaction)
+    result = h.client().post(path).json()
+    assert result['snapshot'] is None
+    assert result['refresh_error']['code'] == 'SAP_CONFIGURATION_CHANGED'
+    sap.binding = 'one'
+    assert h.client().get(path).json()['snapshot'] == previous
+
+
+def test_config_cleanup_cannot_replace_a_later_successful_snapshot(sap_h, monkeypatch):
+    from contextlib import contextmanager
+    from manufacturing_platform.workflow.store import WorkflowStore
+    h, sap = sap_h
+    path = URL+'/production-order?number=123&plant=T001'
+    h.client().post(path)
+    original = WorkflowStore.transaction
+    writes = []
+    @contextmanager
+    def changing_transaction(store, *, write=False):
+        with original(store, write=write) as tx:
+            if write: writes.append(True)
+            yield tx
+            if write and len(writes) == 2:
+                sap.binding = 'changed-after-update'
+    monkeypatch.setattr(WorkflowStore, 'transaction', changing_transaction)
+    matches = sap.configuration_matches
+    later = []
+    def refresh_before_cleanup(binding):
+        if sap.binding == 'changed-after-update' and not later:
+            sap.binding = 'one'
+            later.append(None)
+            later[0] = h.client().post(path).json()['snapshot']
+            sap.binding = 'changed-after-update'
+            return False
+        return matches(binding)
+    sap.configuration_matches = refresh_before_cleanup
+    result = h.client().post(path).json()
+    assert result['refresh_error']['code'] == 'SAP_CONFIGURATION_CHANGED'
+    sap.binding = 'one'
+    assert later[0] is not None
+    assert h.client().get(path).json() == dict(snapshot=later[0], refresh_error=None)
+
+
+def test_snapshot_retraction_storage_failure_returns_503(sap_h, monkeypatch):
+    from contextlib import contextmanager
+    from manufacturing_platform.workflow.store import WorkflowStore
+    h, sap = sap_h
+    original = WorkflowStore.transaction
+    writes = []
+    @contextmanager
+    def failing_cleanup(store, *, write=False):
+        with original(store, write=write) as tx:
+            if write: writes.append(True)
+            yield tx
+            if write and len(writes) == 2:
+                sap.binding = 'changed-after-update'
+                tx.execute("CREATE TRIGGER deny_retraction BEFORE UPDATE OF snapshot_json ON sap_material_observations BEGIN SELECT RAISE(ABORT,'isolated cleanup failure'); END")
+    monkeypatch.setattr(WorkflowStore, 'transaction', failing_cleanup)
+    response = h.client().post(URL+'/production-order?number=123&plant=T001')
+    assert response.status_code == 503
+    assert response.json() == {'detail':'Workflow storage unavailable'}
