@@ -36,6 +36,7 @@ def build_workflow_router(
     business_clock=None,
     production_tools: ProductionToolsConfig | None = None,
     mes_access_service=None,
+    sap_access_service=None,
 ):
     store = WorkflowStore(database_path, authority_database_path, dataset, business_clock=business_clock)
     service = WorkflowService(
@@ -44,6 +45,7 @@ def build_workflow_router(
         test_evidence_reader=test_evidence_reader,
         resolve_subject_profiles=resolve_subject_profiles,
         mes_access_service=mes_access_service,
+        sap_access_service=sap_access_service,
     )
 
     class PrivateRoute(APIRoute):
@@ -113,6 +115,9 @@ def build_workflow_router(
 
     def actor(request):
         return request.state.workflow_actor
+
+    from .sap_materials import register_sap_material_routes
+    register_sap_material_routes(router, service, actor)
 
     from .material_control_api import register_material_control_routes
     register_material_control_routes(router, service, actor)

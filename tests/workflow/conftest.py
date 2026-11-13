@@ -90,6 +90,7 @@ class WorkflowHarness:
                 test_evidence_reader=getattr(self, "test_evidence_reader", None),
                 business_clock=getattr(self, "business_clock", None),
                 production_tools=getattr(self, "production_tools", None),
+                sap_access_service=getattr(self, "sap_access_service", None),
             )
         )
         self._client = TestClient(app)

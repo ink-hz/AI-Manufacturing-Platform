@@ -360,6 +360,13 @@ class WorkflowStore:
                 migrate_material_task_references(conn)
                 conn.execute("UPDATE schema_version SET version=28")
                 version = conn.execute("SELECT version FROM schema_version").fetchall()
+            if len(version) == 1 and version[0][0] == 28:
+                from .sap_material_schema import SAP_MATERIAL_SCHEMA
+                for statement in SAP_MATERIAL_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute("UPDATE schema_version SET version=29")
+                version = conn.execute("SELECT version FROM schema_version").fetchall()
             if (
                 len(version) != 1
                 or version[0][0] != SCHEMA_VERSION

@@ -105,7 +105,9 @@ class WorkflowService:
         resolve_subject_profiles=None,
         configure_systems=None,
         mes_access_service=None,
+        sap_access_service=None,
     ):
+        self.sap_access_service = sap_access_service
         self.mes_access_service = mes_access_service
         self.store, self.resolve_subject = store, resolve_subject
         self.resolve_subject_profiles = resolve_subject_profiles

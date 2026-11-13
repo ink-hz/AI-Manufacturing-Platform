@@ -4,7 +4,7 @@ from manufacturing_platform.workflow.schema import SCHEMA_VERSION
 def test_fresh_schema_supports_verify_and_nullable_requirement(workflow):
     workflow.create_project(mode='oem')
     with workflow.db() as tx:
-        assert SCHEMA_VERSION == 28
+        assert SCHEMA_VERSION == 29
         columns = {row['name']: row for row in tx.execute('PRAGMA table_info(material_tasks)')}
         assert not columns['requirement_id']['notnull']
         assert 'reference_json' in columns and 'reference_key' in columns
