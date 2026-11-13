@@ -31,6 +31,16 @@ function errorText(
   limit: number,
 ) {
   if (!error) return null;
+  const relayErrors: Record<string, string> = {
+    SAP_RELAY_UNAVAILABLE: "Mac只读连接器离线，请恢复Mac与加密隧道后重试。",
+    SAP_RELAY_UNAUTHORIZED: "Mac只读连接器认证失败，请联系管理员。",
+    SAP_RELAY_CONTEXT_MISMATCH: "Mac只读连接器来源已变更，请联系管理员重新登记。",
+    SAP_RELAY_BUSY: "Mac只读连接器繁忙，请稍后重试。",
+    SAP_RELAY_INVALID_RESPONSE: "Mac只读连接器响应校验失败，未接纳本次结果。",
+    SAP_RELAY_RESPONSE_TOO_LARGE: "Mac只读连接器响应超过读取上限。",
+    SAP_TIMEOUT: "SAP读取超时，请检查Mac只读连接器与源连接。",
+  };
+  if (relayErrors[error.code]) return relayErrors[error.code];
   return error.code === "SAP_RESULT_LIMIT_EXCEEDED"
     ? `SAP明细超过当前完整读取上限 ${limit} 条，请联系管理员扩展读取能力；未展示部分结果。`
     : "读取失败，请核对连接和权限后重试。";

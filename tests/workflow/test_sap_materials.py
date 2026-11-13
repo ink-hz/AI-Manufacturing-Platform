@@ -370,3 +370,18 @@ def test_postaccept_configuration_switch_needs_no_compensating_write(sap_h, monk
     assert response.status_code == 200
     assert response.json()['refresh_error'] is None
     assert response.json()['snapshot']['source'] == SOURCE
+
+
+def test_mac_relay_offline_preserves_snapshot_and_read_time(sap_h):
+    from manufacturing_platform.sap_access.errors import SapAccessError
+    h, sap = sap_h
+    path=URL+'/production-order?number=123&plant=T001'
+    saved=h.client().post(path).json()['snapshot']
+    def offline(*args, **kwargs):
+        raise SapAccessError('SAP_RELAY_UNAVAILABLE')
+    sap.production_order=offline
+    result=h.client().post(path).json()
+    assert result['snapshot']==saved
+    assert result['refresh_error']['code']=='SAP_RELAY_UNAVAILABLE'
+    assert 'Mac' in result['refresh_error']['message']
+    assert h.client().get(path).json()==result

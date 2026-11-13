@@ -11,7 +11,7 @@ from .errors import SapAccessError
 
 MAX_BYTES = 5 * 1024 * 1024
 EVENT_FIELDS = {'request_id', 'operation', 'function', 'timestamp', 'elapsed_ms',
-                'status', 'error_code', 'response_bytes', 'contract_digest', 'actor_hash', 'binding', 'row_count'}
+                'status', 'error_code', 'response_bytes', 'contract_digest', 'actor_hash', 'binding', 'row_count', 'source_request_id'}
 
 
 class SapAuditStore:

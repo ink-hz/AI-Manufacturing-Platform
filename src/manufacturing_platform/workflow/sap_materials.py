@@ -10,6 +10,13 @@ from .clock import checked_time
 
 PREFIX = '/material-control/sap'
 MESSAGES = {
+    'SAP_RELAY_UNAVAILABLE': 'Mac只读连接器离线，请恢复Mac与加密隧道后重试；保留上次成功读取结果。',
+    'SAP_RELAY_UNAUTHORIZED': 'Mac只读连接器认证失败，请联系管理员核对中转配置。',
+    'SAP_RELAY_CONTEXT_MISMATCH': 'Mac只读连接器来源已变更，请联系管理员重新登记。',
+    'SAP_RELAY_BUSY': 'Mac只读连接器繁忙，请稍后重试。',
+    'SAP_RELAY_INVALID_RESPONSE': 'Mac只读连接器响应校验失败，未接纳本次结果。',
+    'SAP_RELAY_RESPONSE_TOO_LARGE': 'Mac只读连接器响应超过读取上限，未接纳本次结果。',
+    'SAP_TIMEOUT': 'SAP读取超时，请检查Mac只读连接器与源连接后重试。',
     'SAP_FUNCTION_NOT_ALLOWED': 'SAP read function is not allowed',
     'SAP_AUTHENTICATION_FAILED': 'SAP source authentication failed',
     'SAP_BUSINESS_FAILURE': 'SAP source rejected the read request',

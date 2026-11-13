@@ -413,3 +413,23 @@ it("MRP null snapshot limit failure is explicit rather than a false empty result
   expect(v.host.textContent).not.toContain("无供需明细");
   await act(async () => v.root.unmount());
 });
+
+it("shows Mac offline with the preserved server snapshot time", async () => {
+  const api = {
+    sapMaterialStatus: vi.fn(async () => ({ configured: true, can_refresh: true, source })),
+    sapProductionOrder: vi.fn(async () => ({ ...order, refresh_error: { code: "SAP_RELAY_UNAVAILABLE", message: "safe" } })),
+  } as unknown as WorkflowApi;
+  const v = await mount(api);
+  await act(async () => {
+    const inputs = v.host.querySelectorAll("input");
+    for (const [i, value] of ["001", "P"].entries()) {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(inputs[i], value);
+      inputs[i].dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    v.host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  await tick();
+  expect(v.host.textContent).toContain("Mac只读连接器离线");
+  expect(v.host.textContent).toContain("old-time");
+  await act(async () => v.root.unmount());
+});
