@@ -58,11 +58,11 @@ def test_admin_sees_existing_and_new_projects_without_active_grants(workflow, ac
     for project in (first, second):
         detail = client.get(f"{BASE}/projects/{project['id']}")
         assert detail.status_code == 200, detail.text
-        # Resolve is contextual and appears only with a real unresolved issue.
+        # Resolve and handoff actions are contextual; these new projects have no handoff.
         assert set(detail.json()["allowed_actions"]) == set(
             COMMAND_REGISTRY._entries
         ) - {"delivery.resolve_issue", "material_handoff.record", "material_handoff.receive",
-             "material_handoff.resolve", "material_handoff.cancel",
+             "material_handoff.resolve", "material_handoff.cancel", "material_handoff.confirm_use",
              "expedite.open", "expedite.progress", "expedite.close", "issue.mark",
              "material_task.open", "material_task.accept", "material_task.reassign",
              "material_task.progress", "material_task.verify", "material_task.close", "material_task.cancel"}
