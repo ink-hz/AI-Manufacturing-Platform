@@ -111,7 +111,7 @@ def build_router(*, database_path: str, assets_dir: str, authorize, release: str
 
     @router.get('/assets/{asset_name}')
     def asset(asset_name: str, request: Request):
-        media_types = {'manufacturing.js': 'text/javascript', 'manufacturing.css': 'text/css'}
+        media_types = {'manufacturing.js': 'text/javascript', 'manufacturing.css': 'text/css', 'master-logo-v2.png': 'image/png', 'app-icon-v2.png': 'image/png'}
         if asset_name not in media_types:
             raise HTTPException(404, 'Manufacturing asset not found')
         if any(tag != release for tag in request.query_params.getlist('release')):

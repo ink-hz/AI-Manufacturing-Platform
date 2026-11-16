@@ -30,6 +30,8 @@ OWNER = "manufacturing-oem-preview-v1"
 ASSETS = {
     "manufacturing.js": "text/javascript",
     "manufacturing.css": "text/css",
+    "master-logo-v2.png": "image/png",
+    "app-icon-v2.png": "image/png",
     "preview-renderer.js": "text/javascript",
     "preview.css": "text/css",
 }
@@ -153,7 +155,7 @@ def prepare(root, platform_root):
     platform_root = Path(platform_root).resolve(strict=True)
     sources = {
         name: ROOT / "webui/dist" / name
-        for name in ("manufacturing.js", "manufacturing.css")
+        for name in ("manufacturing.js", "manufacturing.css", "master-logo-v2.png", "app-icon-v2.png")
     }
     for directory in (ROOT / "webui", ROOT / "webui/dist"):
         if directory.is_symlink() or not directory.is_dir():

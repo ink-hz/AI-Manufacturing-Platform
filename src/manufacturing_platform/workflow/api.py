@@ -400,7 +400,7 @@ def build_workflow_router(
         a = actor(request)
         if not a.configuration_admin and not service.project_ids(a):
             raise HTTPException(403, "Permission denied")
-        types = {"manufacturing.js": "text/javascript", "manufacturing.css": "text/css"}
+        types = {"manufacturing.js": "text/javascript", "manufacturing.css": "text/css", "master-logo-v2.png": "image/png", "app-icon-v2.png": "image/png"}
         if asset_name not in types:
             raise HTTPException(404, "Asset not found")
         if request.query_params.getlist("release") != [release]:

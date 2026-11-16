@@ -421,3 +421,43 @@
 @media (prefers-reduced-motion: reduce) {
   .mf-root *, .mf-root *::before, .mf-root *::after { scroll-behavior: auto; animation: none; transition: none; }
 }
+
+/* Frame original white PNGs; retain all source pixels and crop only their padding. */
+.mf-root .mf-console-brand { padding: 0; gap: 6px; }
+.mf-root .mf-console-brand-panel {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  color: #0068b7;
+  border-radius: 8px;
+  width: 100%;
+  height: 60px;
+  flex: 1;
+}
+.mf-root .mf-brand-full {
+  position: absolute;
+  width: 112%;
+  max-width: none;
+  height: auto;
+  left: -6%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.mf-root .mf-brand-icon { display: none; }
+.mf-root .mf-console-collapsed .mf-console-brand { padding: 0; }
+.mf-root .mf-console-collapsed .mf-console-brand-panel { height: 48px; }
+.mf-root .mf-console-collapsed .mf-brand-full { display: none; }
+.mf-root .mf-console-collapsed .mf-brand-icon {
+  display: block;
+  position: absolute;
+  width: 140%;
+  max-width: none;
+  height: auto;
+  left: -20%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.mf-root .mf-console-drawer .mf-console-brand { padding: 0; }
+.mf-root .mf-console-drawer .mf-console-brand-panel { height: 60px; }
+.mf-root .mf-console-drawer .mf-brand-full { display: block; }
+.mf-root .mf-console-drawer .mf-brand-icon { display: none; }

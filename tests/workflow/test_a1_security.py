@@ -1,3 +1,5 @@
+import pytest
+
 import hashlib
 from uuid import uuid4
 
@@ -127,3 +129,24 @@ def test_assets_require_exact_name_and_release(workflow, tmp_path):
         workflow.client().get(BASE + "/assets/secrets.txt?release=test").status_code
         == 404
     )
+
+
+@pytest.mark.parametrize("name", ["master-logo-v2.png", "app-icon-v2.png"])
+def test_brand_assets_keep_workflow_access_and_release_boundaries(workflow, tmp_path, name):
+    workflow.create_project()
+    content = b"\x89PNG\r\nfixture"
+    (tmp_path / name).write_bytes(content)
+    url = BASE + "/assets/" + name
+    response = workflow.client().get(url + "?release=test")
+    assert response.status_code == 200
+    assert response.content == content
+    assert response.headers["content-type"] == "image/png"
+    for query in ["", "?release=wrong", "?release=test&release=wrong"]:
+        assert workflow.client().get(url + query).status_code == 409
+    assert workflow.client("outsider").get(url + "?release=test").status_code == 403
+    assert workflow._client.get(url + "?release=test").status_code == 401
+    outside = tmp_path.parent / (name + ".outside")
+    outside.write_bytes(content)
+    (tmp_path / name).unlink()
+    (tmp_path / name).symlink_to(outside)
+    assert workflow.client().get(url + "?release=test").status_code == 404

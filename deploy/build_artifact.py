@@ -43,7 +43,7 @@ def write_business_release(repo,sha,assets,target):
     require(not target.exists(),'release_target_exists');target.mkdir(parents=True)
     export_paths(repo,sha,target,['src',*DOCUMENTS])
     files={}
-    for name in ['manufacturing.js','manufacturing.css']:
+    for name in ['manufacturing.js','manufacturing.css','master-logo-v2.png','app-icon-v2.png']:
         source=assets/name;require(source.is_file() and not source.is_symlink(),'missing_business_asset')
         path=target/'webui/dist'/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(source.read_bytes())
     metadata={}

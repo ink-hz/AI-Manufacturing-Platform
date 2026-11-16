@@ -69,7 +69,7 @@ def local_bundle(tmp_path, monkeypatch):
     repository = tmp_path / "repository"
     assets = repository / "webui/dist"
     assets.mkdir(parents=True)
-    for name in ("manufacturing.js", "manufacturing.css"):
+    for name in ("manufacturing.js", "manufacturing.css", "master-logo-v2.png", "app-icon-v2.png"):
         (assets / name).write_text("local business bundle")
     (repository / "docs").mkdir()
     (repository / "docs/manufacturing-system-handbook.md").write_text("Synthetic handbook")
@@ -77,7 +77,7 @@ def local_bundle(tmp_path, monkeypatch):
     return preview, repository
 
 
-@pytest.mark.parametrize("name", ["manufacturing.js", "manufacturing.css"])
+@pytest.mark.parametrize("name", ["manufacturing.js", "manufacturing.css", "master-logo-v2.png", "app-icon-v2.png"])
 @pytest.mark.parametrize("kind", ["symlink", "directory", "fifo"])
 def test_prepare_rejects_nonregular_build_inputs_before_writes(
     local_bundle, tmp_path, name, kind
@@ -122,7 +122,7 @@ def test_prepare_rejects_linked_asset_directories_before_writes(
         assert sorted(p.name for p in outside.iterdir()) == (
             ["dist", "sentinel"]
             if directory == "webui"
-            else ["manufacturing.css", "manufacturing.js", "sentinel"]
+            else ["app-icon-v2.png", "manufacturing.css", "manufacturing.js", "master-logo-v2.png", "sentinel"]
         )
     assert not root.exists()
 
@@ -239,6 +239,8 @@ def test_prepared_demo_and_guarded_real_commands(prepared):
         for name in (
             "manufacturing.js",
             "manufacturing.css",
+            "master-logo-v2.png",
+            "app-icon-v2.png",
             "preview-renderer.js",
             "preview.css",
         ):
@@ -514,3 +516,26 @@ def test_failed_preparation_is_preserved_and_never_auto_reset(
     assert (root / "manifest.json").read_bytes() == failed
     with pytest.raises(ValueError, match="Complete owned"):
         preview.build_app(root, 8765)
+
+
+def test_prepare_copies_original_brand_bytes_before_renderer_stage(local_bundle, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    preview, repository = local_bundle
+    originals = {name: b"\x89PNG\r\n" + name.encode() for name in ["master-logo-v2.png", "app-icon-v2.png"]}
+    for name, value in originals.items():
+        (repository / "webui/dist" / name).write_bytes(value)
+    monkeypatch.setattr(preview.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=1, stderr="synthetic renderer stop"))
+    root = tmp_path / "demo"
+    with pytest.raises(ValueError, match="Renderer build failed"):
+        preview.prepare(root, tmp_path)
+    for name, value in originals.items():
+        assert (root / "webui/dist" / name).read_bytes() == value
+        assert (root / "webui/dist" / name).stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("name", ["master-logo-v2.png", "app-icon-v2.png"])
+def test_owned_brand_hash_tampering_is_rejected(owned_files, name):
+    preview, root, manifest = owned_files
+    (root / "webui/dist" / name).write_bytes(b"changed")
+    with pytest.raises(ValueError, match="Preview asset changed"):
+        preview.load_owned(root)
