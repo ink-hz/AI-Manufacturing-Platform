@@ -212,6 +212,11 @@ def test_export_is_exact_committed_private_source_separate_from_production(tmp_p
         assert name not in envelope['manufacturing_runtime']['files']
     assert set(envelope['platform_runtime']['files'])=={'backend/app/'+k for k in m.PF_OVERLAY}
     assert envelope['manufacturing_runtime']['files']['webui/dist/manufacturing.js']==m.digest(business/'webui/dist/manufacturing.js')
+    for name in ['master-logo-v2.png', 'app-icon-v2.png']:
+        key = 'webui/dist/' + name
+        assert (output/'source'/key).read_bytes() == (business/key).read_bytes()
+        assert envelope['manufacturing_runtime']['files'][key] == m.digest(business/key)
+        assert envelope['source']['build_files'][key] == m.digest(business/key)
     assert not any('.git' in p.parts for p in output.rglob('*'))
     controller=output/'controller.py'
     assert controller.is_file() and controller.stat().st_mode&0o777==0o444

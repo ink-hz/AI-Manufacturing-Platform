@@ -132,10 +132,10 @@ def export_fixture(repo, sha, platform_sha, business, preflight, runtime, runtim
     (source/'webui/node_modules').mkdir()
     published=json.loads((Path(business)/'manifest.json').read_text())
     require(published['commit']==sha,'private_business_commit')
-    for name in ['webui/dist/manufacturing.js','webui/dist/manufacturing.css']:
+    for name in ['webui/dist/manufacturing.js','webui/dist/manufacturing.css','webui/dist/master-logo-v2.png','webui/dist/app-icon-v2.png']:
         path=Path(business)/name;require(digest(path)==published['files'][name],'private_business_asset_hash')
         target=source/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(path,target)
-    files=file_hashes(source);build={k:files.pop(k) for k in ['webui/dist/manufacturing.js','webui/dist/manufacturing.css']}
+    files=file_hashes(source);build={k:files.pop(k) for k in ['webui/dist/manufacturing.js','webui/dist/manufacturing.css','webui/dist/master-logo-v2.png','webui/dist/app-icon-v2.png']}
     mf={k:v for k,v in files.items() if k.startswith('src/') or k=='docs/manufacturing-system-handbook.md'};mf.update(build)
     require(all(published['files'].get(k)==v and digest(Path(business)/k)==v for k,v in mf.items()),'private_business_runtime_mismatch')
     provenance={'provenance_kind':'live_git','manufacturing_commit':sha,'platform_commit':platform_sha,

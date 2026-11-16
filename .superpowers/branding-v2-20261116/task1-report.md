@@ -1,7 +1,7 @@
 # Task1 implementation report
 
 - Branch: `codex/branding-v2-20261116`, isolated `.worktrees/branding-v2-20261116`.
-- Base: `b313c37b186d2d7302f1df328bb305037f38e90e` (retains manufacturing/source UI fixes atop `25b0133`). Implementation head: the commit containing this report; exact SHA supplied in agent handoff.
+- Base: `b313c37b186d2d7302f1df328bb305037f38e90e` (retains manufacturing/source UI fixes atop `25b0133`). Initial implementation head: `8565353657a038bd11c8b8992a212ecebc679325`; supplementary candidate/preview delivery head is supplied in agent handoff.
 - Production source reads/writes: none. No network, SSH, Docker, launchctl, browser or deployment actions. MES/WMS and SAP/MRP remain strictly read-only. Root's three dirty files untouched.
 
 ## Changes
@@ -32,4 +32,4 @@ Original, public and dist hashes match:
 
 Parent independent review and actual release remain pending. No browser screenshot/employee-device small-size acceptance performed under this subtask's restrictions. PF sidebar entry still uses 大制造/Boxes and PF route title remains controlled by shared host. MF mount interface does not indicate the active host app, so document title/favicon were not changed: background/multiple mounts cannot safely own shared document branding. Changing those dedicated entry details requires separately scoped PF work; shared login/company branding must remain intact.
 
-Optional local preview/candidate tooling still has JS/CSS-only inventories (`scripts/preview_manufacturing.py` ASSETS/prepare, `deploy/candidate_fixture.py` build_files). Actual production artifact packaging is updated; parent should extend those separate tooling inventories if using them to inspect the new branding. Parent should verify live response MIME, authorization, release pinning and actual PNG byte hashes after controlled publication.
+Local preview and candidate inventories were also extended with only the same two fixed PNGs: preview preparation copies source bytes, validates regular inputs before writes and hashes the assets; candidate export copies and pins both assets into build_files and manufacturing runtime manifest. No filename wildcard or new permissions. Focused preview+candidate export verification: **24 passed, 11 optional renderer integrations skipped**. Build-artifact+candidate tests excluding the three acceptance-runner cases: **35 passed, 3 deselected**. Those three unrelated runner tests require missing local `cryptography` package metadata and were not changed. New boundary tests verify PNG symlink/directory/FIFO rejection before writes, hash tamper rejection, private output modes, candidate byte identity and runtime/source manifest pinning. Parent should verify live response MIME, authorization, release pinning and actual PNG byte hashes after controlled publication.
