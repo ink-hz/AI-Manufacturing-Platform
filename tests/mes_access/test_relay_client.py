@@ -103,3 +103,13 @@ def test_audit_upstream_uuids_only_on_successful_queries(tmp_path,operation,stat
     from manufacturing_platform.mes_access.store import MesAuditStore
     event=dict(request_id=str(uuid4()),operation=operation,function=function,timestamp=datetime.now(timezone.utc).isoformat(),status=status,actor_hash='a'*64,binding='b'*64,source_request_ids=[str(uuid4())])
     with pytest.raises(MesAccessError):MesAuditStore(str(tmp_path/'audit')).record(event)
+
+@pytest.mark.parametrize('site_code',['SITE_A','_SITE','-SITE'])
+def test_cloud_factory_reads_native_site_code_locally(tmp_path,site_code):
+    from manufacturing_platform.mes_access import build_mes_access_service
+    service=configured(tmp_path)
+    path=service.config_path
+    config=json.loads(open(path).read());config['expected_context']['source']['site_code']=site_code
+    with open(path,'w') as stream:json.dump(config,stream)
+    selected=build_mes_access_service(path,service.audit_path)
+    assert selected.read_context()['source']['site_code']==site_code

@@ -103,7 +103,7 @@ def observe(service, actor, kind, scope, refresh=False):
     if failure is None:
         snapshot = dict(id=str(uuid4()), kind=kind, scope=scope, source=ctx['source'],
                         collected_at=checked_time(service.store.business_clock).isoformat(),
-                        data={k:v for k,v in data.items() if k not in {'source','function','request_id'}})
+                        data={k:v for k,v in data.items() if k not in {'source','function','request_id','fingerprint'}})
     with service.store.transaction(write=True) as tx:
         # Acceptance point: source-pinned observations remain valid after later config changes.
         if not service.mes_access_service.configuration_matches(ctx['fingerprint']):

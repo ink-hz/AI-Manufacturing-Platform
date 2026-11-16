@@ -30,7 +30,7 @@ def validate_context(value):
     _keys(value,('source','fingerprint'));source=value['source']
     _keys(source,('system','origin','fact_role','environment','site_code','namespace'))
     if source['system']!='mes' or source['origin']!='native' or source['fact_role']!='observation' or source['environment'] not in ('production','test','development') or not _hex(source['namespace']) or not _hex(value['fingerprint']):_reject()
-    text_scope(source['site_code'])
+    if type(source['site_code']) is not str or not re.fullmatch(r'[A-Za-z0-9_-]{1,32}',source['site_code']):_reject()
     return value
 def parse_request(payload):
     if type(payload) is not bytes or len(payload)>MAX_REQUEST_BYTES:_reject()

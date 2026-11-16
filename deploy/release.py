@@ -348,7 +348,7 @@ def validate_mes_relay_storage(e):
     require(type(source) is dict and set(source)=={'system','origin','fact_role','environment','site_code','namespace'}
             and source['system']=='mes' and source['origin']=='native' and source['fact_role']=='observation'
             and source['environment']==config['environment'], 'mes_relay_source_identity')
-    require(type(source['site_code']) is str and re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,63}',source['site_code'])
+    require(type(source['site_code']) is str and re.fullmatch('[A-Za-z0-9_-]{1,32}',source['site_code'])
             and type(source['namespace']) is str and re.fullmatch('[0-9a-f]{64}',source['namespace']), 'mes_relay_source_identity')
     token=(directory/'token').read_text().removesuffix('\n')
     require(re.fullmatch('[0-9a-f]{64}',token) is not None, 'mes_relay_token_format')

@@ -239,3 +239,15 @@ def test_sap_production_remains_rejected(sap_private_state):
 def test_invalid_environment_type_is_rejected_as_policy_error(private_state):
     e,directory=private_state;change_config(directory,lambda c:c.update(environment=[]))
     with pytest.raises(ValueError):release.validate_mes_relay_storage(e)
+
+@pytest.mark.parametrize('site_code',['SITE_A','_SITE','-SITE','a'*32])
+def test_native_site_codes_accepted(private_state,site_code):
+    e,directory=private_state
+    change_config(directory,lambda c:c['expected_context']['source'].update(site_code=site_code))
+    release.validate_mes_relay_storage(e)
+
+@pytest.mark.parametrize('site_code',['SITE.A','a'*33,'SITE/A',''])
+def test_non_native_site_codes_rejected(private_state,site_code):
+    e,directory=private_state
+    change_config(directory,lambda c:c['expected_context']['source'].update(site_code=site_code))
+    with pytest.raises(ValueError):release.validate_mes_relay_storage(e)

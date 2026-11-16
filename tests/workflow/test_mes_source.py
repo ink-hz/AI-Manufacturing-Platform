@@ -16,9 +16,9 @@ class Mes(Sap):
         self.calls.append((prefix, after, actor_id, expected_fingerprint))
         if self.hook: self.hook()
         if self.error: raise RuntimeError('private secret')
-        return dict(items=[dict(shop_order='ORDER1', description='Order')], next_cursor=None, total=None, page_size=5)
+        return dict(fingerprint=self.binding, items=[dict(shop_order='ORDER1', description='Order')], next_cursor=None, total=None, page_size=5)
     def collect_order_materials(self, shop_order, actor_id, *, expected_fingerprint=None):
-        return dict(components=[dict(material_id='MAT1', required_quantity='1.2300')], total=1)
+        return dict(fingerprint=self.binding, components=[dict(material_id='MAT1', required_quantity='1.2300')], total=1)
     def query(self, interface, filters, page, page_size, actor_id, *, expected_fingerprint=None):
         self.calls.append((interface, filters, page, page_size, actor_id, expected_fingerprint))
         return dict(rows=[dict(SHOP_ORDER='ORDER1', MATNR='MAT1')] if interface=='material_priority' else [dict(ITEM_NO='MAT1')], total_items=1)

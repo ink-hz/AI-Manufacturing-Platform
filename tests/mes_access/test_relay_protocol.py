@@ -46,3 +46,15 @@ def test_prefix_wildcard_and_overlong_exact_order_denied(operation, scope):
     from uuid import uuid4
     request=dict(version=1,request_id=str(uuid4()),operation=operation,actor_hash='a'*64,expected_fingerprint='b'*64,scope=scope)
     with pytest.raises(p.RelayProtocolError):p.parse_request(json.dumps(request).encode())
+
+@pytest.mark.parametrize('site_code',['SITE_A','_SITE','-SITE','a'*32])
+def test_native_site_code_context_grammar(site_code):
+    import copy
+    context=copy.deepcopy(CONTEXT);context['source']['site_code']=site_code
+    assert p.validate_context(context)==context
+
+@pytest.mark.parametrize('site_code',['SITE.A','a'*33,'SITE/A',''])
+def test_context_rejects_non_native_site_codes(site_code):
+    import copy
+    context=copy.deepcopy(CONTEXT);context['source']['site_code']=site_code
+    with pytest.raises(p.RelayProtocolError):p.validate_context(context)
