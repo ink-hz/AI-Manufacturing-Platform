@@ -50,7 +50,10 @@ def test_zero_source_unavailable_and_availability_are_distinct(workflow):
     r.rows=[]
     result=client.get(BASE+'/projects/1/analysis',params=PARAMS|{'view':'summary'})
     assert result.status_code==200 and result.json()['items'][0]['records']=='0'
-    assert client.get(BASE+'/projects/1/availability').json()['latest_at'] is None
+    result=client.get(BASE+'/projects/1/availability')
+    assert result.status_code==200,result.text
+    assert result.json()==dict(source_namespace='native',source_project_id='1',captured_at='2026-11-10T00:00:00Z',latest_at=None)
+    assert result.headers['cache-control']=='private, no-store'
     r.failure=True
     result=client.get(BASE+'/projects/1/analysis',params=PARAMS|{'view':'summary'})
     assert result.status_code==503 and 'private-password' not in result.text
@@ -123,3 +126,40 @@ def test_availability_is_historical_metadata_and_rejects_window(workflow):
     r.calls=[]
     assert client.get(BASE+'/projects/1/availability',params=PARAMS).status_code==422
     assert not r.calls
+
+
+@pytest.mark.parametrize('rows', [
+    [{'latest_at':None}, {'latest_at':None}],
+    [{'wrong_field':None}],
+    [{'latest_at':None,'unexpected':None}],
+    [{'latest_at':'invalid-time'}],
+    [{'latest_at':'2026-02-30T00:00:00Z'}],
+    [None],
+    None,
+])
+def test_availability_rejects_invalid_source_results(workflow,rows):
+    r=Reader()
+    select=r.select
+    def invalid_latest(st):
+        if st.name.startswith('analytics:latest:'):
+            r.calls.append(st)
+            return rows
+        return select(st)
+    r.select=invalid_latest
+    client,_=install(workflow,r)
+    result=client.get(BASE+'/projects/1/availability')
+    assert result.status_code==503,result.text
+    assert result.json()['code']=='SOURCE_SCHEMA_INVALID'
+    assert r.calls[-1].max_rows==1
+
+
+def test_availability_transport_failure_is_unavailable_not_empty_history(workflow):
+    client,r=install(workflow)
+    r.failure=True
+    result=client.get(BASE+'/projects/1/availability')
+    assert result.status_code==503,result.text
+    assert result.json()['code']=='SOURCE_UNAVAILABLE'
+    assert 'private-password' not in result.text
+    r.failure=False
+    r.rows=[]
+    assert client.get(BASE+'/projects/1/availability').status_code==200
