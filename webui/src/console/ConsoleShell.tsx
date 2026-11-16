@@ -54,6 +54,7 @@ function Icon({ name }: { name: keyof typeof paths }) {
 }
 export function ConsoleShell({
   view,
+  branding,
   projectName,
   creating,
   user,
@@ -68,6 +69,7 @@ export function ConsoleShell({
   navigation,
   canCreate = true,
 }: {
+  branding?: { logo: string; icon: string };
   navigation?: readonly (readonly [ConsoleView, string])[];
   canCreate?: boolean;
   view: ConsoleView;
@@ -196,13 +198,12 @@ export function ConsoleShell({
         aria-label={drawer ? "制造导航" : "制造平台导航"}
       >
         <div className="mf-console-brand">
-          <span className="mf-console-mark" aria-hidden="true">
-            O
-          </span>
-          <span className="mf-console-label">
-            <strong>奥比大制造</strong>
-            <small>制造协同管理平台</small>
-          </span>
+          <div className="mf-console-brand-panel" role="img" aria-label="奥比制造管理">
+            {branding ? <>
+              <img className="mf-brand-full" src={branding.logo} alt="奥比制造管理" />
+              <img className="mf-brand-icon" src={branding.icon} alt="奥比制造管理" />
+            </> : <strong>奥比制造管理</strong>}
+          </div>
           <button
             className="mf-console-drawer-close"
             aria-label="关闭导航"

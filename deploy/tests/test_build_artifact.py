@@ -15,6 +15,8 @@ def repo(tmp_path):
     for args in [['init','-q'],['config','user.name','Artifact Test'],['config','user.email','artifact@example.invalid'],['add','.'],['commit','-q','-m','published']]:subprocess.run(['git','-C',str(root),*args],check=True)
     sha=subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD']).decode().strip()
     assets=tmp_path/'dist';assets.mkdir();(assets/'manufacturing.js').write_text('window.OrbbecManufacturing={};');(assets/'manufacturing.css').write_text('.mf-root{}')
+    for name in ["master-logo-v2.png", "app-icon-v2.png"]:
+        (assets/name).write_bytes(b"\x89PNG\r\nfixture")
     return root,sha,assets
 
 
@@ -27,6 +29,8 @@ def test_release_uses_exact_committed_markdown_and_complete_manifest(tmp_path):
     metadata=json.loads((target/'handbook-metadata.json').read_text())
     manifest=json.loads((target/'manifest.json').read_text())
     assert manifest['commit']==sha
+    for name in ['master-logo-v2.png', 'app-icon-v2.png']:
+        assert (target/'webui/dist'/name).read_bytes() == (assets/name).read_bytes()
     actual={p.relative_to(target).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in target.rglob('*') if p.is_file() and p.name!='manifest.json'}
     assert actual==manifest['files']
     assert metadata['files']['docs/manufacturing-system-handbook.md']['sha256']==actual['docs/manufacturing-system-handbook.md']

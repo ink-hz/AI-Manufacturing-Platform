@@ -1,3 +1,4 @@
+import { manufacturingBrand } from "../branding";
 import {MesSourceWorkbench} from './mesSource/MesSourceWorkbench';
 import type {MesOrderSelection} from './mesSource/types';
 import {SapMaterialBrowser} from './materialControl/SapMaterialBrowser';
@@ -416,6 +417,7 @@ export function WorkflowApp({
   return (
     <div className="mf-root mf-product mf-console-root wf-root" ref={frame}>
       <ConsoleShell
+        branding={manufacturingBrand(options.apiBase, b.release)}
         view={view}
         navigation={[
           ["home", "工作台"],

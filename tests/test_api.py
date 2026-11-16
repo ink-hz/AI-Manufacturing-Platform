@@ -27,6 +27,8 @@ def make_client(tmp_path, *, mode='edit', database_path=None, asynchronous=False
     assets.mkdir(exist_ok=True)
     (assets / 'manufacturing.js').write_text('window.OrbbecManufacturing={};')
     (assets / 'manufacturing.css').write_text('.mf-root {}')
+    for name in ['master-logo-v2.png', 'app-icon-v2.png']:
+        (assets / name).write_text('PNG fixture')
     app = FastAPI()
     app.include_router(build_router(database_path=str(database_path or tmp_path / 'db' / 'workbench.sqlite3'), assets_dir=str(assets), authorize=async_authorize if asynchronous else authorize, release='release-123'))
     return TestClient(app), calls
@@ -267,6 +269,8 @@ def test_manufacturing_error_boundary_preserves_unrelated_host_routes(tmp_path):
 @pytest.mark.parametrize('asset_name,mime,expected', [
     ('manufacturing.js','text/javascript','window.OrbbecManufacturing={};'),
     ('manufacturing.css','text/css','.mf-root {}'),
+    ('master-logo-v2.png','image/png','PNG fixture'),
+    ('app-icon-v2.png','image/png','PNG fixture'),
 ])
 @pytest.mark.parametrize('params', [{}, {'release':'release-123'}])
 def test_assets_accept_matching_release_or_untagged_requests(tmp_path,asset_name,mime,expected,params):
@@ -279,7 +283,7 @@ def test_assets_accept_matching_release_or_untagged_requests(tmp_path,asset_name
     assert calls == [False]
 
 
-@pytest.mark.parametrize('asset_name', ['manufacturing.js','manufacturing.css'])
+@pytest.mark.parametrize('asset_name', ['manufacturing.js','manufacturing.css','master-logo-v2.png','app-icon-v2.png'])
 @pytest.mark.parametrize('params', [
     {'release':'stale-version-token'},
     {'release':''},
@@ -304,7 +308,7 @@ def test_assets_reject_stale_release_before_filesystem_io(tmp_path,monkeypatch,a
     assert not (tmp_path/'db').exists()
 
 
-@pytest.mark.parametrize('asset_name', ['manufacturing.js','manufacturing.css'])
+@pytest.mark.parametrize('asset_name', ['manufacturing.js','manufacturing.css','master-logo-v2.png','app-icon-v2.png'])
 @pytest.mark.parametrize('mode,status', [('anonymous',401),('denied',403)])
 def test_asset_authorization_precedes_release_mismatch(tmp_path,monkeypatch,asset_name,mode,status):
     from manufacturing_platform import api
