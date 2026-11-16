@@ -67,7 +67,7 @@ class Reader:
             if batch:
                 ids = dict.fromkeys(str(r['projuectid']) for r in rows)
                 return [dict(source_project_id=p, latest_at=max(r['timestamp'] for r in rows if str(r['projuectid'])==p)) for p in ids]
-            return [{'latest_at': max((r['timestamp'] for r in rows), default=None)}]
+            return [{'latest_at': max(r['timestamp'] for r in rows)}] if rows else []
         if st.sql.startswith('SELECT *'):
             return rows[:st.max_rows]
         assert 'count(*) AS records' in st.sql, st.sql
@@ -284,3 +284,16 @@ def test_aggregate_slots_fail_closed_and_release_after_transport_error():
     assert caught.value.code=='SOURCE_UNAVAILABLE'
     r.failure=False
     assert src.analysis(SCOPE,filters(),'summary')['complete']
+
+
+@pytest.mark.parametrize('rows', [[], [{'latest_at':None}]])
+def test_availability_empty_history_preserves_metadata_and_one_row_bound(rows):
+    r=Reader()
+    def empty_latest(st):
+        validate_statement(st)
+        r.calls.append(st)
+        return rows
+    r.select=empty_latest
+    result=source(r).availability(SCOPE)
+    assert result==dict(source_namespace='native',source_project_id='1',captured_at='2026-11-10T00:00:00Z',latest_at=None)
+    assert len(r.calls)==1 and r.calls[0].max_rows==1

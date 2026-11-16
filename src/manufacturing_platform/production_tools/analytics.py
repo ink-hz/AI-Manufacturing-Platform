@@ -186,8 +186,6 @@ def analysis(source,scope,filters,view):
 def _latest(source,ids):
     rows=_read(source,latest_statement(ids))
     batch=len(ids)>1
-    if not batch and len(rows)!=1:
-        raise error('SOURCE_SCHEMA_INVALID')
     result={}
     for row in rows:
         if set(row)!=({'source_project_id','latest_at'} if batch else {'latest_at'}):

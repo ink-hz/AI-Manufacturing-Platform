@@ -210,7 +210,12 @@ def source_manifest(root):
     hashes = {name: digest(root / name) for name in files if (root / name).is_file()}
     build = {
         name: digest(root / name)
-        for name in ("webui/dist/manufacturing.js", "webui/dist/manufacturing.css")
+        for name in (
+            "webui/dist/manufacturing.js",
+            "webui/dist/manufacturing.css",
+            "webui/dist/master-logo-v2.png",
+            "webui/dist/app-icon-v2.png",
+        )
         if (root / name).is_file()
     }
     return {
