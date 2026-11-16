@@ -184,3 +184,10 @@ it('keeps valid snapshot supplied with superseded initial refresh when cache GET
  const query=vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce({...observation({items:[{shop_order:'SYN-CACHED',description:'cached-response'}]}),refresh_error:superseded}).mockRejectedValueOnce(Error('PRIVATE'));
  const v=await mount({mesSourceQuery:query});expect(v.host.textContent).toContain('cached-response');expect(v.host.textContent).toContain('original-time');expect(v.host.textContent).toContain('读取失败');await act(async()=>v.root.unmount());
 });
+it('shows recent dates and true false unknown component presence',async()=>{
+ const v=await mount({mesSourceQuery:vi.fn(async()=>observation({items:[{shop_order:'RECENT',description:null,created_at:'2026-11-16T01:02:03.123456789Z',has_components:true},{shop_order:'EMPTY',description:null,created_at:null,has_components:false},{shop_order:'LEGACY',description:null}],next_cursor:null}))});
+ expect(v.host.textContent).toContain('最近创建工单');expect(v.host.querySelector('time')?.getAttribute('datetime')).toBe('2026-11-16T01:02:03.123456789Z');const rows=Array.from(v.host.querySelectorAll('tbody tr'));expect(rows[0].textContent).toContain('有组件记录');expect(rows[1].textContent).toContain('无组件记录');expect(rows[1].textContent).toContain('未知');expect(rows[2].textContent).toContain('未知');await act(async()=>v.root.unmount());
+});
+it('empty owner components remain neutral without zero demand',async()=>{
+ const v=await mount({mesSourceQuery:vi.fn(async(kind:string,scope:Record<string,string|number>)=>observation(kind==='orders'?{items:[{shop_order:'EMPTY',description:null}],next_cursor:null}:{total:0,components:[]},scope))});await click(v.host,'EMPTY');expect(v.host.textContent).toContain('未查到该工单的MES组件记录，暂不能分析料况');expect(v.host.querySelector('[role="alert"]')).toBeNull();expect(v.host.textContent).not.toContain('完整组件 0');expect(v.host.textContent).not.toContain('需求量');await act(async()=>v.root.unmount());
+});

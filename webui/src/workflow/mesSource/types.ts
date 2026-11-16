@@ -20,6 +20,8 @@ export type MesStatus = {
 export type MesOrder = {
     shop_order: string;
     description: string | null;
+    created_at?: string | null;
+    has_components?: boolean;
 };
 export type MesData = {
     items?: MesOrder[];

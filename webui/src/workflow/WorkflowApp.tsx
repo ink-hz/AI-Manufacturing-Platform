@@ -48,6 +48,8 @@ export function WorkflowApp({
 }) {
   const b = options.bootstrap!;
   const [mesSelection,setMesSelection] = useState<MesOrderSelection|null>(null);
+  const [sapBrowser,setSapBrowser] = useState(false);
+  useEffect(()=>{setSapBrowser(false);},[b.user.id]);
   const [formalLedger,setFormalLedger] = useState(false);
   const productionHandoff = b.configuration_admin ? validProductionHandoff(new URLSearchParams(window.location.search).get("production_handoff")) : undefined;
   const handoffReturn = useRef<{projectId: string; projectWorkspace: boolean} | null>(null);
@@ -474,8 +476,8 @@ export function WorkflowApp({
         {opening && (opening.error ? <p role="alert">{opening.error}<button onClick={() => open(opening.target)}>重试打开记录</button></p> : <p role="status">正在读取记录所属项目…</p>)}
         <div hidden={view === "handbook"} key={epoch}>
           {activeView === "production_tools" && b.configuration_admin && <ProductionToolsWorkspace api={api} userId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} handoffId={productionHandoff} onDirty={productionDirty} />}
-          {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <MesSourceWorkbench key={String(b.user.id)} api={api} accountId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} selectedSelection={mesSelection} onSelectOrder={selection=>{setMesSelection(selection);if(selection && activeView!=="supply")navigate("supply");}}/>}
-          {activeView === "supply" && !project && b.configuration_admin && <SapMaterialBrowser api={api} readOnly={options.readOnly || !b.can_edit}/> }
+          {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <MesSourceWorkbench key={String(b.user.id)} api={api} accountId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} selectedSelection={mesSelection} onSelectOrder={selection=>{setMesSelection(selection);setSapBrowser(false);if(selection && activeView!=="supply")navigate("supply");}}/>}
+          {activeView === "supply" && !project && b.configuration_admin && <section><button onClick={()=>setSapBrowser(x=>!x)}>{sapBrowser ? "收起SAP查询" : "单独查询SAP"}</button>{sapBrowser && <SapMaterialBrowser api={api} readOnly={options.readOnly || !b.can_edit}/>}</section> }
           {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <button onClick={()=>setFormalLedger(x=>!x)}>{formalLedger?"收起平台正式台账":"平台正式台账"}</button>}
         {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && formalLedger && (
           <p className="mf-badge">

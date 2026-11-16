@@ -33,6 +33,9 @@ it.each([true, false])(
     );
     try {
       await v.click("计划与物料");
+      expect(v.host.querySelector('[aria-label="SAP工单与物料供需"]')).toBeNull();
+      expect(status).toHaveBeenCalledTimes(0);
+      if (admin) await v.click("单独查询SAP");
       expect(!!v.host.querySelector('[aria-label="SAP工单与物料供需"]')).toBe(
         admin,
       );
