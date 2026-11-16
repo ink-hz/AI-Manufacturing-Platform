@@ -41,3 +41,43 @@ def items(rows, prefix, after):
         result.append({'shop_order': order, 'description': description})
         previous = order
     return result
+
+
+def canonical_timestamp(value):
+    """Java Timestamp JSON to sortable UTC ISO, retaining all nanoseconds."""
+    from datetime import datetime, timezone
+    if value is None:
+        return None
+    if type(value) is not dict:
+        raise ValueError()
+    millis, nanos = value.get('time'), value.get('nanos')
+    if (type(millis) is not int or type(nanos) is not int or not 0 <= nanos < 1_000_000_000
+            or millis % 1000 != nanos // 1_000_000):
+        raise ValueError()
+    stamp = datetime.fromtimestamp(millis // 1000, timezone.utc)
+    return stamp.strftime('%Y-%m-%dT%H:%M:%S') + f'.{nanos:09d}Z'
+
+
+def recent_items(rows, prefix, after):
+    try:
+        result, seen, previous = [], set(), None
+        for row in rows:
+            if not {'SHOP_ORDER', 'ORDER_DESC', 'CREATE_DATE', 'HAS_COMPONENTS'} <= row.keys():
+                raise ValueError()
+            order, description = row.get('SHOP_ORDER'), row.get('ORDER_DESC')
+            created = canonical_timestamp(row.get('CREATE_DATE'))
+            flag = row.get('HAS_COMPONENTS')
+            if (not valid_identity(order) or not order.startswith(prefix) or order == after or order in seen
+                    or description is not None and type(description) is not str
+                    or type(flag) is not int or flag not in (0, 1)):
+                raise ValueError()
+            key = (created is not None, created or '', order)
+            if previous is not None and key >= previous:
+                raise ValueError()
+            result.append({'shop_order': order, 'description': description, 'created_at': created,
+                           'has_components': bool(flag)})
+            seen.add(order)
+            previous = key
+        return result
+    except (ValueError, TypeError, OverflowError, OSError):
+        raise MesAccessError('MES_INVALID_RESPONSE', 502) from None

@@ -24,7 +24,7 @@ def _validate_event(event):
     if event['operation'] not in {'diagnose', 'query'} or event['status'] not in {'started', 'success', 'failed'}:
         raise ValueError()
     if ((event['operation'] == 'diagnose' and event['function'] is not None)
-            or event['operation'] == 'query' and event['function'] not in INTERFACES and event['function'] != 'source_orders'):
+            or event['operation'] == 'query' and event['function'] not in INTERFACES and event['function'] not in {'source_orders', 'source_orders_recent', 'source_order_components'}):
         raise ValueError()
     for key in ('elapsed_ms', 'response_bytes'):
         if key in event and (type(event[key]) is not int or not 0 <= event[key] <= 2**31 - 1):

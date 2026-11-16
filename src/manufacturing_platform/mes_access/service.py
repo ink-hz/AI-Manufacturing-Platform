@@ -8,7 +8,7 @@ from uuid import uuid4
 from ..mes_connection import load_mes_connection_config
 from .errors import MesAccessError
 from .parsing import parse_query_response
-from .registry import INTERFACES, prepare_query
+from .registry import INTERFACES, PRIVATE_INTERFACES, prepare_query
 from .store import MesAuditStore
 from .transport import SessionTransport
 
@@ -95,7 +95,7 @@ class MesAccessService:
             store.record({**event, 'status': 'failed', 'error_code': error.code,
                           'elapsed_ms': round((monotonic() - started) * 1000)})
             raise error from None
-        row_metadata = {'row_count': len(result['items'] if interface == 'source_orders' else result['rows'])} if operation == 'query' else {}
+        row_metadata = {'row_count': len(result['items'] if interface in {'source_orders', 'source_orders_recent'} else result['rows'])} if operation == 'query' else {}
         store.record({**event, **row_metadata, 'status': 'success', 'response_bytes': size,
                       'elapsed_ms': round((monotonic() - started) * 1000)})
         return {**result, 'request_id': event['request_id']}
@@ -122,7 +122,7 @@ class MesAccessService:
         spec, params = prepare_query(config, interface, filters, page, page_size)
         # Freeze caller-owned filters before I/O; a shared service never stores
         # transport/session state or mutable request inputs between operations.
-        public_filters = {key: params[key] for key in spec.filters}
+        public_filters = dict(filters) if interface in PRIVATE_INTERFACES else {key: params[key] for key in spec.filters}
         def call(transport):
             payload = transport.query(interface, public_filters, page, page_size)
             if type(payload) is not bytes or len(payload) > config.max_response_bytes:
@@ -182,3 +182,31 @@ class MesAccessService:
                     'next_cursor': observed[-1]['shop_order'] if len(observed) == 5 else None,
                     'total': None, 'page_size': 5}
         return self._operation(config, fingerprint, store, 'query', 'source_orders', actor_id, call)
+
+    def collect_order_materials_by_owner(self, shop_order, actor_id, *, expected_fingerprint=None):
+        from .order_materials import collect
+        config, fingerprint, store = self._context()
+        self._live(config)
+        self._expected(fingerprint, expected_fingerprint)
+        return collect(self, config, fingerprint, store, shop_order, actor_id, owner=True)
+
+    def source_orders_recent(self, prefix, after, actor_id, *, expected_fingerprint=None):
+        from .source_orders import source, validate_scope, recent_items
+        config, fingerprint, store = self._context()
+        self._live(config)
+        self._expected(fingerprint, expected_fingerprint)
+        prefix, after = validate_scope(prefix, after)
+        filters = {'prefix': prefix, 'after': after}
+        prepare_query(config, 'source_orders_recent', filters, 1, 5)
+        def call(transport):
+            payload = transport.query('source_orders_recent', filters, 1, 5)
+            if type(payload) is not bytes or len(payload) > config.max_response_bytes:
+                raise MesAccessError('MES_RESPONSE_TOO_LARGE', 502)
+            parsed = parse_query_response('source_orders_recent', payload, page=1, page_size=5)
+            observed = recent_items(parsed['rows'], prefix, after)
+            if not self.configuration_matches(fingerprint):
+                raise MesAccessError('MES_CONFIGURATION_CHANGED', 409)
+            return {'source': source(config), 'fingerprint': fingerprint, 'items': observed,
+                    'next_cursor': observed[-1]['shop_order'] if len(observed) == 5 else None,
+                    'total': None, 'page_size': 5}
+        return self._operation(config, fingerprint, store, 'query', 'source_orders_recent', actor_id, call)

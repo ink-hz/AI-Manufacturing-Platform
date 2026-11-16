@@ -4,7 +4,7 @@ import math
 import re
 
 from .errors import MesAccessError
-from .registry import INTERFACES, SOURCE_ORDERS
+from .registry import INTERFACES, SOURCE_ORDERS, PRIVATE_INTERFACES
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_DEPTH = 6
@@ -73,10 +73,10 @@ def _bounded_tree(value, interface):
 
 
 def parse_query_response(interface, payload, *, page=1, page_size=1):
-    if type(interface) is not str or interface not in INTERFACES and interface != 'source_orders':
+    if type(interface) is not str or interface not in INTERFACES and interface != 'source_orders' and interface not in PRIVATE_INTERFACES:
         raise MesAccessError('MES_INTERFACE_DENIED', 404)
     try:
-        spec = SOURCE_ORDERS if interface == 'source_orders' else INTERFACES[interface]
+        spec = SOURCE_ORDERS if interface == 'source_orders' else PRIVATE_INTERFACES[interface] if interface in PRIVATE_INTERFACES else INTERFACES[interface]
         if (type(page) is not int or not 1 <= page <= 1_000_000
                 or spec.pagination_mode == 'bounded_data' and page != 1
                 or type(page_size) is not int or not 1 <= page_size <= 5
@@ -86,7 +86,7 @@ def parse_query_response(interface, payload, *, page=1, page_size=1):
             raise MesAccessError('MES_SESSION_EXPIRED', 502)
         root = json.loads(payload.decode('utf-8'), object_pairs_hook=_unique,
                           parse_constant=_invalid_constant,
-                          **({'parse_float': _decimal_lexeme} if interface in {'iqc_receive', 'order_materials', 'material_priority', 'iqc_inspections'} else {}))
+                          **({'parse_float': _decimal_lexeme} if interface in {'source_order_components', 'iqc_receive', 'order_materials', 'material_priority', 'iqc_inspections'} else {}))
         _bounded_tree(root, interface)
         if type(root) is not dict or type(root.get('result')) is not dict:
             raise ValueError()
@@ -96,6 +96,15 @@ def parse_query_response(interface, payload, *, page=1, page_size=1):
         rows = result.get(spec.rows_key)
         if type(rows) is not list or len(rows) > page_size or any(type(row) is not dict for row in rows):
             raise ValueError()
+        if interface == 'source_order_components':
+            total = rows[0].get('TOTAL_ROWS') if rows else 0
+            if type(total) is not int or total < 0:
+                raise ValueError()
+            for index, row in enumerate(rows, (page - 1) * page_size + 1):
+                if (type(row.get('TOTAL_ROWS')) is not int or row['TOTAL_ROWS'] != total
+                        or type(row.get('READ_ROW_NUM')) is not int or row['READ_ROW_NUM'] != index):
+                    raise ValueError()
+            return {'rows': rows, 'total_items': total, 'page': page, 'page_size': page_size}
         if spec.pagination_mode == 'bounded_data':
             reported_page = result.get('pageNumber', 1)
             if type(reported_page) is not int or reported_page != 1:

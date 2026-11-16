@@ -41,17 +41,24 @@ def namespace(config):
     return hashlib.sha256(json.dumps(fields, separators=(',', ':')).encode()).hexdigest()
 
 
-def collect(service, config, fingerprint, store, shop_order, actor_id):
+def collect(service, config, fingerprint, store, shop_order, actor_id, *, owner=False):
     try:
         size = min(5, config.max_rows)
         source_namespace = namespace(config)
         components, seen, total, requests = [], set(), None, []
+        previous_owner_key = None
         for page in range(1, 21):
-            result = service._query(config, source_namespace, store, 'order_materials', {'shopOrder': shop_order}, page, size, actor_id)
+            result = service._query(config, source_namespace, store, 'source_order_components' if owner else 'order_materials', {'shopOrder': shop_order}, page, size, actor_id)
             observed = result['total_items']
             if type(observed) is not int:
                 raise ValueError()
+            if owner and observed == 0 and page == 1 and not result['rows']:
+                total = 0
+                requests.append(result['request_id'])
+                break
             if observed == 0:
+                if owner:
+                    raise MesAccessError('MES_COLLECTION_INCOMPLETE', 502)
                 raise MesAccessError('MES_ORDER_EMPTY', 422)
             if observed > min(100, 20 * size):
                 raise MesAccessError('MES_COLLECTION_LIMIT', 422)
@@ -66,6 +73,7 @@ def collect(service, config, fingerprint, store, shop_order, actor_id):
                 if _text(row.get('SHOP_ORDER')) != shop_order:
                     raise MesAccessError('MES_ORDER_MISMATCH', 502)
                 reservation = row.get('RSNUM')
+                raw_reservation = reservation
                 if type(reservation) is int and reservation >= 0:
                     reservation = str(reservation)
                 key = (_text(reservation), _text(row.get('RSPOS')))
@@ -73,6 +81,13 @@ def collect(service, config, fingerprint, store, shop_order, actor_id):
                     raise ValueError()
                 if key in seen:
                     raise ValueError()
+                if owner:
+                    ordered_key = (raw_reservation, key[1])
+                    if previous_owner_key is not None and (
+                            type(raw_reservation) is not type(previous_owner_key[0])
+                            or ordered_key <= previous_owner_key):
+                        raise MesAccessError('MES_COLLECTION_INCOMPLETE', 502)
+                    previous_owner_key = ordered_key
                 seen.add(key)
                 components.append({'component_key': ':'.join(key), 'material_id': _text(row.get('MATNR')),
                     'required_quantity': _amount(row.get('BDMNG')), 'withdrawn_quantity': None if row.get('ENMNG') in (None, '') else _amount(row.get('ENMNG')),

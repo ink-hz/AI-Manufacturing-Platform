@@ -47,15 +47,49 @@ SOURCE_ORDERS_SQL = (
     'WHERE SITE=:SITE{predicates} ORDER BY SHOP_ORDER ASC) WHERE ROWNUM<={row_limit}'
 )
 
+PRIVATE_INTERFACES = MappingProxyType({
+    'source_orders_recent': SOURCE_ORDERS,
+    'source_order_components': Interface('MES所属工单组件', SOURCE_ORDERS.path, ('shopOrder',), rows_key='DATA', encoding='json_body', pagination_mode='owner_rows'),
+})
+
+
+def _private_payload(interface, filters, page, size):
+    from .source_orders import validate_scope, valid_identity
+    if interface == 'source_order_components':
+        order = filters.get('shopOrder')
+        if not valid_identity(order) or page > 20:
+            raise MesAccessError('MES_INVALID_QUERY', 400)
+        sql = ('SELECT * FROM (SELECT SHOP_ORDER,AUFNR,RSNUM,RSPOS,MATNR,BDMNG,ENMNG,MEINS,LGORT,'
+               'COUNT(*) OVER() AS TOTAL_ROWS,ROW_NUMBER() OVER(ORDER BY RSNUM ASC,RSPOS ASC) AS READ_ROW_NUM '
+               'FROM M_SHOP_ORDER_RESB WHERE SITE=:SITE AND SHOP_ORDER=:SHOP_ORDER) '
+               f'WHERE READ_ROW_NUM>{(page-1)*size} AND READ_ROW_NUM<={page*size} ORDER BY READ_ROW_NUM ASC')
+        return {'querySql': sql, 'params': {'SHOP_ORDER': order}}
+    prefix, after = validate_scope(filters.get('prefix'), filters.get('after'))
+    params, predicates = {}, ''
+    if prefix:
+        params['SHOP_ORDER'] = prefix
+        predicates += " AND t.SHOP_ORDER LIKE :SHOP_ORDER||'%'"
+    if after:
+        params['AFTER_SHOP_ORDER'] = after
+        predicates += (' AND EXISTS (SELECT 1 FROM M_SHOP_ORDER a WHERE a.SITE=:SITE AND a.SHOP_ORDER=:AFTER_SHOP_ORDER '
+                       'AND ((a.CREATE_DATE IS NOT NULL AND (t.CREATE_DATE<a.CREATE_DATE OR t.CREATE_DATE IS NULL)) '
+                       'OR ((t.CREATE_DATE=a.CREATE_DATE OR (t.CREATE_DATE IS NULL AND a.CREATE_DATE IS NULL)) '
+                       'AND t.SHOP_ORDER<a.SHOP_ORDER)))')
+    sql = ('SELECT SHOP_ORDER,ORDER_DESC,CREATE_DATE,HAS_COMPONENTS FROM (SELECT t.SHOP_ORDER,t.ORDER_DESC,t.CREATE_DATE,'
+           'CASE WHEN EXISTS (SELECT 1 FROM M_SHOP_ORDER_RESB r WHERE r.SITE=t.SITE AND r.SHOP_ORDER=t.SHOP_ORDER) '
+           'THEN 1 ELSE 0 END AS HAS_COMPONENTS FROM M_SHOP_ORDER t WHERE t.SITE=:SITE'
+           + predicates + f' ORDER BY t.CREATE_DATE DESC NULLS LAST,t.SHOP_ORDER DESC) WHERE ROWNUM<={size}')
+    return {'querySql': sql, 'params': params}
+
 
 DATE_KEYS = frozenset({'startDate', 'endDate', 'begindate', 'enddate', 'date_start', 'date_end'})
 
 
 def prepare_query(config, interface, filters=None, page=1, page_size=1):
     """Return a fresh fixed wire payload after all public inputs pass policy."""
-    if type(interface) is not str or interface not in INTERFACES and interface != 'source_orders':
+    if type(interface) is not str or interface not in INTERFACES and interface != 'source_orders' and interface not in PRIVATE_INTERFACES:
         raise MesAccessError('MES_INTERFACE_DENIED', 404)
-    spec = SOURCE_ORDERS if interface == 'source_orders' else INTERFACES[interface]
+    spec = SOURCE_ORDERS if interface == 'source_orders' else PRIVATE_INTERFACES[interface] if interface in PRIVATE_INTERFACES else INTERFACES[interface]
     if spec.path not in config.allowed_api_paths:
         raise MesAccessError('MES_INTERFACE_DENIED', 403)
     filters = {} if filters is None else filters
@@ -64,6 +98,8 @@ def prepare_query(config, interface, filters=None, page=1, page_size=1):
             or spec.pagination_mode == 'bounded_data' and page != 1
             or type(page_size) is not int or not 1 <= page_size <= min(5, config.max_rows)):
         raise MesAccessError('MES_INVALID_QUERY', 400)
+    if interface in PRIVATE_INTERFACES:
+        return spec, _private_payload(interface, filters, page, page_size)
     if interface == 'source_orders':
         from .source_orders import validate_scope
         prefix, after = validate_scope(filters.get('prefix'), filters.get('after'))
