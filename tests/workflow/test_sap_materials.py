@@ -133,7 +133,7 @@ def test_schema28_upgrade_preserves_metadata_and_existing_records(h):
     h.reopen()
     assert h.client().get(URL+'/production-order?number=123&plant=T001').status_code == 200
     with sqlite3.connect(h.paths.domain) as db:
-        assert db.execute('SELECT version FROM schema_version').fetchone()[0] == 29
+        assert db.execute('SELECT version FROM schema_version').fetchone()[0] == 30
         assert db.execute('SELECT * FROM projects').fetchall() == before
         assert db.execute('SELECT * FROM dataset_metadata').fetchall() == metadata
 

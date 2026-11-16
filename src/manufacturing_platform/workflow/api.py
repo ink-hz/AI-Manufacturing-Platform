@@ -118,6 +118,8 @@ def build_workflow_router(
 
     from .sap_materials import register_sap_material_routes
     register_sap_material_routes(router, service, actor)
+    from .mes_source import register_mes_source_routes
+    register_mes_source_routes(router, service, actor)
 
     from .material_control_api import register_material_control_routes
     register_material_control_routes(router, service, actor)
