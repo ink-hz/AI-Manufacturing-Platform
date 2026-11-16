@@ -24,3 +24,31 @@ it('admin with zero projects sees source browser at home execution and supply; m
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
 });
+it('retained order from source A cannot query source B until explicitly reselected', async () => {
+    let namespace = 'source-a';
+    const source = () => ({system:'mes',origin:'native',fact_role:'observation',environment:'production',site_code:namespace,namespace});
+    const componentCalls: {namespace:string;method:string}[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input:unknown, init?:RequestInit) => {
+        const url = new URL(String(input),'http://localhost');
+        let data: unknown = {};
+        if(url.pathname.endsWith('/mes-source/status')) data={configured:true,can_refresh:true,source:source()};
+        else if(url.pathname.endsWith('/mes-source/orders')) data={snapshot:{id:'1',kind:'orders',scope:{prefix:'',after:''},source:source(),collected_at:'now',data:{items:[{shop_order:'SAME',description:namespace==='source-a'?'OLD-DESCRIPTION':'NEW-DESCRIPTION'}],next_cursor:null}},refresh_error:null};
+        else if(url.pathname.endsWith('/mes-source/order-materials')) {
+            componentCalls.push({namespace,method:init?.method||'GET'});
+            data={snapshot:{id:'2',kind:'order-materials',scope:{shop_order:'SAME'},source:source(),collected_at:'now',data:{total:1,components:[{component_key:'1',material_id:namespace==='source-a'?'MATERIAL-A':'MATERIAL-B'}]}},refresh_error:null};
+        } else if(url.pathname.endsWith('/projects')) data={items:[]};
+        return new Response(JSON.stringify(data),{status:200,headers:{'content-type':'application/json'}});
+    }));
+    const options={apiBase:'/api/v1/manufacturing',csrfToken:'x',readOnly:false,bootstrap:{user:{id:'a',display_name:'Admin'},configuration_admin:true,can_edit:true,allowed:true,workflow_access:true,dataset:{mode:'production'},release:{}}} as unknown as MountOptions;
+    const host=document.createElement('div'),root=createRoot(host);
+    const click=async(text:string)=>act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent===text)!.click());
+    await act(async()=>root.render(<WorkflowApp options={options}/>));await click('SAME');
+    expect(host.textContent).toContain('MATERIAL-A');
+    await click('制造项目');namespace='source-b';await click('工单与执行');
+    expect(host.textContent).not.toContain('OLD-DESCRIPTION');
+    expect(host.textContent).not.toContain('MATERIAL-B');
+    expect(componentCalls.filter(call=>call.namespace==='source-b')).toEqual([]);
+    await click('SAME');expect(host.textContent).toContain('NEW-DESCRIPTION');expect(host.textContent).toContain('MATERIAL-B');
+    expect(componentCalls.filter(call=>call.namespace==='source-b')).toHaveLength(1);
+    await act(async()=>root.unmount());vi.unstubAllGlobals();
+});

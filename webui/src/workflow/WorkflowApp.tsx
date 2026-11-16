@@ -1,5 +1,5 @@
 import {MesSourceWorkbench} from './mesSource/MesSourceWorkbench';
-import type {MesOrder} from './mesSource/types';
+import type {MesOrderSelection} from './mesSource/types';
 import {SapMaterialBrowser} from './materialControl/SapMaterialBrowser';
 import {initialMaterialViewContext, type MaterialViewContext} from './materialControl/types';
 import {MaterialTaskPanel} from './materialControl/MaterialTaskPanel';
@@ -47,7 +47,7 @@ export function WorkflowApp({
   options: MountOptions;
 }) {
   const b = options.bootstrap!;
-  const [mesSelection,setMesSelection] = useState<{accountId:string;order:MesOrder|null}|null>(null);
+  const [mesSelection,setMesSelection] = useState<MesOrderSelection|null>(null);
   const [formalLedger,setFormalLedger] = useState(false);
   const productionHandoff = b.configuration_admin ? validProductionHandoff(new URLSearchParams(window.location.search).get("production_handoff")) : undefined;
   const handoffReturn = useRef<{projectId: string; projectWorkspace: boolean} | null>(null);
@@ -474,7 +474,7 @@ export function WorkflowApp({
         {opening && (opening.error ? <p role="alert">{opening.error}<button onClick={() => open(opening.target)}>重试打开记录</button></p> : <p role="status">正在读取记录所属项目…</p>)}
         <div hidden={view === "handbook"} key={epoch}>
           {activeView === "production_tools" && b.configuration_admin && <ProductionToolsWorkspace api={api} userId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} handoffId={productionHandoff} onDirty={productionDirty} />}
-          {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <MesSourceWorkbench key={String(b.user.id)} api={api} accountId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} selectedOrder={mesSelection?.accountId===String(b.user.id)?mesSelection.order:null} onSelectOrder={order=>{setMesSelection({accountId:String(b.user.id),order});if(order && activeView!=="supply")navigate("supply");}}/>}
+          {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <MesSourceWorkbench key={String(b.user.id)} api={api} accountId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} selectedSelection={mesSelection} onSelectOrder={selection=>{setMesSelection(selection);if(selection && activeView!=="supply")navigate("supply");}}/>}
           {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <button onClick={()=>setFormalLedger(x=>!x)}>{formalLedger?"收起平台正式台账":"平台正式台账"}</button>}
           {activeView === "home" && !project && (!b.configuration_admin || formalLedger) && (
             <WorkflowHome readOnly={readOnly} onDirty={onDirty} requestLeave={requestLeave} data={dashboard} projects={projects} projectsReady={projectsReady} dashboardError={dashboardError} projectsError={projectsError} api={api} refresh={refresh} active={view === "home"} onRefresh={() => setRefresh(r => r + 1)} onOpen={open}

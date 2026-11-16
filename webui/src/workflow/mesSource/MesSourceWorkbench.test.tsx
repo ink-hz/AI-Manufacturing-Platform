@@ -104,3 +104,30 @@ it('changing component discards late priority and IQC records', async () => {
  await act(async()=>{finishPriority(observation({rows:[{MAKTX:'OLD-PRIORITY'}],total_items:1},{shop_order:'SO1',material:'A',page:1}));finishIqc(observation({rows:[{INSP_CODE:'OLD-IQC'}],total_items:1},{material:'A',page:1}));});
  expect(v.host.textContent).not.toContain('OLD-PRIORITY');expect(v.host.textContent).not.toContain('OLD-IQC');await act(async()=>v.root.unmount());
 });
+it('synchronously suppresses retained source A selection on source B, including dependent reads', async () => {
+ const newSource={...source,namespace:'source-b',site_code:'B'};
+ const query=vi.fn(async()=>empty);
+ const api={mesSourceStatus:async()=>({configured:true,source:newSource,can_refresh:false}),mesSourceQuery:query} as unknown as WorkflowApi;
+ const host=document.createElement('div'),root=createRoot(host);
+ const retained={accountId:'same-account',source,order:{shop_order:'SAME',description:'OLD-A'}};
+ await act(async()=>root.render(<MesSourceWorkbench api={api} accountId="same-account" readOnly={false} selectedSelection={retained}/>));
+ expect(host.textContent).not.toContain('OLD-A');
+ expect(query).toHaveBeenCalledTimes(1);
+ expect(query).toHaveBeenCalledWith('orders',{prefix:'',after:''},false,expect.any(AbortSignal));
+ await act(async()=>root.unmount());
+});
+it('late source A component results cannot appear after a source B remount', async () => {
+ let finish!:(value:unknown)=>void;
+ const oldSelection={accountId:'a',source,order:{shop_order:'SAME',description:'OLD-A'}};
+ const queryA=vi.fn(async(kind:string)=>kind==='orders'?empty:await new Promise(resolve=>finish=resolve));
+ const apiA={mesSourceStatus:async()=>({configured:true,source,can_refresh:false}),mesSourceQuery:queryA} as unknown as WorkflowApi;
+ const sourceB={...source,namespace:'source-b'};
+ const queryB=vi.fn(async()=>empty);
+ const apiB={mesSourceStatus:async()=>({configured:true,source:sourceB,can_refresh:false}),mesSourceQuery:queryB} as unknown as WorkflowApi;
+ const host=document.createElement('div'),root=createRoot(host);
+ await act(async()=>root.render(<MesSourceWorkbench api={apiA} accountId="a" readOnly selectedSelection={oldSelection}/>));
+ await act(async()=>root.render(<MesSourceWorkbench api={apiB} accountId="a" readOnly selectedSelection={oldSelection}/>));
+ await act(async()=>finish(observation({total:1,components:[{component_key:'1',material_id:'LATE-A'}]},{shop_order:'SAME'})));
+ expect(host.textContent).not.toContain('OLD-A');expect(host.textContent).not.toContain('LATE-A');expect(queryB).toHaveBeenCalledTimes(1);
+ await act(async()=>root.unmount());
+});

@@ -49,3 +49,9 @@ export type MesObservation = {
         message: string;
     };
 };
+// A source order is meaningful only within the source and account that supplied it.
+export type MesOrderSelection = Readonly<{
+    accountId: string;
+    source: Readonly<MesSource>;
+    order: Readonly<MesOrder>;
+}>;
