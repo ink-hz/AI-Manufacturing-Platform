@@ -1,6 +1,29 @@
 import importlib.util
 from pathlib import Path
 import pytest
+
+def test_mes_entrypoint_runs_isolated_from_unrelated_directory(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    # Neither the working directory nor PYTHONPATH may supply the supervisor.
+    (tmp_path / 'sap_relay_supervisor.py').write_text(
+        "raise RuntimeError('untrusted supervisor imported')\n"
+    )
+    entrypoint = Path(__file__).resolve().parents[2] / 'scripts/mes_relay_supervisor.py'
+    result = subprocess.run(
+        [sys.executable, '-I', '-B', str(entrypoint), '--help'],
+        cwd=tmp_path,
+        env={**os.environ, 'PYTHONPATH': str(tmp_path)},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert '--settings' in result.stdout
+    assert result.stderr == ''
+
 spec=importlib.util.spec_from_file_location('mes_supervisor_test',Path(__file__).parents[2]/'scripts'/'sap_relay_supervisor.py')
 s=importlib.util.module_from_spec(spec);spec.loader.exec_module(s)
 def test_mes_profile_is_closed_and_sap_remains_default():
