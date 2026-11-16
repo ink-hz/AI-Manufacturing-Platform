@@ -28,7 +28,20 @@ SOCKET_PATTERN = r'r-[0-9a-f]{16}\.sock'
 PROBE_TIMEOUT = 5
 
 
-def load_settings(path):
+class _StaticProfile:
+    __slots__=('directory','validate_context','validate_response')
+    def __init__(self,directory,context,response):
+        self.directory,self.validate_context,self.validate_response=directory,context,response
+
+SAP_PROFILE=_StaticProfile(REMOTE_DIRECTORY,validate_context,validate_response)
+from manufacturing_platform.mes_access import relay_protocol as mes_protocol
+MES_PROFILE=_StaticProfile('/data/orbbec-agent-platform/manufacturing/data/mes-relay/bridge',mes_protocol.validate_context,mes_protocol.validate_response)
+def _profile(profile):
+    if profile is not SAP_PROFILE and profile is not MES_PROFILE:raise ValueError('invalid profile')
+    return profile
+
+def load_settings(path, *, profile=SAP_PROFILE):
+    profile=_profile(profile)
     value = read_private_json(path)
     if stat.S_IMODE(os.lstat(path).st_mode) != 0o600: raise ValueError("invalid private mode")
     keys = {'version','ssh_host','ssh_user','ssh_identity','ssh_known_hosts',
@@ -42,7 +55,7 @@ def load_settings(path):
         ipaddress.IPv4Address(host)
     elif any(not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?',label) for label in host.split('.')):
         raise ValueError('invalid host')
-    if value['ssh_user'] != 'root' or value['remote_directory'] != REMOTE_DIRECTORY:
+    if value['ssh_user'] != 'root' or value['remote_directory'] != profile.directory:
         raise ValueError('invalid target')
     _private_bytes(value['ssh_identity'], 65536)
     load_token(value['token_path'])
@@ -56,7 +69,7 @@ def load_settings(path):
         if not stat.S_ISREG(info.st_mode) or info.st_uid not in (0,os.getuid()) or info.st_mode & 0o022 or info.st_size>1048576:
             raise ValueError('invalid known hosts')
     finally: os.close(fd)
-    validate_context(value['expected_context'])
+    profile.validate_context(value['expected_context'])
     return value
 
 
@@ -74,7 +87,8 @@ def describe_request():
     return nonce,json.dumps(dict(version=1, request_id=nonce, operation='describe', actor_hash='0'*64, expected_fingerprint=None, scope={})).encode()
 
 
-def local_describe(settings, ready):
+def local_describe(settings, ready, *, profile=SAP_PROFILE):
+    profile=_profile(profile)
     nonce,body=describe_request()
     connection=http.client.HTTPConnection('127.0.0.1',ready['port'],timeout=PROBE_TIMEOUT)
     started=time.monotonic()
@@ -89,7 +103,7 @@ def local_describe(settings, ready):
         response=connection.getresponse()
         payload=response.read(MAX_RESPONSE_BYTES+1)
         if response.status!=200 or len(payload)>MAX_RESPONSE_BYTES: raise ValueError('probe failed')
-        result=validate_response(strict_json(payload),request_id=nonce,expected_context=settings['expected_context'])
+        result=profile.validate_response(strict_json(payload),request_id=nonce,expected_context=settings['expected_context'])
         if result['error'] is not None or result['result']!={}: raise ValueError('probe failed')
     except http.client.HTTPException:
         raise ValueError('probe failed') from None
@@ -105,9 +119,10 @@ def ssh_base_argv(settings):
             '-o','ServerAliveInterval=15','-o','ServerAliveCountMax=2']
 
 
-def tunnel_argv(settings, name, port):
+def tunnel_argv(settings, name, port, *, profile=SAP_PROFILE):
+    profile=_profile(profile)
     if not re.fullmatch(SOCKET_PATTERN,name) or type(port) is not int or not 1<=port<=65535: raise ValueError('invalid tunnel')
-    return ssh_base_argv(settings)+['-N','-o','ExitOnForwardFailure=yes','-R',REMOTE_DIRECTORY+'/'+name+':127.0.0.1:'+str(port),'root@'+settings['ssh_host']]
+    return ssh_base_argv(settings)+['-N','-o','ExitOnForwardFailure=yes','-R',profile.directory+'/'+name+':127.0.0.1:'+str(port),'root@'+settings['ssh_host']]
 
 
 # This is the entire permitted remote program. No caller-provided code or paths.
@@ -194,10 +209,12 @@ except Exception:
 '''
 
 
-def remote_action(settings, action, name, runner=subprocess.run):
+def remote_action(settings, action, name, runner=subprocess.run, *, profile=SAP_PROFILE):
+    profile=_profile(profile)
+    profile.validate_context(settings['expected_context'])
     if action not in ('activate','cleanup') or type(name) is not str or not re.fullmatch(SOCKET_PATTERN,name): raise ValueError('invalid action')
     payload=dict(action=action,nonce=str(uuid4()),socketname=name,expected_context=settings['expected_context'])
-    argv=ssh_base_argv(settings)+['root@'+settings['ssh_host'],'python3 -c '+shlex.quote(REMOTE_CODE)]
+    argv=ssh_base_argv(settings)+['root@'+settings['ssh_host'],'python3 -c '+shlex.quote(REMOTE_CODE.replace("D='"+REMOTE_DIRECTORY+"'","D='"+profile.directory+"'"))]
     result=runner(argv,input=json.dumps(payload).encode(),stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=20,check=False)
     if result.returncode or len(result.stdout)>4096: raise ValueError('remote unavailable')
     value=strict_json(result.stdout)
@@ -205,22 +222,23 @@ def remote_action(settings, action, name, runner=subprocess.run):
 
 
 class Supervisor:
-    def __init__(self,settings,*,ready_reader=read_ready,describe=local_describe,popen=subprocess.Popen,remote=remote_action,wait=None,status=None):
+    def __init__(self,settings,*,ready_reader=read_ready,describe=local_describe,popen=subprocess.Popen,remote=remote_action,wait=None,status=None,profile=SAP_PROFILE):
+        self.profile=_profile(profile)
         self.settings=settings;self.ready_reader=ready_reader;self.describe=describe;self.popen=popen;self.remote=remote
         self.stopped=threading.Event();self.wait=wait or self.stopped.wait;self.status=status or (lambda phase: print(phase,flush=True))
         self.process=None;self.ready=None;self.name=None
 
     def start(self):
         ready=self.ready_reader(self.settings)
-        self.describe(self.settings,ready)
+        self.describe(self.settings,ready,**({} if self.profile is SAP_PROFILE else {'profile':self.profile}))
         self.ready=ready;self.name='r-'+uuid4().hex[:16]+'.sock'
-        self.process=self.popen(tunnel_argv(self.settings,self.name,ready['port']),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        self.process=self.popen(tunnel_argv(self.settings,self.name,ready['port'],profile=self.profile),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         try:
             # Forward creation is asynchronous; retry only fixed describe activation.
             for attempt in range(5):
                 if self.process.poll() is not None or self.stopped.is_set(): raise ValueError('tunnel unavailable')
                 try:
-                    self.remote(self.settings,'activate',self.name)
+                    self.remote(self.settings,'activate',self.name,**({} if self.profile is SAP_PROFILE else {'profile':self.profile}))
                     if self.ready_reader(self.settings)!=ready: raise ValueError('gateway changed')
                     self.status('relay ready');return
                 except Exception:
@@ -240,7 +258,7 @@ class Supervisor:
             except (OSError,subprocess.TimeoutExpired): pass
         name,self.name=self.name,None
         if name:
-            try: self.remote(self.settings,'cleanup',name)
+            try: self.remote(self.settings,'cleanup',name,**({} if self.profile is SAP_PROFILE else {'profile':self.profile}))
             except Exception: self.status('relay cleanup pending')
         self.ready=None
 
@@ -259,11 +277,12 @@ class Supervisor:
         finally: self.disconnect()
 
 
-def main():
+def main(argv=None, *, profile=SAP_PROFILE):
+    profile=_profile(profile)
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--settings',required=True)
-    args=parser.parse_args()
+    args=parser.parse_args(argv)
     try:
-        settings=load_settings(args.settings);supervisor=Supervisor(settings)
+        settings=load_settings(args.settings,profile=profile);supervisor=Supervisor(settings,profile=profile)
         for sig in (signal.SIGTERM,signal.SIGINT): signal.signal(sig,lambda *_:supervisor.stop())
         supervisor.run()
         return 0
