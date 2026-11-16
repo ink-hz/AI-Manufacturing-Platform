@@ -56,7 +56,7 @@ def validate_result(result,operation,scope,context):
         if operation=='order_materials':
             _keys(result,('namespace','fingerprint','environment','site_code','request_ids','total','components'))
             if any(result[k]!=source[k] for k in ('namespace','environment','site_code')) or result['fingerprint']!=context['fingerprint']:raise ValueError()
-            if type(result['request_ids']) is not list or not 1<=len(result['request_ids'])<=20 or any(not _uuid(v) for v in result['request_ids']):raise ValueError()
+            if type(result['request_ids']) is not list or not 1<=len(result['request_ids'])<=20 or any(not _uuid(v) for v in result['request_ids']) or len(set(result['request_ids']))!=len(result['request_ids']):raise ValueError()
             rows=result['components']
             if type(rows) is not list or not 1<=len(rows)<=100 or type(result['total']) is not int or result['total']!=len(rows):raise ValueError()
             from .order_materials import _text,_amount
@@ -145,7 +145,7 @@ class RelayMesAccessService:
             if not self.configuration_matches(binding):raise MesAccessError('MES_CONFIGURATION_CHANGED',409)
         except MesAccessError as exc:
             store.record({**event,'status':'failed','error_code':exc.code});raise
-        store.record({**event,'status':'success','response_bytes':size})
+        store.record({**event,'status':'success','response_bytes':size,'source_request_ids':result['request_ids'] if operation=='order_materials' else [result['request_id']]})
         if operation in ('order_materials','source_orders'):return {**result,'fingerprint':binding}
         return result
     def source_orders(self,prefix='',after='',actor_id=None,*,expected_fingerprint=None):
@@ -167,5 +167,5 @@ class RelayMesAccessService:
     def interfaces(self):
         self._context()
         from .registry import INTERFACES
-        return {'source':'native_mes','business_data_verified':False,'interfaces':[{'interface':n,'label':INTERFACES[n].label,'filters':list(INTERFACES[n].filters),'max_page_size':5} for n in ('order_materials','material_priority','iqc_inspections')]}
+        return {'source':'native_mes','business_data_verified':False,'interfaces':[{'interface':n,'label':INTERFACES[n].label,'filters':list(('shopOrder','itemNo') if n=='material_priority' else ('item_no',)),'max_page_size':5,'required_filters':list(('shopOrder','itemNo') if n=='material_priority' else ('item_no',))} for n in ('material_priority','iqc_inspections')]}
     def diagnose(self,actor_id):raise MesAccessError('MES_INTERFACE_DENIED',403)

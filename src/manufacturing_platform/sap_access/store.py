@@ -15,6 +15,7 @@ EVENT_FIELDS = {'request_id', 'operation', 'function', 'timestamp', 'elapsed_ms'
 
 
 class SapAuditStore:
+    event_fields = EVENT_FIELDS
     def __init__(self, path):
         self.path = path
 
@@ -72,7 +73,7 @@ class SapAuditStore:
             return self._read()
 
     def record(self, event, *, contract=None):
-        if set(event) - EVENT_FIELDS:
+        if set(event) - self.event_fields:
             raise SapAccessError('SAP_AUDIT_UNAVAILABLE')
         with self._lock():
             data = self._read()

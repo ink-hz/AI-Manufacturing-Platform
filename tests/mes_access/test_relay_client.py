@@ -53,3 +53,53 @@ def test_relay_validates_underscore_source_cursor():
 def test_full_identity_page_requires_roundtrippable_cursor():
     result=dict(source=CONTEXT['source'],fingerprint=CONTEXT['fingerprint'],items=[{'shop_order':f'WO_{i}','description':None} for i in range(1,6)],next_cursor=None,total=None,page_size=5,request_id=str(uuid4()))
     with pytest.raises(MesAccessError):validate_result(result,'source_orders',{'prefix':'WO','after':''},CONTEXT)
+
+def test_interfaces_advertise_only_exact_generic_queries(tmp_path):
+    entries=configured(tmp_path).interfaces()['interfaces']
+    assert {e['interface'] for e in entries}=={'material_priority','iqc_inspections'}
+    assert {e['interface']:e['required_filters'] for e in entries}=={'material_priority':['shopOrder','itemNo'],'iqc_inspections':['item_no']}
+
+def test_cloud_audit_retains_validated_upstream_uuid(tmp_path,monkeypatch):
+    from manufacturing_platform.mes_access import relay_client as c
+    from manufacturing_platform.mes_access.store import MesAuditStore
+    service=configured(tmp_path);upstream=str(uuid4())
+    def exchange(sock,token,command,timeout,max_bytes):
+        result=dict(rows=[],total_items=0,page=1,page_size=5,interface='iqc_inspections',source='native_mes',authentication_verified=True,business_query_succeeded=True,business_data_verified=False,business_reconciled=False,request_id=upstream)
+        return dict(version=1,request_id=command['request_id'],context=CONTEXT,result=result,error=None),100
+    monkeypatch.setattr(c,'_exchange_result',exchange)
+    service.query('iqc_inspections',{'item_no':'123'},1,5,'operator')
+    event=MesAuditStore(service.audit_path).read()['events'][-1]
+    assert event['source_request_ids']==[upstream]
+    assert event['request_id']!=upstream
+
+def test_collection_audit_retains_only_upstream_uuids(tmp_path,monkeypatch):
+    from manufacturing_platform.mes_access import relay_client as c
+    from manufacturing_platform.mes_access.store import MesAuditStore
+    service=configured(tmp_path);upstream=[str(uuid4()),str(uuid4())]
+    def exchange(sock,token,command,timeout,max_bytes):
+        result=dict(namespace=CONTEXT['source']['namespace'],fingerprint=CONTEXT['fingerprint'],environment='production',site_code='1000',request_ids=upstream,total=1,components=[dict(component_key='1:1',material_id='123',required_quantity='2',withdrawn_quantity=None,unit='EA',storage_location=None)])
+        return dict(version=1,request_id=command['request_id'],context=CONTEXT,result=result,error=None),100
+    monkeypatch.setattr(c,'_exchange_result',exchange)
+    service.collect_order_materials('M1','operator')
+    event=MesAuditStore(service.audit_path).read()['events'][-1]
+    assert event['source_request_ids']==upstream
+    assert 'components' not in event and 'shop_order' not in event
+
+@pytest.mark.parametrize('ids',[[],[str(uuid4())]*2,['bad'],[str(uuid4()).upper()],[str(uuid4()) for _ in range(21)]])
+def test_audit_rejects_invalid_upstream_uuid_lists(tmp_path,ids):
+    from datetime import datetime,timezone
+    from manufacturing_platform.mes_access.store import MesAuditStore
+    event=dict(request_id=str(uuid4()),operation='query',function='material_priority',timestamp=datetime.now(timezone.utc).isoformat(),status='success',actor_hash='a'*64,binding='b'*64,source_request_ids=ids)
+    with pytest.raises(MesAccessError):MesAuditStore(str(tmp_path/'audit')).record(event)
+
+def test_sap_audit_keeps_closed_default_fields(tmp_path):
+    from manufacturing_platform.sap_access.store import SapAuditStore
+    from manufacturing_platform.sap_access.errors import SapAccessError
+    with pytest.raises(SapAccessError):SapAuditStore(str(tmp_path/'sap')).record({'source_request_ids':[str(uuid4())]})
+
+@pytest.mark.parametrize('operation,status,function',[('query','started','material_priority'),('query','failed','iqc_inspections'),('diagnose','success',None)])
+def test_audit_upstream_uuids_only_on_successful_queries(tmp_path,operation,status,function):
+    from datetime import datetime,timezone
+    from manufacturing_platform.mes_access.store import MesAuditStore
+    event=dict(request_id=str(uuid4()),operation=operation,function=function,timestamp=datetime.now(timezone.utc).isoformat(),status=status,actor_hash='a'*64,binding='b'*64,source_request_ids=[str(uuid4())])
+    with pytest.raises(MesAccessError):MesAuditStore(str(tmp_path/'audit')).record(event)

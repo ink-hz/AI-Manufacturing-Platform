@@ -8,7 +8,7 @@ from .errors import MesAccessError
 from .registry import INTERFACES
 
 BASE_FIELDS = {'request_id', 'operation', 'function', 'timestamp', 'status', 'actor_hash', 'binding'}
-EXTRA_FIELDS = {'elapsed_ms', 'error_code', 'response_bytes', 'row_count'}
+EXTRA_FIELDS = {'elapsed_ms', 'error_code', 'response_bytes', 'row_count', 'source_request_ids'}
 
 
 def _validate_event(event):
@@ -32,11 +32,20 @@ def _validate_event(event):
     if 'row_count' in event and (event['operation'] != 'query' or event['status'] != 'success'
             or type(event['row_count']) is not int or not 0 <= event['row_count'] <= 5):
         raise ValueError()
+    if 'source_request_ids' in event:
+        from uuid import UUID
+        values=event['source_request_ids']
+        if (event['operation']!='query' or event['status']!='success' or type(values) is not list
+                or not 1<=len(values)<=20 or any(type(value) is not str for value in values)
+                or len(set(values))!=len(values)):
+            raise ValueError()
+        if any(str(UUID(value))!=value for value in values):raise ValueError()
     if 'error_code' in event and (type(event['error_code']) is not str or not re.fullmatch('MES_[A-Z0-9_]{1,56}', event['error_code'])):
         raise ValueError()
 
 
 class _MetadataStore(SapAuditStore):
+    event_fields = BASE_FIELDS | EXTRA_FIELDS
     def _read(self):
         data = super()._read()
         # MES never caches contracts or business records. Validate existing

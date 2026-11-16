@@ -17,7 +17,40 @@ from .service import MesAccessService
 from .relay_protocol import (MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, SAFE_CODES, RelayProtocolError,
                              load_token, parse_request, validate_context, read_private_json)
 
+import subprocess
+
+class NativeChildren:
+    """Serialize creation against shutdown and retain ownership until reaped."""
+    def __init__(self):
+        self.lock=threading.Lock();self.children=set();self.closed=False
+    def start(self,argv):
+        with self.lock:
+            if self.closed:raise MesAccessError('MES_RELAY_UNAVAILABLE')
+            child=subprocess.Popen(argv,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+            self.children.add(child)
+            return child
+    def release(self,child):
+        with self.lock:self.children.discard(child)
+    @staticmethod
+    def reap(child):
+        try:
+            if child.poll() is None:child.terminate()
+            try:child.wait(timeout=2)
+            except subprocess.TimeoutExpired:child.kill();child.wait(timeout=2)
+        except (OSError,subprocess.TimeoutExpired):pass
+    def close(self):
+        with self.lock:
+            self.closed=True;children=tuple(self.children)
+        for child in children:self.reap(child)
+        with self.lock:self.children.difference_update(children)
+
 class Gateway(ThreadingHTTPServer):
+    def shutdown(self):
+        self.native_children.close()
+        super().shutdown()
+    def server_close(self):
+        self.native_children.close()
+        super().server_close()
     daemon_threads=True
     request_queue_size=16
     def process_request(self, request, client_address):
@@ -71,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.server.source_slots.acquire(blocking=False):return self.reply(503,request_id,error='MES_RELAY_BUSY')
         try:
             if self.server.service is None:
-                reply=isolated_dispatch(self.server.config_path,self.server.audit_path,command)
+                reply=isolated_dispatch(self.server.config_path,self.server.audit_path,command,children=self.server.native_children)
             else:
                 reply=dispatch(self.server.service,command)
             self.reply(200,request_id,context=reply['context'],result=reply['result'])
@@ -97,14 +130,17 @@ def dispatch(service,command):
         if validate_context(service.read_context())!=context:raise MesAccessError('MES_RELAY_CONTEXT_MISMATCH',409)
     return {'context':context,'result':result}
 
-def isolated_dispatch(config,audit,command):
+def isolated_dispatch(config,audit,command,*,children=None):
     import subprocess,sys
     from pathlib import Path
+    pool=children if children is not None else NativeChildren()
+    child=None
     try:
-        completed=subprocess.run([sys.executable,'-I',str(Path(__file__).with_name('relay_native_worker.py'))],input=json.dumps({'config':config,'audit':audit,'command':command}).encode(),stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=65,check=False)
-        if completed.returncode or len(completed.stdout)>MAX_RESPONSE_BYTES:raise ValueError()
+        child=pool.start([sys.executable,'-I',str(Path(__file__).with_name('relay_native_worker.py')),str(os.getpid())])
+        output,_=child.communicate(json.dumps({'config':config,'audit':audit,'command':command}).encode(),timeout=65)
+        if child.returncode or len(output)>MAX_RESPONSE_BYTES:raise ValueError()
         from .relay_protocol import strict_json
-        reply=strict_json(completed.stdout)
+        reply=strict_json(output)
         if type(reply) is dict and set(reply)=={'error'}:
             code=reply['error']
             raise MesAccessError(code if type(code) is str and code in SAFE_CODES else 'MES_RELAY_UNAVAILABLE')
@@ -115,11 +151,15 @@ def isolated_dispatch(config,audit,command):
     except subprocess.TimeoutExpired:raise MesAccessError('MES_TIMEOUT') from None
     except MesAccessError:raise
     except Exception:raise MesAccessError('MES_RELAY_UNAVAILABLE') from None
+    finally:
+        if child is not None:
+            pool.reap(child);pool.release(child)
 
 def build_gateway(config_path,audit_path,token_path,*,port=0,service=None):
     token=load_token(token_path)
     if type(port) is not int or not 0<=port<=65535:raise ValueError('invalid port')
     server=Gateway(('127.0.0.1',port),Handler)
+    server.native_children=NativeChildren()
     server.token=token;server.service=service;server.config_path=config_path;server.audit_path=audit_path
     server.source_slots=threading.BoundedSemaphore(4)
     server.handler_slots=threading.BoundedSemaphore(16)
