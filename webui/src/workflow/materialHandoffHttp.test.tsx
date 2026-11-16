@@ -190,7 +190,7 @@ it.each(['disputed', 'all'] as const)('retains the project %s filter across retu
   const access=await owner.api.bootstrap();
   await act(async()=>root.render(<App key={'filter-'+filter} options={{...owner.options,bootstrap:access}}/>));
   await settled(()=>!![...host.querySelectorAll('button')].find(b=>b.textContent==='计划与物料'));
-  await button('计划与物料');await button('物料交接');
+  await button('计划与物料');await button('平台正式台账');await button('物料交接');
   await settled(()=>!!host.querySelector('[aria-label="本页交接状态筛选"]'));
   await button('待接收');
   await settled(()=>!!host.querySelector(`[aria-label="所属项目筛选"] option[value="${p.id}"]`));
