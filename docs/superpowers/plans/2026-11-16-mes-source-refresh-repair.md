@@ -27,12 +27,14 @@ if (value.refresh_error?.code === 'MES_REFRESH_SUPERSEDED') {
 }
 ```
 
-- [ ] TDD复现带有效snapshot的superseded响应错误显示；POST后只多一次GET，显示其更新结果或真实错误；缓存仍空时提示更新中。验证源POST不重试及账号/来源切换、卸载和失败缓存保留。
-- [ ] TDD验证真实源入口不显示demo总标签，进入正式台账仍显示原dataset身份；零项目路径保持可用。
-- [ ] 最小实现，运行`npm test -- src/workflow/mesSource`及相关工作台测试，`npm run build`；独立评审后精确提交。
+- [x] TDD复现带有效snapshot的superseded响应错误显示；POST后只多一次GET，显示其更新结果或真实错误；缓存仍空时提示更新中。验证源POST不重试及账号/来源切换、卸载和失败缓存保留。
+- [x] TDD验证真实源入口不显示demo总标签，进入正式台账仍显示原dataset身份；零项目路径保持可用。
+- [x] 最小实现，运行`npm test -- src/workflow/mesSource`及相关工作台测试，`npm run build`；独立评审后精确提交。
 
 ### Task 2: 真实缓存前端接纳与受控发布
 
-- [ ] 父代理私有保存实际线上缓存和范围状态，用实际React/API消费验证；后端并发用例复核，保留原失败。
-- [ ] 分支评审、归并推送；从精确主线构建API-only候选，保全SAP/MES/产测配置及既存Compose/静态/SDK/其他容器/Nginx。
-- [ ] 固定37项与OEM候选验收；已有schema30副本初始化保全，零业务行改写；受控切换并核对实际静态字节、服务健康及只读入口，记录员工浏览器未验。
+- [x] 父代理私有保存实际线上缓存和范围状态，用实际React/API消费验证；后端并发用例复核，保留原失败。
+- [x] 分支评审、归并推送；从精确主线构建API-only候选，保全SAP/MES/产测配置及既存Compose/静态/SDK/其他容器/Nginx。
+- [x] 固定37项与OEM候选验收；已有schema30副本初始化保全，零业务行改写；受控切换并核对实际静态字节、服务健康及只读入口，记录员工浏览器未验。
+
+实际部署与验证边界见[修复记录](../../reviews/2026-11-16-mes-source-read-failure-repair.md)。员工浏览器验收仍由用户完成。
