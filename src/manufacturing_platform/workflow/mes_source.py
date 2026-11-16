@@ -9,7 +9,7 @@ from .clock import checked_time
 
 PREFIX = '/material-control/mes-source'
 MESSAGES = {
-    'MES_ORDER_EMPTY': 'MES工单没有组件，保留上次成功读取结果。',
+    'MES_ORDER_EMPTY': '本次MES查询未返回该工单组件，保留上次成功读取结果。',
     'MES_COLLECTION_LIMIT': 'MES组件超过完整读取上限。',
     'MES_COLLECTION_INCOMPLETE': 'MES组件读取不完整，未接纳本次结果。',
     'MES_UNAVAILABLE': 'MES只读源暂不可用，保留上次成功读取结果。',
