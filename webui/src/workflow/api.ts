@@ -1,3 +1,4 @@
+import {mesSourceApi} from './mesSource/api';
 import {sapApi} from './materialControl/sapApi';
 import {materialControlApi} from './materialControl/api';
 import {productionApi} from './productionTools/productionApi';
@@ -145,6 +146,7 @@ export function createWorkflowApi(
   return {
     ...materialControlApi(request),
     ...sapApi(request),
+    ...mesSourceApi(request),
     ...productionApi(request, productionPath, productionQuery),
     productionProjects: (filters: {before_id?: string} = {}, signal?: AbortSignal) =>
       request<SourceProjectPage>("/production-tools/projects" + (filters.before_id === undefined ? "" : "?" + productionQuery(filters)), "GET", undefined, signal),

@@ -1,3 +1,5 @@
+import {MesSourceWorkbench} from './mesSource/MesSourceWorkbench';
+import type {MesOrder} from './mesSource/types';
 import {SapMaterialBrowser} from './materialControl/SapMaterialBrowser';
 import {initialMaterialViewContext, type MaterialViewContext} from './materialControl/types';
 import {MaterialTaskPanel} from './materialControl/MaterialTaskPanel';
@@ -45,6 +47,8 @@ export function WorkflowApp({
   options: MountOptions;
 }) {
   const b = options.bootstrap!;
+  const [mesSelection,setMesSelection] = useState<{accountId:string;order:MesOrder|null}|null>(null);
+  const [formalLedger,setFormalLedger] = useState(false);
   const productionHandoff = b.configuration_admin ? validProductionHandoff(new URLSearchParams(window.location.search).get("production_handoff")) : undefined;
   const handoffReturn = useRef<{projectId: string; projectWorkspace: boolean} | null>(null);
   const [materialContexts, setMaterialContexts] = useState<Record<string,MaterialViewContext>>({});
@@ -470,13 +474,15 @@ export function WorkflowApp({
         {opening && (opening.error ? <p role="alert">{opening.error}<button onClick={() => open(opening.target)}>重试打开记录</button></p> : <p role="status">正在读取记录所属项目…</p>)}
         <div hidden={view === "handbook"} key={epoch}>
           {activeView === "production_tools" && b.configuration_admin && <ProductionToolsWorkspace api={api} userId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} handoffId={productionHandoff} onDirty={productionDirty} />}
-          {activeView === "home" && !project && (
+          {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <MesSourceWorkbench key={String(b.user.id)} api={api} accountId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} selectedOrder={mesSelection?.accountId===String(b.user.id)?mesSelection.order:null} onSelectOrder={order=>{setMesSelection({accountId:String(b.user.id),order});if(order && activeView!=="supply")navigate("supply");}}/>}
+          {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <button onClick={()=>setFormalLedger(x=>!x)}>{formalLedger?"收起平台正式台账":"平台正式台账"}</button>}
+          {activeView === "home" && !project && (!b.configuration_admin || formalLedger) && (
             <WorkflowHome readOnly={readOnly} onDirty={onDirty} requestLeave={requestLeave} data={dashboard} projects={projects} projectsReady={projectsReady} dashboardError={dashboardError} projectsError={projectsError} api={api} refresh={refresh} active={view === "home"} onRefresh={() => setRefresh(r => r + 1)} onOpen={open}
               onNavigate={(module, kind, projectId) => navigate(module, {kind, projectId})} onMaterialProject={id=>requestLeave(()=>{const p=projects.find(x=>x.id===id);if(p){setProject(p);setWorkspace("supply");setSupplyMode({projectId:id,mode:"material"});setTarget(null);}})} />
           )}{" "}
           {activeView === "tasks" && !project && <GlobalTasks api={api} context={taskContext} onContext={context=>{cancelOpening();setTaskContext(context);}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open}/> }
           {activeView === "supply" && !project && b.configuration_admin && <SapMaterialBrowser api={api} readOnly={options.readOnly || !b.can_edit}/> }
-          {isBusinessModule(activeView) && !project && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>{cancelOpening();setLedgers(old=>({...old,[activeView]:context}));}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");if(activeView === "supply" && ledgers.supply.kind === "material_handoff")setSupplyMode({projectId:p.id,mode:"handoff"});})}/>}
+          {isBusinessModule(activeView) && !project && (!b.configuration_admin || !["execution","supply"].includes(activeView) || formalLedger) && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>{cancelOpening();setLedgers(old=>({...old,[activeView]:context}));}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");if(activeView === "supply" && ledgers.supply.kind === "material_handoff")setSupplyMode({projectId:p.id,mode:"handoff"});})}/>}
           {(activeView === "projects" || project) &&
             (creating ? (
               <ProjectForm
