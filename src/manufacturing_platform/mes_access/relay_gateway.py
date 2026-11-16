@@ -122,8 +122,12 @@ def dispatch(service,command):
             raise MesAccessError('MES_RELAY_CONTEXT_MISMATCH',409)
         pin={'expected_fingerprint':context['fingerprint']}
         actor=command['actor_hash']
-        if op=='source_orders':result=service.source_orders(scope['prefix'],scope['after'],actor,**pin)
-        elif op=='order_materials':result=service.collect_order_materials(scope['shop_order'],actor,**pin)
+        if op=='source_orders':
+            method=service.source_orders_recent if scope.get('directory_mode')=='recent' else service.source_orders
+            result=method(scope['prefix'],scope['after'],actor,**pin)
+        elif op=='order_materials':
+            method=service.collect_order_materials_by_owner if scope.get('component_mode')=='owner' else service.collect_order_materials
+            result=method(scope['shop_order'],actor,**pin)
         elif op=='material_priority':result=service.query(op,{'shopOrder':scope['shop_order'],'itemNo':scope['material']},scope['page'],scope['page_size'],actor,**pin)
         elif op=='iqc_inspections':result=service.query(op,{'item_no':scope['material']},scope['page'],scope['page_size'],actor,**pin)
         else:raise RelayProtocolError()

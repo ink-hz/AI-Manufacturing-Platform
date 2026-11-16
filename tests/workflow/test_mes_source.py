@@ -181,3 +181,38 @@ def test_exact_order_cursor_scope_accepts_underscore(mes_h, route, params):
 def test_prefix_underscore_and_overlong_order_denied(mes_h, route, params):
     h, mes = mes_h
     assert h.client().get(URL+'/'+route, params=params).status_code == 422
+
+@pytest.mark.parametrize('kind,scope,route',[
+    ('orders',{'prefix':'','after':''},'/orders?prefix=&after='),
+    ('order-materials',{'shop_order':'ORDER1'},'/order-materials?shop_order=ORDER1'),
+    ('priority',{'shop_order':'ORDER1','material':'MAT1','page':1},'/priority?shop_order=ORDER1&material=MAT1&page=1'),
+    ('iqc',{'material':'MAT1','page':1},'/iqc?material=MAT1&page=1'),
+])
+def test_v2_projection_isolates_and_retains_legacy_cache(mes_h,kind,scope,route):
+    import hashlib,json
+    h,mes=mes_h
+    h.client().get(URL+route)  # Initialize the isolated workflow schema.
+    scope_json=json.dumps(scope,sort_keys=True,separators=(',',':'))
+    old_snapshot={'id':'legacy','kind':kind,'scope':scope,'source':SOURCE,'data':{'legacy':True}}
+    with sqlite3.connect(h.paths.domain) as db:
+        db.execute('INSERT INTO mes_source_observations(fingerprint,kind,scope_json,snapshot_json,refresh_error_json,refresh_seq) VALUES(?,?,?,?,?,?)',(mes.binding,kind,scope_json,json.dumps(old_snapshot),json.dumps({'code':'MES_ORDER_EMPTY'}),1))
+    assert h.client().get(URL+route).json()==dict(snapshot=None,refresh_error=None)
+    assert not mes.calls
+    refreshed=h.client().post(URL+route).json()
+    assert refreshed['refresh_error'] is None
+    assert refreshed['snapshot']['source']==SOURCE
+    assert refreshed['snapshot']['scope']==scope
+    expected=hashlib.sha256(json.dumps([mes.binding,'mes-owned-components-v2'],separators=(',',':')).encode()).hexdigest()
+    with sqlite3.connect(h.paths.domain) as db:
+        assert json.loads(db.execute('SELECT snapshot_json FROM mes_source_observations WHERE fingerprint=?',(mes.binding,)).fetchone()[0])==old_snapshot
+        assert db.execute('SELECT count(*) FROM mes_source_observations WHERE fingerprint=?',(expected,)).fetchone()[0]==1
+    if mes.calls:assert mes.calls[-1][-1]==mes.binding
+
+
+def test_empty_owner_is_successful_observation(mes_h):
+    h,mes=mes_h
+    mes.collect_order_materials=lambda *a,**kw:dict(components=[],total=0,request_ids=['offline-evidence'])
+    result=h.client().post(URL+'/order-materials?shop_order=ORDER1').json()
+    assert result['refresh_error'] is None
+    assert result['snapshot']['data']['components']==[]
+    assert result['snapshot']['data']['total']==0

@@ -1,4 +1,5 @@
 """Administrator-scoped MES source observations with isolated local snapshots."""
+import hashlib
 import json
 from uuid import uuid4
 from fastapi import HTTPException, Request
@@ -62,7 +63,9 @@ def observe(service, actor, kind, scope, refresh=False):
     ctx, unavailable = context(service)
     if ctx is None:
         return dict(snapshot=None, refresh_error=unavailable)
-    key = (ctx['fingerprint'], kind, json.dumps(scope, sort_keys=True, separators=(',', ':')))
+    # Version the local projection only; source pins and public scope stay native.
+    projection = hashlib.sha256(json.dumps([ctx['fingerprint'], 'mes-owned-components-v2'], separators=(',', ':')).encode()).hexdigest()
+    key = (projection, kind, json.dumps(scope, sort_keys=True, separators=(',', ':')))
     if not refresh:
         with service.store.transaction() as tx:
             result = read_row(tx, key)

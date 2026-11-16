@@ -44,10 +44,13 @@ def parse_request(payload):
     else:
         if not _hex(v['expected_fingerprint']):_reject()
         if op=='source_orders':
-            _keys(s,('prefix','after'))
+            _keys(s,('prefix','after','directory_mode') if type(s) is dict and 'directory_mode' in s else ('prefix','after'))
+            if 'directory_mode' in s and s['directory_mode']!='recent':_reject()
             text_scope(s['prefix'],empty=True,limit=64);order_scope(s['after'],empty=True)
         elif op=='order_materials':
-            _keys(s,('shop_order',));order_scope(s['shop_order'])
+            _keys(s,('shop_order','component_mode') if type(s) is dict and 'component_mode' in s else ('shop_order',))
+            if 'component_mode' in s and s['component_mode']!='owner':_reject()
+            order_scope(s['shop_order'])
         elif op in ('material_priority','iqc_inspections'):
             _keys(s,('shop_order','material','page','page_size') if op=='material_priority' else ('material','page','page_size'))
             text_scope(s['material'])

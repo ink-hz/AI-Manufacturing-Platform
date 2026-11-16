@@ -18,11 +18,11 @@ class MesAccessSelector:
         try: return self._service().configuration_matches(fingerprint)
         except MesAccessError: return False
     def source_orders(self,prefix='',after='',actor_id=None,*,expected_fingerprint=None):
-        return self._service().source_orders(prefix,after,actor_id,expected_fingerprint=expected_fingerprint)
+        return self._service().source_orders_recent(prefix,after,actor_id,expected_fingerprint=expected_fingerprint)
     def query(self,interface,filters=None,page=1,page_size=1,actor_id=None,*,expected_fingerprint=None):
         return self._service().query(interface,filters,page,page_size,actor_id,expected_fingerprint=expected_fingerprint)
     def collect_order_materials(self,shop_order,actor_id,*,expected_fingerprint=None):
-        return self._service().collect_order_materials(shop_order,actor_id,expected_fingerprint=expected_fingerprint)
+        return self._service().collect_order_materials_by_owner(shop_order,actor_id,expected_fingerprint=expected_fingerprint)
     def order_materials_configuration(self):return self._service().order_materials_configuration()
     def status(self):return self._service().status()
     def interfaces(self):return self._service().interfaces()

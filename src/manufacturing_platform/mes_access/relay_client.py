@@ -58,7 +58,7 @@ def validate_result(result,operation,scope,context):
             if any(result[k]!=source[k] for k in ('namespace','environment','site_code')) or result['fingerprint']!=context['fingerprint']:raise ValueError()
             if type(result['request_ids']) is not list or not 1<=len(result['request_ids'])<=20 or any(not _uuid(v) for v in result['request_ids']) or len(set(result['request_ids']))!=len(result['request_ids']):raise ValueError()
             rows=result['components']
-            if type(rows) is not list or not 1<=len(rows)<=100 or type(result['total']) is not int or result['total']!=len(rows):raise ValueError()
+            if type(rows) is not list or not (0 if scope.get('component_mode')=='owner' else 1)<=len(rows)<=100 or type(result['total']) is not int or result['total']!=len(rows):raise ValueError()
             from .order_materials import _text,_amount
             seen=set()
             for row in rows:
@@ -72,11 +72,26 @@ def validate_result(result,operation,scope,context):
             if result['source']!=source or result['fingerprint']!=context['fingerprint'] or result['total'] is not None or type(result['page_size']) is not int or result['page_size']!=5 or not _uuid(result['request_id']):raise ValueError()
             rows=result['items']
             if type(rows) is not list or len(rows)>5:raise ValueError()
-            last=scope['after']
+            recent=scope.get('directory_mode')=='recent'
+            last=scope['after'];previous=None;seen=set()
             for row in rows:
-                _keys(row,('shop_order','description'));order_scope(row['shop_order'])
-                if row['shop_order']<=last or not row['shop_order'].startswith(scope['prefix']) or row['description'] is not None and (type(row['description']) is not str or len(row['description'])>4096):raise ValueError()
-                last=row['shop_order']
+                _keys(row,('shop_order','description','created_at','has_components') if recent else ('shop_order','description'))
+                order_scope(row['shop_order'])
+                identity=row['shop_order']
+                if identity in seen or identity==scope['after'] or not identity.startswith(scope['prefix']) or row['description'] is not None and (type(row['description']) is not str or len(row['description'])>4096):raise ValueError()
+                seen.add(identity)
+                if recent:
+                    created=row['created_at']
+                    if type(row['has_components']) is not bool:raise ValueError()
+                    if created is not None:
+                        if type(created) is not str or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{9}Z',created):raise ValueError()
+                        # Validate the calendar without losing nanosecond ordering.
+                        datetime.strptime(created[:19],'%Y-%m-%dT%H:%M:%S')
+                    order=(created is not None,created or '',identity)
+                    if previous is not None and order>=previous:raise ValueError()
+                    previous=order
+                elif identity<=last:raise ValueError()
+                last=identity
             if result['next_cursor'] != (last if len(rows)==5 else None):raise ValueError()
         else:
             _keys(result,('rows','total_items','page','page_size','interface','source','authentication_verified','business_query_succeeded','business_data_verified','business_reconciled','request_id'))
@@ -148,6 +163,10 @@ class RelayMesAccessService:
         store.record({**event,'status':'success','response_bytes':size,'source_request_ids':result['request_ids'] if operation=='order_materials' else [result['request_id']]})
         if operation in ('order_materials','source_orders'):return {**result,'fingerprint':binding}
         return result
+    def source_orders_recent(self,prefix='',after='',actor_id=None,*,expected_fingerprint=None):
+        return self._query('source_orders',{'prefix':prefix,'after':after,'directory_mode':'recent'},actor_id,expected_fingerprint)
+    def collect_order_materials_by_owner(self,shop_order,actor_id,*,expected_fingerprint=None):
+        return self._query('order_materials',{'shop_order':shop_order,'component_mode':'owner'},actor_id,expected_fingerprint)
     def source_orders(self,prefix='',after='',actor_id=None,*,expected_fingerprint=None):
         return self._query('source_orders',{'prefix':prefix,'after':after},actor_id,expected_fingerprint)
     def collect_order_materials(self,shop_order,actor_id,*,expected_fingerprint=None):
