@@ -44,10 +44,7 @@ SOURCE_ORDERS = Interface('MES工单身份（总数未知）',
     rows_key='DATA', encoding='json_body', pagination_mode='bounded_data')
 SOURCE_ORDERS_SQL = (
     'SELECT SHOP_ORDER,ORDER_DESC FROM (SELECT SHOP_ORDER,ORDER_DESC FROM M_SHOP_ORDER '
-    "WHERE SITE=:SITE AND (:SHOP_ORDER IS NULL OR SHOP_ORDER LIKE :SHOP_ORDER||'%') "
-    "AND (:ORDER_DESC IS NULL OR ORDER_DESC LIKE :ORDER_DESC||'%') "
-    'AND (:AFTER_SHOP_ORDER IS NULL OR SHOP_ORDER>:AFTER_SHOP_ORDER) '
-    'ORDER BY SHOP_ORDER ASC) WHERE ROWNUM<={row_limit}'
+    'WHERE SITE=:SITE{predicates} ORDER BY SHOP_ORDER ASC) WHERE ROWNUM<={row_limit}'
 )
 
 
@@ -70,9 +67,17 @@ def prepare_query(config, interface, filters=None, page=1, page_size=1):
     if interface == 'source_orders':
         from .source_orders import validate_scope
         prefix, after = validate_scope(filters.get('prefix'), filters.get('after'))
-        return spec, {'querySql': SOURCE_ORDERS_SQL.format(row_limit=page_size),
-                      'params': {'SHOP_ORDER': prefix or None, 'ORDER_DESC': None,
-                                 'AFTER_SHOP_ORDER': after}}
+        # Four closed predicate variants avoid untyped null JDBC binds. Only
+        # trusted fixed fragments select variants; user values remain binds.
+        predicates, params = '', {}
+        if prefix:
+            predicates += " AND SHOP_ORDER LIKE :SHOP_ORDER||'%'"
+            params['SHOP_ORDER'] = prefix
+        if after:
+            predicates += ' AND SHOP_ORDER>:AFTER_SHOP_ORDER'
+            params['AFTER_SHOP_ORDER'] = after
+        return spec, {'querySql': SOURCE_ORDERS_SQL.format(
+            predicates=predicates, row_limit=page_size), 'params': params}
     payload = dict.fromkeys(spec.filters, '')
     for key, value in filters.items():
         if type(value) is not str or len(value) > 128:

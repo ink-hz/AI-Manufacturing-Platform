@@ -35,7 +35,7 @@ def test_fixed_bound_query(config_file, raw_config, tmp_path):
     spec, body = prepare(config, 'source_orders', {'prefix': 'WO', 'after': 'WO1'}, 1, 5)
     assert spec.path == PATH and spec.encoding == 'json_body'
     assert set(body) == {'querySql', 'params'}
-    assert body['params'] == {'SHOP_ORDER': 'WO', 'ORDER_DESC': None, 'AFTER_SHOP_ORDER': 'WO1'}
+    assert body['params'] == {'SHOP_ORDER': 'WO', 'AFTER_SHOP_ORDER': 'WO1'}
     sql = body['querySql']
     assert 'SITE=:SITE' in sql and 'ORDER BY SHOP_ORDER ASC) WHERE ROWNUM<=5' in sql
     assert ':SHOP_ORDER' in sql and ':AFTER_SHOP_ORDER' in sql and 'WO1' not in sql
@@ -187,3 +187,29 @@ def test_registry_exact_order_boundaries_do_not_expand_other_filters(config):
     for interface,filters in [('order_materials',{'shopOrder':'W'*65}),('material_priority',{'itemNo':'MAT_1'})]:
         with pytest.raises(Exception) as exc:prepare_query(config,interface,filters,1,5)
         assert exc.value.code=='MES_INVALID_QUERY'
+
+
+@pytest.mark.parametrize('prefix,after', [('', ''), ('WO', ''), ('', 'WO_5'), ('WO', 'WO_5')])
+def test_fixed_variants_omit_null_binds_for_legacy_driver(config_file, raw_config, tmp_path, prefix, after):
+    service(config_file, raw_config, tmp_path)
+    config = implementation('mes_connection').load_mes_connection_config(config_file(raw_config))
+    captured = []
+    def legacy_driver(method, path, body, headers):
+        wire = json.loads(body)
+        # Model the observed Oracle JDBC failure without contacting any source.
+        assert all(type(value) is str and value for value in wire['params'].values()), 'legacy JDBC rejects null binds'
+        captured.append(wire)
+        return 200, [], b'{"status":true,"result":{"MSTATUS":"S","DATA":[]}}'
+    transport = implementation('mes_access.transport').SessionTransport(config, requester=legacy_driver)
+    transport.authenticated = True
+    transport.query('source_orders', {'prefix': prefix, 'after': after}, 1, 5)
+    params = {}
+    predicate = 'WHERE SITE=:SITE'
+    if prefix:
+        params['SHOP_ORDER'] = prefix
+        predicate += " AND SHOP_ORDER LIKE :SHOP_ORDER||'%'"
+    if after:
+        params['AFTER_SHOP_ORDER'] = after
+        predicate += ' AND SHOP_ORDER>:AFTER_SHOP_ORDER'
+    assert captured == [{'querySql': 'SELECT SHOP_ORDER,ORDER_DESC FROM (SELECT SHOP_ORDER,ORDER_DESC FROM M_SHOP_ORDER '
+                        + predicate + ' ORDER BY SHOP_ORDER ASC) WHERE ROWNUM<=5', 'params': params}]
