@@ -131,3 +131,56 @@ it('late source A component results cannot appear after a source B remount', asy
  expect(host.textContent).not.toContain('OLD-A');expect(host.textContent).not.toContain('LATE-A');expect(queryB).toHaveBeenCalledTimes(1);
  await act(async()=>root.unmount());
 });
+
+const superseded = { code: 'MES_REFRESH_SUPERSEDED', message: 'PRIVATE-ERROR' };
+it('recovers superseded response with exactly one cache GET and persisted success', async () => {
+ const query=vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce({...observation({items:[{shop_order:'SYN-OLD',description:'older'}]}),refresh_error:superseded}).mockResolvedValueOnce(observation({items:[{shop_order:'SYN-NEW',description:'newer'}]}));
+ const v=await mount({mesSourceQuery:query});expect(v.host.textContent).toContain('newer');expect(v.host.querySelector('[role="alert"]')).toBeNull();expect(query.mock.calls.map(c=>c[2])).toEqual([false,true,false]);expect(query.mock.calls.every(c=>JSON.stringify(c[1])===JSON.stringify({prefix:'',after:''}))).toBe(true);await act(async()=>v.root.unmount());
+});
+it('shows update in progress when superseded cache remains empty without fake empty or retry',async()=>{
+ const query=vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce({snapshot:null,refresh_error:superseded}).mockResolvedValueOnce(empty);
+ const v=await mount({mesSourceQuery:query});expect(v.host.textContent).toContain('其他查询正在更新');expect(v.host.textContent).not.toContain('本页无工单');expect(v.host.querySelector('[role="alert"]')).toBeNull();expect(query).toHaveBeenCalledTimes(3);await act(async()=>v.root.unmount());
+});
+it('renders persisted safe error after superseded without leaking arbitrary messages',async()=>{
+ const query=vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce({...observation({items:[]}),refresh_error:superseded}).mockResolvedValueOnce({...observation({items:[]}),refresh_error:{code:'MES_TIMEOUT',message:'PRIVATE-ERROR'}});
+ const v=await mount({mesSourceQuery:query});expect(v.host.textContent).toContain('读取超时');expect(v.host.textContent).not.toContain('PRIVATE-ERROR');expect(v.host.textContent).not.toContain('组件超过');expect(query).toHaveBeenCalledTimes(3);await act(async()=>v.root.unmount());
+});
+it('keeps successful data and time when superseded cache GET fails',async()=>{
+ const query=vi.fn().mockResolvedValueOnce(observation({items:[{shop_order:'SYN-SAVED',description:'saved'}]})).mockResolvedValueOnce({snapshot:null,refresh_error:superseded}).mockRejectedValueOnce(Error('PRIVATE-ERROR'));
+ const v=await mount({mesSourceQuery:query});await click(v.host,'刷新工单');expect(v.host.textContent).toContain('saved');expect(v.host.textContent).toContain('original-time');expect(v.host.textContent).toContain('读取失败');expect(v.host.textContent).not.toContain('PRIVATE-ERROR');expect(query.mock.calls.map(c=>c[2])).toEqual([false,true,false]);await act(async()=>v.root.unmount());
+});
+
+it.each(['source','scope'])('rejects %s mismatch in superseded cache followup',async(mismatch)=>{
+ const bad=observation({items:[{shop_order:'SYN-WRONG',description:'wrong-followup'}]});
+ if(mismatch==='source')bad.snapshot.source={...source,namespace:'different'};else bad.snapshot.scope={prefix:'different',after:''};
+ const query=vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce({snapshot:null,refresh_error:superseded}).mockResolvedValueOnce(bad);
+ const v=await mount({mesSourceQuery:query});expect(v.host.textContent).not.toContain('wrong-followup');expect(v.host.textContent).toContain('读取失败');expect(query).toHaveBeenCalledTimes(3);await act(async()=>v.root.unmount());
+});
+it.each(['account','api','unmount'])('discards late superseded cache followup after %s changes',async(change)=>{
+ let finish!:(value:unknown)=>void;
+ const query=vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce({snapshot:null,refresh_error:superseded}).mockImplementationOnce(()=>new Promise(resolve=>finish=resolve)).mockResolvedValue(empty);
+ const v=await mount({mesSourceQuery:query});expect(query).toHaveBeenCalledTimes(3);
+ if(change==='unmount')await act(async()=>v.root.unmount());
+ else await act(async()=>v.root.render(<MesSourceWorkbench api={change==='api'?{...v.api,mesSourceStatus:async()=>({configured:true,can_refresh:false,source:{...source,namespace:'new-source'}}),mesSourceQuery:vi.fn(async()=>empty)}:v.api} accountId={change==='account'?'b':'a'} readOnly/>));
+ await act(async()=>finish(observation({items:[{shop_order:'SYN-LATE',description:'late-followup'}]})));
+ expect(v.host.textContent).not.toContain('late-followup');if(change!=='unmount')await act(async()=>v.root.unmount());
+});
+it('does not follow a superseded response after unmount before it arrives',async()=>{
+ let finish!:(value:unknown)=>void;const query=vi.fn().mockResolvedValueOnce(empty).mockImplementationOnce(()=>new Promise(resolve=>finish=resolve));const v=await mount({mesSourceQuery:query});await act(async()=>v.root.unmount());await act(async()=>finish({snapshot:null,refresh_error:superseded}));expect(query).toHaveBeenCalledTimes(2);
+});
+
+it('discards pending superseded component cache after another order is selected',async()=>{
+ let finish!:(value:unknown)=>void;
+ const query=vi.fn(async(kind:string,scope:Record<string,string|number>,refresh:boolean)=>{
+  if(kind==='orders')return observation({items:[{shop_order:'SYN-A',description:'a'},{shop_order:'SYN-B',description:'b'}]});
+  if(scope.shop_order==='SYN-A')return refresh?{snapshot:null,refresh_error:superseded}:await new Promise(resolve=>finish=resolve);
+  return observation({total:0,components:[]},scope);
+ });
+ // Initial component GET carries superseded, followup cache GET remains pending.
+ let first=true;const wrapped=vi.fn(async(kind:string,scope:Record<string,string|number>,refresh:boolean)=>{if(kind==='order-materials'&&scope.shop_order==='SYN-A'&&first){first=false;return {snapshot:null,refresh_error:superseded};}return query(kind,scope,refresh);});
+ const v=await mount({mesSourceQuery:wrapped});await click(v.host,'SYN-A');await click(v.host,'SYN-B');await act(async()=>finish(observation({total:1,components:[{component_key:'syn',material_id:'LATE-COMPONENT'}]},{shop_order:'SYN-A'})));expect(v.host.textContent).not.toContain('LATE-COMPONENT');expect(wrapped.mock.calls.filter(c=>c[1].shop_order==='SYN-A').map(c=>c[2])).toEqual([false,false]);await act(async()=>v.root.unmount());
+});
+it('keeps valid snapshot supplied with superseded initial refresh when cache GET fails',async()=>{
+ const query=vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce({...observation({items:[{shop_order:'SYN-CACHED',description:'cached-response'}]}),refresh_error:superseded}).mockRejectedValueOnce(Error('PRIVATE'));
+ const v=await mount({mesSourceQuery:query});expect(v.host.textContent).toContain('cached-response');expect(v.host.textContent).toContain('original-time');expect(v.host.textContent).toContain('读取失败');await act(async()=>v.root.unmount());
+});

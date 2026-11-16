@@ -454,7 +454,7 @@ export function WorkflowApp({
         }
         onLogout={options.onLogout ? () => account("logout") : undefined}
       >
-        {activeView !== "production_tools" && (
+        {activeView !== "production_tools" && !(b.configuration_admin && !project && ["home","execution","supply"].includes(activeView)) && (
           <p className="mf-badge">
             {b.dataset?.label} ·{" "}
             {b.dataset?.mode === "production"
@@ -475,13 +475,24 @@ export function WorkflowApp({
         <div hidden={view === "handbook"} key={epoch}>
           {activeView === "production_tools" && b.configuration_admin && <ProductionToolsWorkspace api={api} userId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} handoffId={productionHandoff} onDirty={productionDirty} />}
           {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <MesSourceWorkbench key={String(b.user.id)} api={api} accountId={String(b.user.id)} readOnly={options.readOnly || !b.can_edit} selectedSelection={mesSelection} onSelectOrder={selection=>{setMesSelection(selection);if(selection && activeView!=="supply")navigate("supply");}}/>}
+          {activeView === "supply" && !project && b.configuration_admin && <SapMaterialBrowser api={api} readOnly={options.readOnly || !b.can_edit}/> }
           {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && <button onClick={()=>setFormalLedger(x=>!x)}>{formalLedger?"收起平台正式台账":"平台正式台账"}</button>}
+        {b.configuration_admin && !project && ["home","execution","supply"].includes(activeView) && formalLedger && (
+          <p className="mf-badge">
+            {b.dataset?.label} ·{" "}
+            {b.dataset?.mode === "production"
+              ? "生产数据"
+              : b.dataset?.mode === "demo"
+                ? "隔离演示数据"
+                : "隔离测试数据"}
+          </p>
+        )}
           {activeView === "home" && !project && (!b.configuration_admin || formalLedger) && (
             <WorkflowHome readOnly={readOnly} onDirty={onDirty} requestLeave={requestLeave} data={dashboard} projects={projects} projectsReady={projectsReady} dashboardError={dashboardError} projectsError={projectsError} api={api} refresh={refresh} active={view === "home"} onRefresh={() => setRefresh(r => r + 1)} onOpen={open}
               onNavigate={(module, kind, projectId) => navigate(module, {kind, projectId})} onMaterialProject={id=>requestLeave(()=>{const p=projects.find(x=>x.id===id);if(p){setProject(p);setWorkspace("supply");setSupplyMode({projectId:id,mode:"material"});setTarget(null);}})} />
           )}{" "}
+
           {activeView === "tasks" && !project && <GlobalTasks api={api} context={taskContext} onContext={context=>{cancelOpening();setTaskContext(context);}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open}/> }
-          {activeView === "supply" && !project && b.configuration_admin && <SapMaterialBrowser api={api} readOnly={options.readOnly || !b.can_edit}/> }
           {isBusinessModule(activeView) && !project && (!b.configuration_admin || !["execution","supply"].includes(activeView) || formalLedger) && <GlobalLedger api={api} module={activeView} context={ledgers[activeView]} onContext={context=>{cancelOpening();setLedgers(old=>({...old,[activeView]:context}));}} projects={projects} refresh={refresh} onRefresh={()=>setRefresh(r=>r+1)} onOpen={open} onProject={(p,trace)=>requestLeave(()=>{setProject(p);setTarget(null);setDetail(null);setCurrentTask(null);if(trace)setWorkspace("trace");if(activeView === "supply" && ledgers.supply.kind === "material_handoff")setSupplyMode({projectId:p.id,mode:"handoff"});})}/>}
           {(activeView === "projects" || project) &&
             (creating ? (

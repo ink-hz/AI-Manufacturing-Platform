@@ -52,3 +52,10 @@ it('retained order from source A cannot query source B until explicitly reselect
     expect(componentCalls.filter(call=>call.namespace==='source-b')).toHaveLength(1);
     await act(async()=>root.unmount());vi.unstubAllGlobals();
 });
+
+it('keeps demo dataset identity on formal ledger without placing it over source browsers',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(input:unknown)=>new Response(JSON.stringify(String(input).endsWith('/mes-source/status')?{configured:true,can_refresh:false,source:{system:'mes',origin:'native',fact_role:'observation',environment:'production',site_code:'SYN-SITE',namespace:'syn'}}:String(input).endsWith('/projects')?{items:[]}:{}),{status:200,headers:{'content-type':'application/json'}})));
+ const options={apiBase:'/api/v1/manufacturing',csrfToken:'x',readOnly:false,bootstrap:{user:{id:'a',display_name:'Admin'},configuration_admin:true,can_edit:true,allowed:true,workflow_access:true,dataset:{mode:'demo',label:'全流程模拟环境'},release:{}}} as unknown as MountOptions;
+ const host=document.createElement('div'),root=createRoot(host);await act(async()=>root.render(<WorkflowApp options={options}/>));expect(host.textContent).toContain('MES生产环境');expect(host.textContent).not.toContain('隔离演示数据');
+ await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='平台正式台账')!.click());expect(host.textContent).toContain('全流程模拟环境');expect(host.textContent).toContain('隔离演示数据');await act(async()=>root.unmount());vi.unstubAllGlobals();
+});

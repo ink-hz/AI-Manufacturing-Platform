@@ -11,6 +11,7 @@ function useObservation(api: WorkflowApi, status: MesStatus | null, kind: MesKin
         value: MesObservation | null;
         busy: boolean;
         failed: boolean;
+        updating?: boolean;
     } | null>(null);
     const [attempt, setAttempt] = useState(0);
     const manual = useRef(false);
@@ -31,6 +32,7 @@ function useObservation(api: WorkflowApi, status: MesStatus | null, kind: MesKin
             }
             return v;
         };
+        let fallback: MesObservation | null = null;
         void (async () => {
             try {
                 let value = accept(await api.mesSourceQuery(kind, scope, refresh, c.signal));
@@ -38,18 +40,55 @@ function useObservation(api: WorkflowApi, status: MesStatus | null, kind: MesKin
                     return;
                 if (!refresh && !value.snapshot && !value.refresh_error && status.can_refresh && !readOnly)
                     value = accept(await api.mesSourceQuery(kind, scope, true, c.signal));
+                if (!live) return;
+                let updating = false;
+                if (value.refresh_error?.code === 'MES_REFRESH_SUPERSEDED') {
+                    if (value.snapshot) fallback = {...value, refresh_error: null};
+                    value = accept(await api.mesSourceQuery(kind, scope, false, c.signal));
+                    updating = !value.snapshot && !value.refresh_error || value.refresh_error?.code === 'MES_REFRESH_SUPERSEDED';
+                    if (value.refresh_error?.code === 'MES_REFRESH_SUPERSEDED') value = {...value, refresh_error: null};
+                }
                 if (live)
-                    setState({ key, api, value, busy: false, failed: false });
+                    setState({ key, api, value, busy: false, failed: false, updating });
             }
             catch {
                 if (live)
-                    setState(old => ({ key, api, value: old?.key === key && old.api === api ? old.value : null, busy: false, failed: true }));
+                    setState(old => ({ key, api, value: old?.key === key && old.api === api && old.value?.snapshot ? old.value : fallback, busy: false, failed: true }));
             }
         })();
         return () => { live = false; c.abort(); };
     }, [api, key, attempt]);
     const current = state?.key === key && state.api === api ? state : null;
-    return { value: current?.value, busy: current?.busy, failed: current?.failed, refresh: () => { manual.current = true; setAttempt(x => x + 1); } };
+    return { kind, updating: current?.updating, value: current?.value, busy: current?.busy, failed: current?.failed, refresh: () => { manual.current = true; setAttempt(x => x + 1); } };
+}
+function readError(code: string | undefined, kind: MesKind) {
+    const messages: Record<string, string> = {
+        MES_RELAY_UNAVAILABLE: '只读连接器离线。',
+        MES_RELAY_BUSY: '只读连接器繁忙，请稍后手动刷新。',
+        MES_TIMEOUT: 'MES读取超时，请稍后重试。',
+        MES_AUTHENTICATION_FAILED: 'MES源认证失败，请联系管理员核对。',
+        MES_RELAY_UNAUTHORIZED: '只读连接器认证失败，请联系管理员核对。',
+        MES_BUSINESS_FAILURE: 'MES源拒绝本次查询。',
+        MES_FUNCTION_NOT_ALLOWED: '当前只读查询未获授权。',
+        MES_CONFIGURATION_CHANGED: 'MES来源配置已变更，请重新进入源工作台。',
+        MES_RELAY_CONTEXT_MISMATCH: '只读连接器来源不匹配，请联系管理员核对。',
+        MES_SCOPE_MISMATCH: '查询结果与请求对象不匹配，未接纳本次结果。',
+        MES_INVALID_RESPONSE: 'MES查询响应校验失败，未接纳本次结果。',
+        MES_RELAY_INVALID_RESPONSE: '只读连接器响应校验失败，未接纳本次结果。',
+        MES_RESULT_LIMIT_EXCEEDED: '查询结果超过完整读取上限，未接纳本次结果。',
+        MES_RESPONSE_TOO_LARGE: '查询响应超过读取上限，未接纳本次结果。',
+        MES_RELAY_RESPONSE_TOO_LARGE: '只读连接器响应超过读取上限，未接纳本次结果。',
+        MES_NOT_CONFIGURED: 'MES只读源尚未配置。',
+        MES_CONFIGURATION_ERROR: 'MES只读源配置不可用，请联系管理员核对。',
+        MES_DISABLED: 'MES只读源已停用。',
+        MES_UNAVAILABLE: 'MES只读源暂不可用，请稍后重试。',
+    };
+    if (kind === 'order-materials') {
+        if (code === 'MES_COLLECTION_LIMIT') return 'MES组件超过完整读取上限，未接纳本次结果。';
+        if (code === 'MES_COLLECTION_INCOMPLETE') return 'MES组件读取不完整，未接纳本次结果。';
+        if (code === 'MES_ORDER_EMPTY') return '本次查询未返回该工单组件。';
+    }
+    return messages[code || ''] || 'MES只读查询失败，请稍后重试或联系管理员核对。';
 }
 function Result({ query, children }: {
     query: ReturnType<typeof useObservation>;
@@ -57,7 +96,7 @@ function Result({ query, children }: {
 }) {
     const value = query.value;
     const snapshot = value?.snapshot;
-    return <>{query.busy && <p role="status">正在读取…</p>}{(query.failed || value?.refresh_error) && <p role="alert">读取失败：{value?.refresh_error?.code === 'MES_RELAY_UNAVAILABLE' ? '只读连接器离线。' : '请核对连接或权限后重试；组件超过上限时不展示未取全结果。'}{snapshot && ' 保留上次成功结果及原读取时间。'}</p>}{snapshot ? <><p>读取时间 {snapshot.collected_at}</p>{children(snapshot.data)}</> : !query.busy && !query.failed && !value?.refresh_error && <p>尚未查询，无已保存结果。</p>}</>;
+    return <>{query.busy && <p role="status">正在读取…</p>}{query.updating && <p role="status">其他查询正在更新，可稍后手动刷新。</p>}{(query.failed || value?.refresh_error) && <p role="alert">读取失败：{readError(query.failed ? undefined : value?.refresh_error?.code, query.kind)}{snapshot && ' 保留上次成功结果及原读取时间。'}</p>}{snapshot ? <><p>读取时间 {snapshot.collected_at}</p>{children(snapshot.data)}</> : !query.busy && !query.failed && !query.updating && !value?.refresh_error && <p>尚未查询，无已保存结果。</p>}</>;
 }
 function MaterialRecords({ api, status, accountId, readOnly, order, material }: {
     api: WorkflowApi;
