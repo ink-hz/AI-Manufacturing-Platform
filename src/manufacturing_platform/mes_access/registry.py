@@ -38,14 +38,27 @@ INTERFACES = MappingProxyType({
     'inventory_options': Interface('指定仓库及物料的库存选项', '/orbbec/appointIssue/appointIssueAction!queryInventoryOptions.action',
         ('warehouseNo', 'itemNo', 'appointBatch', 'shippingSpace'), required_filters=('warehouseNo', 'itemNo')),
 })
+# Reviewed source-owned SELECT; SITE is supplied by the authenticated MES session.
+SOURCE_ORDERS = Interface('MES工单身份（总数未知）',
+    '/orbbec/customCommon/customCommonAction!query.action', ('prefix', 'after'),
+    rows_key='DATA', encoding='json_body', pagination_mode='bounded_data')
+SOURCE_ORDERS_SQL = (
+    'SELECT SHOP_ORDER,ORDER_DESC FROM (SELECT SHOP_ORDER,ORDER_DESC FROM M_SHOP_ORDER '
+    "WHERE SITE=:SITE AND (:SHOP_ORDER IS NULL OR SHOP_ORDER LIKE :SHOP_ORDER||'%') "
+    "AND (:ORDER_DESC IS NULL OR ORDER_DESC LIKE :ORDER_DESC||'%') "
+    'AND (:AFTER_SHOP_ORDER IS NULL OR SHOP_ORDER>:AFTER_SHOP_ORDER) '
+    'ORDER BY SHOP_ORDER ASC) WHERE ROWNUM<={row_limit}'
+)
+
+
 DATE_KEYS = frozenset({'startDate', 'endDate', 'begindate', 'enddate', 'date_start', 'date_end'})
 
 
 def prepare_query(config, interface, filters=None, page=1, page_size=1):
     """Return a fresh fixed wire payload after all public inputs pass policy."""
-    if type(interface) is not str or interface not in INTERFACES:
+    if type(interface) is not str or interface not in INTERFACES and interface != 'source_orders':
         raise MesAccessError('MES_INTERFACE_DENIED', 404)
-    spec = INTERFACES[interface]
+    spec = SOURCE_ORDERS if interface == 'source_orders' else INTERFACES[interface]
     if spec.path not in config.allowed_api_paths:
         raise MesAccessError('MES_INTERFACE_DENIED', 403)
     filters = {} if filters is None else filters
@@ -54,6 +67,12 @@ def prepare_query(config, interface, filters=None, page=1, page_size=1):
             or spec.pagination_mode == 'bounded_data' and page != 1
             or type(page_size) is not int or not 1 <= page_size <= min(5, config.max_rows)):
         raise MesAccessError('MES_INVALID_QUERY', 400)
+    if interface == 'source_orders':
+        from .source_orders import validate_scope
+        prefix, after = validate_scope(filters.get('prefix'), filters.get('after'))
+        return spec, {'querySql': SOURCE_ORDERS_SQL.format(row_limit=page_size),
+                      'params': {'SHOP_ORDER': prefix or None, 'ORDER_DESC': None,
+                                 'AFTER_SHOP_ORDER': after}}
     payload = dict.fromkeys(spec.filters, '')
     for key, value in filters.items():
         if type(value) is not str or len(value) > 128:

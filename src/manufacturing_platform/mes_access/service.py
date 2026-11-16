@@ -95,7 +95,7 @@ class MesAccessService:
             store.record({**event, 'status': 'failed', 'error_code': error.code,
                           'elapsed_ms': round((monotonic() - started) * 1000)})
             raise error from None
-        row_metadata = {'row_count': len(result['rows'])} if operation == 'query' else {}
+        row_metadata = {'row_count': len(result['items'] if interface == 'source_orders' else result['rows'])} if operation == 'query' else {}
         store.record({**event, **row_metadata, 'status': 'success', 'response_bytes': size,
                       'elapsed_ms': round((monotonic() - started) * 1000)})
         return {**result, 'request_id': event['request_id']}
@@ -110,8 +110,11 @@ class MesAccessService:
                     'business_data_verified': False, 'business_reconciled': False}
         return self._operation(config, binding, store, 'diagnose', None, actor_id, call)
 
-    def query(self, interface, filters=None, page=1, page_size=1, actor_id=None):
+    def query(self, interface, filters=None, page=1, page_size=1, actor_id=None, *, expected_fingerprint=None):
         config, binding, store = self._context()
+        if type(interface) is not str or interface not in INTERFACES:
+            raise MesAccessError('MES_INTERFACE_DENIED', 404)
+        self._expected(binding, expected_fingerprint)
         return self._query(config, binding, store, interface, filters, page, page_size, actor_id)
 
     def _query(self, config, binding, store, interface, filters, page, page_size, actor_id):
@@ -141,8 +144,41 @@ class MesAccessService:
         self._live(config)
         return current == fingerprint
 
-    def collect_order_materials(self, shop_order, actor_id):
+    def collect_order_materials(self, shop_order, actor_id, *, expected_fingerprint=None):
         from .order_materials import collect
         config, fingerprint, store = self._context()
         self._live(config)
+        self._expected(fingerprint, expected_fingerprint)
         return collect(self, config, fingerprint, store, shop_order, actor_id)
+
+    @staticmethod
+    def _expected(fingerprint, expected):
+        if expected is not None and expected != fingerprint:
+            raise MesAccessError('MES_CONFIGURATION_CHANGED', 409)
+
+    def read_context(self):
+        from .source_orders import source
+        config, fingerprint, _ = self._context()
+        self._live(config)
+        return {'source': source(config), 'fingerprint': fingerprint}
+
+    def source_orders(self, prefix, after, actor_id, *, expected_fingerprint=None):
+        from .source_orders import source, validate_scope, items
+        config, fingerprint, store = self._context()
+        self._live(config)
+        self._expected(fingerprint, expected_fingerprint)
+        prefix, after = validate_scope(prefix, after)
+        # The public observation always has a fixed five-row page contract.
+        prepare_query(config, 'source_orders', {'prefix': prefix, 'after': after}, 1, 5)
+        def call(transport):
+            payload = transport.query('source_orders', {'prefix': prefix, 'after': after}, 1, 5)
+            if type(payload) is not bytes or len(payload) > config.max_response_bytes:
+                raise MesAccessError('MES_RESPONSE_TOO_LARGE', 502)
+            parsed = parse_query_response('source_orders', payload, page=1, page_size=5)
+            observed = items(parsed['rows'], prefix, after)
+            if not self.configuration_matches(fingerprint):
+                raise MesAccessError('MES_CONFIGURATION_CHANGED', 409)
+            return {'source': source(config), 'fingerprint': fingerprint, 'items': observed,
+                    'next_cursor': observed[-1]['shop_order'] if len(observed) == 5 else None,
+                    'total': None, 'page_size': 5}
+        return self._operation(config, fingerprint, store, 'query', 'source_orders', actor_id, call)

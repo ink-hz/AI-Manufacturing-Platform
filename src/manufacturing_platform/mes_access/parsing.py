@@ -4,7 +4,7 @@ import math
 import re
 
 from .errors import MesAccessError
-from .registry import INTERFACES
+from .registry import INTERFACES, SOURCE_ORDERS
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_DEPTH = 6
@@ -73,10 +73,10 @@ def _bounded_tree(value, interface):
 
 
 def parse_query_response(interface, payload, *, page=1, page_size=1):
-    if type(interface) is not str or interface not in INTERFACES:
+    if type(interface) is not str or interface not in INTERFACES and interface != 'source_orders':
         raise MesAccessError('MES_INTERFACE_DENIED', 404)
     try:
-        spec = INTERFACES[interface]
+        spec = SOURCE_ORDERS if interface == 'source_orders' else INTERFACES[interface]
         if (type(page) is not int or not 1 <= page <= 1_000_000
                 or spec.pagination_mode == 'bounded_data' and page != 1
                 or type(page_size) is not int or not 1 <= page_size <= 5
@@ -86,7 +86,7 @@ def parse_query_response(interface, payload, *, page=1, page_size=1):
             raise MesAccessError('MES_SESSION_EXPIRED', 502)
         root = json.loads(payload.decode('utf-8'), object_pairs_hook=_unique,
                           parse_constant=_invalid_constant,
-                          **({'parse_float': _decimal_lexeme} if interface in {'iqc_receive', 'order_materials'} else {}))
+                          **({'parse_float': _decimal_lexeme} if interface in {'iqc_receive', 'order_materials', 'material_priority', 'iqc_inspections'} else {}))
         _bounded_tree(root, interface)
         if type(root) is not dict or type(root.get('result')) is not dict:
             raise ValueError()
