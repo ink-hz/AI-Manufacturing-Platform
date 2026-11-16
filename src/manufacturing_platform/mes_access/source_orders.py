@@ -11,12 +11,20 @@ def source(config):
             'namespace': namespace(config)}
 
 
+def valid_identity(value):
+    """Exact order IDs and keyset cursors share one round-trippable alphabet."""
+    return (type(value) is str and 1 <= len(value) <= 64
+            and value == value.strip()
+            and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:/ -]{0,63}', value) is not None)
+
+
 def validate_scope(prefix, after):
-    for value in (prefix, after):
-        if value is not None and (type(value) is not str or len(value) > 64
-                or value and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.:/ -]{0,63}', value)
-                or value != value.strip()):
-            raise MesAccessError('MES_INVALID_QUERY', 400)
+    if prefix is not None and (type(prefix) is not str or len(prefix) > 64
+            or prefix != prefix.strip()
+            or prefix and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.:/ -]{0,63}', prefix)):
+        raise MesAccessError('MES_INVALID_QUERY', 400)
+    if after is not None and (type(after) is not str or after and not valid_identity(after)):
+        raise MesAccessError('MES_INVALID_QUERY', 400)
     return prefix or '', after or None
 
 
@@ -26,8 +34,7 @@ def items(rows, prefix, after):
     for row in rows:
         order = row.get('SHOP_ORDER')
         description = row.get('ORDER_DESC')
-        if (type(order) is not str or not order or len(order) > 128
-                or order != order.strip() or any(ord(c) < 32 for c in order)
+        if (not valid_identity(order)
                 or not order.startswith(prefix) or previous is not None and order <= previous
                 or description is not None and type(description) is not str):
             raise MesAccessError('MES_INVALID_RESPONSE', 502)

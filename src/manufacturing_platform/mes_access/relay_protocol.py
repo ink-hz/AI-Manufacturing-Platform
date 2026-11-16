@@ -1,6 +1,7 @@
 """Closed MES observation relay schema; no arbitrary endpoint or SQL."""
 import re
 from ..sap_access import relay_protocol as shared
+from .source_orders import valid_identity
 MAX_REQUEST_BYTES=2048
 MAX_RESPONSE_BYTES=2*1024*1024
 class RelayProtocolError(ValueError):
@@ -22,6 +23,9 @@ def load_token(path):return _wrap(shared.load_token,path)
 def text_scope(value,*,empty=False,limit=128):
     if type(value) is not str or len(value)>limit or (not value and not empty) or value!=value.strip() or (value and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.:/ -]*',value)):_reject()
     return value
+def order_scope(value, *, empty=False):
+    if not (empty and value == '' and type(value) is str) and not valid_identity(value):_reject()
+    return value
 def validate_context(value):
     _keys(value,('source','fingerprint'));source=value['source']
     _keys(source,('system','origin','fact_role','environment','site_code','namespace'))
@@ -41,13 +45,13 @@ def parse_request(payload):
         if not _hex(v['expected_fingerprint']):_reject()
         if op=='source_orders':
             _keys(s,('prefix','after'))
-            for k in s:text_scope(s[k],empty=True,limit=64)
+            text_scope(s['prefix'],empty=True,limit=64);order_scope(s['after'],empty=True)
         elif op=='order_materials':
-            _keys(s,('shop_order',));text_scope(s['shop_order'])
+            _keys(s,('shop_order',));order_scope(s['shop_order'])
         elif op in ('material_priority','iqc_inspections'):
             _keys(s,('shop_order','material','page','page_size') if op=='material_priority' else ('material','page','page_size'))
             text_scope(s['material'])
-            if op=='material_priority':text_scope(s['shop_order'])
+            if op=='material_priority':order_scope(s['shop_order'])
             if type(s['page']) is not int or not 1<=s['page']<=1000000 or type(s['page_size']) is not int or not 1<=s['page_size']<=5:_reject()
         else:_reject()
     return v

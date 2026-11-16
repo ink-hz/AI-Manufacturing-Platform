@@ -135,9 +135,10 @@ def register_mes_source_routes(router, service, actor):
                     raise HTTPException(422, 'Invalid MES scope')
                 scope[key] = int(value)
             else:
-                limit = 64 if key in {'prefix','after'} else 128
+                limit = 64 if key in {'prefix','after','shop_order'} else 128
                 empty = key in {'prefix','after'}
-                if len(value) > limit or value != value.strip() or (not value and not empty) or (value and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.:/ -]*', value)):
+                pattern = r'[A-Za-z0-9][A-Za-z0-9_.:/ -]*' if key in {'after','shop_order'} else r'[A-Za-z0-9][A-Za-z0-9.:/ -]*'
+                if len(value) > limit or value != value.strip() or (not value and not empty) or (value and not re.fullmatch(pattern, value)):
                     raise HTTPException(422, 'Invalid MES scope')
         return user, scope
 

@@ -24,3 +24,25 @@ def test_nonce_and_null_safe_error():
 def test_known_native_failures_remain_safe_codes(code):
     rid=str(uuid4())
     p.validate_response(dict(version=1,request_id=rid,context=None,result=None,error={'code':code}),request_id=rid)
+
+
+@pytest.mark.parametrize('operation,scope', [
+    ('source_orders', {'prefix':'WO','after':'WO_5'}),
+    ('order_materials', {'shop_order':'WO_5'}),
+    ('material_priority', {'shop_order':'WO_5','material':'MAT','page':1,'page_size':5}),
+])
+def test_exact_order_identifier_accepts_underscore(operation, scope):
+    from uuid import uuid4
+    request = dict(version=1,request_id=str(uuid4()),operation=operation,actor_hash='a'*64,expected_fingerprint='b'*64,scope=scope)
+    assert p.parse_request(json.dumps(request).encode())['scope'] == scope
+
+
+@pytest.mark.parametrize('operation,scope', [
+    ('source_orders', {'prefix':'WO_','after':''}),
+    ('source_orders', {'prefix':'','after':'W'*65}),
+    ('order_materials', {'shop_order':'W'*65}),
+])
+def test_prefix_wildcard_and_overlong_exact_order_denied(operation, scope):
+    from uuid import uuid4
+    request=dict(version=1,request_id=str(uuid4()),operation=operation,actor_hash='a'*64,expected_fingerprint='b'*64,scope=scope)
+    with pytest.raises(p.RelayProtocolError):p.parse_request(json.dumps(request).encode())

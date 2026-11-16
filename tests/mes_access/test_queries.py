@@ -109,7 +109,7 @@ def test_query_session_or_http_failure_does_not_reauthenticate(config, status, h
     assert len(wire.calls) == 4 and not c.authenticated
 
 
-@pytest.mark.parametrize('code', ['ORDER_1', ' a', 'a\t', 'a"b', 'a\\b'])
+@pytest.mark.parametrize('code', [' a', 'a\t', 'a"b', 'a\\b'])
 def test_only_literal_code_characters_are_accepted(config, code):
     wire = Wire()
     with pytest.raises(Exception) as caught:

@@ -74,10 +74,10 @@ def validate_result(result,operation,scope,context):
             if type(rows) is not list or len(rows)>5:raise ValueError()
             last=scope['after']
             for row in rows:
-                _keys(row,('shop_order','description'));text_scope(row['shop_order'],limit=64)
+                _keys(row,('shop_order','description'));order_scope(row['shop_order'])
                 if row['shop_order']<=last or not row['shop_order'].startswith(scope['prefix']) or row['description'] is not None and (type(row['description']) is not str or len(row['description'])>4096):raise ValueError()
                 last=row['shop_order']
-            if result['next_cursor'] is not None and (len(rows)!=5 or result['next_cursor']!=last):raise ValueError()
+            if result['next_cursor'] != (last if len(rows)==5 else None):raise ValueError()
         else:
             _keys(result,('rows','total_items','page','page_size','interface','source','authentication_verified','business_query_succeeded','business_data_verified','business_reconciled','request_id'))
             if not _uuid(result['request_id']) or result['interface']!=operation or result['source']!='native_mes' or any(type(result[k]) is not int or result[k]!=scope[k] for k in ('page','page_size')):raise ValueError()

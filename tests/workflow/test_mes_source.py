@@ -161,3 +161,23 @@ def test_configuration_change_during_success_never_accepts_old_binding(mes_h):
     assert result['refresh_error']['code']=='MES_CONFIGURATION_CHANGED'
     mes.binding='one'
     assert h.client().get(path).json()==dict(snapshot=None,refresh_error=None)
+
+
+@pytest.mark.parametrize('route,params', [
+    ('orders', {'prefix':'WO','after':'WO_5'}),
+    ('order-materials', {'shop_order':'WO_5'}),
+    ('priority', {'shop_order':'WO_5','material':'MAT1','page':1}),
+])
+def test_exact_order_cursor_scope_accepts_underscore(mes_h, route, params):
+    h, mes = mes_h
+    assert h.client().get(URL+'/'+route, params=params).status_code == 200
+
+
+@pytest.mark.parametrize('route,params', [
+    ('orders', {'prefix':'WO_','after':''}),
+    ('orders', {'prefix':'','after':'W'*65}),
+    ('order-materials', {'shop_order':'W'*65}),
+])
+def test_prefix_underscore_and_overlong_order_denied(mes_h, route, params):
+    h, mes = mes_h
+    assert h.client().get(URL+'/'+route, params=params).status_code == 422

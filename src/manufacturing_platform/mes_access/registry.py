@@ -85,6 +85,10 @@ def prepare_query(config, interface, filters=None, page=1, page_size=1):
                     date.fromisoformat(value)
                 except ValueError:
                     raise MesAccessError('MES_INVALID_QUERY', 400) from None
+            elif key == 'shopOrder':
+                from .source_orders import valid_identity
+                if not valid_identity(value):
+                    raise MesAccessError('MES_INVALID_QUERY', 400)
             elif not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.:/ -]{0,127}', value):
                 raise MesAccessError('MES_INVALID_QUERY', 400)
         payload[key] = value

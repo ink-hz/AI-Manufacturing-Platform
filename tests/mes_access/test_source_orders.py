@@ -134,3 +134,56 @@ def test_private_identity_profile_is_not_generic_query_interface(config_file, ra
     with pytest.raises(Exception) as exc:
         s.query('source_orders', {'prefix': 'WO'})
     assert exc.value.code == 'MES_INTERFACE_DENIED'
+
+
+def test_underscore_page_cursor_roundtrips(config_file, raw_config, tmp_path):
+    pages = [[{'SHOP_ORDER': f'WO_{i}', 'ORDER_DESC': None} for i in range(1, 6)],
+             [{'SHOP_ORDER': 'WO_6', 'ORDER_DESC': None}]]
+    calls = []
+    def factory(c):
+        class PageTransport(FakeTransport):
+            def query(self, interface, filters, page, page_size):
+                calls.append(filters)
+                return json.dumps({'status': True, 'result': {'MSTATUS': 'S', 'DATA': pages.pop(0)}}).encode()
+        return PageTransport(c)
+    s = service(config_file, raw_config, tmp_path, factory=factory)
+    first = s.source_orders('WO', None, 'actor')
+    assert first['next_cursor'] == 'WO_5'
+    second = s.source_orders('WO', first['next_cursor'], 'actor')
+    assert second['items'] == [{'shop_order': 'WO_6', 'description': None}]
+    assert calls[-1]['after'] == 'WO_5'
+
+
+@pytest.mark.parametrize('order', ['WO中文', 'W'*65, 'WO%', 'WO\x7f'])
+def test_unusable_source_identity_rejected(config_file, raw_config, tmp_path, order):
+    s = service(config_file, raw_config, tmp_path, [{'SHOP_ORDER': order, 'ORDER_DESC': None}])
+    with pytest.raises(Exception) as exc:
+        s.source_orders('', None, 'actor')
+    assert exc.value.code == 'MES_INVALID_RESPONSE'
+
+
+def test_native_collector_queries_underscore_order_and_checks_identity(config_file, raw_config, tmp_path):
+    row = {'SHOP_ORDER': 'WO_1', 'RSNUM': 'R', 'RSPOS': '1', 'MATNR': 'M', 'BDMNG': '1', 'MEINS': 'EA'}
+    payload = json.dumps({'status': True, 'result': {'MSTATUS': 'S', 'page': [row], 'pageNumber': 1, 'totalItems': 1}}).encode()
+    s = service(config_file, raw_config, tmp_path, factory=lambda c: FakeTransport(c, payload))
+    assert s.collect_order_materials('WO_1', 'actor')['components'][0]['material_id'] == 'M'
+    with pytest.raises(Exception) as exc:
+        s.collect_order_materials('WO_2', 'actor')
+    assert exc.value.code == 'MES_ORDER_MISMATCH'
+
+
+@pytest.mark.parametrize('after', ['WO中文', 'W'*65, 'WO%', 'WO\x7f', True, {}])
+def test_unusable_cursor_rejected_before_io(config_file, raw_config, tmp_path, after):
+    s = service(config_file, raw_config, tmp_path, factory=lambda c: pytest.fail('invalid cursor must not perform I/O'))
+    with pytest.raises(Exception) as exc:
+        s.source_orders('', after, 'actor')
+    assert exc.value.code == 'MES_INVALID_QUERY'
+
+
+def test_registry_exact_order_boundaries_do_not_expand_other_filters(config):
+    from manufacturing_platform.mes_access.registry import prepare_query
+    assert prepare_query(config, 'material_priority', {'shopOrder':'WO_1'}, 1, 5)[1]['shopOrder']=='WO_1'
+    assert prepare_query(config, 'order_materials', {'shopOrder':'W'*64}, 1, 5)[1]['shopOrder']=='W'*64
+    for interface,filters in [('order_materials',{'shopOrder':'W'*65}),('material_priority',{'itemNo':'MAT_1'})]:
+        with pytest.raises(Exception) as exc:prepare_query(config,interface,filters,1,5)
+        assert exc.value.code=='MES_INVALID_QUERY'

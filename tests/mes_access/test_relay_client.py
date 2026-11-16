@@ -43,3 +43,13 @@ def test_unknown_or_null_transport_error_is_sanitized(monkeypatch):
     command=dict(version=1,request_id=str(uuid4()),operation='describe',actor_hash='0'*64,expected_fingerprint=None,scope={})
     monkeypatch.setattr(subprocess,'run',lambda *a,**k:subprocess.CompletedProcess([],0,b'{"error":null}'))
     with pytest.raises(MesAccessError,match='MES_RELAY_INVALID_RESPONSE'):c.exchange('/tmp/x','d'*64,command)
+
+
+def test_relay_validates_underscore_source_cursor():
+    result=dict(source=CONTEXT['source'],fingerprint=CONTEXT['fingerprint'],items=[{'shop_order':f'WO_{i}','description':None} for i in range(1,6)],next_cursor='WO_5',total=None,page_size=5,request_id=str(uuid4()))
+    assert validate_result(result,'source_orders',{'prefix':'WO','after':''},CONTEXT)['next_cursor']=='WO_5'
+
+
+def test_full_identity_page_requires_roundtrippable_cursor():
+    result=dict(source=CONTEXT['source'],fingerprint=CONTEXT['fingerprint'],items=[{'shop_order':f'WO_{i}','description':None} for i in range(1,6)],next_cursor=None,total=None,page_size=5,request_id=str(uuid4()))
+    with pytest.raises(MesAccessError):validate_result(result,'source_orders',{'prefix':'WO','after':''},CONTEXT)
