@@ -42,6 +42,31 @@ def sap_relay_configuration(request, *, baseline=False):
     _require(old is None or target == old, 'existing_sap_relay_configuration_changed')
     return old if baseline else target
 
+MES_RELAY_FIELDS = {
+    'config_path': 'PLATFORM_MANUFACTURING_MES_CONFIG_PATH',
+    'audit_path': 'PLATFORM_MANUFACTURING_MES_AUDIT_PATH',
+}
+MES_RELAY_PATHS = {
+    'config_path': '/app/data/manufacturing/mes-relay/config.json',
+    'audit_path': '/app/data/manufacturing/mes-relay/audit.json',
+}
+
+
+def mes_relay_environment(config):
+    _require(type(config) is dict and config == MES_RELAY_PATHS, 'mes_relay_exact_paths')
+    return {name: config[key] for key, name in MES_RELAY_FIELDS.items()}
+
+
+def mes_relay_configuration(request, *, baseline=False):
+    old = request.get('baseline_mes_relay')
+    if 'baseline_mes_relay' in request:
+        mes_relay_environment(old)
+    target = request.get('target_mes_relay', old)
+    if 'target_mes_relay' in request:
+        mes_relay_environment(target)
+    _require(old is None or target == old, 'existing_mes_relay_configuration_changed')
+    return old if baseline else target
+
 
 def workflow_environment(config):
     _require(isinstance(config,dict) and set(config)==set(WORKFLOW_FIELDS),'workflow_exact_fields_required')
@@ -94,7 +119,7 @@ def validate_candidate(baseline, candidate, *, target_image, environment_delta, 
 
 def validate_upgrade_candidate(baseline, candidate, *, target_image, environment_delta,
                                baseline_environment, new_code_mount, data_mount, native_enabled=False,
-                               sap_relay_enabled=False):
+                               sap_relay_enabled=False, mes_relay_enabled=False):
     """Replace one immutable source; preserve the existing data and all other state."""
     before,after=copy.deepcopy(baseline),copy.deepcopy(candidate)
     old,new=before['services']['platform-api'],after['services']['platform-api']
@@ -106,13 +131,16 @@ def validate_upgrade_candidate(baseline, candidate, *, target_image, environment
     workflow_keys=set(WORKFLOW_FIELDS.values())
     native_keys=set(NATIVE_FIELDS.values()) if native_enabled else set()
     relay_keys=set(SAP_RELAY_FIELDS.values()) if sap_relay_enabled else set()
+    mes_keys=set(MES_RELAY_FIELDS.values()) if mes_relay_enabled else set()
     for row in [baseline_environment,environment_delta]:
-        _require(set(fixed)|releases <= set(row) <= set(fixed)|releases|workflow_keys|native_keys|relay_keys,'upgrade_environment_keys')
+        _require(set(fixed)|releases <= set(row) <= set(fixed)|releases|workflow_keys|native_keys|relay_keys|mes_keys,'upgrade_environment_keys')
         validate_workflow_environment(row)
         selected={key:row[value] for key,value in NATIVE_FIELDS.items() if value in row}
         if selected:native_environment(selected)
         relay={key:row[value] for key,value in SAP_RELAY_FIELDS.items() if value in row}
         if relay:sap_relay_environment(relay)
+        mes={key:row[value] for key,value in MES_RELAY_FIELDS.items() if value in row}
+        if mes:mes_relay_environment(mes)
     old_workflow={k:v for k,v in baseline_environment.items() if k in workflow_keys}
     new_workflow={k:v for k,v in environment_delta.items() if k in workflow_keys}
     _require(not old_workflow or old_workflow==new_workflow,'existing_workflow_configuration_changed')
@@ -125,7 +153,10 @@ def validate_upgrade_candidate(baseline, candidate, *, target_image, environment
     for key in releases:
         _require(all(isinstance(row[key],str) and re.fullmatch('[0-9a-f]{40}',row[key]) for row in [baseline_environment,environment_delta]),'upgrade_release_pin')
     old_env,new_env=old.get('environment',{}),new.get('environment',{})
-    for key in (workflow_keys|native_keys|relay_keys)-set(baseline_environment):
+    old_mes={k:v for k,v in baseline_environment.items() if k in mes_keys}
+    new_mes={k:v for k,v in environment_delta.items() if k in mes_keys}
+    _require(not old_mes or old_mes==new_mes,'existing_mes_relay_configuration_changed')
+    for key in (workflow_keys|native_keys|relay_keys|mes_keys)-set(baseline_environment):
         _require(key not in old_env,'upgrade_baseline_workflow_expected_absent')
     for key,value in environment_delta.items():
         if key not in baseline_environment:

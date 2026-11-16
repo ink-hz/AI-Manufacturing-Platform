@@ -127,13 +127,14 @@ def assemble(manufacturing_repo,platform_repo,output,baseline,manufacturing_sha,
              'resource_urls':['https://agent.orbbec.com.cn/office/','https://fae.orbbec.com.cn/partner/login'],
              'backend_base_hashes':base_hashes,'backend_hashes':new_hashes,'backend_added_files':baseline.get('approved_backend_additions',[]),'static_hashes':static}
     from release import workflow_configuration
-    for key in ['baseline_workflow','target_workflow','baseline_native','target_native','baseline_sap_relay','target_sap_relay']:
+    for key in ['baseline_workflow','target_workflow','baseline_native','target_native','baseline_sap_relay','target_sap_relay','baseline_mes_relay','target_mes_relay']:
         if key in baseline:request[key]=baseline[key]
     workflow_configuration(request)
     from native_release import native_configuration
     native_configuration(request)
-    from release_guard import sap_relay_configuration
+    from release_guard import sap_relay_configuration, mes_relay_configuration
     sap_relay_configuration(request)
+    mes_relay_configuration(request)
     (payload/'request-template.json').write_text(json.dumps(request,sort_keys=True,indent=2)+'\n')
     archive=output/'payload.tar.gz'
     def metadata(member):
